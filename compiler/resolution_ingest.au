@@ -8,6 +8,7 @@ import aurora.compiler.parser;
 import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.lowering_storage;
+import aurora.compiler.builtin_catalog;
 
 // Source admission lexes, parses and admits one module; ingest then copies it
 // into Session rows and projects every token coordinate to a source reference.
@@ -553,11 +554,17 @@ export namespace compiler_resolver {
             return detail;
         }
     };
+    // The admission limits of the language: scalar arrays of at most 64 and
+    // byte arrays of at most 512 elements, and every catalog service group with
+    // the Console, Display and IommuEvent service bits.
+    auto admission() -> compiler_parser::AdmissionConfig {
+        return compiler_parser::AdmissionConfig(64, 512, compiler_catalog::service_groups(true, true, true), 1, 2, 4);
+    }
     // Lexes the whole source, then parses and admits it as a module in the
     // cleared arena, whose last syntax node is then the module root. As in the
     // former host adapter, lexical errors anywhere precede grammar errors.
-    auto parse_source(compiler_parser::AstArena& arena, builtin::span<const u8> source,
-        compiler_parser::AdmissionConfig configuration) -> SourceResult {
+    auto parse_source(compiler_parser::AstArena& arena, builtin::span<const u8> source) -> SourceResult {
+        const compiler_parser::AdmissionConfig configuration = admission();
         SourceResult result = SourceResult();
         arena.clear();
         i64 tokens = 0;

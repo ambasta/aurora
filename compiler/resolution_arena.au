@@ -664,6 +664,8 @@ export namespace compiler_resolver {
                 fail_storage(StorageStatus::invalid);
                 return false;
             }
+            // Set first, so a failed reservation reports as a lowering failure.
+            diagnosticPayloadRow = 0;
             if (!reserve_output_rows(1) || !reserve_output_operands(3)) {
                 return false;
             }
@@ -681,7 +683,6 @@ export namespace compiler_resolver {
             }
             operand_used = 3;
             output_used = 1;
-            diagnosticPayloadRow = 0;
             return true;
         }
         // Payload IDs already exist at the decision site. This path never grows a
@@ -1289,14 +1290,13 @@ export namespace compiler_resolver {
             work_used = count;
             return true;
         }
-        // Appends the next module source, or rejects one past its byte limit:
-        // -2 for the 1 MiB file limit and -3 for the 4 MiB graph limit, which
-        // takes precedence while less than a file's worth of graph remains.
-        auto append_source(builtin::span<const u8> source) -> i64 {
+        // Whether the next module source of count bytes fits: 0, or -2 past
+        // the 1 MiB file limit and -3 past the 4 MiB graph limit, which takes
+        // precedence while less than a file's worth of graph remains.
+        auto source_limit(i64 count) -> i64 {
             if (!good()) {
                 return -1;
             }
-            const i64 count = source.size();
             if (modules >= 64 || count < 0) {
                 return fail_storage(StorageStatus::limit);
             }
@@ -1307,6 +1307,15 @@ export namespace compiler_resolver {
                 }
                 return -2;
             }
+            return 0;
+        }
+        // Appends the next module source, or rejects one past its byte limit.
+        auto append_source(builtin::span<const u8> source) -> i64 {
+            const i64 limit = source_limit(source.size());
+            if (limit < 0) {
+                return limit;
+            }
+            const i64 count = source.size();
             if (modules > 0) {
                 const MetaRow previous = metadata.at(modules - 1);
                 if (previous.kind() != MetaTag::module_unit) {

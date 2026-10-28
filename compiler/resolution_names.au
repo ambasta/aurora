@@ -497,6 +497,23 @@ export namespace compiler_resolver {
         }
         return target;
     }
+    // Orders an explicitly ordered in-memory module, whose header name no
+    // later module may repeat, as the graph walk guarantees for its own.
+    auto order_named_module(Session& session, i64 module_id, i64 order, i64 scope, bool root) -> bool {
+        if (!session.good() || module_id < 0 || module_id >= session.module_count()) {
+            session.fail_storage(StorageStatus::invalid);
+            return false;
+        }
+        const MetaRow unit = session.meta(module_id);
+        const SyntaxRow definition = session.syntax(unit.word(10));
+        const SyntaxRow header = session.syntax(definition.word(7));
+        const i64 name = source_name_range(session, header.word(0), header.word(6));
+        if (unit.kind() != MetaTag::module_unit || module_named(session, name) != module_id) {
+            session.fail_storage(StorageStatus::invalid);
+            return false;
+        }
+        return order_module(session, module_id, order, scope, root);
+    }
     // Binds every import the graph walk left unbound, in module and import
     // order, as explicitly ordered in-memory modules require.
     auto bind_imports(Session& session) -> bool {

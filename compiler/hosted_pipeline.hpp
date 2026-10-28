@@ -42,9 +42,9 @@ public:
 // The source snapshot of a diagnostic's source index.
 using ReportSource = std::function<std::shared_ptr<const SourceText>(std::int64_t)>;
 // Copies one diagnostic Aurora rendered; `read` returns its Report from a
-// message offset on. Throws Internal on a malformed or inconsistent report.
+// message offset on. Throws Internal on a malformed chunk.
 Diagnostic copyReport(const std::function<hosted_abi::compiler_resolver::Report(std::int64_t)> &read,
-                      const ReportSource &source);
+                      const ReportSource &source = {});
 std::uint64_t pipelineOptions(const EmissionRequest &request);
 // Storage for one Aurora pipeline Result. The caller runs exactly one entry
 // into data(); destruction releases that Result.
@@ -58,19 +58,18 @@ public:
     PipelineResult &operator=(const PipelineResult &) = delete;
     void *data();
     hosted_abi::compiler_pipeline::Report report();
-    // The requested artifacts of a complete run.
+    // The requested artifacts of a complete run; throws the rendered failure
+    // of an incomplete one.
     PipelineOutput output(const hosted_abi::compiler_pipeline::Report &report,
                           const EmissionRequest &request,
                           const ReportSource &sources = {});
 };
-// The first failure of an incomplete run, with its former message and code.
-[[noreturn]] void rejectPipeline(const hosted_abi::compiler_pipeline::Report &report);
 
 // One Aurora call projects the lowered Session, admits, structures and verifies
 // every function, checks the call graph, publishes and emits the requested
 // artifacts. It consumes `session`, an owner in `region` the caller must then
 // treat as moved. The host copies the result out, with lint warnings located
-// in `sources`, or renders its first failure with the former message and code.
+// in `sources`, or throws the failure Aurora rendered.
 PipelineOutput runHostedPipeline(std::uint64_t region,
                                  const hosted_abi::compiler_resolver::Session &session,
                                  std::int64_t root,

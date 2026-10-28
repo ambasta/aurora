@@ -57,10 +57,9 @@ ROWS = (
         "noexcept,discard",
     ),
     (
-        "formatter_prepare(compiler_formatter::Workspace& workspace, builtin::span<const u8> source, "
-        "compiler_parser::AdmissionConfig configuration) -> bool",
-        "direct workspace.begin(source, configuration)",
-        "FormatterInput:source,configuration",
+        "formatter_prepare(compiler_formatter::Workspace& workspace, builtin::span<const u8> source) -> bool",
+        "direct workspace.begin(source)",
+        "FormatterInput:source",
         "noexcept",
     ),
     (
@@ -83,9 +82,16 @@ ROWS = (
         "noexcept",
     ),
     (
-        "formatter_rejection(const compiler_formatter::Workspace& workspace) -> compiler_resolver::SourceResult",
-        "copy workspace.rejection()",
+        "formatter_diagnostic(const compiler_formatter::Workspace& workspace, i64 index, i64 offset) -> "
+        "compiler_resolver::Report",
+        "copy compiler_formatter::diagnostic(workspace, index, offset)",
         "",
+        "noexcept",
+    ),
+    (
+        "object_report(compiler_x86::EmitStatus status, bool wrapper, i64 offset) -> compiler_resolver::Report",
+        "copy compiler_resolver::object_report(status, wrapper, offset)",
+        "ObjectReport:status,wrapper,offset",
         "noexcept",
     ),
     (
@@ -120,16 +126,138 @@ ROWS = (
         "noexcept",
     ),
     (
-        "lexer_next(builtin::span<const u8> source, compiler_lexer::Cursor cursor) -> compiler_lexer::Lexeme",
-        "copy compiler_lexer::next_lexeme(source, cursor)",
-        "LexerInput:source,cursor",
-        ":lexer_invoke",
-    ),
-    (
         "parser_create(builtin::ByteRegion region, i64 capacity) -> compiler_parser::AstArena",
         "move compiler_parser::create(region, capacity)",
         "ParserCreate:region,capacity",
         "",
+    ),
+    (
+        "parser_source(compiler_parser::AstArena& arena, builtin::span<const u8> source) -> "
+        "compiler_resolver::SourceResult",
+        "copy compiler_resolver::parse_source(arena, source)",
+        "ParserSourceInput:source",
+        "",
+    ),
+    (
+        "parser_release(builtin::ByteRegion region, compiler_parser::AstArena arena) -> i64",
+        "direct compiler_parser::release(region, move(arena))",
+        "ParserRelease:region,arena",
+        "discard",
+    ),
+    (
+        "resolver_create(builtin::ByteRegion region) -> compiler_resolver::Session",
+        "move compiler_resolver::create(region)",
+        "ResolverCreate:region",
+        "",
+    ),
+    (
+        "resolver_release(builtin::ByteRegion region, compiler_resolver::Session session) -> i64",
+        "direct compiler_resolver::release(region, move(session))",
+        "ResolverRelease:region,session",
+        "discard",
+    ),
+    (
+        "resolver_append_source(compiler_resolver::Session& session, builtin::span<const u8> source, "
+        "compiler_resolver::SourceResult result) -> i64",
+        "direct compiler_resolver::load_source(session, source, result)",
+        "ResolverSourceInput:source,result",
+        "",
+    ),
+    (
+        "resolver_ingest(compiler_resolver::Session& session, const compiler_parser::AstArena& parsed) -> i64",
+        "direct compiler_resolver::ingest_source(session, parsed)",
+        "",
+        "",
+    ),
+    (
+        "resolver_name_chunk(builtin::span<const u8> source, i64 begin, i64 end, i64 offset, bool path) -> "
+        "compiler_resolver::LinkageChunk",
+        "copy compiler_resolver::name_chunk(source, begin, end, offset, path)",
+        "ResolverNameInput:source,begin,end,offset,path",
+        "",
+    ),
+    (
+        "resolver_order_module(compiler_resolver::Session& session, i64 module_id, i64 order, i64 scope, bool "
+        "root) -> bool",
+        "direct compiler_resolver::order_named_module(session, module_id, order, scope, root)",
+        "ResolverOrderInput:module,order,scope,root:0,1,2,3",
+        "",
+    ),
+    (
+        "resolver_graph_step(compiler_resolver::Session& session, i64 root, i64 roots) -> compiler_resolver::WorkRow",
+        "copy compiler_resolver::load_step(session, root, roots)",
+        "",
+        "",
+    ),
+    ("resolver_run(compiler_resolver::Session& session) -> i64", "direct compiler_resolver::run(session)", "", ""),
+    (
+        "resolver_report(const compiler_resolver::Session& session, i64 offset) -> compiler_resolver::Report",
+        "copy compiler_resolver::report(session, offset)",
+        "",
+        "",
+    ),
+    (
+        "resolver_source_report(builtin::span<const u8> source, compiler_resolver::SourceResult result, "
+        "compiler_parser::Stop stop, i64 offset) -> compiler_resolver::Report",
+        "copy compiler_resolver::source_report(source, result, stop, offset)",
+        "ResolverSourceReport:source,result,stop,offset",
+        "",
+    ),
+    (
+        "lowering_begin(compiler_resolver::Session& session, i64 mode) -> i64",
+        "direct compiler_lowering::begin_lowering(session, mode)",
+        "",
+        "noexcept",
+    ),
+    (
+        "lowering_run(compiler_resolver::Session& session) -> compiler_lowering::LoweringResult",
+        "copy compiler_lowering::run_lowering(session)",
+        "",
+        "noexcept",
+    ),
+    (
+        "pipeline_run(builtin::ByteRegion region, compiler_resolver::Session session, i64 root, i64 diagnostic, "
+        "u64 options) -> compiler_pipeline::Result",
+        "move compiler_pipeline::run(region, move(session), root, diagnostic, options)",
+        "PipelineRun:region,session,root,diagnostic,options",
+        "noexcept",
+    ),
+    (
+        "pipeline_release(builtin::ByteRegion region, compiler_pipeline::Result result) -> i64",
+        "direct compiler_pipeline::release(region, move(result))",
+        "PipelineRelease:region,result",
+        "noexcept,discard",
+    ),
+    (
+        "pipeline_report(const compiler_pipeline::Result& result) -> compiler_pipeline::Report",
+        "copy result.report()",
+        "",
+        "noexcept",
+    ),
+    (
+        "pipeline_diagnostic(const compiler_pipeline::Result& result, i64 index, i64 offset) -> "
+        "compiler_resolver::Report",
+        "copy compiler_pipeline::diagnostic(result, index, offset)",
+        "",
+        "noexcept",
+    ),
+    (
+        "pipeline_chunk(const compiler_pipeline::Result& result, compiler_x86::Artifact artifact, i64 offset) -> "
+        "compiler_x86::EmitChunk",
+        "copy result.chunk(artifact, offset)",
+        "",
+        "noexcept",
+    ),
+)
+
+# Rows only test drivers call, over internal rows: the test graph (tests/tools/frontend.au)
+# exports them; the compiler never does.
+TEST_ROWS = (
+    (
+        "lexer_next(builtin::span<const u8> source, compiler_lexer::Cursor cursor) -> compiler_lexer::Lexeme",
+        "copy compiler_lexer::next_lexeme(source, cursor)",
+        "LexerInput:source,cursor",
+        ":lexer_invoke",
     ),
     (
         "parser_parse(compiler_parser::AstArena& arena, builtin::span<const u8> source, "
@@ -145,19 +273,6 @@ ROWS = (
         "copy compiler_parser::admit(arena, source, root, configuration)",
         "AdmissionInput:source,root,configuration",
         "",
-    ),
-    (
-        "parser_source(compiler_parser::AstArena& arena, builtin::span<const u8> source, "
-        "compiler_parser::AdmissionConfig configuration) -> compiler_resolver::SourceResult",
-        "copy compiler_resolver::parse_source(arena, source, configuration)",
-        "ParserSourceInput:source,configuration",
-        "",
-    ),
-    (
-        "parser_release(builtin::ByteRegion region, compiler_parser::AstArena arena) -> i64",
-        "direct compiler_parser::release(region, move(arena))",
-        "ParserRelease:region,arena",
-        "discard",
     ),
     (
         "parser_node_count(const compiler_parser::AstArena& arena) -> i64",
@@ -208,50 +323,6 @@ ROWS = (
         ":parser_syntax",
     ),
     (
-        "resolver_create(builtin::ByteRegion region) -> compiler_resolver::Session",
-        "move compiler_resolver::create(region)",
-        "ResolverCreate:region",
-        "",
-    ),
-    (
-        "resolver_release(builtin::ByteRegion region, compiler_resolver::Session session) -> i64",
-        "direct compiler_resolver::release(region, move(session))",
-        "ResolverRelease:region,session",
-        "discard",
-    ),
-    (
-        "resolver_append_source(compiler_resolver::Session& session, builtin::span<const u8> source) -> i64",
-        "direct compiler_resolver::append_source(session, source)",
-        "ResolverSourceInput:source",
-        "",
-    ),
-    (
-        "resolver_ingest(compiler_resolver::Session& session, const compiler_parser::AstArena& parsed) -> i64",
-        "direct compiler_resolver::ingest_source(session, parsed)",
-        "",
-        "",
-    ),
-    (
-        "resolver_name_chunk(builtin::span<const u8> source, i64 begin, i64 end, i64 offset, bool path) -> "
-        "compiler_resolver::LinkageChunk",
-        "copy compiler_resolver::name_chunk(source, begin, end, offset, path)",
-        "ResolverNameInput:source,begin,end,offset,path",
-        "",
-    ),
-    (
-        "resolver_order_module(compiler_resolver::Session& session, i64 module_id, i64 order, i64 scope, bool "
-        "root) -> bool",
-        "direct compiler_resolver::order_module(session, module_id, order, scope, root)",
-        "ResolverOrderInput:module,order,scope,root:0,1,2,3",
-        "",
-    ),
-    (
-        "resolver_graph_step(compiler_resolver::Session& session, i64 root, i64 roots) -> compiler_resolver::WorkRow",
-        "copy compiler_resolver::graph_step(session, root, roots)",
-        "",
-        "",
-    ),
-    (
         "resolver_count(const compiler_resolver::Session& session, i64 pool) -> i64",
         "direct compiler_resolver::count(session, pool)",
         "",
@@ -276,37 +347,11 @@ ROWS = (
         "",
         "",
     ),
-    ("resolver_run(compiler_resolver::Session& session) -> i64", "direct compiler_resolver::run(session)", "", ""),
     (
         "resolver_read_meta(const compiler_resolver::Session& session, i64 index) -> compiler_resolver::MetaRow",
         "copy compiler_resolver::read_meta(session, index)",
         "",
         "",
-    ),
-    (
-        "resolver_report(const compiler_resolver::Session& session, i64 offset) -> compiler_resolver::Report",
-        "copy compiler_resolver::report(session, offset)",
-        "",
-        "",
-    ),
-    (
-        "resolver_source_report(builtin::span<const u8> source, compiler_resolver::SourceResult result, "
-        "compiler_parser::Stop stop, i64 offset) -> compiler_resolver::Report",
-        "copy compiler_resolver::source_report(source, result, stop, offset)",
-        "ResolverSourceReport:source,result,stop,offset",
-        "",
-    ),
-    (
-        "lowering_begin(compiler_resolver::Session& session, compiler_lowering::LoweringConfig configuration) -> i64",
-        "direct compiler_lowering::begin_lowering(session, configuration)",
-        "LoweringBeginInput:configuration",
-        "noexcept",
-    ),
-    (
-        "lowering_run(compiler_resolver::Session& session) -> compiler_lowering::LoweringResult",
-        "copy compiler_lowering::run_lowering(session)",
-        "",
-        "noexcept",
     ),
     (
         "lowering_count(const compiler_resolver::Session& session, i64 pool) -> i64",
@@ -323,38 +368,6 @@ ROWS = (
     (
         "lowering_read_operand(const compiler_resolver::Session& session, i64 index) -> compiler_lowering::OperandRow",
         "copy session.view_operand(index)",
-        "",
-        "noexcept",
-    ),
-    (
-        "pipeline_run(builtin::ByteRegion region, compiler_resolver::Session session, i64 root, i64 diagnostic, "
-        "u64 options) -> compiler_pipeline::Result",
-        "move compiler_pipeline::run(region, move(session), root, diagnostic, options)",
-        "PipelineRun:region,session,root,diagnostic,options",
-        "noexcept",
-    ),
-    (
-        "pipeline_release(builtin::ByteRegion region, compiler_pipeline::Result result) -> i64",
-        "direct compiler_pipeline::release(region, move(result))",
-        "PipelineRelease:region,result",
-        "noexcept,discard",
-    ),
-    (
-        "pipeline_report(const compiler_pipeline::Result& result) -> compiler_pipeline::Report",
-        "copy result.report()",
-        "",
-        "noexcept",
-    ),
-    (
-        "pipeline_lint(const compiler_pipeline::Result& result, i64 index, i64 offset) -> compiler_resolver::Report",
-        "copy compiler_pipeline::lint(result, index, offset)",
-        "",
-        "noexcept",
-    ),
-    (
-        "pipeline_chunk(const compiler_pipeline::Result& result, compiler_x86::Artifact artifact, i64 offset) -> "
-        "compiler_x86::EmitChunk",
-        "copy result.chunk(artifact, offset)",
         "",
         "noexcept",
     ),
@@ -399,12 +412,6 @@ ROWS = (
     (
         "projection_count(const compiler_lowering_projection::ProjectionWorkspace& workspace, i64 pool) -> i64",
         "direct workspace.count(pool)",
-        "",
-        "noexcept",
-    ),
-    (
-        "catalog_summary() -> compiler_catalog::Summary",
-        "copy compiler_catalog::summary()",
         "",
         "noexcept",
     ),
@@ -497,10 +504,6 @@ ROWS = (
         "",
         "noexcept",
     ),
-)
-
-# Rows only the textual IR test graph exports (tests/tools/frontend.au).
-TEST_ROWS = (
     (
         "air_start(builtin::ByteRegion region) -> compiler_air::Reader",
         "move compiler_air::start(region)",

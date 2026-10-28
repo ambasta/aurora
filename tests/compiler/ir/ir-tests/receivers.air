@@ -903,7 +903,7 @@ end
 ; BASE: class arguments and result use independent value storage
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: aggregate argument outside active object lifetime
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -28,0 +29 @@
 +    EndObject 16
 

@@ -17,41 +17,6 @@ import aurora.compiler.builtin_catalog;
 // catalog operations of the seeded service families, followed by initial
 // layout order and then semantic output.
 export namespace compiler_lowering {
-    class LoweringConfig {
-        i64 byteLeaves;
-        i64 nonByteLeaves;
-        i64 totalLeaves;
-        i64 copiedBytes;
-        i64 byteArrayLength;
-        i64 scalarArrayLength;
-        i64 analysisMode;
-    public:
-        LoweringConfig(i64 bytes, i64 non_bytes, i64 total, i64 storage, i64 byte_array,
-            i64 scalar_array) : byteLeaves(bytes), nonByteLeaves(non_bytes), totalLeaves(total), copiedBytes(storage),
-            byteArrayLength(byte_array), scalarArrayLength(scalar_array), analysisMode(0) {
-        }
-        auto byte_leaves() const -> i64 {
-            return byteLeaves;
-        }
-        auto non_byte_leaves() const -> i64 {
-            return nonByteLeaves;
-        }
-        auto total_leaves() const -> i64 {
-            return totalLeaves;
-        }
-        auto copied_bytes() const -> i64 {
-            return copiedBytes;
-        }
-        auto byte_array_length() const -> i64 {
-            return byteArrayLength;
-        }
-        auto scalar_array_length() const -> i64 {
-            return scalarArrayLength;
-        }
-        auto mode() const -> i64 {
-            return analysisMode;
-        }
-    };
     auto setup_invalid(compiler_resolver::Session& session) -> i64 {
         return session.fail_storage(compiler_resolver::StorageStatus::invalid);
     }
@@ -223,27 +188,25 @@ export namespace compiler_lowering {
         return record(session, RecordKind::InitialLayoutOrder, prefix, 1);
     }
     // Publishes the whole prelude from the host limits and the seeded catalog.
-    auto begin_lowering(compiler_resolver::Session& session, LoweringConfig config) -> i64 {
+    // Copied classes have at most 512 byte, 64 other and 513 total leaves in
+    // 520 bytes; class arrays hold at most 512 bytes or 64 scalars. Mode 1 lints.
+    auto begin_lowering(compiler_resolver::Session& session, i64 mode) -> i64 {
         if (!session.reserve_diagnostic_payload()) {
             return -1;
         }
-        if (config.byte_leaves() < 1 || config.non_byte_leaves() < 1 || config.total_leaves() < 1
-            || config.copied_bytes() < 1 || config.byte_array_length() < 1 || config.scalar_array_length() < 1
-            || config.byte_leaves() > 8192 || config.non_byte_leaves() > 8192 || config.total_leaves() > 8192
-            || config.copied_bytes() > 65536 || config.byte_array_length() > 8192 || config.scalar_array_length() > 8192
-            || config.mode() < 0 || config.mode() > 1) {
+        if (mode < 0 || mode > 1) {
             return setup_invalid(session);
         }
         const i64 groups = compiler_catalog::service_groups(compiler_resolver::family_seeded(session, 1),
             compiler_resolver::family_seeded(session, 2), compiler_resolver::family_seeded(session, 3));
         const i64 begin = session.operand_count();
-        put(session, OperandRole::MaximumCopiedByteLeaves, config.byte_leaves());
-        put(session, OperandRole::MaximumCopiedNonByteLeaves, config.non_byte_leaves());
-        put(session, OperandRole::MaximumCopiedLeaves, config.total_leaves());
-        put(session, OperandRole::MaximumCopiedBytes, config.copied_bytes());
-        put(session, OperandRole::MaximumByteArrayLength, config.byte_array_length());
-        put(session, OperandRole::MaximumScalarArrayLength, config.scalar_array_length());
-        put(session, OperandRole::AnalysisMode, config.mode());
+        put(session, OperandRole::MaximumCopiedByteLeaves, 512);
+        put(session, OperandRole::MaximumCopiedNonByteLeaves, 64);
+        put(session, OperandRole::MaximumCopiedLeaves, 513);
+        put(session, OperandRole::MaximumCopiedBytes, 520);
+        put(session, OperandRole::MaximumByteArrayLength, 512);
+        put(session, OperandRole::MaximumScalarArrayLength, 64);
+        put(session, OperandRole::AnalysisMode, mode);
         put(session, OperandRole::SupportedServiceGroups, groups);
         const i64 configuration = record(session, RecordKind::Configuration, begin, 8);
         i64 at = 0;

@@ -964,7 +964,7 @@ end
 ; CASE: uncalled constructor class result rejected
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: receiver signature requires scalar, enum or class values
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 layout Empty []
 layout Leaf [i64 bool]
 layout Other [i64 bool]

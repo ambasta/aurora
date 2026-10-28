@@ -1,7 +1,7 @@
 ; CASE: uncalled invalid constructor policy 0
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: invalid constructor receiver signature
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 layout Pair [i64 bool]
 function construct_pair
   result i64
@@ -38,7 +38,7 @@ end
 ; BASE: uncalled invalid constructor policy 0
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: invalid constructor receiver signature
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -3 +3 @@
 -  result i64
 +  result bool
@@ -50,7 +50,7 @@ end
 ; BASE: uncalled invalid constructor policy 0
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: invalid constructor receiver signature
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -3 +3 @@
 -  result i64
 +  result u64
@@ -62,7 +62,7 @@ end
 ; BASE: uncalled invalid constructor policy 0
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: invalid constructor receiver signature
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -1,0 +2 @@
 +views [(0 []) (1 [])]
 @@ -5,0 +7 @@
@@ -72,7 +72,7 @@ end
 ; BASE: uncalled invalid constructor policy 0
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: invalid constructor receiver signature
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -1,0 +2 @@
 +views [(0 []) (1 [])]
 @@ -3 +4 @@
@@ -87,7 +87,7 @@ end
 ; BASE: uncalled invalid constructor policy 0
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: invalid constructor receiver signature
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -1,0 +2 @@
 +views [(0 []) (1 [])]
 @@ -3 +4 @@

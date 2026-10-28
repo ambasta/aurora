@@ -1239,7 +1239,7 @@ end
 ; CASE: indexed store lifetime precedes mistyped current
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: array element access outside active lifetime
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 function test
   result i64
   frame 16
@@ -1257,7 +1257,7 @@ end
 ; BASE: indexed store lifetime precedes mistyped current
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: array element not initialized
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -5,0 +6 @@
 +    BeginArray 8
 @@ -8 +9 @@
@@ -1269,7 +1269,7 @@ end
 ; CASE: indexed store later initialization precedes earlier write conflict
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: array element not initialized
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 function test
   result i64
   frame 96
@@ -1302,7 +1302,7 @@ end
 ; BASE: indexed store later initialization precedes earlier write conflict
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: missing or mistyped current value
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -18,3 +18 @@
 -    EndArray 7
 -    BeginArray 7
@@ -1312,7 +1312,7 @@ end
 ; CASE: indexed parameter write checks current value before immutability
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: missing or mistyped current value
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 function test
   result i64
   params [i64]
@@ -1331,7 +1331,7 @@ end
 ; BASE: indexed parameter write checks current value before immutability
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: indexed write to immutable scalar parameter
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -10 +10 @@
 -    Constant 1 bool
 +    Constant 1
@@ -1339,7 +1339,7 @@ end
 ; CASE: indexed const object write checks current value before mutability
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: missing or mistyped current value
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 layout Cell [i64]
 function test
   result i64
@@ -1361,7 +1361,7 @@ end
 ; BASE: indexed const object write checks current value before mutability
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: indexed write to const object field
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -13 +13 @@
 -    Constant 1 bool
 +    Constant 1

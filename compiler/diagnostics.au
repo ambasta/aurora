@@ -6,19 +6,22 @@ import aurora.compiler.resolution_kinds;
 import aurora.compiler.resolution_rows;
 import aurora.compiler.resolution_arena;
 import aurora.compiler.resolution_ingest;
+import aurora.compiler.resolution_names;
 import aurora.compiler.resolution_linkage;
 import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.lowering_storage;
+import aurora.compiler.x86_object_storage;
 import std.decimal_digits;
 
-// Aurora renders every source, resolver, lowering and lint diagnostic: its
-// family, message bytes and module-relative span. A source rejection is
-// rendered from the copied SourceResult and the source bytes. A resolver or
-// lowering rejection is rendered into the Session's byte pool just before the
-// Session latches it, with a final report row naming the message and span;
-// lint warnings are rendered the same way into the pipeline Result. The host
-// copies a Report out 384 message bytes at a time and only prints it.
+// Aurora renders every module-loading, source, resolver, lowering and lint
+// diagnostic: its family, message bytes and module-relative span. A source
+// rejection is rendered from the copied SourceResult and the source bytes. A
+// module-loading, resolver or lowering rejection is rendered into the Session's
+// byte pool just before the Session latches it, with a final report row naming
+// the message, span and code; lint warnings are rendered the same way into the
+// pipeline Result. The host copies a Report out 384 message bytes at a time
+// and only prints it.
 export namespace compiler_resolver {
     // One diagnostic's code number (AU1001 is 1001), severity and span (source
     // -1 when unlocated), and its message bytes from offset on: writing skips
@@ -45,6 +48,12 @@ export namespace compiler_resolver {
         auto size() const -> i64 {
             return byteCount;
         }
+        auto code() const -> i64 {
+            return family;
+        }
+        auto byte(i64 index) const -> u8 {
+            return payload[index];
+        }
         auto invalidate() -> bool {
             byteCount = -1;
             return false;
@@ -68,6 +77,21 @@ export namespace compiler_resolver {
             while (at < value.size() && byteCount >= 0 && byteCount < 384) {
                 put(value.at(at));
                 at = at + 1;
+            }
+            return byteCount >= 0;
+        }
+        // The text only when selected: one line of a message table.
+        auto when(bool selected, builtin::span<const u8> value) -> bool {
+            if (selected) {
+                return text(value);
+            }
+            return byteCount >= 0;
+        }
+        // The same for a typed-IR rejection, after "invalid typed IR: ".
+        auto typed(bool selected, builtin::span<const u8> value) -> bool {
+            if (selected) {
+                text("invalid typed IR: ");
+                return text(value);
             }
             return byteCount >= 0;
         }
@@ -111,6 +135,10 @@ export namespace compiler_resolver {
         auto classify(i64 code, bool is_warning) -> bool {
             family = code;
             warning = is_warning;
+            return true;
+        }
+        auto from_source(i64 index) -> bool {
+            source = index;
             return true;
         }
         // Takes the span of a report row.
@@ -163,15 +191,30 @@ export namespace compiler_resolver {
         }
         return result;
     }
-    // The latched resolver or lowering rejection of a Session.
+    // The latched rejection of a Session: a storage failure, or the module
+    // loading, resolver or lowering rejection rendered as it latched. A report
+    // row keeps a code in word 9; otherwise it is AU4001, or AU3001 once
+    // lowering rejected.
     auto report(const Session& session, i64 offset) -> Report {
+        const StorageStatus storage = session.storage_status();
+        if (storage != StorageStatus::none) {
+            const bool allocation = storage == StorageStatus::allocation;
+            const bool lowering = session.diagnostic_payload_row() >= 0;
+            Report failure = Report(offset);
+            failure.when(allocation && lowering, "hosted lowering allocation failed");
+            failure.when(allocation && !lowering, "hosted module resolution allocation failed");
+            failure.when(!allocation, "invalid hosted resolution result");
+            return failure;
+        }
         const MetaRow row = session.view_meta(session.meta_count() - 1);
         i64 code = 4001;
+        if (row.word(9) > 0) {
+            code = row.word(9);
+        }
         if (session.lowering_error() != compiler_lowering::LoweringError::none) {
             code = 3001;
         }
-        if (session.storage_status() != StorageStatus::none || (session.error_code() == SemanticError::none && code
-            != 3001)) {
+        if (session.error_code() == SemanticError::none && code != 3001) {
             Report invalid = Report(offset);
             invalid.invalidate();
             return invalid;
@@ -642,30 +685,9 @@ export namespace compiler_resolver {
         }
         return 0;
     }
-    // The trivia-free spelling of a module's header name.
-    auto say_module(Session& session, i64 module_id) -> i64 {
-        if (module_id < 0 || module_id >= session.module_count()) {
-            return session.fail_storage(StorageStatus::invalid);
-        }
-        const MetaRow unit = session.meta(module_id);
-        if (unit.kind() != MetaTag::module_unit) {
-            return session.fail_storage(StorageStatus::invalid);
-        }
-        const SyntaxRow root = session.syntax(unit.word(10));
-        const SyntaxRow preamble = session.syntax(root.word(7));
-        if (preamble.declaration_kind() != compiler_parser::SyntaxKind::preamble) {
-            return session.fail_storage(StorageStatus::invalid);
-        }
-        const MetaRow first = session.meta(preamble.word(0));
-        i64 last_reference = preamble.word(6);
-        if (last_reference < 0) {
-            last_reference = preamble.word(0);
-        }
-        const MetaRow last = session.meta(last_reference);
-        const i64 begin = first.word(1);
-        const i64 count = last.word(2) - begin;
-        if (first.kind() != MetaTag::source_reference || last.kind() != MetaTag::source_reference || begin < 0 || count
-            < 0 || count > session.source_size() - begin) {
+    // The trivia-free spelling of Session bytes [begin, begin + count).
+    auto say_spelled(Session& session, i64 begin, i64 count) -> i64 {
+        if (begin < 0 || count < 0 || count > session.source_size() - begin) {
             return session.fail_storage(StorageStatus::invalid);
         }
         i64 at = 0;
@@ -688,6 +710,36 @@ export namespace compiler_resolver {
             start = lexeme.next_line_start();
         }
         return 0;
+    }
+    // The trivia-free spelling from the first through the last of two token
+    // references; a negative last names the first alone.
+    auto say_tokens(Session& session, i64 first_reference, i64 last_reference) -> i64 {
+        i64 last_token = last_reference;
+        if (last_token < 0) {
+            last_token = first_reference;
+        }
+        const MetaRow first = session.meta(first_reference);
+        const MetaRow last = session.meta(last_token);
+        if (first.kind() != MetaTag::source_reference || last.kind() != MetaTag::source_reference) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        return say_spelled(session, first.word(1), last.word(2) - first.word(1));
+    }
+    // The trivia-free spelling of a module's header name.
+    auto say_module(Session& session, i64 module_id) -> i64 {
+        if (module_id < 0 || module_id >= session.module_count()) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        const MetaRow unit = session.meta(module_id);
+        if (unit.kind() != MetaTag::module_unit) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        const SyntaxRow root = session.syntax(unit.word(10));
+        const SyntaxRow preamble = session.syntax(root.word(7));
+        if (preamble.declaration_kind() != compiler_parser::SyntaxKind::preamble) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        return say_tokens(session, preamble.word(0), preamble.word(6));
     }
     // A symbol's published linkage spelling.
     auto say_native(Session& session, i64 symbol) -> i64 {
@@ -1537,5 +1589,168 @@ export namespace compiler_resolver {
             return -1;
         }
         return session.append_meta(call);
+    }
+
+    // The failure of a private object composition, or with wrapper of a
+    // frontend wrapper emission, that stopped with status: allocation and
+    // transport failures are internal; rejected inputs are unclassified.
+    auto object_report(compiler_x86::EmitStatus status, bool wrapper, i64 offset) -> Report {
+        Report value = Report(offset);
+        const bool allocation = status == compiler_x86::EmitStatus::allocation;
+        const bool limit = status == compiler_x86::EmitStatus::limit;
+        const bool rejected = status == compiler_x86::EmitStatus::invalid || status
+            == compiler_x86::EmitStatus::unsupported;
+        if (limit || rejected) {
+            value.classify(0, false);
+        }
+        value.when(allocation && !wrapper, "private object composition allocation failed");
+        value.when(limit && !wrapper, "private object composition exceeds its bounded output or workspace");
+        value.when(rejected && !wrapper, "private object inputs do not match the admitted private object profiles");
+        value.when(allocation && wrapper, "frontend wrapper allocation failed");
+        value.when(limit && wrapper, "frontend wrapper exceeds its bounded output or workspace");
+        value.when(rejected && wrapper, "frontend wrapper recipe does not match the admitted instruction envelope");
+        value.when(!allocation && !limit && !rejected, "invalid private object composition transport");
+        return value;
+    }
+
+    // Module loading. The host opens the file each import request names, then
+    // lends its bytes and their admission; Aurora appends and ingests each
+    // source and walks the imports. Every rejection is rendered into the
+    // Session before it latches, after "module NAME: " when the source answers
+    // an import, so the host copies a finished diagnostic.
+    // "module NAME: " when the module at index answers an import request.
+    auto say_context(Session& session, i64 module_id) -> i64 {
+        const i64 node = session.index(8, module_id, 0, 0, 0);
+        if (node < 0) {
+            return 0;
+        }
+        const SyntaxRow imported = session.syntax(node);
+        say(session, "module ");
+        say_tokens(session, imported.word(0), imported.word(6));
+        return say(session, ": ");
+    }
+    // Latches the rendered rejection whose message starts at begin, with its
+    // code and the span of row.
+    auto latch(Session& session, MetaRow row, i64 begin, i64 code) -> i64 {
+        MetaRow rendered = row;
+        rendered.set_word(0, begin);
+        rendered.set_word(1, session.source_size());
+        rendered.set_word(9, code);
+        if (session.append_meta(rendered) < 0) {
+            return -1;
+        }
+        return session.reject(SemanticError::module_loading, -1, -1, -1);
+    }
+    // Renders the first rejection of the admission of the source that would
+    // be the next module, located in it, and latches it; the source itself
+    // never reaches the Session.
+    auto reject_source(Session& session, builtin::span<const u8> source, SourceResult result) -> i64 {
+        const i64 module_id = session.module_count();
+        const i64 begin = session.source_size();
+        say_context(session, module_id);
+        i64 code = 0;
+        i64 offset = 0;
+        bool more = true;
+        while (more && session.good()) {
+            const Report part = source_report(source, result, compiler_parser::Stop::module_definition, offset);
+            if (part.size() < 0) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            code = part.code();
+            i64 at = 0;
+            while (at < part.size()) {
+                session.append_literal_byte(part.byte(at));
+                at = at + 1;
+            }
+            more = part.size() == 384;
+            offset = offset + 384;
+        }
+        MetaRow row = report_row(0, 0);
+        row.set_word(2, module_id);
+        i64 slot = 0;
+        while (slot < 6) {
+            row.set_word(3 + slot, result.coordinate(slot));
+            slot = slot + 1;
+        }
+        return latch(session, row, begin, code);
+    }
+    // Appends the next module source, as the host admitted it, and returns its
+    // index; or renders its byte-limit rejection, which precedes an admission
+    // rejection, or that one, and returns -1.
+    auto load_source(Session& session, builtin::span<const u8> source, SourceResult result) -> i64 {
+        const i64 module_id = session.module_count();
+        const i64 limit = session.source_limit(source.size());
+        if (limit == -2 || limit == -3) {
+            const i64 begin = session.source_size();
+            say_context(session, module_id);
+            if (limit == -2) {
+                say(session, "module file exceeds 1048576 bytes");
+            } else {
+                say(session, "module graph exceeds 4194304 bytes");
+            }
+            return latch(session, report_row(0, 0), begin, 4001);
+        }
+        if (session.good() && !result.admitted()) {
+            return reject_source(session, source, result);
+        }
+        return session.append_source(source);
+    }
+    // The next graph step (see graph_step): 0 complete or 1 request, or one of
+    // its rejections, rendered and latched. Rejections are unlocated.
+    auto load_step(Session& session, i64 root, i64 roots) -> WorkRow {
+        const WorkRow step = graph_step(session, root, roots);
+        const i64 status = step.word(0);
+        if (status < 2) {
+            return step;
+        }
+        const i64 begin = session.source_size();
+        const i64 requester = step.word(1);
+        i64 name = -1;
+        i64 count = 0;
+        if (status != 3 && status != 4 && status != 5) {
+            const MetaRow unit = session.meta(requester);
+            name = unit.word(0) + step.word(2);
+            count = step.word(3) - step.word(2);
+        }
+        if (status == 2) {
+            say(session, "duplicate import in ");
+            say_module(session, requester);
+            say(session, ": ");
+            say_spelled(session, name, count);
+        }
+        if (status == 3) {
+            say(session, "module import cycle involving ");
+            say_module(session, requester);
+        }
+        if (status == 4) {
+            say(session, "module import depth exceeds 16");
+        }
+        if (status == 5) {
+            say(session, "module graph exceeds 64 files");
+        }
+        if (status == 6) {
+            say(session, "imports require an explicit --module-root");
+        }
+        if (status == 7) {
+            say(session, "invalid or excessive module name");
+        }
+        if (status == 8) {
+            say(session, "invalid module path component");
+        }
+        if (status == 9) {
+            say(session, "module header mismatch: expected ");
+            say_spelled(session, name, count);
+            say(session, ", got ");
+            say_module(session, step.word(4));
+        }
+        if (status == 10) {
+            say(session, "imported module requires an export module interface: ");
+            say_spelled(session, name, count);
+        }
+        if (status > 10) {
+            session.fail_storage(StorageStatus::invalid);
+        }
+        latch(session, report_row(0, 0), begin, 4001);
+        return step;
     }
 }

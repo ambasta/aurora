@@ -1,9 +1,8 @@
 #pragma once
-#include "hosted_parser.hpp"
-#include "hosted_resolver.hpp"
+#include "hosted_pipeline.hpp"
 #include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
-#include <array>
+#include <limits>
 #include <memory>
 
 namespace aurora::format {
@@ -25,54 +24,45 @@ public:
 
 // One Aurora call parses the source, lays it out, checks that the output keeps
 // every token and comment in place and formats to itself. The host bounds the
-// source, copies the output and findings and renders the diagnostics.
+// source and copies out the output and the findings and failure Aurora renders.
 class Operation {
-    hosted::bytes::Region region;
+    // Aurora bounds the workspace by the 1 MiB source and output limits it checks.
+    hosted::bytes::Region region{std::numeric_limits<std::int64_t>::max()};
     hosted_abi::FormatterRelease formatter{};
-    // One text's parse arena and workspace; a run formats the source and then
-    // its output, which the source bound also bounds.
-    static std::uint64_t quota(std::size_t bytes) {
-        using namespace hosted_abi::compiler_parser;
-        constexpr auto records = sizeof(AstNode) + sizeof(ChildEdge) + sizeof(TypeSyntax) + sizeof(SyntaxNode);
-        constexpr auto rows = 5 * sizeof(hosted_abi::compiler_formatter::Row);
-        return 2 * bytes * (records + hosted_abi::frameBytes + rows) + 8 * (records + rows) +
-               (2 * hosted_parser::maximumLiveFrames + 8) * hosted_abi::frameBytes + 5 * sourceLimit;
+    void *workspace() {
+        return formatter.workspace.storage.data();
     }
-    [[noreturn]] void reject(const std::shared_ptr<const SourceText> &text) {
-        hosted_abi::compiler_resolver::SourceResult rejection;
-        aurora_hosted_formatter_rejection(formatter.workspace.storage.data(), &rejection);
-        rejectSource(text, rejection);
-        throw Error(DiagnosticCode::Internal, "invalid hosted formatter result");
+    // Diagnostic -1 is the failure; findings of the source are sources[0],
+    // those of the output sources[1].
+    Diagnostic diagnostic(std::int64_t index, const std::vector<std::shared_ptr<const SourceText>> &sources) {
+        return copyReport(
+            [&](std::int64_t offset) {
+                hosted_abi::compiler_resolver::Report report{};
+                aurora_hosted_formatter_diagnostic(workspace(), index, offset, &report);
+                return report;
+            },
+            [&](std::int64_t source) {
+                if (source < 0 || static_cast<std::uint64_t>(source) >= sources.size())
+                    throw Error(DiagnosticCode::Internal, "invalid hosted formatter result");
+                return sources[static_cast<std::size_t>(source)];
+            });
     }
     std::vector<Finding>
-    findings(const std::shared_ptr<const SourceText> &text, std::int64_t first, std::int64_t count) {
-        constexpr std::array codes{"AUF1001", "AUF1002", "AUF1003"};
-        constexpr std::array messages{"line exceeds 120 byte columns; comments and tokens are never split",
-                                      "trailing whitespace",
-                                      "indentation must use groups of four spaces"};
-        const auto length = static_cast<std::int64_t>(text->text.size());
+    findings(std::int64_t first, std::int64_t count, const std::vector<std::shared_ptr<const SourceText>> &sources) {
         std::vector<Finding> result;
         for (auto index = first; index < first + count; ++index) {
-            hosted_abi::compiler_formatter::Row row;
-            aurora_hosted_formatter_finding(formatter.workspace.storage.data(), index, &row);
-            if (row.a < 1 || row.a > 3 || row.b < 0 || row.c < row.b || row.c > length || row.d < 1 ||
-                row.d > length + 1 || row.e < 1 || row.e > row.b + 1 || row.f < row.e || row.f - row.e != row.c - row.b)
-                throw Error(DiagnosticCode::Internal, "invalid hosted formatter finding");
-            result.push_back({codes[row.a - 1],
-                              messages[row.a - 1],
-                              {text,
-                               {static_cast<std::size_t>(row.b), static_cast<int>(row.d), static_cast<int>(row.e)},
-                               {static_cast<std::size_t>(row.c), static_cast<int>(row.d), static_cast<int>(row.f)}}});
+            auto found = diagnostic(index, sources);
+            result.push_back({diagnosticCode(found.code, "AUF"), std::move(found.message), std::move(found.span)});
         }
         return result;
     }
 
 public:
-    explicit Operation(std::size_t bytes) : region(quota(bytes) + quota(sourceLimit)) {
+    Operation() {
         formatter.region = region.id();
         hosted_abi::FormatterCreate create;
         create.region = region.id();
-        aurora_hosted_formatter_create(&create, formatter.workspace.storage.data());
+        aurora_hosted_formatter_create(&create, workspace());
     }
     ~Operation() {
         aurora_hosted_formatter_release(&formatter);
@@ -84,59 +74,45 @@ public:
         hosted_abi::FormatterInput input;
         input.source.backing = source->text.data();
         input.source.length = static_cast<std::int64_t>(source->text.size());
-        input.configuration = hosted_parser::admissionConfiguration();
-        if (aurora_hosted_formatter_prepare(formatter.workspace.storage.data(), &input) != 1)
-            throw Error(DiagnosticCode::Internal, "formatter workspace allocation failed");
+        if (aurora_hosted_formatter_prepare(workspace(), &input) != 1)
+            throw Error(diagnostic(-1, {source}));
         // The workspace moves through the call and back; the copy left in `run` is dead.
         hosted_abi::FormatterRun run;
         run.region = region.id();
         run.workspace = formatter.workspace;
         run.layout = layout;
-        aurora_hosted_formatter_run(&run, formatter.workspace.storage.data());
+        aurora_hosted_formatter_run(&run, workspace());
+        // Status 4 completes; 7 rejects the output, whose text stays readable.
         hosted_abi::compiler_formatter::Row report;
-        aurora_hosted_formatter_finding(formatter.workspace.storage.data(), -1, &report);
-        // 6 and 7 reject the source and the output, 8 and 9 refuse the output.
-        if (report.a == 6)
-            reject(source);
-        if (report.a == 8)
-            throw Error(DiagnosticCode::Internal, "formatter refused a token/comment change");
-        if (report.a == 9)
-            throw Error(DiagnosticCode::Internal, "formatter refused non-idempotent output");
+        aurora_hosted_formatter_finding(workspace(), -1, &report);
         if (report.a != 4 && report.a != 7)
-            throw Error(DiagnosticCode::Internal,
-                        report.a == 2   ? "formatted output exceeds 1 MiB bound"
-                        : report.a == 1 ? "formatter workspace allocation failed"
-                                        : "invalid hosted formatter result");
-        constexpr auto limit = static_cast<std::int64_t>(sourceLimit);
-        if (report.b < 0 || report.b > limit || report.c < 0 || report.c > limit || report.d < 0 || report.d > limit ||
-            report.e || report.f)
-            throw Error(DiagnosticCode::Internal, "invalid hosted formatter extents");
+            throw Error(diagnostic(-1, {source}));
         Result result;
         for (std::int64_t offset = 0; offset < report.b;) {
             hosted_abi::compiler_x86::EmitChunk chunk;
-            aurora_hosted_formatter_chunk(formatter.workspace.storage.data(), offset, &chunk);
+            aurora_hosted_formatter_chunk(workspace(), offset, &chunk);
             if (chunk.byteCount != std::min<std::int64_t>(512, report.b - offset))
                 throw Error(DiagnosticCode::Internal, "invalid hosted formatter chunk");
             result.text.append(reinterpret_cast<const char *>(chunk.payload.data()), chunk.byteCount);
             offset += chunk.byteCount;
         }
-        const auto output = std::make_shared<const SourceText>(source->path, result.text);
+        const std::vector sources{source, std::make_shared<const SourceText>(source->path, result.text)};
         if (report.a == 7)
-            reject(output);
-        result.findings = findings(source, 0, report.c);
-        result.remainingFindings = findings(output, report.c, report.d);
+            throw Error(diagnostic(-1, sources));
+        result.findings = findings(0, report.c, sources);
+        result.remainingFindings = findings(report.c, report.d, sources);
         return result;
     }
 };
 inline std::vector<Finding> styleFindings(const std::string &text) {
     if (text.size() > sourceLimit)
         throw Error(DiagnosticCode::Module, "formatter input exceeds 1 MiB source bound");
-    return Operation(text.size()).run(std::make_shared<const SourceText>("", text), false).findings;
+    return Operation().run(std::make_shared<const SourceText>("", text), false).findings;
 }
 inline Result source(const std::string &contents, const std::string &path = {}) {
     if (contents.size() > sourceLimit)
         throw Error(DiagnosticCode::Module, "formatter input exceeds 1 MiB source bound");
-    auto result = Operation(contents.size()).run(std::make_shared<const SourceText>(path, contents), true);
+    auto result = Operation().run(std::make_shared<const SourceText>(path, contents), true);
     result.changed = contents != result.text;
     return result;
 }

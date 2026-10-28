@@ -70,7 +70,7 @@ frontend_object = custom_target(
   command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
 )
 # The resolver-through-pipeline adapters; hosted-parser-invalid links these objects alone.
-frontend_adapter_sources = files('compiler/hosted_parser.cpp', 'compiler/hosted_resolver.cpp',
+frontend_adapter_sources = files('compiler/hosted_resolver.cpp',
                                  'compiler/hosted_pipeline.cpp', 'runtime/hosted_bytes.cpp')
 frontend_host_sources = frontend_adapter_sources + files('compiler/hosted_private_object.cpp')
 frontend_library = static_library(

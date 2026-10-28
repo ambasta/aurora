@@ -1048,7 +1048,7 @@ end
 ; BASE: typed metadata must name owner spill
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: owned value element must be a copied class, not an owner or carrier
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -1,0 +2 @@
 +layout Carrier [u8 u64 u8]
 @@ -7,0 +9 @@
@@ -1070,7 +1070,7 @@ end
 ; BASE: typed metadata must name owner spill
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: owned value element exceeds copied class leaf limits
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -5,0 +6 @@
 +layout TooMany [i64*65]
 @@ -12,7 +13 @@
@@ -1089,7 +1089,7 @@ end
 ; BASE: typed metadata must name owner spill
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: owned value element storage exceeds 520 bytes
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -5,0 +6 @@
 +layout TooWide [i64*64 u8*9]
 @@ -12,7 +13 @@

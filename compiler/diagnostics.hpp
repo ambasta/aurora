@@ -30,49 +30,26 @@ public:
     SourcePosition begin;
     SourcePosition end;
 };
-// These are diagnostic families, not message hashes. Add narrower codes explicitly.
+// Diagnostic families by number (AU3001 is 3001), not message hashes. Aurora
+// names the family of each diagnostic it renders; these name the host's own.
 enum class DiagnosticCode {
-    Unclassified,
-    UnsupportedCharacter,
-    InvalidByteLiteral,
-    InvalidByteStringLiteral,
-    UnexpectedToken,
-    NestingLimit,
-    UnsupportedFieldType,
-    Semantic,
-    Module,
-    CommandLine,
-    Internal,
-    UnreadLocal
+    Unclassified = 0,
+    UnsupportedCharacter = 1001,
+    InvalidByteLiteral = 1002,
+    InvalidByteStringLiteral = 1003,
+    UnexpectedToken = 2001,
+    NestingLimit = 2002,
+    UnsupportedFieldType = 2003,
+    Semantic = 3001,
+    Module = 4001,
+    CommandLine = 5001,
+    UnreadLocal = 6001,
+    Internal = 9001
 };
-inline std::string_view diagnosticCode(DiagnosticCode code) {
-    switch (code) {
-    case DiagnosticCode::Unclassified:
-        return "AU0000";
-    case DiagnosticCode::UnsupportedCharacter:
-        return "AU1001";
-    case DiagnosticCode::InvalidByteLiteral:
-        return "AU1002";
-    case DiagnosticCode::InvalidByteStringLiteral:
-        return "AU1003";
-    case DiagnosticCode::UnexpectedToken:
-        return "AU2001";
-    case DiagnosticCode::NestingLimit:
-        return "AU2002";
-    case DiagnosticCode::UnsupportedFieldType:
-        return "AU2003";
-    case DiagnosticCode::Semantic:
-        return "AU3001";
-    case DiagnosticCode::Module:
-        return "AU4001";
-    case DiagnosticCode::CommandLine:
-        return "AU5001";
-    case DiagnosticCode::UnreadLocal:
-        return "AU6001";
-    case DiagnosticCode::Internal:
-        return "AU9001";
-    }
-    return "AU9001";
+// The family's name, with the tool prefix: AU for diagnostics, AUF for style findings.
+inline std::string diagnosticCode(DiagnosticCode code, std::string_view prefix = "AU") {
+    const auto digits = std::to_string(static_cast<int>(code));
+    return std::string(prefix) + std::string(digits.size() < 4 ? 4 - digits.size() : 0, '0') + digits;
 }
 enum class DiagnosticSeverity {
     Error,

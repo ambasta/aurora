@@ -243,7 +243,7 @@ end
 ; BASE: sparse maximum label identity
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: missing or mistyped current value
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -4,3 +3,0 @@
 -    Jump 2147483647
 -    Label 2147483647
@@ -255,7 +255,7 @@ end
 ; BASE: sparse maximum label identity
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: object return requires class result; owning classes require an explicit move return
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -4,4 +4,2 @@
 -    Jump 2147483647
 -    Label 2147483647
@@ -268,7 +268,7 @@ end
 ; BASE: sparse maximum label identity
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: span return requires const owning receiver field summary
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -4,4 +4,2 @@
 -    Jump 2147483647
 -    Label 2147483647
@@ -281,7 +281,7 @@ end
 ; BASE: sparse maximum label identity
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: owner return nominal type mismatch
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -4,4 +4,2 @@
 -    Jump 2147483647
 -    Label 2147483647
@@ -294,7 +294,7 @@ end
 ; BASE: sparse maximum label identity
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: owning object return requires ordinary owning class result
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -4,4 +4,2 @@
 -    Jump 2147483647
 -    Label 2147483647

@@ -189,7 +189,7 @@ end
 ; BASE: source-admitted scalar entry prefix
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: parameter bindings must form the entry prefix
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -6,0 +7 @@
 +    Label 7
 @@ -9,0 +11,2 @@
@@ -200,7 +200,7 @@ end
 ; BASE: source-admitted scalar entry prefix
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: parameter bindings must form the entry prefix
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -6,0 +7 @@
 +    Label 7
 @@ -9,0 +11,2 @@
@@ -211,7 +211,7 @@ end
 ; BASE: source-admitted scalar entry prefix
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: parameter bindings must form the entry prefix
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -7,0 +8 @@
 +    Label 7
 @@ -9,0 +11,2 @@
@@ -222,7 +222,7 @@ end
 ; BASE: source-admitted scalar entry prefix
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: parameter bindings must form the entry prefix
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -7,0 +8 @@
 +    Label 7
 @@ -9,0 +11,2 @@

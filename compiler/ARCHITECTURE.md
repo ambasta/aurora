@@ -8,10 +8,10 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 
 | Component | Current source authority | Remaining work |
 |---|---|---|
-| Module traversal | Aurora owns discovery requests, duplicate/cycle/depth/file limits and dependency postorder; C++ retains authorized file opening and bytes | Native runtime/file I/O migration |
-| Formatting | Aurora owns syntax roles, layout and findings; native host retains source transport and token/comment/reparse/idempotence checks | Final-source qualification required |
+| Module traversal | Aurora owns discovery requests, byte, duplicate/cycle/depth/file limits, dependency postorder and every loading diagnostic; C++ retains authorized file opening and bytes | Native runtime/file I/O migration |
+| Formatting | Aurora owns syntax roles, layout, findings, token/comment/reparse/idempotence checks and their diagnostics; the native host transports source and output | Final-source qualification required |
 | Lexing and parsing | Aurora | Complete final-source predecessor/current convergence |
-| Resolution, immutable linkage spelling and typed lowering | Aurora; after lowering one Aurora call runs projection through emission and ABI declaration spelling; Aurora renders resolver, lowering, lint and source diagnostics and the host only prints them | Validate final integrated behavior and paired compile-time/output gates |
+| Resolution, immutable linkage spelling and typed lowering | Aurora; after lowering one Aurora call runs projection through emission and ABI declaration spelling; Aurora renders resolver, lowering, lint, source and pipeline diagnostics and the host only prints them | Validate final integrated behavior and paired compile-time/output gates |
 | Metadata, callable and frame admission | Aurora owns frame size and disjoint slot domains; successful source projection, or the textual-IR test reader, writes pending raw declarations | Retain independent admission |
 | Instruction storage and static admission | Aurora owns service argument-vector shape and copied-argument contracts | Preserve admission before whole-function verification |
 | Initialization and synchronous service loans | Aurora verification workspace | Final integrated allocation, cleanup and semantic qualification |
@@ -20,7 +20,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Call graph | Aurora, including edge construction | Preserve retained-set order |
 | x86 emission | Aurora, fixed native transport | Byte-identical C1/C2 (`hosted-lexer-bootstrap`); inlines single-field getters; owned-value bounds checks and sizes use multiplies, not divq; no register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
-| Private host bridge | One 77-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts, symbols and raw enum validation. A test graph adds 43 rows (textual-IR reader, initialization probes) for test tools only | Preserve fail-closed conversion; native replacement remains incomplete |
+| Private host bridge | One 38-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts and symbols. A test graph adds 82 rows (readers of internal rows, the textual-IR reader, initialization probes) for test drivers only | Preserve fail-closed conversion; native replacement remains incomplete |
 | Bootstrap route | One digest-pinned checkpoint (C2 of `d4cbabb`, one hop from the C2 of `2fd30b2`, which the recorded six-stage source route built), then current C1/C2 with convergence | Bump in one hop: build an accepted main commit with the current checkpoint, pass C1/C2 convergence, then the release gates ([recipe](README.md#bumping-the-checkpoint-one-hop)) |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
@@ -36,15 +36,17 @@ Expressions, declarations and bodies are part of the same Aurora parser. The
 legacy C++ expression parser is retired; final-source convergence remains a required gate.
 `hosted-parser` checks each grammar entry and the whole-source entry against data
 cases and a reviewed golden dump of the Aurora records and rendered diagnostics
-([test contract](../docs/developer-test-contract.md)); `hosted-parser-invalid`
-links the resolver and lowering adapters with forged Aurora entries to test their
-fail-closed conversion.
+([test contract](../docs/developer-test-contract.md)). It and the hosted lexer,
+lowering and formatter drivers link the C1-built test graph, which alone exports
+the readers of internal rows; `hosted-parser-invalid` links the resolver and
+pipeline adapters with forged Aurora entries to test report transport, malformed
+chunks and owner release on every failure exit.
 
 ## Current boundaries
 
-Each source is lexed, parsed, admitted and ingested by Aurora; the host receives
-only its header name or the rejection, which Aurora renders from the copied
-result and the source bytes. Module loading advances through
+Each source is lexed, parsed, admitted and ingested by Aurora; a rejected source
+never reaches the Session, which renders and latches its rejection from the copied
+result and the lent bytes. Module loading advances through
 source-owned graph steps in the existing resolver Session. Transient scratch frames
 track active ancestry and are cleared before ingestion. Completed module
 order/scopes and import bindings persist; resumption replays unfinished ancestry,
@@ -52,8 +54,9 @@ bounded by 64 files and depth 16. Duplicate
 checks happen at each edge, and depth precedes active/completed checks. Aurora also
 validates each requested name, maps it to its relative path, charges every source
 against the 1 MiB file and 4 MiB graph limits and, at the next step, checks that the
-requested module's header spells the name in an interface unit. Host opening,
-not-found/ambiguity across roots, inode authority and overlays remain native.
+requested module's header spells the name in an interface unit; it renders each
+of these rejections. Host opening, not-found/ambiguity across roots, read errors,
+inode authority and overlays remain native.
 The explicit-order in-memory resolver API remains separate compatibility transport,
 not a fallback traversal. No additional owner, callback or runtime capability is used.
 
@@ -63,8 +66,9 @@ projects it, admits the metadata, admits and structures the instructions,
 verifies every declaration, checks the call graph and selects retained
 functions, publishes, then emits code and the requested stack and ABI facts. Its
 `Result` holds those artifacts and the rendered unread-local warnings, or the first
-failure: a stage and the failing store's reason, which the host renders with the
-former messages and codes. Every store shares the Session region's existing
+failure: a stage and the failing store's reason, which Aurora renders with its
+message and code (the metadata, instruction and verification message tables live
+in `pipeline.au`). Every store shares the Session region's existing
 loose ceiling; the separate grants the host used to derive for projection,
 metadata, instructions, each function's verification, the graph and emission are
 gone. Textual IR (`tests/tools/air.au`, test tooling) enters at the same point:
@@ -91,14 +95,19 @@ callable because the facts print only retained ones. The Session is released
 before instruction, CFG, lifetime and graph admission. No native success fallback
 remains. Lowering sorts the initial layout order itself.
 
-The resolver and lowering render a rejection into the Session's byte pool just
-before the Session latches it, ending with a `report` metadata row that names
-the message bytes and the module-relative span; nothing appends after a latched
-rejection, so that row is the Session's last. Type and template-id spellings
-expand on the scratch stack without recursion, bounded at depth 128. The host
-copies the report through `resolver_report`, 384 message bytes per call, and
-prints it; `pipeline_lint` copies rendered lint warnings, ordered by offset, the
-same way. Code numbers are the printed ones (4001 is AU4001). The Session region
+Module loading, the resolver and lowering render a rejection into the Session's
+byte pool just before the Session latches it, ending with a `report` metadata row
+that names the message bytes, the module-relative span and, for loading, the
+code; nothing appends after a latched rejection, so that row is the Session's
+last. Loading covers byte limits, source admission and every import-graph
+rejection, prefixed `module NAME: ` when the source answers an import; storage
+failures report the allocation or transport message. Type and template-id
+spellings expand on the scratch stack without recursion, bounded at depth 128.
+The host copies the report through `resolver_report`, 384 message bytes per call,
+and prints it; `pipeline_diagnostic` copies the failure or the rendered lint
+warnings, ordered by offset, the same way, and the formatter and the bootstrap
+object composer report through `formatter_diagnostic` and `object_report`. Code
+numbers are the printed ones (4001 is AU4001). The Session region
 has no host-computed ledger: every pool is a checked i64 byte extent bounded by
 the input limits Aurora enforces, so the region grants that range and allocation
 failure remains the only other refusal.

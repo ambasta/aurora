@@ -334,7 +334,7 @@ end
 ; CASE: uncalled invalid method parameter own<i64>
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: receiver signature requires scalar, enum or class values
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 layout Box [i64]
 layout Other [i64]
 function take
@@ -365,7 +365,7 @@ end
 ; BASE: uncalled invalid method parameter own<i64>
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: receiver signature requires scalar, enum or class values
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -5 +5 @@
 -  params [own i64 (class Box)]
 +  params [ref i64 (class Box)]
@@ -382,7 +382,7 @@ end
 ; BASE: uncalled invalid method parameter own<i64>
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: receiver signature requires scalar, enum or class values
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -5 +5 @@
 -  params [own i64 (class Box)]
 +  params [mutref i64 (class Box)]
@@ -399,7 +399,7 @@ end
 ; BASE: uncalled invalid method parameter own<i64>
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: receiver signature requires scalar, enum or class values
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -5 +5 @@
 -  params [own i64 (class Box)]
 +  params [(array elem=u8 len=2) i64 (class Box)]

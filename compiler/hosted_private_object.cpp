@@ -1,6 +1,6 @@
 #include "hosted_private_object.hpp"
 #include "host_sources.hpp"
-#include "hosted_frontend_abi.hpp"
+#include "hosted_pipeline.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -12,6 +12,20 @@ using Status = hosted_abi::compiler_x86::EmitStatus;
 
 [[noreturn]] void invalidTransport() {
     throw Error(DiagnosticCode::Internal, "invalid private object composition transport");
+}
+// The failure Aurora renders for an object operation that stopped with status.
+void checkStatus(std::int64_t status, bool wrapper) {
+    if (status == static_cast<std::int64_t>(Status::complete))
+        return;
+    throw Error(copyReport([&](std::int64_t offset) {
+        hosted_abi::ObjectReport input{};
+        input.status = static_cast<Status>(status);
+        input.wrapper = wrapper;
+        input.offset = offset;
+        hosted_abi::compiler_resolver::Report report{};
+        aurora_hosted_object_report(&input, &report);
+        return report;
+    }));
 }
 void addExtent(std::uint64_t &total, std::uint64_t count, std::uint64_t stride) {
     if (stride != 0 && count > (std::numeric_limits<std::uint64_t>::max() - total) / stride)
@@ -61,16 +75,7 @@ public:
         input.wrapper.length = static_cast<std::int64_t>(wrapper.size());
         input.selected.backing = selected.data();
         input.selected.length = static_cast<std::int64_t>(selected.size());
-        const auto status = aurora_hosted_private_object_run(data(), &input);
-        if (status == static_cast<std::int64_t>(Status::allocation))
-            throw Error(DiagnosticCode::Internal, "private object composition allocation failed");
-        if (status == static_cast<std::int64_t>(Status::limit))
-            throw Error("private object composition exceeds its bounded output or workspace");
-        if (status == static_cast<std::int64_t>(Status::invalid) ||
-            status == static_cast<std::int64_t>(Status::unsupported))
-            throw Error("private object inputs do not match the admitted private object profiles");
-        if (status != static_cast<std::int64_t>(Status::complete))
-            invalidTransport();
+        checkStatus(aurora_hosted_private_object_run(data(), &input), false);
         const auto size = aurora_hosted_private_object_size(data());
         if (size < 0 || static_cast<std::uint64_t>(size) > host::artifactLimit)
             invalidTransport();
@@ -123,16 +128,7 @@ public:
         hosted_abi::EmitterWrapperInput input{};
         input.recipe.backing = recipe.data();
         input.recipe.length = static_cast<std::int64_t>(recipe.size());
-        const auto status = aurora_hosted_emitter_wrapper_run(data(), &input);
-        if (status == static_cast<std::int64_t>(Status::allocation))
-            throw Error(DiagnosticCode::Internal, "frontend wrapper allocation failed");
-        if (status == static_cast<std::int64_t>(Status::limit))
-            throw Error("frontend wrapper exceeds its bounded output or workspace");
-        if (status == static_cast<std::int64_t>(Status::invalid) ||
-            status == static_cast<std::int64_t>(Status::unsupported))
-            throw Error("frontend wrapper recipe does not match the admitted instruction envelope");
-        if (status != static_cast<std::int64_t>(Status::complete))
-            invalidTransport();
+        checkStatus(aurora_hosted_emitter_wrapper_run(data(), &input), true);
         const auto size = aurora_hosted_emitter_object_size(data());
         if (size < 0 || static_cast<std::uint64_t>(size) > host::artifactLimit)
             invalidTransport();
