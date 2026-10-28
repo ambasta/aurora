@@ -296,6 +296,14 @@ export namespace compiler_air {
             sourceLine = line;
             return good();
         }
+        // Later failures name the source line holding token.
+        auto at_token(i64 token) -> bool {
+            if (token < 0) {
+                return good();
+            }
+            const Token end_token = token_at(line_end_token(token));
+            return at_line(end_token.extra());
+        }
 
         // ---- owned pools
         auto put(u8 value) -> bool {
@@ -933,20 +941,26 @@ export namespace compiler_air {
                 fail();
                 return 0;
             }
+            // Accumulated negatively: -9223372036854775808 has no positive counterpart.
             i64 result = 0;
             while (at < end) {
                 const i64 next_digit = i64(text.at(at));
-                if (!digit(next_digit) || result > 922337203685477580) {
+                const bool last = result == -922337203685477580 && next_digit > 56;
+                if (!digit(next_digit) || result < -922337203685477580 || last) {
                     fail();
                     return 0;
                 }
-                result = result * 10 + next_digit - 48;
+                result = result * 10 - (next_digit - 48);
                 at = at + 1;
             }
             if (negative) {
-                return -result;
+                return result;
             }
-            return result;
+            if (result == -9223372036854775807 - 1) {
+                fail();
+                return 0;
+            }
+            return -result;
         }
         // Appends [begin, end) with each {a,s} spelled as a + s * index.
         auto expand_template(i64 begin, i64 end, i64 index) -> bool {
@@ -1084,6 +1098,10 @@ export namespace compiler_air {
                 }
                 if (plain && top() == 2 && !space(i64(value)) && value != ']' && value != ')') {
                     const i64 item_end = node_end(at, end);
+                    if (item_end < 0) {
+                        fail();
+                        return -1;
+                    }
                     const i64 star = skip_space(item_end, end);
                     if (item_end > at && star < end && text.at(star) == '*') {
                         i64 last = star + 1;
@@ -2279,6 +2297,7 @@ export namespace compiler_air {
         while (index < end && reader.good()) {
             const Entry declaration = reader.entry_at(index);
             const i64 line = declaration.token();
+            reader.at_token(line);
             if (declaration.number() == 0) {
                 membership = membership | masks.class_layout();
                 emit_leaves(reader, metadata, line, fill);
@@ -2339,6 +2358,7 @@ export namespace compiler_air {
         while (at < reader.entry_count() && reader.good()) {
             const Entry entry = reader.entry_at(at);
             const i64 line = entry.token();
+            reader.at_token(line);
             if (entry.category() == 1) {
                 const compiler_ir_metadata::DescriptorRow row = compiler_ir_metadata::DescriptorRow(entry.number(),
                     reader.integer(reader.node(line, 2)), reader.integer(reader.node(line, 3)));
@@ -2399,6 +2419,7 @@ export namespace compiler_air {
         const Entry entry = reader.entry_at(index);
         const i64 ordinal = entry.group() % 16;
         const i64 line = entry.token();
+        reader.at_token(line);
         i64 type = 0;
         i64 length = 0;
         i64 mutable_value = 0;
@@ -2439,6 +2460,7 @@ export namespace compiler_air {
         if (line < 0) {
             return 0;
         }
+        reader.at_token(line);
         return reader.integer(reader.node(line, 1));
     }
     // One callable: its name, result and parameter types, then its frame slots
@@ -2447,15 +2469,18 @@ export namespace compiler_air {
         bool fill) -> i64 {
         const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::flag_masks();
         const i64 name = reader.header(function, 0);
+        reader.at_token(name);
         const i64 begin = token_text(reader, metadata, name, fill);
         const i64 types = reader.count(1);
         i64 result = -1;
         if (reader.header(function, 1) >= 0) {
+            reader.at_token(reader.header(function, 1));
             result = reader.node(reader.header(function, 1), 1);
         }
         emit_type(reader, metadata, result, -1, types, fill);
         i64 parameters = 0;
         if (reader.header(function, 2) >= 0) {
+            reader.at_token(reader.header(function, 2));
             const i64 list = reader.node(reader.header(function, 2), 1);
             parameters = reader.items(list, 2);
             i64 at = 0;
@@ -2484,6 +2509,7 @@ export namespace compiler_air {
         u64 receiver_flags = 0u64;
         const i64 receiver = reader.header(function, 5);
         if (receiver >= 0) {
+            reader.at_token(receiver);
             flags = flags | masks.callable_receiver();
             const i64 receiver_name = reader.node(receiver, 1);
             receiver_begin = token_text(reader, metadata, receiver_name, fill);
@@ -2979,14 +3005,16 @@ export namespace compiler_air {
         empty_metadata.initialize(compiler_pipeline::zero_counts(), 0, 0, 0);
         compiler_ir_instructions::InstructionStore empty_instructions = compiler_ir_instructions::create(region, 0, 0,
             0, 0);
+        bool filled = false;
         if (reader.good() && emit(reader, empty_metadata, empty_instructions, false)
             && result.initialize(reader.input_counts(), reader.count(10), reader.count(11),
             reader.instruction_begin())) {
             compiler_ir_instructions::InstructionStore instructions = compiler_ir_instructions::create(region,
                 reader.count(12), reader.count(13), reader.count(14), reader.count(15));
-            if (instructions.allocated()) {
-                emit(reader, result, instructions, true);
-            }
+            filled = instructions.allocated() && emit(reader, result, instructions, true);
+        }
+        if (!filled && result.status() == compiler_ir_metadata::MetadataStatus::pending) {
+            result.reject(compiler_ir_metadata::MetadataError::integrity);
         }
         return move(result);
     }
