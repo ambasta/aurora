@@ -19,6 +19,7 @@ import aurora.compiler.x86_storage;
 import aurora.compiler.ir_listing;
 import aurora.compiler.pipeline_declarations;
 import aurora.compiler.pipeline;
+import aurora.compiler.diagnostics;
 
 // Textual IR (.air) modules, read straight into the pending metadata and
 // instruction stores lowering's projection fills, then run through the

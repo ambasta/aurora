@@ -120,7 +120,8 @@ validated formatted source. Exit 0 means success, 1 means `--check` found a
 formatting difference or style finding, and 2 means an argument, input, compiler,
 formatter-invariant or output error. Existing AU diagnostic families and imported
 source ranges remain intact. Format-check JSON adds `mode: "format-check"` and a
-`changed` boolean; its warnings have explicit AUF codes. Semantic-check JSON uses
+`changed` boolean; its warnings have explicit AUF codes. Aurora renders every
+finding and failure (`formatter.au`); the host copies and prints them. Semantic-check JSON uses
 the compiler's existing schema, with warning severity and success when no errors
 are present. No schema promises LSP coordinates.
 

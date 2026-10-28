@@ -147,12 +147,6 @@ public:
         const auto reason = static_cast<meta::MetadataError>(aurora_hosted_metadata_error(owner.store.storage.data()));
         if (status == static_cast<std::int64_t>(meta::MetadataStatus::allocation))
             allocationFailure();
-        if (status == static_cast<std::int64_t>(meta::MetadataStatus::invalid)) {
-            const auto message = meta::metadataErrorMessage(reason);
-            if (reason == meta::MetadataError::none || !message)
-                invalidInitialization();
-            throw Error(message);
-        }
         if (status != static_cast<std::int64_t>(meta::MetadataStatus::success) || reason != meta::MetadataError::none)
             invalidInitialization();
     }

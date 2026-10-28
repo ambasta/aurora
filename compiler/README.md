@@ -14,19 +14,20 @@ call-site admission and whole-function value, lifetime and provenance verificati
 After lowering, one Aurora call (`pipeline.au`) consumes the resolver Session and
 projects it into metadata and instruction owners, admits and verifies them, checks
 the call graph, publishes and emits code plus any requested stack and ABI facts;
-the host copies out the artifacts or renders the first failure.
+the host copies out the artifacts or the rendered first failure.
 `builtin_catalog.au` is the only copy of the built-in type, scalar descriptor and
-sealed service catalog: the resolver seeds its descriptors and lowering its scalar, service and initial layout prelude from it, and the host
-takes service kinds/operations from the generated header and its admission
-service groups from `catalog_summary`. On the resolver path Aurora lexes, parses, admits and ingests
-each source and keeps its module header and imports; the host gets back only the
-header name or a rendered rejection. aurora-fmt likewise parses, lays out and
-verifies its output in one Aurora call. Aurora also decides module-loading policy
-(names, relative paths, byte limits, headers and interfaces) and renders every
-source, resolver, lowering and lint diagnostic (`diagnostics.au`,
-`lowering_messages.au`): code, message and span, copied out 384 bytes at a time.
-Opening files under the explicit roots, module-loading and pipeline messages,
-diagnostic printing, allocation and artifact transport remain C++23.
+sealed service catalog: the resolver seeds its descriptors, admission its service
+set and lowering its scalar, service and initial layout prelude from it. On the
+resolver path Aurora lexes, parses, admits and ingests each source and keeps its
+module header and imports. aurora-fmt likewise parses, lays out and verifies its
+output in one Aurora call. Aurora decides module-loading policy (names, relative
+paths, byte limits, headers and interfaces), owns the admission and layout limits
+and renders every module-loading, source, resolver, lowering, pipeline, formatter
+and lint diagnostic (`diagnostics.au`, `lowering_messages.au`, `pipeline.au`,
+`formatter.au`): code, message and span, copied out 384 bytes at a time. The C++23
+host only parses command lines, opens files under the explicit roots (naming a
+missing, ambiguous or unreadable module), prints diagnostics, provides the byte
+runtime and copies Aurora's results and artifacts.
 Textual-IR test cases are read in Aurora (`tests/tools/air.au`, built into a
 test-only graph) straight into the same stores and run the same pipeline stages;
 there is no C++ IR model.
@@ -42,7 +43,7 @@ helpers with the same defining-module visibility and symbol-selection rules as
 text output. Neither backend adds reflection access to private values.
 
 Native console, UART and hosted frontend wrappers remain private bootstrap adapters.
-For frontend B/C, `frontend_wrapper.au` emits the 77 wrappers directly, using the
+For frontend B/C, `frontend_wrapper.au` emits the 38 wrappers directly, using the
 same table/ABI-derived recipe that renders predecessor frontend A and the GNU
 reference. The closed recipe admits at most 256 sorted hidden exports, 1024-byte
 identifier names and six ordered register moves or readonly record-lane loads
@@ -261,8 +262,8 @@ C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. The candidate's independent module graph pass runs in Aurora after all
 source whole-function checks and before import pruning, without a C++ graph fallback.
 Successful lowering-record projection runs in Aurora without native traversal or
-per-value callbacks. Module file opening, optional ABI declarations, diagnostics
-and quota/report transport remain native. Aurora now owns complete x86 text emission, including
+per-value callbacks. Module file opening, diagnostic printing and report
+transport remain native. Aurora now owns complete x86 text emission, including
 stack facts and ABI JSON; its host adapter lends the two admitted owners and
 copies bounded sealed output, with no native opcode fallback. Aurora owns metadata/layout,
 callable/frame admission, durable instruction storage, structural CFG checks and

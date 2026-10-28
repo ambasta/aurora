@@ -1,6 +1,7 @@
 // Forged Aurora resolver and lowering results through the production host
-// adapters, which are linked without the generated frontend: every malformed
-// copied report must fail closed and release each owner exactly once.
+// adapters, which are linked without the generated frontend: every rendered
+// report is copied out whole, a malformed one fails closed, and every exit
+// releases each owner exactly once.
 #include "hosted_resolver.hpp"
 #include <array>
 #include <cstdint>
@@ -9,36 +10,29 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
-#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
 
 namespace {
 using aurora::DiagnosticCode;
-using aurora::hosted_abi::compiler_parser::TypeKind;
 void *arenaAddress = nullptr;
 std::uint64_t arenaRegion = 0;
 constexpr std::uint64_t arenaCanary = 0x746970656172656eULL;
 int created = 0, parsed = 0, released = 0;
-bool throwingAdmission = false;
+bool throwingAdmission = false, rejectedSource = false, failedIngest = false, failedResolution = false;
 namespace Resolution = aurora::hosted_abi::compiler_resolver;
-Resolution::SessionStatus resolutionStatus;
-Resolution::SourceResult admission{};
 void *sessionAddress = nullptr;
 std::uint64_t sessionRegion = 0;
 constexpr std::uint64_t sessionCanary = 0x7265736f6c766564ULL;
 int sessionsCreated = 0, sessionsReleased = 0, transferred = 0, reports = 0;
-bool allocationOnIngest = false;
 std::int64_t sourceBytes = 0;
-// The forged rendered diagnostic and an optional header change after its first chunk.
+// The forged rendered diagnostic.
 Resolution::Report forgedReport{};
 std::string forgedMessage;
-std::function<void(Resolution::Report &)> laterChunk;
 namespace Lowering = aurora::hosted_abi::compiler_lowering;
 Lowering::LoweringResult loweringResult{};
 int loweringBegun = 0, loweringRun = 0;
-bool loweringAllocation = false;
 std::size_t cases = 0;
 void require(bool value, const std::string &message) {
     if (!value)
@@ -53,21 +47,15 @@ void forge(std::int64_t family, std::string message, std::int64_t begin, std::in
     forgedReport.end = end;
     forgedReport.end_column = end + 1;
     forgedMessage = std::move(message);
-    laterChunk = nullptr;
 }
 std::shared_ptr<const aurora::SourceText> resolutionFixture() {
     require(!sessionAddress, "previous forged resolution retained its Session");
-    throwingAdmission = allocationOnIngest = loweringAllocation = false;
+    throwingAdmission = rejectedSource = failedIngest = failedResolution = false;
     created = parsed = released = 0;
     arenaAddress = nullptr;
     auto source =
         std::make_shared<const aurora::SourceText>("resolved-record.au", "module forged;auto f()->i64{return 1;}");
     sourceBytes = static_cast<std::int64_t>(source->text.size());
-    admission = {};
-    admission.field_type = TypeKind::invalid;
-    admission.name_begin = 7;
-    admission.name_end = 13;
-    resolutionStatus = {Resolution::StorageStatus::none, Resolution::SemanticError::none, -1, -1, -1};
     sessionsCreated = sessionsReleased = transferred = reports = 0;
     const auto function = static_cast<std::int64_t>(source->text.find("f()"));
     forge(3001, "at most six parameters supported", function, function + 1);
@@ -85,7 +73,7 @@ std::optional<aurora::Diagnostic> resolveFixture(
     try {
         aurora::HostedResolution resolution;
         const auto module = resolution.add(source);
-        require(module.id == 0 && module.moduleName == "forged", "session ingestion lost the copied module header");
+        require(module.id == 0, "session ingestion changed the module index");
         mutate();
         static_cast<void>(resolution.resolve({module.id}, module.id, aurora::AnalysisMode::Check, abiFacts));
     } catch (const aurora::Error &error) {
@@ -109,7 +97,7 @@ void resolutionControls() {
     ++cases;
 
     source = resolutionFixture();
-    resolutionStatus.diagnostic = Resolution::SemanticError::unknown_function;
+    failedResolution = true;
     forge(4001, "unknown function 'g' in defining module forged", -1, -1);
     forgedReport.source = -1;
     diagnostic = resolveFixture(source);
@@ -120,7 +108,7 @@ void resolutionControls() {
     ++cases;
 
     source = resolutionFixture();
-    admission.grammar = aurora::hosted_parser::Status::expected_semicolon;
+    rejectedSource = true;
     forge(2001, "expected ';' (found 'f')", 19, 20);
     diagnostic = resolveFixture(source);
     require(diagnostic && diagnostic->code == DiagnosticCode::UnexpectedToken &&
@@ -140,72 +128,21 @@ void resolutionControls() {
     reject("negative report size", [] {
         forgedReport.byteCount = -1;
     });
-    reject("unknown diagnostic code", [] {
-        forgedReport.family = 1234;
-    });
-    reject("unknown severity", [] {
-        forgedReport.warning = 2;
-    });
     reject("report source outside the graph", [] {
         forgedReport.source = 1;
     });
-    reject("report span outside its source", [] {
-        forgedReport.end = sourceBytes + 1;
-    });
-    reject("reversed report span", [] {
-        forgedReport.end = forgedReport.begin - 1;
-    });
-    reject("report column precedes its line", [] {
-        forgedReport.begin_column = forgedReport.begin + 2;
-    });
-    reject("report header changes between chunks", [] {
-        forgedMessage = std::string(400, 'x');
-        laterChunk = [](Resolution::Report &report) {
-            report.end = report.begin;
-        };
-    });
-    reject("unknown storage status", [] {
-        resolutionStatus.storage = static_cast<Resolution::StorageStatus>(99);
-    });
-    reject("successful resolver status carries a node", [] {
-        resolutionStatus.node = 0;
-    });
-    reject("successful resolver status carries first detail", [] {
-        resolutionStatus.first = 0;
-    });
-    reject("successful resolver status carries second detail", [] {
-        resolutionStatus.second = 0;
-    });
-    reject("unknown lowering status", [] {
-        loweringResult.result_status = static_cast<Lowering::LoweringStatus>(99);
-    });
-    reject("failure lacks a reason", [] {
-        loweringResult.result_reason = Lowering::LoweringError::none;
-    });
-    reject("failure publishes a module root", [] {
-        loweringResult.root_row = 16;
-    });
-    reject("failure omits its diagnostic root", [] {
-        loweringResult.diagnostic_row = -1;
-    });
-    reject("success carries a failure reason", [] {
-        loweringResult.result_status = Lowering::LoweringStatus::success;
-    });
-    reject("success publishes no module root", [] {
-        loweringResult.result_status = Lowering::LoweringStatus::success;
-        loweringResult.result_reason = Lowering::LoweringError::none;
-    });
-    reject("storage failure lacks an allocation status", [] {
-        loweringResult.result_status = Lowering::LoweringStatus::storage_failure;
-    });
-    reject("native lowering allocation preserves owner cleanup", [] {
-        loweringAllocation = true;
+    reject("lowering allocation preserves owner cleanup", [] {
+        loweringResult = {Lowering::LoweringStatus::storage_failure, Lowering::LoweringError::none, -1, -1};
+        forge(9001, "hosted lowering allocation failed", -1, -1);
+        forgedReport.source = -1;
     });
 
     for (const bool duringIngest : {false, true}) {
         source = resolutionFixture();
-        allocationOnIngest = duringIngest;
+        failedIngest = duringIngest;
         throwingAdmission = !duringIngest;
+        forge(9001, "hosted module resolution allocation failed", -1, -1);
+        forgedReport.source = -1;
         bool rejected = false;
         try {
             aurora::HostedResolution resolution;
@@ -231,37 +168,38 @@ void copyReport(std::int64_t offset, void *output) {
         report.byteCount = std::min<std::int64_t>(384, std::max<std::int64_t>(0, size - offset));
         std::memcpy(report.payload.data(), forgedMessage.data() + offset, static_cast<std::size_t>(report.byteCount));
     }
-    if (offset && laterChunk)
-        laterChunk(report);
     std::memcpy(output, &report, sizeof(report));
 }
 } // namespace
 // No forged report in this fixture may reach the compilation pipeline: every
 // rejection here precedes it, and it never manufactures accepted durable IR.
-[[noreturn]] static void unexpectedPipelineEntry() noexcept {
-    std::fputs("forged projection unexpectedly reached the compilation pipeline\n", stderr);
+[[noreturn]] static void unexpectedEntry() noexcept {
+    std::fputs("forged resolution unexpectedly reached the compilation pipeline or graph walk\n", stderr);
     std::abort();
 }
 extern "C" void aurora_hosted_pipeline_run(const void *, void *) noexcept {
-    unexpectedPipelineEntry();
+    unexpectedEntry();
 }
 extern "C" void aurora_hosted_pipeline_release(void *) noexcept {
-    unexpectedPipelineEntry();
+    unexpectedEntry();
 }
 extern "C" void aurora_hosted_pipeline_report(const void *, void *) noexcept {
-    unexpectedPipelineEntry();
+    unexpectedEntry();
 }
-extern "C" void aurora_hosted_pipeline_lint(const void *, std::int64_t, std::int64_t, void *) noexcept {
-    unexpectedPipelineEntry();
+extern "C" void aurora_hosted_pipeline_diagnostic(const void *, std::int64_t, std::int64_t, void *) noexcept {
+    unexpectedEntry();
 }
 extern "C" void aurora_hosted_pipeline_chunk(const void *, std::int64_t, std::int64_t, void *) noexcept {
-    unexpectedPipelineEntry();
+    unexpectedEntry();
 }
-extern "C" void aurora_hosted_catalog_summary(void *output) noexcept {
-    // Admission inputs only; this fixture seeds no catalog.
-    aurora::hosted_abi::compiler_catalog::Summary summary{};
-    summary.serviceGroups = 4295033150;
-    std::memcpy(output, &summary, sizeof(summary));
+extern "C" void aurora_hosted_resolver_name_chunk(const void *, void *) {
+    unexpectedEntry();
+}
+extern "C" void aurora_hosted_resolver_graph_step(void *, std::int64_t, std::int64_t, void *) {
+    unexpectedEntry();
+}
+extern "C" void aurora_hosted_resolver_source_report(const void *, void *) {
+    unexpectedEntry();
 }
 extern "C" void aurora_hosted_parser_create(const void *input, void *output) {
     const auto &value = *static_cast<const aurora::hosted_abi::ParserCreate *>(input);
@@ -275,36 +213,18 @@ extern "C" void aurora_hosted_parser_create(const void *input, void *output) {
                 sizeof(arenaCanary));
     ++created;
 }
-// Resolution sources admit as the forged module header or its forged rejection.
+// The forged admission is opaque to the host, which lends it to append_source.
 extern "C" void aurora_hosted_parser_source(void *arena, const void *input, void *output) {
     require(arena == arenaAddress, "source admission changed the arena address");
     const auto &value = *static_cast<const aurora::hosted_abi::ParserSourceInput *>(input);
-    const auto &configuration = value.configuration;
-    require(value.source.kind == 0 && value.source.start == 0 && value.source.length == sourceBytes &&
-                configuration.scalar_array_limit == 64 && configuration.byte_array_limit == 512 &&
-                configuration.service_groups == 4295033150 && configuration.console_mask == 1 &&
-                configuration.display_mask == 2 && configuration.event_mask == 4,
-            "source admission changed its borrowed span or canonical layout/service configuration");
+    require(value.source.kind == 0 && value.source.start == 0 && value.source.length == sourceBytes,
+            "source admission changed its borrowed span");
     ++parsed;
     if (throwingAdmission)
         throw std::runtime_error("injected admission failure");
+    Resolution::SourceResult admission{};
+    admission.name_begin = rejectedSource ? -1 : 7;
     std::memcpy(output, &admission, sizeof(admission));
-}
-extern "C" void aurora_hosted_resolver_source_report(const void *input, void *output) {
-    const auto &value = *static_cast<const aurora::hosted_abi::ResolverSourceReport *>(input);
-    require(value.source.length == sourceBytes && value.result.grammar == admission.grammar &&
-                value.stop == aurora::hosted_parser::Stop::module_definition,
-            "source report changed its borrowed source, result or stop");
-    copyReport(value.offset, output);
-}
-extern "C" void aurora_hosted_resolver_name_chunk(const void *input, void *output) {
-    const auto &value = *static_cast<const aurora::hosted_abi::ResolverNameInput *>(input);
-    require(value.source.length == sourceBytes && value.begin == 7 && value.end == 13 && value.offset == 0,
-            "module name read changed its borrowed source range");
-    Resolution::LinkageChunk chunk{};
-    chunk.byteCount = value.end - value.begin;
-    std::memcpy(chunk.payload.data(), value.source.backing + value.begin, static_cast<std::size_t>(chunk.byteCount));
-    std::memcpy(output, &chunk, sizeof(chunk));
 }
 extern "C" void aurora_hosted_parser_release(void *owner) {
     const auto &record = *static_cast<const aurora::hosted_abi::ParserRelease *>(owner);
@@ -350,11 +270,7 @@ extern "C" std::int64_t aurora_hosted_resolver_ingest(const void *input) {
     require(roots[1] == arenaAddress && created == released + 1 && canary == arenaCanary,
             "ingest did not borrow the live parser arena");
     ++transferred;
-    if (allocationOnIngest) {
-        resolutionStatus.storage = Resolution::StorageStatus::allocation;
-        return -1;
-    }
-    return 0;
+    return failedIngest ? -1 : 0;
 }
 extern "C" void aurora_hosted_resolver_release(void *input) {
     const auto &record = *static_cast<const aurora::hosted_abi::ResolverRelease *>(input);
@@ -368,9 +284,10 @@ extern "C" std::int64_t aurora_hosted_resolver_append_source(void *session, cons
     checkSession(session);
     const auto &record = *static_cast<const aurora::hosted_abi::ResolverSourceInput *>(input);
     require(record.source.kind == 0 && record.source.start == 0 && record.source.length == sourceBytes &&
-                record.source.reserved == std::array<std::uint64_t, 3>{},
-            "source ingestion changed its borrowed contiguous span");
-    return 0;
+                record.source.reserved == std::array<std::uint64_t, 3>{} &&
+                record.result.name_begin == (rejectedSource ? -1 : 7),
+            "source ingestion changed its borrowed contiguous span or its admission");
+    return rejectedSource ? -1 : 0;
 }
 extern "C" std::int64_t aurora_hosted_resolver_order_module(void *session, const void *input) {
     checkSession(session);
@@ -379,16 +296,9 @@ extern "C" std::int64_t aurora_hosted_resolver_order_module(void *session, const
             "resolved root/order/scope inputs differ");
     return 1;
 }
-extern "C" void aurora_hosted_resolver_graph_step(void *, std::int64_t, std::int64_t, void *) {
-    throw std::runtime_error("explicit-order resolution fixture acquired graph traversal");
-}
 extern "C" std::int64_t aurora_hosted_resolver_run(void *session) {
     checkSession(session);
-    return 0;
-}
-extern "C" void aurora_hosted_resolver_status(const void *session, void *output) {
-    checkSession(session);
-    std::memcpy(output, &resolutionStatus, sizeof(resolutionStatus));
+    return failedResolution ? -1 : 0;
 }
 extern "C" void aurora_hosted_resolver_report(const void *session, std::int64_t offset, void *output) {
     checkSession(session);
@@ -397,29 +307,16 @@ extern "C" void aurora_hosted_resolver_report(const void *session, std::int64_t 
 
 // The two lowering endpoints. Only the fixed failure report above is
 // supplied; valid typed modules must come from the real native fixture.
-extern "C" std::int64_t aurora_hosted_lowering_begin(void *session, const void *input) noexcept {
+extern "C" std::int64_t aurora_hosted_lowering_begin(void *session, std::int64_t mode) noexcept {
     checkSession(session);
-    const auto &configuration = static_cast<const aurora::hosted_abi::LoweringBeginInput *>(input)->configuration;
-    require(configuration.byteLeaves == aurora::maximumCopiedByteLeaves &&
-                configuration.nonByteLeaves == aurora::maximumCopiedNonByteLeaves &&
-                configuration.totalLeaves == aurora::maximumCopiedClassLeaves &&
-                configuration.copiedBytes == aurora::maximumCopiedClassBytes &&
-                configuration.byteArrayLength == aurora::maximumClassByteArrayLength &&
-                configuration.scalarArrayLength == aurora::maximumClassScalarArrayLength &&
-                configuration.analysisMode == 0,
-            "lowering received a changed copied configuration");
+    require(mode == 0, "lowering received a changed analysis mode");
     ++loweringBegun;
     return 1;
 }
 extern "C" void aurora_hosted_lowering_run(void *session, void *output) noexcept {
     checkSession(session);
     ++loweringRun;
-    auto result = loweringResult;
-    if (loweringAllocation) {
-        resolutionStatus.storage = Resolution::StorageStatus::allocation;
-        result = {Lowering::LoweringStatus::storage_failure, Lowering::LoweringError::none, -1, -1};
-    }
-    std::memcpy(output, &result, sizeof(result));
+    std::memcpy(output, &loweringResult, sizeof(loweringResult));
 }
 
 int main() {

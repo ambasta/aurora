@@ -212,7 +212,7 @@ end
 ; BASE: typed checked division
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: load before initialization
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -5,4 +5 @@
 -    Constant 84
 -    Push
@@ -296,7 +296,7 @@ end
 ; BASE: symbol injection
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: reachable fallthrough without return
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -1 +1 @@
 -function "x:\n.include \"bad\""
 +function test
@@ -307,7 +307,7 @@ end
 ; BASE: typed checked division
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: value stack underflow
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -5,5 +5 @@
 -    Constant 84
 -    Push
@@ -319,7 +319,7 @@ end
 ; CASE: terminal conditional still rejects fallthrough
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: reachable fallthrough without return
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 function test
   result i64
   frame 16
@@ -333,7 +333,7 @@ end
 ; BASE: terminal conditional still rejects fallthrough
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: value stack underflow
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -4,0 +5,2 @@
 +    Jump 1
 +    Constant
@@ -346,7 +346,7 @@ end
 ; BASE: terminal conditional still rejects fallthrough
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: reachable fallthrough without return
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -4,0 +5,3 @@
 +    Constant 42
 +    Jump 1
@@ -359,7 +359,7 @@ end
 ; BASE: terminal conditional still rejects fallthrough
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: unreachable semantic instruction
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -5,3 +5,3 @@
 -    Label 1
 -    Constant 1 bool
@@ -371,7 +371,7 @@ end
 ; CASE: linear depth error precedes later omitted semantic instruction
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: operand stack depth differs from linear emission order
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 function test
   result i64
   frame 16
@@ -391,7 +391,7 @@ end
 ; BASE: linear depth error precedes later omitted semantic instruction
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: unreachable semantic instruction
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -7,0 +8,3 @@
 +    Label 9
 +    Jump 9
@@ -884,7 +884,7 @@ end
 ; CASE: isolated unknown object class
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: unknown object class
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 function test
   result i64
   frame 16
@@ -900,7 +900,7 @@ end
 ; BASE: isolated unknown object class
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: unknown receiver class
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -3,0 +4 @@
 +  receiver Missing false false
 @@ -5 +5,0 @@

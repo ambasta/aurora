@@ -98,10 +98,10 @@ test('scratchpad-source-native', python,
 
 # Textual IR cases (.air) run through one driver; each top-level directory of
 # tests/compiler/ir is one test. See tests/compiler/ir/README.md.
-# The textual IR test graph: the compiler's own modules plus the Aurora .air
-# reader (tools/air.au) and the initialization workspace probes, built by C1
-# with the test bridge rows into its own object and header. Only test tools
-# link it; the compiler never does.
+# The test graph: the compiler's own modules plus the Aurora .air reader
+# (tools/air.au) and the initialization workspace probes, built by C1 with the
+# test-only bridge rows into its own object and header. Only test drivers link
+# it; the compiler never does.
 air_forwarders = custom_target('air-frontend-forwarders', input: 'tools/frontend.au', output: 'frontend.au',
     command: [python, '-B', bridge_table, '@INPUT@', '@OUTPUT@'])
 air_frontend = custom_target('air-frontend',
@@ -112,7 +112,8 @@ air_frontend = custom_target('air-frontend',
               '--test-entries', '--output', '@OUTPUT0@', '@INPUT@'],
     depend_files: bridge_table)
 air_frontend_library = static_library('air-frontend',
-    [air_frontend[0], air_frontend[3], files('../compiler/hosted_pipeline.cpp', '../runtime/hosted_bytes.cpp')],
+    [air_frontend[0], air_frontend[3],
+     files('../compiler/hosted_resolver.cpp', '../compiler/hosted_pipeline.cpp', '../runtime/hosted_bytes.cpp')],
     include_directories: include_directories('.', '../compiler'), native: true, override_options: fixture_options,
     install: false)
 air_frontend_dep = declare_dependency(link_with: air_frontend_library, sources: air_frontend[3],
@@ -575,7 +576,7 @@ hosted_lexer_abi = custom_target(
 )
 hosted_lexer_test = executable(
     'hosted-lexer-test', ['compiler/hosted_lexer.cpp', hosted_lexer_abi],
-    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
+    dependencies: air_frontend_dep,
     native: true, override_options: fixture_options, install: false,
 )
 test('hosted-lexer', hosted_lexer_test, args: files('compiler/golden/hosted_lexer.golden'),
@@ -586,8 +587,8 @@ test('hosted-lexer-bootstrap', python,
      depends: [frontend_stage2_output, frontend_stage3_output] + record_host_targets, suite: ['full', 'merge', 'dev', 'core', 'compiler'],
      env: oracle_env, timeout: 30)
 
-format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_frontend,
-                            include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false)
+format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: air_frontend_dep,
+                            native: true, override_options: fixture_options, install: false)
 test('hosted-lexer-format', format_fixture, suite: ['full', 'merge', 'dev', 'compiler'], timeout: 180)
 test('hosted-lexer-format-cli', python, args: ['-B', '-O', files('compiler/format.py'), aurora_fmt],
      depends: [aurora_fmt] + record_host_targets, suite: ['full', 'merge', 'dev', 'compiler'], env: oracle_env,
@@ -602,7 +603,7 @@ hosted_parser_abi = custom_target(
 )
 hosted_parser_test = executable(
     'hosted-parser-test', ['compiler/hosted_parser.cpp', hosted_parser_abi],
-    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
+    dependencies: air_frontend_dep,
     native: true, override_options: fixture_options, install: false,
 )
 test('hosted-parser', hosted_parser_test,
@@ -612,7 +613,7 @@ test('hosted-parser', hosted_parser_test,
 # form and malformed source-owned transport without rebuilding per case.
 hosted_lowering_test = executable(
     'hosted-lowering-test', 'compiler/hosted_lowering.cpp',
-    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
+    dependencies: air_frontend_dep,
     native: true, override_options: fixture_options, install: false,
 )
 test('hosted-lowering', hosted_lowering_test, args: files('compiler/hosted_lowering.cases'),

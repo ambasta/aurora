@@ -4,7 +4,6 @@
 // what is not a parse-this-text case: raw ABI envelopes, growth limits,
 // representative allocation failures, ownership and typed-module controls.
 #include "lexemes.hpp"
-#include "hosted_parser.hpp"
 #include "hosted_resolver.hpp"
 #include "../../runtime/hosted_bytes.hpp"
 #include <algorithm>
@@ -85,10 +84,10 @@ void hosted_parser_misaligned_call(const void *, const void *, void *, AbiEntry)
 }
 
 namespace {
-using aurora::hosted_parser::AdmissionStatus;
-using aurora::hosted_parser::NodeKind;
-using aurora::hosted_parser::Status;
-using aurora::hosted_parser::Stop;
+using aurora::hosted_abi::compiler_parser::AdmissionStatus;
+using aurora::hosted_abi::compiler_parser::NodeKind;
+using Status = aurora::hosted_abi::compiler_parser::ParseStatus;
+using aurora::hosted_abi::compiler_parser::Stop;
 using Words = std::array<std::int64_t, 6>;
 using AdmissionWords = std::array<std::int64_t, 5>;
 using AdmissionConfigWords = std::array<std::int64_t, 6>;
@@ -97,7 +96,7 @@ using NodeWords = std::array<std::int64_t, 7>;
 using EdgeWords = std::array<std::int64_t, 5>;
 using TypeWords = std::array<std::int64_t, 8>;
 using SyntaxWords = std::array<std::int64_t, 12>;
-using aurora::hosted_parser::SyntaxKind;
+using aurora::hosted_abi::compiler_parser::SyntaxKind;
 using ContextWords = std::array<std::int64_t, 7>;
 constexpr std::int64_t wire(NodeKind value) {
     return static_cast<std::int64_t>(value);
@@ -286,7 +285,6 @@ public:
         aurora::hosted_abi::ParserSourceInput input;
         input.source.backing = source.data();
         input.source.length = static_cast<std::int64_t>(source.size());
-        input.configuration = aurora::hosted_parser::admissionConfiguration();
         GuardedRecord<aurora::hosted_abi::compiler_resolver::SourceResult> output;
         checked_hosted_parser_source(data(), &input, &output.value);
         output.check();
@@ -474,7 +472,8 @@ constexpr std::array<const char *, 28> syntaxKinds{"invalid",        "block",
                                                    "declaration",    "template_scalar",
                                                    "template_value", "template_capacity"};
 static_assert(wire(NodeKind::array_zero) + 1 == nodeKinds.size() &&
-              static_cast<std::size_t>(aurora::hosted_parser::TypeKind::value_span) + 1 == typeKinds.size() &&
+              static_cast<std::size_t>(aurora::hosted_abi::compiler_parser::TypeKind::value_span) + 1 ==
+                  typeKinds.size() &&
               wire(SyntaxKind::return_value) == 3 && wire(SyntaxKind::enum_case) == 20 &&
               wire(SyntaxKind::template_capacity) + 1 == syntaxKinds.size());
 template <std::size_t N> std::string kind(std::int64_t value, const std::array<const char *, N> &names) {
@@ -1077,7 +1076,9 @@ void programStep(Lines &lines, const std::string &mode, const std::vector<aurora
     RawArena arena(allocations, 64 * 1048576);
     const auto result = arena.source(dumpSource->text);
     try {
-        aurora::rejectSource(dumpSource, result);
+        if (result.lexical != aurora::hosted_abi::compiler_lexer::Event::token || result.grammar != Status::success ||
+            result.declaration != AdmissionStatus::success)
+            throw aurora::Error(aurora::sourceDiagnostic(dumpSource, result));
         lines.push_back(mode + " module " +
                         printable(dumpSource->text.substr(result.name_begin, result.name_end - result.name_begin)) +
                         (result.detail ? " interface" : ""));
@@ -1337,8 +1338,7 @@ void resolvedModules() {
         aurora::HostedResolution resolution;
         // Arrival order deliberately differs from dependency/output order.
         const auto main = resolution.add(root), imported = resolution.add(dependency);
-        require(main.id != imported.id && main.moduleName == "root" && imported.moduleName == "dep",
-                "copied module header identity differs");
+        require(main.id != imported.id, "copied module identity differs");
         return resolution.resolve({imported.id, main.id}, main.id, aurora::AnalysisMode::Lint, emittedFacts());
     }();
     const auto &code = resolved.code;
@@ -1403,15 +1403,14 @@ void resolvedModules() {
                      call(measures[1]),
                      call(measures[0])}),
             "typed calls lost repeated concrete-instance identity or source order");
-    require(resolved.lintDiagnostics.size() == 1 &&
-                resolved.lintDiagnostics[0].code == aurora::DiagnosticCode::UnreadLocal &&
-                resolved.lintDiagnostics[0].message == "local binding 'state' is never read" &&
-                resolved.lintDiagnostics[0].severity == aurora::DiagnosticSeverity::Warning,
+    require(resolved.lints.size() == 1 && resolved.lints[0].code == aurora::DiagnosticCode::UnreadLocal &&
+                resolved.lints[0].message == "local binding 'state' is never read" &&
+                resolved.lints[0].severity == aurora::DiagnosticSeverity::Warning,
             "typed root-only lint lost its scalar binding or diagnostic contract");
     const std::weak_ptr<const aurora::SourceText> retainedRoot = root;
     root.reset();
-    require(!retainedRoot.expired() && resolved.lintDiagnostics[0].span.source == retainedRoot.lock() &&
-                spanText(resolved.lintDiagnostics[0].span) == "state",
+    require(!retainedRoot.expired() && resolved.lints[0].span.source == retainedRoot.lock() &&
+                spanText(resolved.lints[0].span) == "state",
             "typed lint lost immutable source ownership after Session cleanup");
     ++cases;
 }
@@ -1485,11 +1484,9 @@ void resolvedVisibility() {
             resolution.add(std::make_shared<const aurora::SourceText>("empty.au", "export module empty;"));
         return resolution.resolve({imported.id, root.id}, root.id, aurora::AnalysisMode::Lint);
     }();
-    require(empty.code.empty() && empty.stackFacts.empty() && empty.abiFacts.empty() &&
-                empty.lintDiagnostics.size() == 1 && !retained.expired() &&
-                empty.lintDiagnostics[0].span.source == retained.lock() &&
-                spanText(empty.lintDiagnostics[0].span) == "unused" &&
-                empty.lintDiagnostics[0].span.source->path == "empty-view-root.au",
+    require(empty.code.empty() && empty.stackFacts.empty() && empty.abiFacts.empty() && empty.lints.size() == 1 &&
+                !retained.expired() && empty.lints[0].span.source == retained.lock() &&
+                spanText(empty.lints[0].span) == "unused" && empty.lints[0].span.source->path == "empty-view-root.au",
             "check-only compilation produced artifacts or invalidated lint sources");
     ++cases;
 
@@ -1633,22 +1630,13 @@ public:
         aurora::hosted_abi::ParserSourceInput input;
         input.source.backing = source.data();
         input.source.length = static_cast<std::int64_t>(source.size());
-        auto &configuration = input.configuration;
-        configuration.scalar_array_limit = admissionConfiguration[0];
-        configuration.byte_array_limit = admissionConfiguration[1];
-        configuration.service_groups = admissionConfiguration[2];
-        configuration.console_mask = admissionConfiguration[3];
-        configuration.display_mask = admissionConfiguration[4];
-        configuration.event_mask = admissionConfiguration[5];
         GuardedRecord<aurora::hosted_abi::compiler_resolver::SourceResult> parsed;
         checked_hosted_parser_source(parser.value.arena.storage.data(), &input, &parsed.value);
         parsed.check();
         guards();
-        if (parsed.value.lexical != aurora::hosted_abi::compiler_lexer::Event::token ||
-            parsed.value.grammar != Status::success || parsed.value.declaration != AdmissionStatus::success)
-            return false;
         aurora::hosted_abi::ResolverSourceInput sourceInput;
         sourceInput.source = input.source;
+        sourceInput.result = parsed.value;
         if (checked_hosted_resolver_append_source(data(), &sourceInput) < 0)
             return false;
         const std::array<const void *, 2> roots{data(), parser.value.arena.storage.data()};
@@ -1721,6 +1709,20 @@ void rawModuleTraversal() {
         rejected = true;
     }
     require(rejected, "completed source graph accepted a late module");
+    ++cases;
+
+    // Explicitly ordered modules cannot share a header name.
+    aurora::HostedResolution twins;
+    const auto first = twins.add(std::make_shared<const aurora::SourceText>("a.au", "export module twin;"));
+    const auto second = twins.add(std::make_shared<const aurora::SourceText>("b.au", "export module twin;"));
+    rejected = false;
+    try {
+        static_cast<void>(twins.resolve({first.id, second.id}, second.id));
+    } catch (const aurora::Error &error) {
+        rejected = error.diagnostic.code == aurora::DiagnosticCode::Internal &&
+                   error.diagnostic.message == "invalid hosted resolution result";
+    }
+    require(rejected, "explicit order accepted two modules with one header name");
     ++cases;
 }
 
@@ -1942,9 +1944,7 @@ void rawCatalogueControls() {
         require(aurora_hosted_resolver_order_module(resolution.data(), &order) == 1 &&
                     aurora_hosted_resolver_run(resolution.data()) == 0,
                 "catalogue fixture failed resolution");
-        aurora::hosted_abi::LoweringBeginInput begin{};
-        begin.configuration = {4096, 512, 4096, 65536, 4096, 512, 0};
-        require(aurora_hosted_lowering_begin(resolution.data(), &begin) == 1, "catalogue begin failed");
+        require(aurora_hosted_lowering_begin(resolution.data(), 0) == 1, "catalogue begin failed");
         const auto operand = [&](std::int64_t row, std::int64_t ordinal) {
             Lowering::OutputRow output;
             Lowering::OperandRow value;
@@ -2278,7 +2278,7 @@ void rawInstructionAdmission() {
     namespace bytes = aurora::hosted::bytes;
     using Form = lower::InstructionForm;
     using Reason = wire::InstructionError;
-    using Kind = aurora::TypeKind;
+    using Kind = meta::MetadataTypeKind;
     meta::FlagMasks masks{};
     aurora_hosted_metadata_flag_masks(&masks);
     require(std::has_single_bit(masks.flowLeader) && std::has_single_bit(masks.flowFallthrough) &&

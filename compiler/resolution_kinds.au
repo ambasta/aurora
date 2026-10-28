@@ -165,6 +165,8 @@ export namespace compiler_resolver {
         function_parameters,
         function_boundaries,
         function_parameter_names,
-        span_named
+        span_named,
+        // A source or import-graph rejection, rendered before it latched.
+        module_loading
     };
 }

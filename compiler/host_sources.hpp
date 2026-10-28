@@ -1,6 +1,6 @@
 #pragma once
 // Trusted Linux-host bootstrap adapter. These OS interfaces are not exposed to Aurora.
-#include "types.hpp"
+#include "diagnostics.hpp"
 #include <algorithm>
 #include <array>
 #include <atomic>

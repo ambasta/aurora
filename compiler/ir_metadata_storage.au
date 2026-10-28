@@ -13,7 +13,7 @@ export namespace compiler_ir_metadata {
         allocation,
         invalid
     };
-    // Generated facts pin these ordinals to native TypeKind. Raw rows retain
+    // The IR type kinds; append new kinds to keep ordinals stable. Raw rows retain
     // integers, including unknown kinds, rather than accepting unchecked enums.
     enum class MetadataTypeKind {
         I64,
@@ -39,266 +39,136 @@ export namespace compiler_ir_metadata {
         ServeSession,
         ValueSpan
     };
+    // Each reason's message is in pipeline.au (compiler_ir_metadata::metadata_text).
     enum class MetadataError {
         none,
-        //: invalid hosted IR metadata transport
         integrity,
-        //: invalid typed IR: invalid metadata descriptor
         descriptor,
-        //: invalid typed IR: missing root reflection scope
         root_scope,
-        //: invalid typed IR: invalid reflection scope
         scope,
-        //: invalid typed IR: reflection view references missing descriptor
         view_descriptor,
-        //: invalid typed IR: too many enum declarations
         enum_count,
-        //: invalid typed IR: invalid nominal enum declaration
         enum_declaration,
-        //: invalid typed IR: class and enum nominal names overlap
         nominal_overlap,
-        //: invalid typed IR: invalid nominal class layout
         class_layout,
-        //: invalid typed IR: class exceeds 8192 direct fields
         class_field_limit,
-        //: invalid typed IR: non-scalar class layout field
         class_leaf,
-        //: invalid typed IR: logical fields reference unknown class layout
         unknown_fields,
-        //: invalid typed IR: noncanonical class array element count
         field_element_count,
-        //: invalid typed IR: class array carrier cannot be nested element type
         nested_carrier,
-        //: invalid typed IR: invalid logical class field shape
         field_shape,
-        //: invalid typed IR: owned storage field requires zero scalar leaves
         owner_leaves,
-        //: invalid typed IR: invalid canonical owned value field type
         owner_field_type,
-        //: invalid typed IR: nested owning class field is unsupported
         nested_owner,
-        //: invalid typed IR: invalid nominal nested class field
         nested_type,
-        //: invalid typed IR: class array element count exceeds 1..64
         class_array_count,
-        //: invalid typed IR: nested class field length mismatch
         nested_length,
-        //: invalid typed IR: logical class field range exceeds layout
         field_range,
-        //: invalid typed IR: nested class field leaf type mismatch
         nested_leaf,
-        //: invalid typed IR: logical class field leaf type mismatch
         field_leaf,
-        //: invalid typed IR: logical class fields do not cover complete layout
         leaf_coverage,
-        //: invalid typed IR: composed or owning class exceeds 64 scalar leaves excluding u8, 512 u8 leaves or 513 total
-        //: leaves
         class_leaf_limit,
-        //: invalid typed IR: unknown class array carrier
         unknown_carrier,
-        //: invalid typed IR: class array carrier requires exactly one class array field
         carrier_shape,
-        //: invalid typed IR: cyclic nested class layout
         cycle,
-        //: invalid typed IR: nested class layout exceeds depth 4
         depth,
-        //: invalid typed IR: noncanonical sealed ConsoleSample layout
         console_layout,
-        //: invalid typed IR: noncanonical sealed ConsoleSample fields
         console_fields,
-        //: invalid typed IR: noncanonical sealed ConsoleSample field shape
         console_field_shape,
-        //: invalid typed IR: noncanonical sealed IommuEventSample layout
         event_layout,
-        //: invalid typed IR: noncanonical sealed IommuEventSample fields
         event_fields,
-        //: invalid typed IR: noncanonical sealed IommuEventSample field shape
         event_field_shape,
-        //: invalid typed IR: noncanonical sealed event service enum
         event_enum,
-        //: invalid typed IR: noncanonical sealed service enum
         service_enum,
-        //: IR: storage extent exceeds 65536 bytes
         storage_extent,
-        //: IR: cyclic or excessive class storage depth
         storage_depth,
-        //: IR: missing logical class storage shape
         storage_shape,
-        //: IR: invalid class storage alignment
         storage_alignment,
-        //: IR: invalid logical field range for storage
         storage_field_range,
-        //: IR: owned byte field requires one non-scalar descriptor
         storage_owner_shape,
-        //: IR: nested owning class fields are unsupported
         storage_nested_owner,
-        //: IR: invalid nested field storage shape
         storage_nested_shape,
-        //: IR: invalid scalar field storage shape
         storage_scalar_shape,
-        //: IR: class storage exceeds 65536 bytes
         storage_limit,
-        //: IR: class storage does not cover logical leaves
         storage_coverage,
-        //: invalid typed IR: invalid canonical owned value type
         owner_type,
-        //: invalid typed IR: owned value element requires known canonical class layout
         owner_element_unknown,
-        //: invalid typed IR: owned value element must be a copied class, not an owner or carrier
         owner_element_kind,
-        //: invalid typed IR: owned value element exceeds copied class leaf limits
         owner_element_leaves,
-        //: invalid typed IR: owned value element storage exceeds 520 bytes
         owner_element_storage,
-        //: invalid typed IR: composed or owning class storage exceeds 520 bytes
         class_storage_limit,
-        //: invalid typed IR: noncanonical class storage metadata
         supplied_storage,
-        //: invalid typed IR: empty module
         empty_module,
-        //: invalid typed IR: invalid or reserved function symbol
         function_symbol,
-        //: invalid typed IR: duplicate function
         duplicate_function,
-        //: invalid typed IR: unknown function module scope
         function_scope,
-        //: invalid typed IR: service signature requires a leading sealed group and no receiver or region
         service_signature,
-        //: invalid typed IR: service signature requires distinct capability kinds
         service_duplicates,
-        //: invalid typed IR: unsupported service group
         service_group,
-        //: invalid typed IR: service signature requires later scalar, enum, copied value or readonly span arguments
         service_parameters,
-        //: invalid typed IR: service signature has unsupported result
         service_result,
-        //: invalid typed IR: borrowed roots require a free-function signature
         borrowed_shape,
-        //: invalid typed IR: borrowed formal cannot have resource or borrowed result
         borrowed_result,
-        //: invalid typed IR: borrowed roots count toward six parameters
         borrowed_parameters,
-        //: invalid typed IR: borrowed root requires a canonical named class type
         borrowed_root_type,
-        //: invalid typed IR: borrowed root requires a complete concrete owning class
         borrowed_root_class,
-        //: invalid typed IR: borrowed root count exceeds the explicit formal prefix
         borrowed_root_count,
-        //: invalid typed IR: multi-root borrowed signature requires scalar or enum values
         borrowed_root_values,
-        //: invalid typed IR: resource signature only supports an owning constructor receiver
         resource_receiver,
-        //: invalid typed IR: resource signature requires its region parameter first
         resource_region,
-        //: invalid typed IR: resource signature requires scalar, owned byte or class result
         resource_result,
-        //: invalid typed IR: resource signature requires exactly one region and supported owning parameters
         resource_parameters,
-        //: invalid typed IR: service capability cannot cross an ordinary boundary or return
         service_boundary,
-        //: invalid typed IR: invalid canonical service boundary type
         service_type,
-        //: invalid typed IR: invalid resource boundary type
         resource_boundary,
-        //: invalid typed IR: readonly span boundary requires ordinary parameter or const receiver result
         span_boundary,
-        //: invalid typed IR: constructor result must remain scalar
         constructor_result,
-        //: invalid typed IR: invalid value boundary type
         value_type,
-        //: invalid typed IR: unknown value boundary class
         value_class,
-        //: invalid typed IR: class array carrier cannot cross value boundary
         value_carrier,
-        //: invalid typed IR: owning class requires an ordinary resource boundary
         value_owner,
-        //: invalid typed IR: only an owning constructor may take a copied class resource parameter
         value_resource,
-        //: invalid typed IR: value boundary class exceeds 64 scalar fields excluding u8, 512 u8 leaves or 513 total
-        //: leaves
         value_leaves,
-        //: invalid typed IR: value boundary class storage exceeds 520 bytes
         value_storage,
-        //: invalid typed IR: receiver span field summary requires span result
         span_result,
-        //: invalid typed IR: too many parameters
         parameter_count,
-        //: invalid typed IR: receiver signature requires scalar, enum or class values
         receiver_signature,
-        //: invalid typed IR: invalid aggregate parameter type
         aggregate_parameter,
-        //: invalid typed IR: unknown receiver class
         receiver_class,
-        //: invalid typed IR: class array carrier cannot be receiver
         receiver_carrier,
-        //: invalid typed IR: receiver span field summary requires exact direct byte-storage field or typed owner of
-        //: the view element
         receiver_span,
-        //: invalid typed IR: owned value metadata requires exact owner spill
         owner_spill,
-        //: invalid typed IR: service spills without a service signature
         service_spills,
-        //: invalid typed IR: invalid frame size
         frame_size,
-        //: invalid typed IR: invalid slot offset
         slot_offset,
-        //: invalid typed IR: invalid slot payload type
         slot_type,
-        //: invalid typed IR: overlapping scalar slot storage
         slot_overlap,
-        //: invalid typed IR: unknown object class
         object_class,
-        //: invalid typed IR: invalid object layout offset
         object_offset,
-        //: invalid typed IR: overlapping object layouts
         object_overlap,
-        //: invalid typed IR: object field slot type/layout mismatch
         object_leaf,
-        //: invalid typed IR: scalar slot overlaps empty object or padding
         object_padding,
-        //: invalid typed IR: invalid byte array origin extent
         array_extent,
-        //: invalid typed IR: byte array origin requires exact u8 element slots
         array_leaf,
-        //: invalid typed IR: byte array origin overlaps object storage
         array_object,
-        //: invalid typed IR: overlapping byte array origins
         array_overlap,
-        //: invalid typed IR: invalid span spill extent or alignment
         span_extent,
-        //: invalid typed IR: span spill overlaps scalar, object or array storage
         span_overlap,
-        //: invalid typed IR: overlapping span spills
         span_spills,
-        //: invalid typed IR: invalid service spill extent or alignment
         service_extent,
-        //: invalid typed IR: service spill overlaps scalar, object, array or span storage
         service_overlap,
-        //: invalid typed IR: invalid region spill extent or alignment
         region_extent,
-        //: invalid typed IR: region spill overlaps scalar, object, array or span storage
         region_overlap,
-        //: invalid typed IR: invalid owned byte spill extent or alignment
         byte_extent,
-        //: invalid typed IR: owned byte spill overlaps scalar, object, array or span storage
         byte_overlap,
-        //: invalid typed IR: overlapping region or owned byte spills
         resource_overlap,
-        //: invalid typed IR: noncanonical sealed CallResult layout
         call_layout,
-        //: invalid typed IR: noncanonical sealed CallResult fields
         call_fields,
-        //: invalid typed IR: invalid canonical typed span type
         span_value_type,
-        //: invalid typed IR: typed span element requires known canonical class layout
         span_element_unknown,
-        //: invalid typed IR: typed span element must be a copied class, not an owner or carrier
         span_element_kind,
-        //: invalid typed IR: typed span element exceeds copied class leaf limits
         span_element_leaves,
-        //: invalid typed IR: typed span element storage exceeds 520 bytes
         span_element_storage,
-        //: invalid typed IR: typed span metadata requires exact span spill
         span_value_spill
     };
     class ByteRange {

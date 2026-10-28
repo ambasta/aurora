@@ -1238,7 +1238,7 @@ end
 ; BASE: packed bytes preserve composed receiver/results and tiny aggregate
 ; RUN: verify
 ; EXPECT-MESSAGE: invalid typed IR: scalar slot overlaps empty object or padding
-; EXPECT-CODE: AU0000
+; EXPECT-CODE: AU3001
 @@ -936,0 +937,17 @@
 +function packed_extent_cache
 +  result i64

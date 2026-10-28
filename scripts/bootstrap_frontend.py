@@ -238,77 +238,6 @@ def frontend_abi_entries(facts):
     return entries
 
 
-def owner_messages(source, facts, namespace, enumeration, function):
-    """Render constant owner diagnostics from their source-owned reasons."""
-    start = source.index("enum class " + enumeration + " {")
-    block = source[start : source.index("};", start)].splitlines()[1:]
-    messages, pending = {}, []
-    for line in (raw.strip() for raw in block):
-        if line.startswith("//:"):
-            pending.append(line[3:].strip())
-        elif not line or line.startswith("//"):
-            if pending:
-                raise ValueError("owner message must directly precede its reason")
-        else:
-            name = line.removesuffix(",")
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in messages:
-                raise ValueError("unsupported or repeated owner reason: " + line)
-            text = " ".join(pending)
-            if (name == "none") != (not text):
-                raise ValueError("owner reason requires exactly one constant message: " + name)
-            messages[name] = text
-            pending = []
-    _, reasons = abi_declaration(facts, "enums", namespace + "::" + enumeration)
-    if pending or list(messages) != list(reasons["cases"]):
-        raise ValueError("owner messages differ from the compiled reasons")
-    return [
-        "namespace aurora::hosted_abi::" + namespace + " {",
-        "inline constexpr const char *" + function + "(" + enumeration + " reason) {",
-        "    switch (reason) {",
-        *[
-            f"    case {enumeration}::{name}: return {json.dumps(text, ensure_ascii=True) if text else 'nullptr'};"
-            for name, text in messages.items()
-        ],
-        "    }",
-        "    return nullptr;",
-        "}",
-        "}",
-    ]
-
-
-def metadata_messages(source, facts):
-    return owner_messages(source, facts, "compiler_ir_metadata", "MetadataError", "metadataErrorMessage")
-
-
-def instruction_messages(source, facts):
-    return owner_messages(source, facts, "compiler_ir_instructions", "InstructionError", "instructionErrorMessage")
-
-
-def verification_messages(source, facts):
-    """Exact split reasons, with no host fallback diagnostic or semantic policy."""
-    namespace = "compiler_ir_verification"
-    lines = []
-    for suffix, count in (("First", 200), ("Second", 117)):
-        enumeration = "VerificationError" + suffix
-        _, reasons = abi_declaration(facts, "enums", namespace + "::" + enumeration)
-        if len(reasons["cases"]) != count or list(reasons["cases"].values()) != list(range(count)):
-            raise ValueError("private verification split reasons changed: " + enumeration)
-        lines += owner_messages(source, facts, namespace, enumeration, "verificationError" + suffix + "Message")
-    lines += [
-        "namespace aurora::hosted_abi::compiler_ir_verification {",
-        "inline constexpr const char *verificationErrorMessage(VerificationError reason) {",
-        "    if (!validRaw(reason.firstValue) || !validRaw(reason.secondValue)) return nullptr;",
-        "    if (reason.firstValue != VerificationErrorFirst::none) {",
-        "        if (reason.secondValue != VerificationErrorSecond::none) return nullptr;",
-        "        return verificationErrorFirstMessage(reason.firstValue);",
-        "    }",
-        "    return verificationErrorSecondMessage(reason.secondValue);",
-        "}",
-        "}",
-    ]
-    return lines
-
-
 def verification_abi(facts):
     """Check the closed owner and copied-report contract against actual facts.
 
@@ -480,7 +409,7 @@ def verification_abi(facts):
     return records
 
 
-def frontend_abi_header(facts, metadata_source=None, instruction_source=None, verification_source=None):
+def frontend_abi_header(facts):
     """Render compiler-described classes and enums without a second field schema."""
     frontend_abi_entries(facts)
     # Library modules may declare their own std namespace. Host standard types
@@ -527,14 +456,7 @@ def frontend_abi_header(facts, metadata_source=None, instruction_source=None, ve
             if type(value) is not int or not -(2**63) <= value < 2**63:
                 raise ValueError("unsupported private ABI enum value")
             lines.append(f"    {case} = {value},")
-        lines += [
-            "};",
-            f"inline constexpr bool validRaw({name} value) {{",
-            "    switch (static_cast<::std::int64_t>(value)) {",
-        ]
-        for value in sorted(set(declaration["cases"].values())):
-            lines.append(f"    case {value}: return true;")
-        lines += ["    default: return false;", "    }", "}", "}"]
+        lines += ["};", "}"]
 
     def record(name, size, alignment, members):
         nonlocal lines
@@ -796,12 +718,6 @@ def frontend_abi_header(facts, metadata_source=None, instruction_source=None, ve
         "static_assert(sizeof(void *) == 8);",
         "}",
     ]
-    if metadata_source is not None:
-        lines += metadata_messages(metadata_source, facts)
-    if instruction_source is not None:
-        lines += instruction_messages(instruction_source, facts)
-    if verification_source is not None:
-        lines += verification_messages(verification_source, facts)
     lines += pass_bridges(facts)[0]
     return "\n".join(lines) + "\n"
 
@@ -949,34 +865,16 @@ def stage_modules(module_root, modules):
         (destination / (parts[-1] + ".au")).write_bytes(content)
 
 
-def write_frontend_header(
-    facts, header, metadata_source, instruction_source, compatible_header=None, *, verification_source=None
-):
+def write_frontend_header(facts, header, compatible_header=None):
     """Render the admitted facts; reject incompatible shared ABI before writing."""
-    content = frontend_abi_header(
-        facts,
-        metadata_source.read_text(),
-        instruction_source.read_text(),
-        verification_source.read_text() if verification_source is not None else None,
-    ).encode()
+    content = frontend_abi_header(facts).encode()
     if compatible_header is not None and compatible_header.read_bytes() != content:
         raise ValueError("stage2 ABI header differs from the header used by shared host objects")
     if not header.exists() or header.read_bytes() != content:
         header.write_bytes(content)
 
 
-def emit(
-    compiler,
-    source,
-    output,
-    module_root,
-    metadata_source,
-    instruction_source,
-    compatible_header=None,
-    *,
-    verification_source,
-    output_mode="text",
-):
+def emit(compiler, source, output, module_root, compatible_header=None, *, output_mode="text"):
     if output_mode not in ("text", "object"):
         raise ValueError("unsupported frontend output mode")
     raw = output.with_suffix(".generated.o" if output_mode == "object" else ".generated.s")
@@ -994,14 +892,7 @@ def emit(
     subprocess.run([str(compiler.resolve()), *command], check=True)
     facts = json.loads(facts_output.read_text())
     header = output.parent / (output.stem.replace("-", "_") + "_abi.hpp")
-    write_frontend_header(
-        facts,
-        header,
-        metadata_source,
-        instruction_source,
-        compatible_header,
-        verification_source=verification_source,
-    )
+    write_frontend_header(facts, header, compatible_header)
     # Symbol spellings come from this emitted module; only register moves are trusted.
     if output_mode == "object":
         # The current compiler composes this closed frontend directly; the pinned
@@ -1034,7 +925,7 @@ def emit(
 def main():
     # COMPILER [--output-mode text|object] [--test-entries] --output OUTPUT INPUT...: .au
     # inputs are the compiler modules, and an optional .hpp is the header stage-2 output
-    # must reproduce. --test-entries also bridges the textual IR test rows.
+    # must reproduce. --test-entries also bridges the test-only rows.
     global ENTRIES
     arguments = sys.argv[1:]
     if "--test-entries" in arguments:
@@ -1059,15 +950,7 @@ def main():
         len(modules) + len(headers) != len(inputs)
         or len(headers) > 1
         or len(set(names)) != len(names)
-        or not {
-            "frontend.au",
-            "ir_metadata_storage.au",
-            "ir_instruction_storage.au",
-            "ir_verification_errors.au",
-            "ir_verification_storage.au",
-            "ir_verification.au",
-        }
-        <= set(names)
+        or "frontend.au" not in names
     ):
         raise ValueError("expected unique .au modules including frontend.au and at most one .hpp header")
     module_root = output.parent / (output.stem + "-modules")
@@ -1077,10 +960,7 @@ def main():
         module_root / "aurora/compiler/frontend.au",
         output,
         module_root,
-        modules[names.index("ir_metadata_storage.au")],
-        modules[names.index("ir_instruction_storage.au")],
         headers[0] if headers else None,
-        verification_source=modules[names.index("ir_verification_errors.au")],
         output_mode=output_mode,
     )
 

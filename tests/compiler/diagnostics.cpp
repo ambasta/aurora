@@ -1,4 +1,4 @@
-#include "types.hpp"
+#include "diagnostics.hpp"
 #include <iostream>
 #include <sstream>
 
@@ -6,10 +6,6 @@ namespace {
 void require(bool condition, const std::string &message) {
     if (!condition)
         throw std::runtime_error(message);
-}
-void checkSyntheticToken() {
-    const aurora::Token synthetic("generated", 7);
-    require(!synthetic.span.source && synthetic.line == 7, "synthetic token must not invent a source range");
 }
 void checkTextRendering() {
     const auto source = std::make_shared<const aurora::SourceText>("sample.au", "\n  name");
@@ -68,7 +64,6 @@ void checkErrors() {
 } // namespace
 int main() {
     try {
-        checkSyntheticToken();
         checkErrors();
         checkTextRendering();
         std::cerr << "PASS shared diagnostic rendering\n";

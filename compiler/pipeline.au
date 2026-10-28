@@ -27,12 +27,1044 @@ import aurora.compiler.ir_listing;
 import aurora.compiler.pipeline_declarations;
 import aurora.compiler.diagnostics;
 
+// The message of every metadata, instruction and verification rejection the
+// pipeline reports. Each table appends the text of its one selected reason r;
+// a `typed` line is a typed-IR rejection, after "invalid typed IR: ".
+export namespace compiler_ir_metadata {
+    // The message of each MetadataError reason; none has none.
+    auto metadata_text(compiler_resolver::Report report, MetadataError r) -> compiler_resolver::Report {
+        compiler_resolver::Report value = report;
+        value.when(r == MetadataError::integrity, "invalid hosted IR metadata transport");
+        value.typed(r == MetadataError::descriptor, "invalid metadata descriptor");
+        value.typed(r == MetadataError::root_scope, "missing root reflection scope");
+        value.typed(r == MetadataError::scope, "invalid reflection scope");
+        value.typed(r == MetadataError::view_descriptor, "reflection view references missing descriptor");
+        value.typed(r == MetadataError::enum_count, "too many enum declarations");
+        value.typed(r == MetadataError::enum_declaration, "invalid nominal enum declaration");
+        value.typed(r == MetadataError::nominal_overlap, "class and enum nominal names overlap");
+        value.typed(r == MetadataError::class_layout, "invalid nominal class layout");
+        value.typed(r == MetadataError::class_field_limit, "class exceeds 8192 direct fields");
+        value.typed(r == MetadataError::class_leaf, "non-scalar class layout field");
+        value.typed(r == MetadataError::unknown_fields, "logical fields reference unknown class layout");
+        value.typed(r == MetadataError::field_element_count, "noncanonical class array element count");
+        value.typed(r == MetadataError::nested_carrier, "class array carrier cannot be nested element type");
+        value.typed(r == MetadataError::field_shape, "invalid logical class field shape");
+        value.typed(r == MetadataError::owner_leaves, "owned storage field requires zero scalar leaves");
+        value.typed(r == MetadataError::owner_field_type, "invalid canonical owned value field type");
+        value.typed(r == MetadataError::nested_owner, "nested owning class field is unsupported");
+        value.typed(r == MetadataError::nested_type, "invalid nominal nested class field");
+        value.typed(r == MetadataError::class_array_count, "class array element count exceeds 1..64");
+        value.typed(r == MetadataError::nested_length, "nested class field length mismatch");
+        value.typed(r == MetadataError::field_range, "logical class field range exceeds layout");
+        value.typed(r == MetadataError::nested_leaf, "nested class field leaf type mismatch");
+        value.typed(r == MetadataError::field_leaf, "logical class field leaf type mismatch");
+        value.typed(r == MetadataError::leaf_coverage, "logical class fields do not cover complete layout");
+        value.typed(r == MetadataError::class_leaf_limit,
+            "composed or owning class exceeds 64 scalar leaves excluding u8, 512 u8 leaves or 513 total leaves");
+        value.typed(r == MetadataError::unknown_carrier, "unknown class array carrier");
+        value.typed(r == MetadataError::carrier_shape, "class array carrier requires exactly one class array field");
+        value.typed(r == MetadataError::cycle, "cyclic nested class layout");
+        value.typed(r == MetadataError::depth, "nested class layout exceeds depth 4");
+        value.typed(r == MetadataError::console_layout, "noncanonical sealed ConsoleSample layout");
+        value.typed(r == MetadataError::console_fields, "noncanonical sealed ConsoleSample fields");
+        value.typed(r == MetadataError::console_field_shape, "noncanonical sealed ConsoleSample field shape");
+        value.typed(r == MetadataError::event_layout, "noncanonical sealed IommuEventSample layout");
+        value.typed(r == MetadataError::event_fields, "noncanonical sealed IommuEventSample fields");
+        value.typed(r == MetadataError::event_field_shape, "noncanonical sealed IommuEventSample field shape");
+        value.typed(r == MetadataError::event_enum, "noncanonical sealed event service enum");
+        value.typed(r == MetadataError::service_enum, "noncanonical sealed service enum");
+        value.when(r == MetadataError::storage_extent, "IR: storage extent exceeds 65536 bytes");
+        value.when(r == MetadataError::storage_depth, "IR: cyclic or excessive class storage depth");
+        value.when(r == MetadataError::storage_shape, "IR: missing logical class storage shape");
+        value.when(r == MetadataError::storage_alignment, "IR: invalid class storage alignment");
+        value.when(r == MetadataError::storage_field_range, "IR: invalid logical field range for storage");
+        value.when(r == MetadataError::storage_owner_shape, "IR: owned byte field requires one non-scalar descriptor");
+        value.when(r == MetadataError::storage_nested_owner, "IR: nested owning class fields are unsupported");
+        value.when(r == MetadataError::storage_nested_shape, "IR: invalid nested field storage shape");
+        value.when(r == MetadataError::storage_scalar_shape, "IR: invalid scalar field storage shape");
+        value.when(r == MetadataError::storage_limit, "IR: class storage exceeds 65536 bytes");
+        value.when(r == MetadataError::storage_coverage, "IR: class storage does not cover logical leaves");
+        value.typed(r == MetadataError::owner_type, "invalid canonical owned value type");
+        value.typed(r == MetadataError::owner_element_unknown,
+            "owned value element requires known canonical class layout");
+        value.typed(r == MetadataError::owner_element_kind,
+            "owned value element must be a copied class, not an owner or carrier");
+        value.typed(r == MetadataError::owner_element_leaves, "owned value element exceeds copied class leaf limits");
+        value.typed(r == MetadataError::owner_element_storage, "owned value element storage exceeds 520 bytes");
+        value.typed(r == MetadataError::class_storage_limit, "composed or owning class storage exceeds 520 bytes");
+        value.typed(r == MetadataError::supplied_storage, "noncanonical class storage metadata");
+        value.typed(r == MetadataError::empty_module, "empty module");
+        value.typed(r == MetadataError::function_symbol, "invalid or reserved function symbol");
+        value.typed(r == MetadataError::duplicate_function, "duplicate function");
+        value.typed(r == MetadataError::function_scope, "unknown function module scope");
+        value.typed(r == MetadataError::service_signature,
+            "service signature requires a leading sealed group and no receiver or region");
+        value.typed(r == MetadataError::service_duplicates, "service signature requires distinct capability kinds");
+        value.typed(r == MetadataError::service_group, "unsupported service group");
+        value.typed(r == MetadataError::service_parameters,
+            "service signature requires later scalar, enum, copied value or readonly span arguments");
+        value.typed(r == MetadataError::service_result, "service signature has unsupported result");
+        value.typed(r == MetadataError::borrowed_shape, "borrowed roots require a free-function signature");
+        value.typed(r == MetadataError::borrowed_result, "borrowed formal cannot have resource or borrowed result");
+        value.typed(r == MetadataError::borrowed_parameters, "borrowed roots count toward six parameters");
+        value.typed(r == MetadataError::borrowed_root_type, "borrowed root requires a canonical named class type");
+        value.typed(r == MetadataError::borrowed_root_class, "borrowed root requires a complete concrete owning class");
+        value.typed(r == MetadataError::borrowed_root_count, "borrowed root count exceeds the explicit formal prefix");
+        value.typed(r == MetadataError::borrowed_root_values,
+            "multi-root borrowed signature requires scalar or enum values");
+        value.typed(r == MetadataError::resource_receiver,
+            "resource signature only supports an owning constructor receiver");
+        value.typed(r == MetadataError::resource_region, "resource signature requires its region parameter first");
+        value.typed(r == MetadataError::resource_result,
+            "resource signature requires scalar, owned byte or class result");
+        value.typed(r == MetadataError::resource_parameters,
+            "resource signature requires exactly one region and supported owning parameters");
+        value.typed(r == MetadataError::service_boundary,
+            "service capability cannot cross an ordinary boundary or return");
+        value.typed(r == MetadataError::service_type, "invalid canonical service boundary type");
+        value.typed(r == MetadataError::resource_boundary, "invalid resource boundary type");
+        value.typed(r == MetadataError::span_boundary,
+            "readonly span boundary requires ordinary parameter or const receiver result");
+        value.typed(r == MetadataError::constructor_result, "constructor result must remain scalar");
+        value.typed(r == MetadataError::value_type, "invalid value boundary type");
+        value.typed(r == MetadataError::value_class, "unknown value boundary class");
+        value.typed(r == MetadataError::value_carrier, "class array carrier cannot cross value boundary");
+        value.typed(r == MetadataError::value_owner, "owning class requires an ordinary resource boundary");
+        value.typed(r == MetadataError::value_resource,
+            "only an owning constructor may take a copied class resource parameter");
+        value.typed(r == MetadataError::value_leaves,
+            "value boundary class exceeds 64 scalar fields excluding u8, 512 u8 leaves or 513 total leaves");
+        value.typed(r == MetadataError::value_storage, "value boundary class storage exceeds 520 bytes");
+        value.typed(r == MetadataError::span_result, "receiver span field summary requires span result");
+        value.typed(r == MetadataError::parameter_count, "too many parameters");
+        value.typed(r == MetadataError::receiver_signature, "receiver signature requires scalar, enum or class values");
+        value.typed(r == MetadataError::aggregate_parameter, "invalid aggregate parameter type");
+        value.typed(r == MetadataError::receiver_class, "unknown receiver class");
+        value.typed(r == MetadataError::receiver_carrier, "class array carrier cannot be receiver");
+        value.typed(r == MetadataError::receiver_span,
+            "receiver span field summary requires exact direct byte-storage field or typed owner of the view element");
+        value.typed(r == MetadataError::owner_spill, "owned value metadata requires exact owner spill");
+        value.typed(r == MetadataError::service_spills, "service spills without a service signature");
+        value.typed(r == MetadataError::frame_size, "invalid frame size");
+        value.typed(r == MetadataError::slot_offset, "invalid slot offset");
+        value.typed(r == MetadataError::slot_type, "invalid slot payload type");
+        value.typed(r == MetadataError::slot_overlap, "overlapping scalar slot storage");
+        value.typed(r == MetadataError::object_class, "unknown object class");
+        value.typed(r == MetadataError::object_offset, "invalid object layout offset");
+        value.typed(r == MetadataError::object_overlap, "overlapping object layouts");
+        value.typed(r == MetadataError::object_leaf, "object field slot type/layout mismatch");
+        value.typed(r == MetadataError::object_padding, "scalar slot overlaps empty object or padding");
+        value.typed(r == MetadataError::array_extent, "invalid byte array origin extent");
+        value.typed(r == MetadataError::array_leaf, "byte array origin requires exact u8 element slots");
+        value.typed(r == MetadataError::array_object, "byte array origin overlaps object storage");
+        value.typed(r == MetadataError::array_overlap, "overlapping byte array origins");
+        value.typed(r == MetadataError::span_extent, "invalid span spill extent or alignment");
+        value.typed(r == MetadataError::span_overlap, "span spill overlaps scalar, object or array storage");
+        value.typed(r == MetadataError::span_spills, "overlapping span spills");
+        value.typed(r == MetadataError::service_extent, "invalid service spill extent or alignment");
+        value.typed(r == MetadataError::service_overlap,
+            "service spill overlaps scalar, object, array or span storage");
+        value.typed(r == MetadataError::region_extent, "invalid region spill extent or alignment");
+        value.typed(r == MetadataError::region_overlap, "region spill overlaps scalar, object, array or span storage");
+        value.typed(r == MetadataError::byte_extent, "invalid owned byte spill extent or alignment");
+        value.typed(r == MetadataError::byte_overlap,
+            "owned byte spill overlaps scalar, object, array or span storage");
+        value.typed(r == MetadataError::resource_overlap, "overlapping region or owned byte spills");
+        value.typed(r == MetadataError::call_layout, "noncanonical sealed CallResult layout");
+        value.typed(r == MetadataError::call_fields, "noncanonical sealed CallResult fields");
+        value.typed(r == MetadataError::span_value_type, "invalid canonical typed span type");
+        value.typed(r == MetadataError::span_element_unknown,
+            "typed span element requires known canonical class layout");
+        value.typed(r == MetadataError::span_element_kind,
+            "typed span element must be a copied class, not an owner or carrier");
+        value.typed(r == MetadataError::span_element_leaves, "typed span element exceeds copied class leaf limits");
+        value.typed(r == MetadataError::span_element_storage, "typed span element storage exceeds 520 bytes");
+        value.typed(r == MetadataError::span_value_spill, "typed span metadata requires exact span spill");
+        return value;
+    }
+}
+export namespace compiler_ir_instructions {
+    // The message of each InstructionError reason; none has none.
+    auto instruction_text(compiler_resolver::Report report, InstructionError r) -> compiler_resolver::Report {
+        compiler_resolver::Report value = report;
+        value.when(r == InstructionError::integrity, "invalid hosted IR instruction transport");
+        value.typed(r == InstructionError::noncanonical_type, "noncanonical instruction type payload");
+        value.typed(r == InstructionError::empty_body, "empty function body");
+        value.typed(r == InstructionError::invalid_label, "duplicate or invalid label");
+        value.typed(r == InstructionError::unknown_jump, "unknown jump target");
+        value.typed(r == InstructionError::unknown_branch, "unknown branch target");
+        value.typed(r == InstructionError::reachable_fallthrough, "reachable fallthrough without return");
+        value.typed(r == InstructionError::unreachable_semantic, "unreachable semantic instruction");
+        value.typed(r == InstructionError::service_prefix, "service bindings must form the leading entry group");
+        value.typed(r == InstructionError::service_overlap, "service parameter bindings overlap");
+        value.typed(r == InstructionError::region_prefix, "region parameter binding must begin the entry prefix");
+        value.typed(r == InstructionError::owner_prefix, "owned byte parameter bindings must form the entry prefix");
+        value.typed(r == InstructionError::owner_overlap, "owned byte parameter bindings overlap");
+        value.typed(r == InstructionError::owning_prefix, "owning class parameter bindings must form the entry prefix");
+        value.typed(r == InstructionError::owning_overlap, "owning class parameter bindings overlap");
+        value.typed(r == InstructionError::object_prefix, "object parameter bindings must form the entry prefix");
+        value.typed(r == InstructionError::object_overlap, "object parameter bindings overlap");
+        value.typed(r == InstructionError::span_prefix, "span parameter bindings must form the entry prefix");
+        value.typed(r == InstructionError::span_overlap, "span parameter bindings overlap");
+        value.typed(r == InstructionError::scalar_prefix, "parameter bindings must form the entry prefix");
+        value.typed(r == InstructionError::scalar_overlap, "scalar parameter bindings overlap");
+        value.typed(r == InstructionError::late_binding, "parameter binding outside entry prefix");
+        value.typed(r == InstructionError::service_binding,
+            "service binding requires exact authorized leading parameter");
+        value.typed(r == InstructionError::region_slot, "region parameter requires exact typed spill");
+        value.typed(r == InstructionError::owner_type, "owned byte parameter type mismatch");
+        value.typed(r == InstructionError::owner_region, "owned byte parameter requires bound region");
+        value.typed(r == InstructionError::owner_slot, "owned byte parameter requires exact typed spill");
+        value.typed(r == InstructionError::owner_mutable, "owned byte parameter must be mutable");
+        value.typed(r == InstructionError::span_type, "span parameter type mismatch");
+        value.typed(r == InstructionError::span_slot, "span parameter requires exact typed spill");
+        value.typed(r == InstructionError::owning_type, "owning class parameter type mismatch");
+        value.typed(r == InstructionError::owning_region, "owning class parameter requires bound region");
+        value.typed(r == InstructionError::owning_slot, "owning class parameter requires exact nominal object slot");
+        value.typed(r == InstructionError::owning_mutable, "owning class parameter must be mutable");
+        value.typed(r == InstructionError::object_owner, "copied parameter cannot bind owning class");
+        value.typed(r == InstructionError::object_type, "object parameter type mismatch");
+        value.typed(r == InstructionError::object_slot, "object parameter requires exact object slot");
+        value.typed(r == InstructionError::object_nominal, "object parameter nominal class mismatch");
+        value.typed(r == InstructionError::object_readonly, "object parameter must be readonly");
+        value.typed(r == InstructionError::scalar_type, "parameter type mismatch");
+        value.typed(r == InstructionError::scalar_object, "parameter cannot bind object field storage");
+        value.typed(r == InstructionError::scalar_array, "parameter cannot bind byte array origin storage");
+        value.typed(r == InstructionError::scalar_slot, "slot type/layout mismatch");
+        value.typed(r == InstructionError::call_runtime, "ordinary call cannot target runtime symbol");
+        value.typed(r == InstructionError::call_target, "unknown call target");
+        value.typed(r == InstructionError::call_receiver, "plain call cannot target receiver function");
+        value.typed(r == InstructionError::call_service, "plain call cannot bypass a service loan");
+        value.typed(r == InstructionError::call_resource, "plain call cannot target resource signature");
+        value.typed(r == InstructionError::call_aggregate, "plain call cannot target aggregate signature");
+        value.typed(r == InstructionError::aggregate_target, "unknown aggregate call target");
+        value.typed(r == InstructionError::aggregate_receiver, "aggregate call cannot target receiver function");
+        value.typed(r == InstructionError::aggregate_service, "aggregate call cannot bypass a service loan");
+        value.typed(r == InstructionError::aggregate_resource, "aggregate call cannot target resource signature");
+        value.typed(r == InstructionError::aggregate_signature, "aggregate call requires aggregate signature");
+        value.typed(r == InstructionError::aggregate_vector, "aggregate call argument vector size mismatch");
+        value.typed(r == InstructionError::aggregate_span_vector, "span call argument vector size mismatch");
+        value.typed(r == InstructionError::aggregate_span_object, "span argument cannot name object storage");
+        value.typed(r == InstructionError::aggregate_nonspan, "non-span argument cannot name span storage");
+        value.typed(r == InstructionError::aggregate_scalar, "scalar argument cannot name object storage");
+        value.typed(r == InstructionError::aggregate_parameter, "invalid aggregate parameter type");
+        value.typed(r == InstructionError::aggregate_argument_slot, "aggregate argument requires exact object slot");
+        value.typed(r == InstructionError::aggregate_argument_alias, "aggregate argument snapshots must be distinct");
+        value.typed(r == InstructionError::aggregate_argument_nominal, "aggregate argument nominal class mismatch");
+        value.typed(r == InstructionError::aggregate_argument_readonly, "aggregate argument snapshot must be readonly");
+        value.typed(r == InstructionError::aggregate_result_slot, "aggregate result requires exact object slot");
+        value.typed(r == InstructionError::aggregate_result_alias, "aggregate result aliases argument snapshot");
+        value.typed(r == InstructionError::aggregate_result_nominal, "aggregate result nominal class mismatch");
+        value.typed(r == InstructionError::aggregate_result_type, "invalid aggregate result type");
+        value.typed(r == InstructionError::aggregate_scalar_result, "scalar result cannot name object storage");
+        value.typed(r == InstructionError::resource_target, "unknown resource call target");
+        value.typed(r == InstructionError::resource_signature,
+            "resource call requires ordinary resource signature or owning constructor");
+        value.typed(r == InstructionError::resource_private, "private constructor requires lexical class authority");
+        value.typed(r == InstructionError::resource_receiver, "resource call receiver offset does not match target");
+        value.typed(r == InstructionError::call_region_slot, "region requires exact typed spill");
+        value.typed(r == InstructionError::resource_vector, "resource call argument vector size mismatch");
+        value.typed(r == InstructionError::resource_constructor_argument,
+            "constructor cannot take owning class arguments");
+        value.typed(r == InstructionError::resource_argument_alias, "resource call argument storage must be distinct");
+        value.typed(r == InstructionError::resource_receiver_alias,
+            "resource constructor receiver aliases owning argument");
+        value.typed(r == InstructionError::call_owner_slot, "owner type requires exact typed spill");
+        value.typed(r == InstructionError::resource_argument_nominal,
+            "resource call owner argument nominal type mismatch");
+        value.typed(r == InstructionError::call_owner_mutable, "const owned byte binding cannot be mutated or moved");
+        value.typed(r == InstructionError::call_owning_nominal, "owning object nominal class mismatch");
+        value.typed(r == InstructionError::call_owning_mutable, "const owning object cannot be moved or mutated");
+        value.typed(r == InstructionError::resource_copied_receiver,
+            "constructor receiver aliases copied argument snapshot");
+        value.typed(r == InstructionError::resource_copied_nominal,
+            "constructor copied argument nominal class mismatch");
+        value.typed(r == InstructionError::resource_copied_readonly,
+            "constructor copied argument snapshot must be readonly");
+        value.typed(r == InstructionError::resource_nonowner, "resource call non-owner argument cannot name storage");
+        value.typed(r == InstructionError::resource_first, "resource call first argument must be region");
+        value.typed(r == InstructionError::resource_parameter, "invalid resource call parameter type");
+        value.typed(r == InstructionError::resource_constructor_result,
+            "owning constructor requires scalar result and no result storage");
+        value.typed(r == InstructionError::resource_constructor_root,
+            "owning constructor requires exact nominal receiver root");
+        value.typed(r == InstructionError::resource_result_alias, "resource call owning result aliases argument");
+        value.typed(r == InstructionError::resource_result_nominal, "resource call owner result nominal type mismatch");
+        value.typed(r == InstructionError::resource_copied_result_slot,
+            "resource copied result requires exact object slot");
+        value.typed(r == InstructionError::resource_copied_result_alias,
+            "resource copied result aliases argument storage");
+        value.typed(r == InstructionError::resource_copied_result_nominal,
+            "resource copied result nominal class mismatch");
+        value.typed(r == InstructionError::resource_result_type, "invalid resource call result type");
+        value.typed(r == InstructionError::resource_scalar_result,
+            "scalar resource call result cannot name owning storage");
+        value.typed(r == InstructionError::call_copy_slot, "copy requires exact object slot");
+        value.typed(r == InstructionError::call_copy_nominal, "copy nominal class mismatch");
+        value.typed(r == InstructionError::method_target, "unknown method call target");
+        value.typed(r == InstructionError::method_receiver, "method call requires receiver target");
+        value.typed(r == InstructionError::borrowed_target, "borrowed call requires borrowed formal target");
+        value.typed(r == InstructionError::borrowed_roots, "borrowed call root lanes do not match target");
+        value.typed(r == InstructionError::borrowed_loan, "borrowed call requires active loan");
+        value.typed(r == InstructionError::borrowed_root,
+            "borrowed call root, lifetime, nominal type or authority mismatch");
+        value.typed(r == InstructionError::borrowed_selector, "invalid borrowed object root");
+        value.typed(r == InstructionError::borrowed_unbound, "borrowed object root is not bound");
+        value.typed(r == InstructionError::method_borrowed, "method call cannot target borrowed free function");
+        value.typed(r == InstructionError::method_private, "private method requires lexical class authority");
+        value.typed(r == InstructionError::method_resource,
+            "method call cannot target resource signature or owning constructor");
+        value.typed(r == InstructionError::method_signature,
+            "receiver signature requires scalar, enum or class values");
+        value.typed(r == InstructionError::constructor_vector, "constructor object argument vector size mismatch");
+        value.typed(r == InstructionError::method_vector, "receiver object argument vector size mismatch");
+        value.typed(r == InstructionError::method_span_vector, "method span argument vector size mismatch");
+        value.typed(r == InstructionError::method_span_object, "span method argument cannot name object storage");
+        value.typed(r == InstructionError::method_nonspan, "non-span method argument cannot name span storage");
+        value.typed(r == InstructionError::constructor_scalar,
+            "scalar constructor argument cannot name object storage");
+        value.typed(r == InstructionError::method_scalar, "scalar receiver argument cannot name object storage");
+        value.typed(r == InstructionError::constructor_receiver_alias,
+            "constructor receiver aliases argument snapshot");
+        value.typed(r == InstructionError::method_receiver_alias, "receiver aliases argument snapshot");
+        value.typed(r == InstructionError::constructor_argument_alias,
+            "constructor argument snapshots must be distinct");
+        value.typed(r == InstructionError::method_argument_alias, "receiver argument snapshots must be distinct");
+        value.typed(r == InstructionError::constructor_argument_nominal, "constructor argument nominal class mismatch");
+        value.typed(r == InstructionError::method_argument_nominal, "receiver argument nominal class mismatch");
+        value.typed(r == InstructionError::constructor_argument_readonly,
+            "constructor argument snapshot must be readonly");
+        value.typed(r == InstructionError::method_argument_readonly, "receiver argument snapshot must be readonly");
+        value.typed(r == InstructionError::method_offset, "invalid method receiver offset");
+        value.typed(r == InstructionError::method_field_index, "invalid method receiver field index");
+        value.typed(r == InstructionError::method_nested_constructor, "nested receiver cannot call constructor");
+        value.typed(r == InstructionError::method_field_root, "invalid owned field root offset");
+        value.typed(r == InstructionError::method_field_authority,
+            "borrowed free formal grants no direct receiver field authority");
+        value.typed(r == InstructionError::method_field_unbound, "receiver access without bound receiver");
+        value.typed(r == InstructionError::method_field_layout, "receiver field type/layout mismatch");
+        value.typed(r == InstructionError::method_field_constructor,
+            "constructor cannot access owned field during initialization");
+        value.typed(r == InstructionError::method_field_formal_mutable,
+            "const receiver cannot supply mutable owned field");
+        value.typed(r == InstructionError::method_field_mutable, "const object cannot supply mutable owned field");
+        value.typed(r == InstructionError::method_field_range, "owned field logical index out of range");
+        value.typed(r == InstructionError::method_field_class, "owned field operation requires class field");
+        value.typed(r == InstructionError::method_field_nominal, "nested method receiver nominal class mismatch");
+        value.typed(r == InstructionError::method_forward_unbound, "forwarding without bound receiver");
+        value.typed(r == InstructionError::method_forward_constructor,
+            "constructor cannot forward receiver during initialization");
+        value.typed(r == InstructionError::method_forward_nominal, "forwarded receiver nominal class mismatch");
+        value.typed(r == InstructionError::method_forward_mutable, "const receiver cannot forward mutable capability");
+        value.typed(r == InstructionError::method_receiver_slot, "method receiver is not an object slot");
+        value.typed(r == InstructionError::method_receiver_nominal, "method receiver nominal class mismatch");
+        value.typed(r == InstructionError::method_receiver_mutable, "const object cannot supply mutable receiver");
+        value.typed(r == InstructionError::method_span_multiple, "multiple borrowed roots cannot produce span results");
+        value.typed(r == InstructionError::method_span_direct, "span result requires direct receiver root");
+        value.typed(r == InstructionError::method_span_summary, "span result lacks receiver field summary");
+        value.typed(r == InstructionError::call_span_slot, "span requires exact typed spill");
+        value.typed(r == InstructionError::call_span_parameter, "span parameter cannot be rebound");
+        value.typed(r == InstructionError::method_result_receiver, "method result aliases receiver");
+        value.typed(r == InstructionError::method_result_alias, "method result aliases argument snapshot");
+        value.typed(r == InstructionError::method_result_slot, "method result requires exact object slot");
+        value.typed(r == InstructionError::method_result_nominal, "method result nominal class mismatch");
+        value.typed(r == InstructionError::method_scalar_result, "scalar method result cannot name object storage");
+        value.typed(r == InstructionError::service_target, "unknown service helper target");
+        value.typed(r == InstructionError::service_signature,
+            "service helper requires service target and acquired loans");
+        value.typed(r == InstructionError::service_vector, "service helper argument vector mismatch");
+        value.typed(r == InstructionError::service_object_vector, "service copied argument vector mismatch");
+        value.typed(r == InstructionError::service_leading,
+            "service helper requires distinct acquired loans in leading positions");
+        value.typed(r == InstructionError::service_kind,
+            "service helper requires an unused loan with exact provenance");
+        value.typed(r == InstructionError::service_span_object, "service span argument cannot name object storage");
+        value.typed(r == InstructionError::service_object_span, "service copied argument cannot name span storage");
+        value.typed(r == InstructionError::service_parameter, "invalid service parameter type");
+        value.typed(r == InstructionError::service_argument_slot, "service argument requires exact object slot");
+        value.typed(r == InstructionError::service_argument_alias, "service argument snapshots must be distinct");
+        value.typed(r == InstructionError::service_argument_nominal, "service argument nominal class mismatch");
+        value.typed(r == InstructionError::service_argument_readonly, "service argument snapshot must be readonly");
+        value.typed(r == InstructionError::service_scalar, "service scalar argument mismatch");
+        value.typed(r == InstructionError::service_result_alias, "service result aliases argument snapshot");
+        value.typed(r == InstructionError::service_scalar_result, "service scalar result mismatch");
+        value.typed(r == InstructionError::storage_nested_store, "scalar store cannot write nested class field");
+        value.typed(r == InstructionError::storage_borrow_object, "object field cannot become a scalar borrow handle");
+        value.typed(r == InstructionError::storage_borrow_type, "invalid borrow-handle type");
+        value.typed(r == InstructionError::storage_array_shape, "invalid array shape");
+        value.typed(r == InstructionError::storage_array_extent, "array layout underflow");
+        value.typed(r == InstructionError::storage_array_nested,
+            "scalar array operation cannot address nested class field");
+        value.typed(r == InstructionError::constructor_signature, "invalid constructor receiver signature");
+        value.typed(r == InstructionError::storage_array_origin, "array lifetime requires exact byte array origin");
+        value.typed(r == InstructionError::storage_span_origin, "span borrow requires exact local byte array origin");
+        value.typed(r == InstructionError::constant_type, "invalid constant type");
+        value.typed(r == InstructionError::constant_bool, "noncanonical bool");
+        value.typed(r == InstructionError::constant_u8, "noncanonical u8");
+        value.typed(r == InstructionError::enum_constant_type, "invalid enum constant type");
+        value.typed(r == InstructionError::enum_constant_case, "enum constant is not a declared case");
+        value.typed(r == InstructionError::unary_operation, "invalid unary operation");
+        value.typed(r == InstructionError::unary_operand, "invalid unary operand type");
+        value.typed(r == InstructionError::binary_operation, "invalid binary operation");
+        value.typed(r == InstructionError::binary_operand, "invalid binary operand type");
+        value.typed(r == InstructionError::conversion_types, "invalid checked conversion types");
+        value.typed(r == InstructionError::comparison_operation, "invalid comparison");
+        value.typed(r == InstructionError::comparison_scalar, "non-scalar comparison");
+        value.typed(r == InstructionError::comparison_ordered, "ordered bool comparison or enum comparison");
+        value.typed(r == InstructionError::service_loan_identity,
+            "service loan identity cannot change static root or kind");
+        value.typed(r == InstructionError::service_loan_root, "service loan requires unsuspended parameter authority");
+        value.typed(r == InstructionError::service_release,
+            "service release requires exactly one completed helper call");
+        value.typed(r == InstructionError::service_operation, "unknown sealed service operation");
+        value.typed(r == InstructionError::service_operation_kind,
+            "service operation kind does not match active capability");
+        value.typed(r == InstructionError::service_operation_root,
+            "service operation requires active unsuspended capability provenance");
+        value.typed(r == InstructionError::service_pixel_result,
+            "pixel requires closed enum result and no object storage");
+        value.typed(r == InstructionError::service_put_result, "put requires closed enum result and no object storage");
+        value.typed(r == InstructionError::service_ack_result,
+            "acknowledge requires closed enum result and no object storage");
+        value.typed(r == InstructionError::service_sample_result,
+            "service observation requires exact pristine active copied sample object");
+        value.typed(r == InstructionError::service_port_result, "port operation requires canonical scalar result");
+        value.typed(r == InstructionError::call_span_type, "span argument or result element type mismatch");
+        value.typed(r == InstructionError::storage_span_type,
+            "span borrow, reborrow, window or byte load changes the span element type");
+        value.typed(r == InstructionError::storage_span_values,
+            "typed span element copy requires a typed span and an exact element object");
+        return value;
+    }
+}
+export namespace compiler_ir_verification {
+    // The message of each VerificationErrorFirst reason; none has none.
+    auto first_text(compiler_resolver::Report report, VerificationErrorFirst r) -> compiler_resolver::Report {
+        compiler_resolver::Report value = report;
+        value.when(r == VerificationErrorFirst::internal, "invalid hosted IR verification workspace");
+        value.when(r == VerificationErrorFirst::allocation, "hosted IR verification allocation failed");
+        value.typed(r == VerificationErrorFirst::block_entry_state_retention_limit_exceeds_65536,
+            "block-entry state retention limit exceeds 65536");
+        value.typed(r == VerificationErrorFirst::block_entry_operand_retention_limit_exceeds_262144,
+            "block-entry operand retention limit exceeds 262144");
+        value.typed(r == VerificationErrorFirst::builtin_owner_borrow_invalid_signature,
+            "builtin owner borrow requires one mutable root, scalar return and no region authority");
+        value.typed(r == VerificationErrorFirst::builtin_owner_borrow_supports_only_scalar_or_copied_tails,
+            "builtin owner borrow supports only scalar or copied tails");
+        value.typed(r == VerificationErrorFirst::borrowed_object_root_is_not_bound,
+            "borrowed object root is not bound");
+        value.typed(r == VerificationErrorFirst::builtin_owner_root_is_not_a_class_receiver,
+            "builtin owner root is not a class receiver");
+        value.typed(r == VerificationErrorFirst::owner_type_requires_exact_typed_spill,
+            "owner type requires exact typed spill");
+        value.typed(r == VerificationErrorFirst::literal_span_exceeds_byte_string_bound,
+            "literal span exceeds byte-string bound");
+        value.typed(r == VerificationErrorFirst::literal_span_requires_exact_typed_spill,
+            "literal span requires exact typed spill");
+        value.typed(r == VerificationErrorFirst::borrowed_object_root_requires_a_class_type,
+            "borrowed object root requires a class type");
+        value.typed(r == VerificationErrorFirst::worklist_target_is_not_a_basic_block_entry,
+            "worklist target is not a basic-block entry");
+        value.typed(r == VerificationErrorFirst::incompatible_active_object_lifetimes_at_control_flow_join,
+            "incompatible active object lifetimes at control-flow join");
+        value.typed(r == VerificationErrorFirst::incompatible_active_array_lifetimes_at_control_flow_join,
+            "incompatible active array lifetimes at control-flow join");
+        value.typed(r == VerificationErrorFirst::incompatible_active_span_capabilities_at_control_flow_join,
+            "incompatible active span capabilities at control-flow join");
+        value.typed(r == VerificationErrorFirst::incompatible_service_provenance_or_loans_at_control_flow_join,
+            "incompatible service provenance or loans at control-flow join");
+        value.typed(r == VerificationErrorFirst::incompatible_owned_byte_lifetimes_or_ownership_at_control_flow_join,
+            "incompatible owned byte lifetimes or ownership at control-flow join");
+        value.typed(r == VerificationErrorFirst::incompatible_borrowed_owner_descriptor_at_control_flow_join,
+            "incompatible borrowed owner descriptor at control-flow join");
+        value.typed(r
+            == VerificationErrorFirst::incompatible_owning_object_lifetimes_or_field_ownership_at_control_flow_join,
+            "incompatible owning object lifetimes or field ownership at control-flow join");
+        value.typed(r == VerificationErrorFirst::incompatible_object_loans_at_control_flow_join,
+            "incompatible object loans at control-flow join");
+        value.typed(r == VerificationErrorFirst::incompatible_value_guard_stacks_at_control_flow_join,
+            "incompatible value/guard stacks at control-flow join");
+        value.typed(r == VerificationErrorFirst::missing_or_mistyped_current_value,
+            "missing or mistyped current value");
+        value.typed(r == VerificationErrorFirst::value_stack_underflow, "value stack underflow");
+        value.typed(r == VerificationErrorFirst::object_access_conflicts_with_active_synchronous_loan,
+            "object access conflicts with active synchronous loan");
+        value.typed(r == VerificationErrorFirst::object_field_access_outside_active_lifetime,
+            "object field access outside active lifetime");
+        value.typed(r == VerificationErrorFirst::field_access_through_consumed_owning_object,
+            "field access through consumed owning object");
+        value.typed(r == VerificationErrorFirst::array_element_access_outside_active_lifetime,
+            "array element access outside active lifetime");
+        value.typed(r == VerificationErrorFirst::fixed_array_field_write_with_live_readonly_span,
+            "fixed array field write with live readonly span");
+        value.typed(r == VerificationErrorFirst::write_to_byte_array_with_live_readonly_span,
+            "write to byte array with live readonly span");
+        value.typed(r == VerificationErrorFirst::span_capability_is_not_active, "span capability is not active");
+        value.typed(r == VerificationErrorFirst::literal_span_cannot_carry_another_origin_kind,
+            "literal span cannot carry another origin kind");
+        value.typed(r == VerificationErrorFirst::literal_span_must_retain_its_exact_immutable_origin,
+            "literal span must retain its exact immutable origin");
+        value.typed(r == VerificationErrorFirst::fixed_array_span_cannot_carry_another_origin_kind,
+            "fixed array span cannot carry another origin kind");
+        value.typed(r == VerificationErrorFirst::fixed_array_span_receiver_lifetime_is_not_active,
+            "fixed array span receiver lifetime is not active");
+        value.typed(r == VerificationErrorFirst::fixed_array_span_object_lifetime_is_not_active,
+            "fixed array span object lifetime is not active");
+        value.typed(r == VerificationErrorFirst::fixed_array_span_field_provenance_mismatch,
+            "fixed array span field provenance mismatch");
+        value.typed(r == VerificationErrorFirst::owned_span_cannot_have_parameter_origin,
+            "owned span cannot have parameter origin");
+        value.typed(r == VerificationErrorFirst::span_owned_byte_origin_lifetime_is_not_active,
+            "span owned byte origin lifetime is not active");
+        value.typed(r == VerificationErrorFirst::span_owning_root_lifetime_is_not_active,
+            "span owning root lifetime is not active");
+        value.typed(r == VerificationErrorFirst::span_owner_token_is_not_active, "span owner token is not active");
+        value.typed(r == VerificationErrorFirst::span_borrowed_receiver_provenance_mismatch,
+            "span borrowed receiver provenance mismatch");
+        value.typed(r == VerificationErrorFirst::span_owner_region_identity_is_not_active,
+            "span owner region identity is not active");
+        value.typed(r == VerificationErrorFirst::span_parameter_origin_does_not_exist,
+            "span parameter origin does not exist");
+        value.typed(r == VerificationErrorFirst::span_parameter_origin_lifetime_is_not_active,
+            "span parameter origin lifetime is not active");
+        value.typed(r == VerificationErrorFirst::span_array_origin_lifetime_is_not_active,
+            "span array origin lifetime is not active");
+        value.typed(r == VerificationErrorFirst::span_direct_parent_lifetime_is_not_active,
+            "span direct parent lifetime is not active");
+        value.typed(r == VerificationErrorFirst::span_direct_parent_origin_mismatch,
+            "span direct parent origin mismatch");
+        value.typed(r == VerificationErrorFirst::span_requires_exact_typed_spill, "span requires exact typed spill");
+        value.typed(r == VerificationErrorFirst::span_spill_is_already_active, "span spill is already active");
+        value.typed(r == VerificationErrorFirst::span_parameter_cannot_be_rebound, "span parameter cannot be rebound");
+        value.typed(r == VerificationErrorFirst::owned_byte_or_root_mutation_with_live_readonly_span,
+            "owned byte or root mutation with live readonly span");
+        value.typed(r == VerificationErrorFirst::region_authority_is_not_active, "region authority is not active");
+        value.typed(r == VerificationErrorFirst::region_requires_exact_typed_spill,
+            "region requires exact typed spill");
+        value.typed(r == VerificationErrorFirst::owned_byte_lifetime_is_not_active,
+            "owned byte lifetime is not active");
+        value.typed(r == VerificationErrorFirst::owned_byte_operation_requires_exact_typed_spill,
+            "owned byte operation requires exact typed spill");
+        value.typed(r == VerificationErrorFirst::owned_byte_binding_does_not_hold_live_ownership,
+            "owned byte binding does not hold live ownership");
+        value.typed(r == VerificationErrorFirst::owned_byte_region_identity_does_not_match_active_authority,
+            "owned byte region identity does not match active authority");
+        value.typed(r == VerificationErrorFirst::const_owned_byte_binding_cannot_be_mutated_or_moved,
+            "const owned byte binding cannot be mutated or moved");
+        value.typed(r == VerificationErrorFirst::owned_byte_result_requires_pristine_binding,
+            "owned byte result requires pristine binding");
+        value.typed(r == VerificationErrorFirst::ownership_creation_site_still_has_a_live_token,
+            "ownership creation site still has a live token");
+        value.typed(r == VerificationErrorFirst::write_to_immutable_scalar_parameter,
+            "write to immutable scalar parameter");
+        value.typed(r == VerificationErrorFirst::write_to_initialized_const_object_field,
+            "write to initialized const object field");
+        value.typed(r == VerificationErrorFirst::borrowed_free_formal_grants_no_direct_receiver_field_authority,
+            "borrowed free formal grants no direct receiver field authority");
+        value.typed(r == VerificationErrorFirst::receiver_access_without_bound_receiver,
+            "receiver access without bound receiver");
+        value.typed(r == VerificationErrorFirst::receiver_field_type_layout_mismatch,
+            "receiver field type/layout mismatch");
+        value.typed(r == VerificationErrorFirst::receiver_array_operation_requires_array_field,
+            "receiver array operation requires array field");
+        value.typed(r == VerificationErrorFirst::receiver_scalar_array_operation_requires_scalar_array_field,
+            "receiver scalar array operation requires scalar array field");
+        value.typed(r == VerificationErrorFirst::constructor_cannot_access_receiver_array_during_initialization,
+            "constructor cannot access receiver array during initialization");
+        value.typed(r == VerificationErrorFirst::receiver_array_element_not_initialized,
+            "receiver array element not initialized");
+        value.typed(r == VerificationErrorFirst::receiver_index_access_lacks_matching_dominating_bounds_token,
+            "receiver index access lacks matching dominating bounds token");
+        value.typed(r == VerificationErrorFirst::array_element_not_initialized, "array element not initialized");
+        value.typed(r == VerificationErrorFirst::indexed_write_to_immutable_scalar_parameter,
+            "indexed write to immutable scalar parameter");
+        value.typed(r == VerificationErrorFirst::indexed_write_to_const_object_field,
+            "indexed write to const object field");
+        value.typed(r == VerificationErrorFirst::index_access_lacks_matching_dominating_bounds_token,
+            "index access lacks matching dominating bounds token");
+        value.typed(r == VerificationErrorFirst::owning_object_does_not_hold_complete_live_ownership,
+            "owning object does not hold complete live ownership");
+        value.typed(r == VerificationErrorFirst::owning_object_field_lacks_live_region_ownership,
+            "owning object field lacks live region ownership");
+        value.typed(r == VerificationErrorFirst::nested_class_field_not_completely_initialized,
+            "nested class field not completely initialized");
+        value.typed(r == VerificationErrorFirst::empty_object_not_completely_initialized,
+            "empty object not completely initialized");
+        value.typed(r == VerificationErrorFirst::aggregate_argument_outside_active_object_lifetime,
+            "aggregate argument outside active object lifetime");
+        value.typed(r == VerificationErrorFirst::resource_argument_outside_active_object_lifetime,
+            "resource argument outside active object lifetime");
+        value.typed(r == VerificationErrorFirst::method_argument_outside_active_object_lifetime,
+            "method argument outside active object lifetime");
+        value.typed(r == VerificationErrorFirst::borrowed_argument_outside_active_object_lifetime,
+            "borrowed argument outside active object lifetime");
+        value.typed(r == VerificationErrorFirst::service_argument_outside_active_object_lifetime,
+            "service argument outside active object lifetime");
+        value.typed(r == VerificationErrorFirst::aggregate_argument_object_not_fully_initialized,
+            "aggregate argument object not fully initialized");
+        value.typed(r == VerificationErrorFirst::resource_argument_object_not_fully_initialized,
+            "resource argument object not fully initialized");
+        value.typed(r == VerificationErrorFirst::method_argument_object_not_fully_initialized,
+            "method argument object not fully initialized");
+        value.typed(r == VerificationErrorFirst::borrowed_argument_object_not_fully_initialized,
+            "borrowed argument object not fully initialized");
+        value.typed(r == VerificationErrorFirst::service_argument_object_not_fully_initialized,
+            "service argument object not fully initialized");
+        value.typed(r == VerificationErrorFirst::copy_object_outside_active_lifetime,
+            "copy object outside active lifetime");
+        value.typed(r == VerificationErrorFirst::copy_source_object_not_fully_initialized,
+            "copy source object not fully initialized");
+        value.typed(r == VerificationErrorFirst::copy_requires_exact_object_slot, "copy requires exact object slot");
+        value.typed(r == VerificationErrorFirst::object_loan_requires_exact_owning_root,
+            "object loan requires exact owning root");
+        value.typed(r == VerificationErrorFirst::object_loan_requires_complete_live_root,
+            "object loan requires complete live root");
+        value.typed(r == VerificationErrorFirst::object_loan_field_lacks_live_ownership,
+            "object loan field lacks live ownership");
+        value.typed(r == VerificationErrorFirst::borrowed_root_field_provenance_mismatch,
+            "borrowed root field provenance mismatch");
+        value.typed(r == VerificationErrorFirst::object_loan_field_region_is_not_active,
+            "object loan field region is not active");
+        value.typed(r == VerificationErrorFirst::invalid_borrowed_object_root, "invalid borrowed object root");
+        value.typed(r == VerificationErrorFirst::receiver_nested_class_field_not_initialized,
+            "receiver nested class field not initialized");
+        value.typed(r == VerificationErrorFirst::invalid_owned_field_root_offset, "invalid owned field root offset");
+        value.typed(r == VerificationErrorFirst::constructor_cannot_access_owned_field_during_initialization,
+            "constructor cannot access owned field during initialization");
+        value.typed(r == VerificationErrorFirst::const_receiver_cannot_supply_mutable_owned_field,
+            "const receiver cannot supply mutable owned field");
+        value.typed(r == VerificationErrorFirst::const_object_cannot_supply_mutable_owned_field,
+            "const object cannot supply mutable owned field");
+        value.typed(r == VerificationErrorFirst::owned_field_logical_index_out_of_range,
+            "owned field logical index out of range");
+        value.typed(r == VerificationErrorFirst::owned_field_operation_requires_class_field,
+            "owned field operation requires class field");
+        value.typed(r == VerificationErrorFirst::invalid_class_array_root_offset, "invalid class array root offset");
+        value.typed(r == VerificationErrorFirst::constructor_cannot_access_class_array_during_initialization,
+            "constructor cannot access class array during initialization");
+        value.typed(r == VerificationErrorFirst::const_receiver_cannot_supply_mutable_class_array,
+            "const receiver cannot supply mutable class array");
+        value.typed(r == VerificationErrorFirst::receiver_class_array_not_completely_initialized,
+            "receiver class array not completely initialized");
+        value.typed(r == VerificationErrorFirst::const_object_cannot_supply_mutable_class_array,
+            "const object cannot supply mutable class array");
+        value.typed(r == VerificationErrorFirst::class_array_logical_field_index_out_of_range,
+            "class array logical field index out of range");
+        value.typed(r == VerificationErrorFirst::class_array_operation_requires_class_array_field,
+            "class array operation requires class array field");
+        value.typed(r == VerificationErrorFirst::class_array_elements_must_be_copied_values,
+            "class array elements must be copied values");
+        value.typed(r == VerificationErrorFirst::class_array_access_lacks_matching_dominating_bounds_token,
+            "class array access lacks matching dominating bounds token");
+        value.typed(r == VerificationErrorFirst::copy_result_object_already_initialized,
+            "copy result object already initialized");
+        value.typed(r == VerificationErrorFirst::copy_requires_pristine_result_object,
+            "copy requires pristine result object");
+        value.typed(r == VerificationErrorFirst::owning_object_result_requires_pristine_root,
+            "owning object result requires pristine root");
+        value.typed(r == VerificationErrorFirst::owning_object_result_requires_pristine_fields,
+            "owning object result requires pristine fields");
+        value.typed(r == VerificationErrorFirst::copy_nominal_class_mismatch, "copy nominal class mismatch");
+        value.typed(r == VerificationErrorFirst::owning_object_lifetime_already_active,
+            "owning object lifetime already active");
+        value.typed(r == VerificationErrorFirst::owning_object_field_missing_token,
+            "owning object field missing token");
+        value.typed(r == VerificationErrorFirst::owning_object_fields_have_different_regions,
+            "owning object fields have different regions");
+        value.typed(r == VerificationErrorFirst::owning_object_has_no_resource_fields,
+            "owning object has no resource fields");
+        value.typed(r == VerificationErrorFirst::owning_object_nominal_class_mismatch,
+            "owning object nominal class mismatch");
+        value.typed(r == VerificationErrorFirst::const_owning_object_cannot_be_moved_or_mutated,
+            "const owning object cannot be moved or mutated");
+        value.typed(r == VerificationErrorFirst::resource_field_requires_owning_root,
+            "resource field requires owning root");
+        value.typed(r == VerificationErrorFirst::resource_field_root_is_not_complete_and_live,
+            "resource field root is not complete and live");
+        value.typed(r == VerificationErrorFirst::resource_field_does_not_hold_live_ownership,
+            "resource field does not hold live ownership");
+        value.typed(r == VerificationErrorFirst::borrowed_receiver_provenance_mismatch,
+            "borrowed receiver provenance mismatch");
+        value.typed(r == VerificationErrorFirst::resource_field_region_is_not_active,
+            "resource field region is not active");
+        value.typed(r == VerificationErrorFirst::invalid_owned_byte_field_selector,
+            "invalid owned byte field selector");
+        value.typed(r == VerificationErrorFirst::owner_access_requires_live_bound_builtin_formal,
+            "owner access requires live bound builtin formal");
+        value.typed(r == VerificationErrorFirst::shared_builtin_formal_cannot_supply_mutable_owner_access,
+            "shared builtin formal cannot supply mutable owner access");
+        value.typed(r == VerificationErrorFirst::invalid_owned_byte_object_root, "invalid owned byte object root");
+        value.typed(r == VerificationErrorFirst::owned_byte_access_requires_direct_resource_field,
+            "owned byte access requires direct resource field");
+        value.typed(r == VerificationErrorFirst::constructor_cannot_access_resource_field_during_initialization,
+            "constructor cannot access resource field during initialization");
+        value.typed(r == VerificationErrorFirst::const_receiver_cannot_mutate_resource_field,
+            "const receiver cannot mutate resource field");
+        value.typed(r == VerificationErrorFirst::const_object_cannot_mutate_resource_field,
+            "const object cannot mutate resource field");
+        value.typed(r == VerificationErrorFirst::invalid_owned_storage_field_selector,
+            "invalid owned storage field selector");
+        value.typed(r == VerificationErrorFirst::owned_value_snapshot_aliases_owner_root,
+            "owned value snapshot aliases owner root");
+        value.typed(r == VerificationErrorFirst::owned_value_snapshot_nominal_class_mismatch,
+            "owned value snapshot nominal class mismatch");
+        value.typed(r == VerificationErrorFirst::owned_value_snapshot_must_be_readonly,
+            "owned value snapshot must be readonly");
+        value.typed(r == VerificationErrorFirst::owned_value_snapshot_requires_complete_copied_or_constructed_value,
+            "owned value snapshot requires complete copied or constructed value");
+        value.typed(r == VerificationErrorFirst::typed_owned_values_cannot_supply_a_byte_span,
+            "typed owned values cannot supply a byte span");
+        value.typed(r == VerificationErrorFirst::receiver_array_span_requires_complete_initialization,
+            "receiver array span requires complete initialization");
+        value.typed(r == VerificationErrorFirst::invalid_fixed_array_span_root_or_field,
+            "invalid fixed array span root or field");
+        value.typed(r == VerificationErrorFirst::constructor_cannot_borrow_receiver_array,
+            "constructor cannot borrow receiver array");
+        value.typed(r == VerificationErrorFirst::fixed_array_span_requires_direct_u8_array_field,
+            "fixed array span requires direct u8 array field");
+        value.typed(r == VerificationErrorFirst::return_with_active_synchronous_service_loan,
+            "return with active synchronous service loan");
+        value.typed(r == VerificationErrorFirst::return_with_active_synchronous_object_loan,
+            "return with active synchronous object loan");
+        value.typed(r == VerificationErrorFirst::return_with_active_owning_object_lifetime,
+            "return with active owning object lifetime");
+        value.typed(r == VerificationErrorFirst::load_before_initialization, "load before initialization");
+        value.typed(r == VerificationErrorFirst::push_without_current_value, "push without current value");
+        value.typed(r == VerificationErrorFirst::noninteger_left_operand_or_binary_type_mismatch,
+            "noninteger left operand or binary type mismatch");
+        value.typed(r == VerificationErrorFirst::comparison_type_mismatch, "comparison type mismatch");
+        value.typed(r == VerificationErrorFirst::borrow_of_uninitialized_payload, "borrow of uninitialized payload");
+        value.typed(r == VerificationErrorFirst::call_argument_type_mismatch, "call argument type mismatch");
+        value.typed(r == VerificationErrorFirst::aggregate_scalar_argument_type_mismatch,
+            "aggregate scalar argument type mismatch");
+        value.typed(r == VerificationErrorFirst::aggregate_result_outside_active_object_lifetime,
+            "aggregate result outside active object lifetime");
+        value.typed(r == VerificationErrorFirst::aggregate_result_object_already_initialized,
+            "aggregate result object already initialized");
+        value.typed(r == VerificationErrorFirst::aggregate_result_requires_uninitialized_object,
+            "aggregate result requires uninitialized object");
+        value.typed(r == VerificationErrorFirst::resource_call_owning_argument_has_wrong_region,
+            "resource call owning argument has wrong region");
+        value.typed(r == VerificationErrorFirst::resource_call_scalar_argument_type_mismatch,
+            "resource call scalar argument type mismatch");
+        value.typed(r == VerificationErrorFirst::resource_copied_result_outside_active_object_lifetime,
+            "resource copied result outside active object lifetime");
+        value.typed(r == VerificationErrorFirst::resource_copied_result_object_already_initialized,
+            "resource copied result object already initialized");
+        value.typed(r == VerificationErrorFirst::resource_copied_result_requires_uninitialized_object,
+            "resource copied result requires uninitialized object");
+        value.typed(r == VerificationErrorFirst::owned_byte_lifetime_requires_exact_typed_spill,
+            "owned byte lifetime requires exact typed spill");
+        value.typed(r == VerificationErrorFirst::owned_byte_parameter_lifetime_cannot_restart,
+            "owned byte parameter lifetime cannot restart");
+        value.typed(r == VerificationErrorFirst::owned_byte_lifetime_already_active,
+            "owned byte lifetime already active");
+        value.typed(r == VerificationErrorFirst::byte_allocation_cannot_initialize_typed_owned_values,
+            "byte allocation cannot initialize typed owned values");
+        value.typed(r == VerificationErrorFirst::value_allocation_requires_typed_owner,
+            "value allocation requires typed owner");
+        value.typed(r == VerificationErrorFirst::value_load_requires_typed_owner, "value load requires typed owner");
+        value.typed(r == VerificationErrorFirst::value_load_result_aliases_owner_root,
+            "value load result aliases owner root");
+        value.typed(r == VerificationErrorFirst::value_mutation_requires_typed_owner,
+            "value mutation requires typed owner");
+        value.typed(r == VerificationErrorFirst::owned_byte_move_source_aliases_result,
+            "owned byte move source aliases result");
+        value.typed(r == VerificationErrorFirst::owner_move_nominal_type_mismatch, "owner move nominal type mismatch");
+        value.typed(r == VerificationErrorFirst::byte_payload_operation_cannot_access_typed_owned_values,
+            "byte payload operation cannot access typed owned values");
+        value.typed(r == VerificationErrorFirst::owned_byte_store_index_requires_i64,
+            "owned byte store index requires i64");
+        value.typed(r == VerificationErrorFirst::array_lifetime_already_active, "array lifetime already active");
+        value.typed(r == VerificationErrorFirst::array_lifetime_is_not_active, "array lifetime is not active");
+        value.typed(r == VerificationErrorFirst::array_lifetime_ends_with_live_readonly_span,
+            "array lifetime ends with live readonly span");
+        value.typed(r == VerificationErrorFirst::span_borrow_requires_active_byte_array_origin,
+            "span borrow requires active byte array origin");
+        value.typed(r == VerificationErrorFirst::subspan_offset_requires_i64, "subspan offset requires i64");
+        value.typed(r == VerificationErrorFirst::span_lifetime_ends_with_live_child_reborrow,
+            "span lifetime ends with live child reborrow");
+        value.typed(r == VerificationErrorFirst::lifetime_operation_requires_exact_object_slot,
+            "lifetime operation requires exact object slot");
+        value.typed(r == VerificationErrorFirst::object_parameter_lifetime_cannot_restart,
+            "object parameter lifetime cannot restart");
+        value.typed(r == VerificationErrorFirst::object_lifetime_already_active, "object lifetime already active");
+        value.typed(r == VerificationErrorFirst::object_lifetime_is_not_active, "object lifetime is not active");
+        value.typed(r == VerificationErrorFirst::empty_initialization_requires_exact_object_slot,
+            "empty initialization requires exact object slot");
+        value.typed(r == VerificationErrorFirst::empty_initialization_requires_zero_logical_fields_and_leaves,
+            "empty initialization requires zero logical fields and leaves");
+        value.typed(r == VerificationErrorFirst::owning_object_move_source_aliases_result,
+            "owning object move source aliases result");
+        value.typed(r == VerificationErrorFirst::resource_field_initialization_requires_bound_owning_constructor,
+            "resource field initialization requires bound owning constructor");
+        value.typed(r == VerificationErrorFirst::resource_field_initialization_requires_direct_owner_field,
+            "resource field initialization requires direct owner field");
+        value.typed(r == VerificationErrorFirst::resource_field_initialization_owner_nominal_type_mismatch,
+            "resource field initialization owner nominal type mismatch");
+        value.typed(r == VerificationErrorFirst::constructor_resource_field_initialized_more_than_once,
+            "constructor resource field initialized more than once");
+        value.typed(r == VerificationErrorFirst::constructor_resource_field_has_wrong_region,
+            "constructor resource field has wrong region");
+        value.typed(r == VerificationErrorFirst::copy_source_aliases_result, "copy source aliases result");
+        value.typed(r == VerificationErrorFirst::owning_class_cannot_be_implicitly_copied,
+            "owning class cannot be implicitly copied");
+        value.typed(r == VerificationErrorFirst::constructor_cannot_project_receiver_during_initialization,
+            "constructor cannot project receiver during initialization");
+        return value;
+    }
+    // The message of each VerificationErrorSecond reason; none has none.
+    auto second_text(compiler_resolver::Report report, VerificationErrorSecond r) -> compiler_resolver::Report {
+        compiler_resolver::Report value = report;
+        value.typed(r == VerificationErrorSecond::projection_source_aliases_result, "projection source aliases result");
+        value.typed(r == VerificationErrorSecond::projection_logical_field_index_out_of_range,
+            "projection logical field index out of range");
+        value.typed(r == VerificationErrorSecond::projection_requires_class_field, "projection requires class field");
+        value.typed(r == VerificationErrorSecond::owning_class_field_cannot_be_copied,
+            "owning class field cannot be copied");
+        value.typed(r == VerificationErrorSecond::class_field_assignment_source_aliases_root,
+            "class field assignment source aliases root");
+        value.typed(r == VerificationErrorSecond::class_field_assignment_nominal_class_mismatch,
+            "class field assignment nominal class mismatch");
+        value.typed(r == VerificationErrorSecond::class_field_initialization_requires_bound_constructor_receiver,
+            "class field initialization requires bound constructor receiver");
+        value.typed(r == VerificationErrorSecond::class_field_initialization_requires_constructor_receiver,
+            "class field initialization requires constructor receiver");
+        value.typed(r == VerificationErrorSecond::class_field_initialization_requires_class_field,
+            "class field initialization requires class field");
+        value.typed(r == VerificationErrorSecond::class_field_initializer_nominal_class_mismatch,
+            "class field initializer nominal class mismatch");
+        value.typed(r == VerificationErrorSecond::constructor_class_field_initialized_more_than_once,
+            "constructor class field initialized more than once");
+        value.typed(r == VerificationErrorSecond::constructor_class_field_leaves_already_initialized,
+            "constructor class field leaves already initialized");
+        value.typed(r == VerificationErrorSecond::invalid_class_array_initialization_root,
+            "invalid class array initialization root");
+        value.typed(r == VerificationErrorSecond::class_array_initialization_requires_constructor_receiver,
+            "class array initialization requires constructor receiver");
+        value.typed(r == VerificationErrorSecond::class_array_initialization_requires_exact_object_slot,
+            "class array initialization requires exact object slot");
+        value.typed(r == VerificationErrorSecond::local_class_array_initialization_requires_declared_carrier_field,
+            "local class array initialization requires declared carrier field");
+        value.typed(r == VerificationErrorSecond::class_array_initialization_requires_class_array_field,
+            "class array initialization requires class array field");
+        value.typed(r == VerificationErrorSecond::class_array_initializer_element_count_mismatch,
+            "class array initializer element count mismatch");
+        value.typed(r == VerificationErrorSecond::class_array_initialization_source_aliases_root,
+            "class array initialization source aliases root");
+        value.typed(r == VerificationErrorSecond::class_array_initializer_nominal_class_mismatch,
+            "class array initializer nominal class mismatch");
+        value.typed(r == VerificationErrorSecond::constructor_class_array_initialized_more_than_once,
+            "constructor class array initialized more than once");
+        value.typed(r == VerificationErrorSecond::constructor_class_array_leaves_already_initialized,
+            "constructor class array leaves already initialized");
+        value.typed(r == VerificationErrorSecond::class_array_projection_source_aliases_result,
+            "class array projection source aliases result");
+        value.typed(r == VerificationErrorSecond::class_array_assignment_source_aliases_root,
+            "class array assignment source aliases root");
+        value.typed(r == VerificationErrorSecond::class_array_assignment_nominal_class_mismatch,
+            "class array assignment nominal class mismatch");
+        value.typed(r == VerificationErrorSecond::constructor_cannot_read_receiver_during_initialization,
+            "constructor cannot read receiver during initialization");
+        value.typed(r == VerificationErrorSecond::receiver_field_not_initialized, "receiver field not initialized");
+        value.typed(r == VerificationErrorSecond::write_through_const_receiver, "write through const receiver");
+        value.typed(r == VerificationErrorSecond::constructor_field_initialized_more_than_once,
+            "constructor field initialized more than once");
+        value.typed(r == VerificationErrorSecond::receiver_array_zero_requires_constructor_receiver,
+            "receiver array zero requires constructor receiver");
+        value.typed(r == VerificationErrorSecond::constructor_array_initialized_more_than_once,
+            "constructor array initialized more than once");
+        value.typed(r == VerificationErrorSecond::invalid_or_duplicate_object_loan_identity,
+            "invalid or duplicate object loan identity");
+        value.typed(r == VerificationErrorSecond::invalid_object_loan_field_selector,
+            "invalid object loan field selector");
+        value.typed(r == VerificationErrorSecond::builtin_owner_loan_requires_mutable_authority,
+            "builtin owner loan requires mutable authority");
+        value.typed(r == VerificationErrorSecond::builtin_owner_field_loan_requires_mutable_lexical_receiver,
+            "builtin owner field loan requires mutable lexical receiver");
+        value.typed(r == VerificationErrorSecond::builtin_owner_loan_requires_typed_owned_values,
+            "builtin owner loan requires typed owned values");
+        value.typed(r == VerificationErrorSecond::bound_root_loan_requires_named_borrowed_formal,
+            "bound root loan requires named borrowed formal");
+        value.typed(r == VerificationErrorSecond::shared_formal_cannot_supply_mutable_object_loan,
+            "shared formal cannot supply mutable object loan");
+        value.typed(r == VerificationErrorSecond::const_object_cannot_supply_mutable_object_loan,
+            "const object cannot supply mutable object loan");
+        value.typed(r == VerificationErrorSecond::release_requires_active_object_loan,
+            "release requires active object loan");
+        value.typed(r == VerificationErrorSecond::object_loan_release_requires_completed_borrowed_call,
+            "object loan release requires completed borrowed call");
+        value.typed(r == VerificationErrorSecond::borrowed_call_root_count_mismatch,
+            "borrowed call root count mismatch");
+        value.typed(r == VerificationErrorSecond::borrowed_call_requires_active_loan,
+            "borrowed call requires active loan");
+        value.typed(r == VerificationErrorSecond::object_loan_already_used_by_a_call,
+            "object loan already used by a call");
+        value.typed(r == VerificationErrorSecond::borrowed_call_field_selector_mismatch,
+            "borrowed call field selector mismatch");
+        value.typed(r == VerificationErrorSecond::borrowed_call_root_nominal_type_or_authority_mismatch,
+            "borrowed call root, nominal type or authority mismatch");
+        value.typed(r == VerificationErrorSecond::builtin_borrowed_call_requires_one_mutable_owner_and_scalar_result,
+            "builtin borrowed call requires one mutable owner and scalar result");
+        value.typed(r == VerificationErrorSecond::builtin_borrowed_call_supports_only_scalar_or_copied_tails,
+            "builtin borrowed call supports only scalar or copied tails");
+        value.typed(r == VerificationErrorSecond::builtin_borrowed_call_owner_nominal_type_mismatch,
+            "builtin borrowed call owner nominal type mismatch");
+        value.typed(r == VerificationErrorSecond::builtin_borrowed_call_requires_bound_owner_formal,
+            "builtin borrowed call requires bound owner formal");
+        value.typed(r == VerificationErrorSecond::builtin_borrowed_call_requires_exact_owner_slot,
+            "builtin borrowed call requires exact owner slot");
+        value.typed(r == VerificationErrorSecond::builtin_borrowed_call_requires_mutable_lexical_receiver_field,
+            "builtin borrowed call requires mutable lexical receiver field");
+        value.typed(r == VerificationErrorSecond::builtin_borrowed_call_lifetime_or_owner_token_mismatch,
+            "builtin borrowed call lifetime or owner token mismatch");
+        value.typed(r == VerificationErrorSecond::class_borrowed_call_requires_an_exact_class_root,
+            "class borrowed call requires an exact class root");
+        value.typed(r == VerificationErrorSecond::borrowed_call_requires_named_bound_formal,
+            "borrowed call requires named bound formal");
+        value.typed(r == VerificationErrorSecond::borrowed_call_formal_authority_mismatch,
+            "borrowed call formal authority mismatch");
+        value.typed(r == VerificationErrorSecond::borrowed_call_object_lifetime_or_authority_mismatch,
+            "borrowed call object lifetime or authority mismatch");
+        value.typed(r == VerificationErrorSecond::borrowed_call_root_lifetime_mismatch,
+            "borrowed call root lifetime mismatch");
+        value.typed(r == VerificationErrorSecond::method_call_requires_class_receiver,
+            "method call requires class receiver");
+        value.typed(r == VerificationErrorSecond::method_argument_type_mismatch, "method argument type mismatch");
+        value.typed(r == VerificationErrorSecond::method_receiver_outside_active_object_lifetime,
+            "method receiver outside active object lifetime");
+        value.typed(r == VerificationErrorSecond::object_constructor_called_more_than_once,
+            "object constructor called more than once");
+        value.typed(r == VerificationErrorSecond::constructor_requires_uninitialized_object,
+            "constructor requires uninitialized object");
+        value.typed(r == VerificationErrorSecond::method_receiver_object_not_fully_initialized,
+            "method receiver object not fully initialized");
+        value.typed(r == VerificationErrorSecond::method_result_outside_active_object_lifetime,
+            "method result outside active object lifetime");
+        value.typed(r == VerificationErrorSecond::method_result_object_already_initialized,
+            "method result object already initialized");
+        value.typed(r == VerificationErrorSecond::method_result_requires_uninitialized_object,
+            "method result requires uninitialized object");
+        value.typed(r == VerificationErrorSecond::builtin_borrowed_call_cannot_return_an_escaping_owner_or_view,
+            "builtin borrowed call cannot return an escaping owner or view");
+        value.typed(r == VerificationErrorSecond::unknown_metadata_query, "unknown metadata query");
+        value.typed(r == VerificationErrorSecond::metadata_query_changes_defining_module_scope,
+            "metadata query changes defining-module scope");
+        value.typed(r == VerificationErrorSecond::scalar_return_cannot_return_class_value_or_resource_value,
+            "scalar return cannot return class value or resource value");
+        value.typed(r == VerificationErrorSecond::unbalanced_stack_at_return, "unbalanced stack at return");
+        value.typed(r == VerificationErrorSecond::return_with_active_owned_byte_lifetime,
+            "return with active owned byte lifetime");
+        value.typed(r == VerificationErrorSecond::return_with_active_span_or_byte_array_lifetime,
+            "return with active span or byte array lifetime");
+        value.typed(r == VerificationErrorSecond::constructor_returns_before_all_fields_initialized,
+            "constructor returns before all fields initialized");
+        value.typed(r == VerificationErrorSecond::constructor_returns_before_all_class_fields_initialized,
+            "constructor returns before all class fields initialized");
+        value.typed(r == VerificationErrorSecond::owning_constructor_lacks_region, "owning constructor lacks region");
+        value.typed(r == VerificationErrorSecond::constructor_returns_before_all_resource_fields_initialized,
+            "constructor returns before all resource fields initialized");
+        value.typed(r == VerificationErrorSecond::span_return_requires_const_owning_receiver_field_summary,
+            "span return requires const owning receiver field summary");
+        value.typed(r == VerificationErrorSecond::span_return_does_not_match_receiver_field_summary_and_token,
+            "span return does not match receiver field summary and token");
+        value.typed(r == VerificationErrorSecond::unbalanced_stack_at_span_return, "unbalanced stack at span return");
+        value.typed(r == VerificationErrorSecond::span_return_with_unrelated_active_local_lifetime,
+            "span return with unrelated active local lifetime");
+        value.typed(r == VerificationErrorSecond::cyclic_returned_span_parent_chain,
+            "cyclic returned span parent chain");
+        value.typed(r == VerificationErrorSecond::span_return_with_unrelated_active_span_lifetime,
+            "span return with unrelated active span lifetime");
+        value.typed(r == VerificationErrorSecond::object_return_requires_copied_class_result,
+            "object return requires class result; owning classes require an explicit move return");
+        value.typed(r == VerificationErrorSecond::object_return_requires_exact_object_slot,
+            "object return requires exact object slot");
+        value.typed(r == VerificationErrorSecond::object_return_nominal_class_mismatch,
+            "object return nominal class mismatch");
+        value.typed(r == VerificationErrorSecond::object_return_outside_active_lifetime,
+            "object return outside active lifetime");
+        value.typed(r == VerificationErrorSecond::returned_object_not_fully_initialized,
+            "returned object not fully initialized");
+        value.typed(r == VerificationErrorSecond::unbalanced_stack_at_object_return,
+            "unbalanced stack at object return");
+        value.typed(r == VerificationErrorSecond::owning_object_return_requires_ordinary_owning_class_result,
+            "owning object return requires ordinary owning class result");
+        value.typed(r == VerificationErrorSecond::owning_object_return_requires_bound_region,
+            "owning object return requires bound region");
+        value.typed(r == VerificationErrorSecond::owning_object_return_has_wrong_region,
+            "owning object return has wrong region");
+        value.typed(r == VerificationErrorSecond::unbalanced_stack_at_owning_object_return,
+            "unbalanced stack at owning object return");
+        value.typed(r == VerificationErrorSecond::owner_return_nominal_type_mismatch,
+            "owner return nominal type mismatch");
+        value.typed(r == VerificationErrorSecond::owned_byte_return_requires_bound_region_parameter,
+            "owned byte return requires bound region parameter");
+        value.typed(r == VerificationErrorSecond::owned_byte_return_has_wrong_region,
+            "owned byte return has wrong region");
+        value.typed(r == VerificationErrorSecond::unbalanced_stack_at_owned_byte_return,
+            "unbalanced stack at owned byte return");
+        value.typed(r == VerificationErrorSecond::service_loan_requires_unsuspended_parameter_authority,
+            "service loan requires unsuspended parameter authority");
+        value.typed(r == VerificationErrorSecond::service_release_requires_exactly_one_completed_helper_call,
+            "service release requires exactly one completed helper call");
+        value.typed(r == VerificationErrorSecond::service_operation_requires_active_unsuspended_capability_provenance,
+            "service operation requires active unsuspended capability provenance");
+        value.typed(r == VerificationErrorSecond::pixel_argument_type_mismatch, "pixel argument type mismatch");
+        value.typed(r == VerificationErrorSecond::port_write_byte_argument_type_mismatch,
+            "port write byte argument type mismatch");
+        value.typed(r == VerificationErrorSecond::port_write_offset_argument_type_mismatch,
+            "port write offset argument type mismatch");
+        value.typed(r == VerificationErrorSecond::service_observation_requires_pristine_sample,
+            "service observation requires exact pristine active copied sample object");
+        value.typed(r == VerificationErrorSecond::service_observation_cannot_overwrite_initialized_sample_storage,
+            "service observation cannot overwrite initialized sample storage");
+        value.typed(r == VerificationErrorSecond::unknown_sealed_service_operation, "unknown sealed service operation");
+        value.typed(r == VerificationErrorSecond::service_helper_requires_distinct_acquired_loans_in_leading_positions,
+            "service helper requires distinct acquired loans in leading positions");
+        value.typed(r == VerificationErrorSecond::service_helper_requires_an_unused_loan_with_exact_provenance,
+            "service helper requires an unused loan with exact provenance");
+        value.typed(r == VerificationErrorSecond::service_span_argument_is_not_active,
+            "service span argument is not active");
+        value.typed(r == VerificationErrorSecond::service_scalar_argument_mismatch, "service scalar argument mismatch");
+        value.typed(r == VerificationErrorSecond::reachable_fallthrough_without_return,
+            "reachable fallthrough without return");
+        value.typed(r == VerificationErrorSecond::operand_stack_depth_differs_from_linear_emission_order,
+            "operand stack depth differs from linear emission order");
+        value.typed(r == VerificationErrorSecond::unreachable_semantic_instruction, "unreachable semantic instruction");
+        value.typed(r == VerificationErrorSecond::callable_body_count_mismatch, "callable body count mismatch");
+        value.typed(r == VerificationErrorSecond::callable_body_id_does_not_match_declaration_order,
+            "callable body ID does not match declaration order");
+        return value;
+    }
+    // A verification rejection names exactly one first or second reason. The
+    // workspace and allocation reasons are internal failures.
+    auto verification_text(compiler_resolver::Report report, VerificationError reason) -> compiler_resolver::Report {
+        compiler_resolver::Report value = report;
+        const VerificationErrorFirst first = reason.first();
+        const VerificationErrorSecond second = reason.second();
+        if ((first == VerificationErrorFirst::none) == (second == VerificationErrorSecond::none)) {
+            value.text("invalid hosted IR verification workspace");
+            return value;
+        }
+        if (first == VerificationErrorFirst::none) {
+            value.classify(3001, false);
+            const compiler_resolver::Report named = second_text(value, second);
+            return named;
+        }
+        if (first != VerificationErrorFirst::allocation && first != VerificationErrorFirst::internal) {
+            value.classify(3001, false);
+        }
+        const compiler_resolver::Report named = first_text(value, first);
+        return named;
+    }
+}
+
 // One compilation after successful lowering: project the lowering records into
 // pending metadata and instruction stores, admit and structure them, verify
 // every function, check the call graph and select retained functions, publish,
 // then emit code and the requested stack and ABI facts. Every store lives in
-// the Session's region. The host gets back one Result: the artifacts, the
-// rendered lint warnings, or the first failure for it to render. Textual IR
+// the Session's region. The host gets back one Result: the artifacts and the
+// rendered lint warnings, or the rendered first failure. Textual IR
 // enters at the same admission with stores it read itself (`stages`).
 export namespace compiler_pipeline {
     // Option bits of a run request.
@@ -61,7 +1093,7 @@ export namespace compiler_pipeline {
     auto selected(u64 options, u64 option) -> bool {
         return (options & option) != 0u64;
     }
-    // Where a run stopped. Each failure keeps the message the host rendered for it.
+    // Where a run stopped.
     enum class Stage {
         complete,
         allocation,
@@ -79,22 +1111,6 @@ export namespace compiler_pipeline {
         declarations,
         emission
     };
-    // The failing store's reason; the emitter statuses are read when emission stops.
-    class Failure {
-        compiler_ir_metadata::MetadataError metadataValue;
-        compiler_ir_instructions::InstructionError instructionValue;
-        compiler_ir_verification::VerificationError verificationValue;
-        compiler_ir_graph::GraphStatus graphValue;
-        compiler_x86::EmitStatus emitterValue;
-        compiler_x86::EmitStatus objectValue;
-    public:
-        Failure(compiler_ir_metadata::MetadataError metadata, compiler_ir_instructions::InstructionError instruction,
-            compiler_ir_verification::VerificationError verification, compiler_ir_graph::GraphStatus graph,
-            compiler_x86::EmitStatus emitter, compiler_x86::EmitStatus object) : metadataValue(metadata),
-            instructionValue(instruction), verificationValue(verification), graphValue(graph), emitterValue(emitter),
-            objectValue(object) {
-        }
-    };
     // Byte counts of each produced artifact and the number of lint warnings.
     class Sizes {
         i64 codeBytes;
@@ -109,13 +1125,12 @@ export namespace compiler_pipeline {
     // The verifier metrics of the last function that started verification.
     class Report {
         Stage stageValue;
-        Failure failureValue;
         Sizes sizesValue;
         bool metricsStarted;
         compiler_ir_verification::MetricsRow metricsValue;
     public:
-        Report(Stage stage, Failure failure, Sizes sizes, bool started,
-            compiler_ir_verification::MetricsRow metrics) : stageValue(stage), failureValue(failure), sizesValue(sizes),
+        Report(Stage stage, Sizes sizes, bool started,
+            compiler_ir_verification::MetricsRow metrics) : stageValue(stage), sizesValue(sizes),
             metricsStarted(started), metricsValue(metrics) {
         }
     };
@@ -330,13 +1345,69 @@ export namespace compiler_pipeline {
             return result;
         }
         auto report() const -> Report {
-            const compiler_ir_verification::VerificationError verification = verificationValue;
-            const Failure failure = Failure(metadataValue, instructionValue, verification, graphValue, emitterValue,
-                objectValue);
             const Sizes sizes = Sizes(codeBytes, stackBytes, abiBytes, lintCount);
             const compiler_ir_verification::MetricsRow metrics = metricsValue;
-            const Report result = Report(stageValue, failure, sizes, metricsStarted, metrics);
+            const Report result = Report(stageValue, sizes, metricsStarted, metrics);
             return result;
+        }
+        // The first failure of an incomplete run, from its message offset on.
+        // Integrity and allocation failures are internal (AU9001); rejected IR
+        // is semantic (AU3001).
+        auto failure(i64 offset) const -> compiler_resolver::Report {
+            compiler_resolver::Report value = compiler_resolver::Report(offset);
+            if (stageValue == Stage::metadata && metadataValue != compiler_ir_metadata::MetadataError::none) {
+                value.classify(3001, false);
+                const compiler_resolver::Report named = compiler_ir_metadata::metadata_text(value, metadataValue);
+                return named;
+            }
+            if (stageValue == Stage::instruction && instructionValue
+                != compiler_ir_instructions::InstructionError::none) {
+                value.classify(3001, false);
+                const compiler_resolver::Report named = compiler_ir_instructions::instruction_text(value,
+                    instructionValue);
+                return named;
+            }
+            if (stageValue == Stage::verification) {
+                const compiler_ir_verification::VerificationError reason = verificationValue;
+                const compiler_resolver::Report named = compiler_ir_verification::verification_text(value, reason);
+                return named;
+            }
+            const bool recursive = stageValue == Stage::graph && graphValue
+                == compiler_ir_graph::GraphStatus::recursive;
+            if (stageValue == Stage::body_count || recursive) {
+                value.classify(3001, false);
+            }
+            // The emitter's own status decides unless it stopped cleanly; then the object writer's does.
+            compiler_x86::EmitStatus emitted = emitterValue;
+            if (emitted == compiler_x86::EmitStatus::pending || emitted == compiler_x86::EmitStatus::running || emitted
+                == compiler_x86::EmitStatus::complete) {
+                emitted = objectValue;
+            }
+            const bool emission = stageValue == Stage::emission;
+            value.when(stageValue == Stage::complete, "invalid hosted compiler pipeline result");
+            value.when(stageValue == Stage::allocation, "hosted compiler pipeline allocation failed");
+            value.when(stageValue == Stage::projection_allocation, "hosted lowering projection allocation failed");
+            value.when(stageValue == Stage::projection, "invalid hosted lowering result");
+            value.when(stageValue == Stage::metadata_allocation, "hosted IR metadata allocation failed");
+            value.when(stageValue == Stage::metadata_transport || stageValue == Stage::metadata,
+                "invalid hosted IR metadata transport");
+            value.when(stageValue == Stage::instruction_allocation, "hosted IR instruction allocation failed");
+            value.when(stageValue == Stage::instruction_transport || stageValue == Stage::instruction,
+                "invalid hosted IR instruction transport");
+            value.when(stageValue == Stage::body_count, "invalid typed IR: callable body count mismatch");
+            value.when(recursive, "invalid typed IR: recursive receiver call cycle");
+            value.when(stageValue == Stage::graph && !recursive, "invalid hosted IR graph result");
+            value.when(stageValue == Stage::declarations, "invalid hosted resolution result");
+            value.when(emission && emitted == compiler_x86::EmitStatus::allocation,
+                "hosted x86 emission allocation failed");
+            value.when(emission && emitted == compiler_x86::EmitStatus::limit,
+                "hosted x86 emission exceeded its bounded output or workspace");
+            value.when(emission && emitted == compiler_x86::EmitStatus::unsupported,
+                "x86 object emission does not support this instruction or data form");
+            value.when(emission && emitted != compiler_x86::EmitStatus::allocation && emitted
+                != compiler_x86::EmitStatus::limit && emitted != compiler_x86::EmitStatus::unsupported,
+                "invalid hosted x86 emission transport");
+            return value;
         }
     };
 
@@ -719,8 +1790,13 @@ export namespace compiler_pipeline {
         Result finished = stages(region, move(result), move(metadata), move(instructions), move(declarations), options);
         return move(finished);
     }
-    // The chunk at offset of a rendered unread-local warning.
-    auto lint(const Result& result, i64 index, i64 offset) -> compiler_resolver::Report {
+    // The chunk at offset of a run's diagnostic: the failure of an incomplete
+    // run, or else a rendered unread-local warning.
+    auto diagnostic(const Result& result, i64 index, i64 offset) -> compiler_resolver::Report {
+        if (!result.complete()) {
+            const compiler_resolver::Report failure = result.failure(offset);
+            return failure;
+        }
         const compiler_resolver::Report report = compiler_resolver::stored_report(result.lint(index),
             result.lint_text(), 6001, true, offset);
         return report;

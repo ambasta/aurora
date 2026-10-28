@@ -59,6 +59,7 @@ import aurora.compiler.ir_verification_storage;
 import aurora.compiler.x86_object_storage;
 import aurora.compiler.x86_storage;
 import aurora.compiler.pipeline;
+import aurora.compiler.diagnostics;
 export namespace compiler_frontend {
     auto pipeline_run(builtin::ByteRegion region, compiler_resolver::Session session, i64 root, i64 diagnostic,
         u64 options) -> compiler_pipeline::Result {
