@@ -1,18 +1,21 @@
 #pragma once
 
-#include "ir.hpp"
+#include "diagnostics.hpp"
+#include "hosted_frontend_abi.hpp"
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <string>
 
 namespace aurora::testing {
 
-// Test-only fixture importer. Raw prefixes come from the unchanged test Module
-// builders, into real source-created owners, and must pass full source metadata
-// admission. It never borrows or opens a production Metadata capsule.
+using ServiceKind = hosted_abi::compiler_catalog::ServiceKind;
+// One callable's metadata read from textual IR by the Aurora reader into a real
+// source-created store, which must pass full source metadata admission. facts
+// is the fixture's tracked domain size, its retained-pool budget.
 class Metadata final {
 public:
-    static std::unique_ptr<Metadata> import(const ir::Module &module);
+    static std::unique_ptr<Metadata> read(const std::string &module, std::uint64_t facts);
     ~Metadata();
     Metadata(const Metadata &) = delete;
     Metadata &operator=(const Metadata &) = delete;
@@ -22,7 +25,7 @@ public:
 private:
     class State;
     std::unique_ptr<State> state_;
-    explicit Metadata(const ir::Module &module);
+    Metadata(const std::string &module, std::uint64_t facts);
     const void *sourceOwner() const;
     friend class InitializationWorkspace;
 };
@@ -85,8 +88,8 @@ public:
         missing_logical
     };
     ReceiverCompletion receiverCompletion();
-    bool acquireServiceLoan(int id, int root, service::Kind kind);
-    bool releaseServiceLoan(int id, service::Kind kind);
+    bool acquireServiceLoan(int id, int root, ServiceKind kind);
+    bool releaseServiceLoan(int id, ServiceKind kind);
     bool serviceUnsuspended(int root) const;
     enum class ServiceCallState {
         ready,
@@ -94,9 +97,9 @@ public:
         provenance
     };
     ServiceCallState validateServiceCall(int first,
-                                         service::Kind firstKind,
+                                         ServiceKind firstKind,
                                          int second = 0,
-                                         service::Kind secondKind = service::Kind::Console) const;
+                                         ServiceKind secondKind = ServiceKind::Console) const;
     void completeServiceCall(int first, int second = 0);
     bool serviceLoansClosed() const;
     bool sameServiceLoans(Id snapshot) const;

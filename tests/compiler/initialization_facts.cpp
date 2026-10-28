@@ -1,20 +1,19 @@
 // The reference sets live only in this fixture. Every observed operation goes
 // through the current eleven-pool VerificationWorkspace and test-only generated probes.
 #include "initialization_workspace.hpp"
-#include "ir.hpp"
 #include <algorithm>
 #include <array>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <limits>
 #include <numeric>
 #include <random>
 #include <set>
+#include <string>
 #include <type_traits>
 
 using aurora::Error;
-using aurora::Type;
-using aurora::ir::Module;
 using aurora::testing::InitializationWorkspace;
 using aurora::testing::Metadata;
 using ObjectCompletion = InitializationWorkspace::ObjectCompletion;
@@ -44,16 +43,13 @@ std::vector<int> denseOffsets(std::size_t count) {
     std::iota(offsets.begin(), offsets.end(), 1);
     return offsets;
 }
+// Fixture metadata is textual IR (tests/compiler/ir/README.md), read and
+// admitted by the Aurora reader and metadata admission.
 std::unique_ptr<Metadata> declarations(const std::vector<int> &offsets) {
-    aurora::ir::Function function;
-    function.name = "facts";
-    function.result = Type::I64;
-    function.frameBytes = offsets.empty() ? 0 : 65536;
+    std::string module = "function facts\n  result i64\n  frame " + std::to_string(offsets.empty() ? 0 : 65536) + "\n";
     for (int offset : offsets)
-        function.slots.emplace(offset, Type::U8);
-    Module module;
-    module.functions.push_back(std::move(function));
-    return Metadata::import(module);
+        module += "  slot " + std::to_string(offset) + " u8\n";
+    return Metadata::read(module + "end\n", offsets.size());
 }
 struct Reference {
     std::set<int> must, may;
@@ -267,70 +263,78 @@ enum class ReceiverEntry {
     mutable_borrowed,
     borrowed_pair
 };
-const std::vector<aurora::ir::ClassField> receiverFields{{Type::U8, 0, 1, false},
-                                                         {Type::U8, 1, 3, true},
-                                                         {Type("Nested"), 4, 2, false},
-                                                         {Type("Empty"), 6, 0, false},
-                                                         {Type::OwnedBytes, 6, 0, false},
-                                                         {Type("Nested"), 6, 4, true, 2},
-                                                         {Type("Empty"), 10, 0, true, 3},
-                                                         {Type("NestedEmpty"), 10, 0, false}};
+// A logical receiver field: a scalar ("u8"), owned bytes ("bytes") or a class name.
+struct Field {
+    std::string type;
+    int firstLeaf;
+    int length;
+    bool array;
+    int elementCount = 1;
+    bool isClass() const {
+        return type != "u8" && type != "bytes";
+    }
+    std::string text() const {
+        return "(" + (isClass() ? "(class " + type + ")" : type) + ' ' + std::to_string(firstLeaf) + ' ' +
+               std::to_string(length) + ' ' + (array ? "true" : "false") + ' ' + std::to_string(elementCount) + ')';
+    }
+};
+const std::vector<Field> receiverFields{{"u8", 0, 1, false},
+                                        {"u8", 1, 3, true},
+                                        {"Nested", 4, 2, false},
+                                        {"Empty", 6, 0, false},
+                                        {"bytes", 6, 0, false},
+                                        {"Nested", 6, 4, true, 2},
+                                        {"Empty", 10, 0, true, 3},
+                                        {"NestedEmpty", 10, 0, false}};
 std::unique_ptr<Metadata> objectDeclarations(const std::vector<int> &scalars = objectScalars,
                                              const std::vector<ObjectFacts> &objects = objectFacts,
-                                             const std::vector<aurora::ir::ClassField> &fields = {},
+                                             const std::vector<Field> &fields = {},
                                              ReceiverEntry entry = ReceiverEntry::none) {
-    Module module;
-    module.classLayouts = {
-        {"Box", {Type::U8, Type::U8}}, {"Empty", {}}, {"Nested", {Type::U8, Type::U8}}, {"NestedEmpty", {}}};
-    module.classLayouts["Octet"] = std::vector<Type>(8, Type::U8);
-    module.classFields["Nested"] = {{Type("Box"), 0, 2, false}};
-    module.classFields["NestedEmpty"] = {{Type("Empty"), 0, 0, false}};
-    aurora::ir::Function function;
-    function.name = "object_facts";
-    function.result = Type::I64;
-    function.frameBytes = 65536;
+    const std::map<std::string, int> childLeaves{{"Box", 2}, {"Empty", 0}, {"Nested", 2}, {"NestedEmpty", 0}};
+    std::string module = "layout Box [u8 u8]\nlayout Empty []\nlayout Nested [u8 u8]\nlayout NestedEmpty []\n"
+                         "layout Octet [u8*8]\nfields Nested [((class Box) 0 2 false)]\n"
+                         "fields NestedEmpty [((class Empty) 0 0 false)]\n";
+    std::string function = "function object_facts\n  result i64\n  frame 65536\n";
     for (int offset : scalars)
-        function.slots[offset] = Type::U8;
+        function += "  slot " + std::to_string(offset) + " u8\n";
     for (const auto &object : objects) {
         const auto name = object.incomplete == ObjectCompletion::physical
                               ? (object.leaves.size() == 8 ? "Octet" : "Box")
                           : object.incomplete == ObjectCompletion::missing_empty ? "Empty"
                           : object.leaves.empty()                                ? "NestedEmpty"
                                                                                  : "Nested";
-        function.objectSlots[object.base] = {name, false};
+        function += "  object " + std::to_string(object.base) + ' ' + name + " false\n";
     }
     if (entry != ReceiverEntry::none) {
-        auto &leaves = module.classLayouts["Receiver"];
-        module.classFields["Receiver"] = fields;
-        for (const auto &field : fields)
-            if (field.elementType.isClass()) {
-                const auto &child = module.classLayouts.at(field.elementType.className);
-                for (int element = 0; element < field.elementCount; ++element)
-                    leaves.insert(leaves.end(), child.begin(), child.end());
-            } else
-                leaves.insert(leaves.end(), field.length, field.elementType);
+        // The receiver's leaves are its fields' scalars and their classes' leaves.
+        std::string leaves, logical;
+        for (const auto &field : fields) {
+            const auto count = field.isClass() ? childLeaves.at(field.type) * field.elementCount : field.length;
+            for (int leaf = 0; leaf < count; ++leaf)
+                leaves += field.type == "bytes" ? "bytes " : "u8 ";
+            logical += field.text() + ' ';
+        }
+        module += "layout Receiver [" + leaves + "]\nfields Receiver [" + logical + "]\n";
         if (entry == ReceiverEntry::borrowed || entry == ReceiverEntry::mutable_borrowed ||
             entry == ReceiverEntry::borrowed_pair) {
-            function.parameters = {Type("Receiver")};
-            function.borrowedRootCount = 1;
-            function.borrowedRootMutability = entry == ReceiverEntry::mutable_borrowed;
+            function += "  params [(class Receiver)";
             if (entry == ReceiverEntry::borrowed_pair) {
-                module.classLayouts["OtherOwner"] = {};
-                module.classFields["OtherOwner"] = {{Type::OwnedBytes, 0, 0, false}};
-                function.parameters.push_back(Type("OtherOwner"));
-                function.borrowedRootCount = 2;
+                module += "layout OtherOwner []\nfields OtherOwner [(bytes 0 0 false)]\n";
+                function += " (class OtherOwner)";
             }
+            function += std::string("]\n  roots ") + (entry == ReceiverEntry::borrowed_pair ? "2" : "1") +
+                        "\n  rootmut " + (entry == ReceiverEntry::mutable_borrowed ? "1" : "0") + "\n";
         } else {
-            function.receiver =
-                aurora::ir::Receiver{"Receiver", entry != ReceiverEntry::method, entry == ReceiverEntry::constructor};
+            function += std::string("  receiver Receiver ") + (entry != ReceiverEntry::method ? "true" : "false") +
+                        (entry == ReceiverEntry::constructor ? " true\n" : " false\n");
             if (entry == ReceiverEntry::constructor && std::any_of(fields.begin(), fields.end(), [](const auto &field) {
-                    return field.elementType == Type::OwnedBytes;
+                    return field.type == "bytes";
                 }))
-                function.parameters = {Type::ByteRegion};
+                function += "  params [region]\n";
         }
     }
-    module.functions.push_back(std::move(function));
-    return Metadata::import(module);
+    const auto facts = scalars.size() + objects.size() + (entry == ReceiverEntry::none ? 0 : fields.size());
+    return Metadata::read(module + function + "end\n", facts);
 }
 // Negative keys keep logical object facts disjoint from physical scalar facts
 // in the test-only set oracle, even when their canonical offsets are identical.
@@ -528,19 +532,19 @@ void objectDomainBoundaryTests() {
 int receiverKey(std::size_t field) {
     return -65537 - static_cast<int>(field);
 }
-bool tracksReceiver(const aurora::ir::ClassField &field) {
-    return field.length > 0 || field.elementType.isClass();
+bool tracksReceiver(const Field &field) {
+    return field.length > 0 || field.isClass();
 }
-unsigned receiverState(const Reference &expected, const aurora::ir::ClassField &field, std::size_t index) {
+unsigned receiverState(const Reference &expected, const Field &field, std::size_t index) {
     const bool must = expected.must.contains(receiverKey(index)), may = expected.may.contains(receiverKey(index));
     return (unsigned(field.length == 0 || must) * ReceiverFieldFact::physical_initialized) |
            (unsigned(field.length > 0 && may) * ReceiverFieldFact::physical_written) |
-           (unsigned(field.elementType.isClass() && must) * ReceiverFieldFact::logical_initialized) |
-           (unsigned(field.elementType.isClass() && may) * ReceiverFieldFact::logical_written);
+           (unsigned(field.isClass() && must) * ReceiverFieldFact::logical_initialized) |
+           (unsigned(field.isClass() && may) * ReceiverFieldFact::logical_written);
 }
 void matchesReceiver(InitializationWorkspace &actual,
                      const Reference &expected,
-                     const std::vector<aurora::ir::ClassField> &fields = receiverFields,
+                     const std::vector<Field> &fields = receiverFields,
                      const std::vector<int> &scalars = objectScalars,
                      const std::vector<ObjectFacts> &objects = objectFacts) {
     matchesObjects(actual, expected, scalars, objects, fields.size());
@@ -556,7 +560,7 @@ void matchesReceiver(InitializationWorkspace &actual,
                 completion = ReceiverCompletion::missing_physical;
                 break;
             }
-            if (fields[index].elementType.isClass())
+            if (fields[index].isClass())
                 completion = ReceiverCompletion::missing_logical;
         }
     check(actual.receiverCompletion() == completion, "receiver completion lost physical-before-logical precedence");
@@ -691,13 +695,13 @@ void receiverDomainBoundaryTests() {
         for (std::size_t index = 0; index < objectCount; ++index)
             objects.push_back(
                 {static_cast<int>(((scalarCount + 7) / 8 + index + 1) * 8), {}, ObjectCompletion::missing_empty});
-        std::vector<aurora::ir::ClassField> fields(fieldCount, {Type("Empty"), 0, 0, false});
+        std::vector<Field> fields(fieldCount, {"Empty", 0, 0, false});
         if (fieldCount == 8191)
-            fields.back() = {Type("Empty"), 0, 0, true, 64};
+            fields.back() = {"Empty", 0, 0, true, 64};
         if (fieldCount == 8192)
-            fields.back() = {Type("NestedEmpty"), 0, 0, false};
+            fields.back() = {"NestedEmpty", 0, 0, false};
         if (fieldCount == 65 || fieldCount >= 8191)
-            fields[0] = {Type::OwnedBytes, 0, 0, false}; // Resource gaps still occupy canonical domain bits.
+            fields[0] = {"bytes", 0, 0, false}; // Resource gaps still occupy canonical domain bits.
         for (const auto entry : {ReceiverEntry::constructor, ReceiverEntry::method}) {
             auto metadata = objectDeclarations(scalars, objects, fields, entry);
             InitializationWorkspace workspace(*metadata, 0);
@@ -740,7 +744,7 @@ void receiverDomainBoundaryTests() {
 }
 void receiverFailureTests() {
     for (std::size_t count : {8193u, 73729u}) {
-        const std::vector<aurora::ir::ClassField> fields(count, {Type("Empty"), 0, 0, false});
+        const std::vector<Field> fields(count, {"Empty", 0, 0, false});
         rejects([&] {
             objectDeclarations({}, {}, fields, ReceiverEntry::constructor);
         });
@@ -765,7 +769,7 @@ void receiverFailureTests() {
                 (void)workspace.writeReceiverField(static_cast<int>(index));
             });
         }
-    for (const auto &fields : std::vector<std::vector<aurora::ir::ClassField>>{{}, {{Type::OwnedBytes, 0, 0, false}}}) {
+    for (const auto &fields : std::vector<std::vector<Field>>{{}, {{"bytes", 0, 0, false}}}) {
         auto leafless = objectDeclarations({}, {}, fields, ReceiverEntry::constructor);
         InitializationWorkspace workspace(*leafless, 0);
         matchesReceiver(workspace, {}, fields, {}, {});
@@ -789,20 +793,17 @@ void receiverFailureTests() {
     }
 }
 std::unique_ptr<Metadata> serviceDeclarations(std::size_t count) {
-    aurora::ir::Function function;
-    function.name = "service_facts";
-    function.result = Type::I64;
-    function.frameBytes = static_cast<int>(count * 16);
+    std::string parameters, slots;
     for (std::size_t index = 0; index < count; ++index) {
-        function.parameters.push_back(index == 0 ? Type::ConsoleSession : Type::DisplaySession);
-        function.serviceSlots.insert(static_cast<int>((index + 1) * 16));
+        parameters += index == 0 ? "console " : "display ";
+        slots += "  service " + std::to_string((index + 1) * 16) + "\n";
     }
-    Module module;
-    module.functions.push_back(std::move(function));
-    return Metadata::import(module);
+    return Metadata::read("function service_facts\n  result i64\n  params [" + parameters + "]\n  frame " +
+                              std::to_string(count * 16) + "\n" + slots + "end\n",
+                          0);
 }
 void serviceLoanLifecycleTests() {
-    using Kind = aurora::service::Kind;
+    using Kind = aurora::testing::ServiceKind;
     using CallState = InitializationWorkspace::ServiceCallState;
     const std::array<int, 2> ids{7, std::numeric_limits<int>::max()};
     const std::array<Kind, 2> kinds{Kind::Console, Kind::Display};

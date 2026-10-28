@@ -78,8 +78,13 @@ def main():
         directory = Path(temporary)
         # The source object is the Aurora pipeline's emission of one textual IR case.
         native = directory / "native.o"
-        run(args.ir_check.resolve(), "--output", ROOT / "tests/compiler/ir/ir-tests/object.air", "native object values",
-            native)
+        run(
+            args.ir_check.resolve(),
+            "--output",
+            ROOT / "tests/compiler/ir/ir-tests/object.air",
+            "native object values",
+            native,
+        )
         run(
             args.driver,
             native,

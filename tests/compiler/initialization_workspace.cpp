@@ -1,8 +1,5 @@
 #include "initialization_workspace.hpp"
 #include "../../runtime/hosted_bytes.hpp"
-#include "hosted_frontend_abi.hpp"
-#include "initialization_probe_abi.hpp"
-#include "ir.hpp"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -78,12 +75,12 @@ public:
         release_.region = region;
         hosted_abi::VerificationCreate create{};
         create.region = region;
-        aurora_test_verification_create(&create, data());
+        aurora_hosted_verification_create(&create, data());
         // Do not check a result here. The completed SourceOwner arms cleanup
         // before Capsule can throw for a refused pool or initialization step.
     }
     ~SourceOwner() {
-        aurora_test_verification_release(&release_);
+        aurora_hosted_verification_release(&release_);
     }
     SourceOwner(const SourceOwner &) = delete;
     SourceOwner &operator=(const SourceOwner &) = delete;
@@ -98,236 +95,56 @@ public:
 
 namespace {
 namespace meta = hosted_abi::compiler_ir_metadata;
-// A deliberately narrow raw-fixture encoder. It preserves the existing test
-// Module builders, but it neither accesses private production Metadata nor
-// decides whether any raw declaration is valid. Full source admission does that.
-class MetadataInput final {
-    meta::FlagMasks masks{};
-
-    meta::ByteRange text(std::string_view value) {
-        const meta::ByteRange range{argument(names.size()), argument(value.size())};
-        names.insert(names.end(), value.begin(), value.end());
-        return range;
-    }
-    meta::RawTypeRow type(const Type &value) {
-        meta::RawTypeRow row{};
-        row.typeKind = static_cast<std::int64_t>(value.kind);
-        row.nameRange = text(value.className);
-        row.rawTail.elementKind = static_cast<std::int64_t>(value.elementKind);
-        row.rawTail.arrayLength = value.length;
-        row.rawTail.elementParameterBytes = argument(value.elementParameter.size());
-        row.rawTail.lengthParameterBytes = argument(value.lengthParameter.size());
-        row.rawTail.templateArgumentCount = argument(value.templateArguments.size());
-        return row;
-    }
-    std::int64_t appendType(const Type &value) {
-        const auto position = argument(types.size());
-        types.push_back(type(value));
-        return position;
-    }
-
-public:
-    std::vector<unsigned char> names;
-    std::vector<meta::RawTypeRow> types;
-    std::vector<meta::ClassRow> classes;
-    std::vector<meta::FieldRow> fields;
-    std::vector<meta::SlotRow> slots;
-    meta::CallableRow callable{};
-    meta::InputCounts counts{};
-    std::uint64_t facts = 0;
-
-    explicit MetadataInput(const ir::Module &module) {
-        // Fail closed if a future regression introduces an unencoded input.
-        // Do not silently erase it to make metadata admission succeed.
-        if (module.functions.size() != 1 || !module.classStorage.empty() || !module.classArrayCarriers.empty() ||
-            !module.descriptors.empty() || !module.enumCases.empty() || module.descriptorViews.size() != 1 ||
-            !module.descriptorViews.contains(0) || !module.descriptorViews.at(0).empty())
-            throw Error("unsupported initialization test metadata fixture shape");
-        const auto &function = module.functions.front();
-        if (!function.code.empty() || !function.arraySlots.empty() || !function.spanSlots.empty() ||
-            !function.regionSlots.empty() || !function.byteSlots.empty() || !function.ownedValueTypes.empty() ||
-            !function.spanValueTypes.empty() || function.receiverSpanField)
-            throw Error("unsupported initialization test callable fixture shape");
-        for (const auto &[name, values] : module.classFields) {
-            (void)values;
-            if (!module.classLayouts.contains(name))
-                throw Error("unsupported initialization test class fixture shape");
-        }
-        aurora_test_metadata_flag_masks(&masks);
-        std::size_t leafCount = 0, fieldCount = 0;
-        for (const auto &[name, leaves] : module.classLayouts) {
-            (void)name;
-            leafCount = count(static_cast<std::int64_t>(checkedSum(leafCount, leaves.size())));
-        }
-        for (const auto &[name, values] : module.classFields) {
-            (void)name;
-            fieldCount = count(static_cast<std::int64_t>(checkedSum(fieldCount, values.size())));
-        }
-        types.resize(count(static_cast<std::int64_t>(checkedSum(leafCount, fieldCount))));
-        std::size_t leafPosition = 0;
-        for (const auto &[name, leaves] : module.classLayouts) {
-            meta::ClassRow row{};
-            row.nameRange = text(name);
-            row.membershipBits = masks.classLayout;
-            row.leafRange = {argument(leafPosition), argument(leaves.size())};
-            row.fieldRange = {argument(fields.size()), 0};
-            row.suppliedStorage = -1;
-            for (const auto &leaf : leaves)
-                types.at(leafPosition++) = type(leaf);
-            if (const auto found = module.classFields.find(name); found != module.classFields.end()) {
-                row.membershipBits |= masks.classFields;
-                row.fieldRange.indexCount = argument(found->second.size());
-                for (const auto &field : found->second) {
-                    const auto typeIndex = leafCount + fields.size();
-                    types.at(typeIndex) = type(field.elementType);
-                    fields.push_back(
-                        {argument(typeIndex), field.firstLeaf, field.length, field.array, field.elementCount});
-                }
-            }
-            classes.push_back(row);
-        }
-        callable.nameRange = text(function.name);
-        callable.typeRange = {argument(types.size()), argument(function.parameters.size() + 1)};
-        callable.borrowedRootCount = function.borrowedRootCount;
-        callable.borrowedRootMutability = function.borrowedRootMutability;
-        callable.moduleScope = function.moduleScope;
-        callable.frameBytes = function.frameBytes;
-        appendType(function.result);
-        for (const auto &parameter : function.parameters)
-            appendType(parameter);
-        using SlotKind = hosted_abi::compiler_lowering::RecordKind;
-        for (const auto &[offset, value] : function.slots)
-            slots.push_back({static_cast<std::int64_t>(SlotKind::ScalarSlot), offset, appendType(value), 0, 0});
-        for (const auto &[offset, value] : function.objectSlots)
-            slots.push_back({static_cast<std::int64_t>(SlotKind::ObjectSlot),
-                             offset,
-                             appendType(Type(value.className)),
-                             0,
-                             value.mutableValue});
-        for (const auto offset : function.serviceSlots)
-            slots.push_back({static_cast<std::int64_t>(SlotKind::ServiceSlot), offset, 0, 0, 0});
-        callable.slotRange = {0, argument(slots.size())};
-        if (function.receiver) {
-            const auto &receiver = *function.receiver;
-            callable.flags |= masks.callableReceiver;
-            callable.receiver.nameRange = text(receiver.className);
-            callable.receiver.flags = (receiver.mutableValue ? masks.receiverMutable : 0) |
-                                      (receiver.constructor ? masks.receiverConstructor : 0) |
-                                      (receiver.publicAccess ? masks.receiverPublic : 0);
-        }
-        counts.coreCounts.bytes = argument(names.size());
-        counts.coreCounts.types = argument(types.size());
-        counts.coreCounts.classes = argument(classes.size());
-        counts.coreCounts.fields = argument(fields.size());
-        counts.coreCounts.leaves = argument(leafCount);
-        counts.mapCounts.indices = 1; // The sole callable's independently checked name index.
-        counts.mapCounts.views = 1;   // The actual root reflection scope, not an admission claim.
-        facts = checkedSum(function.slots.size(), function.objectSlots.size());
-        std::string receiverName;
-        if (function.borrowedRootCount != 0 && !function.parameters.empty() && function.parameters.front().isClass())
-            receiverName = function.parameters.front().className;
-        else if (function.receiver)
-            receiverName = function.receiver->className;
-        if (!receiverName.empty()) {
-            const auto explicitFields = module.classFields.find(receiverName);
-            const auto leaves = module.classLayouts.find(receiverName);
-            if (explicitFields != module.classFields.end())
-                facts = checkedSum(facts, explicitFields->second.size());
-            else if (leaves != module.classLayouts.end())
-                facts = checkedSum(facts, leaves->second.size());
-        }
-    }
-    std::uint64_t quota() const {
-        std::uint64_t total = names.size();
-        const auto add = [&](std::uint64_t rows, std::uint64_t stride) {
-            total = checkedSum(total, checkedProduct(rows, stride));
-        };
-        add(types.size(), sizeof(meta::RawTypeRow));
-        add(classes.size(), sizeof(meta::ClassRow));
-        add(checkedSum(fields.size(), count(counts.coreCounts.leaves)), sizeof(meta::FieldRow));
-        add(classes.size(), sizeof(meta::StorageRow));
-        add(checkedSum(1, checkedSum(fields.size(), checkedProduct(2, count(counts.coreCounts.leaves)))),
-            sizeof(meta::IndexRow));
-        add(1, sizeof(meta::ViewRow));
-        add(1, sizeof(meta::CallableRow));
-        add(slots.size(), sizeof(meta::SlotRow));
-        add(classes.size(), sizeof(meta::ClassResultRow));
-        add(4, sizeof(meta::FrameRow));
-        return total;
-    }
-};
-
-class MetadataSourceOwner final {
-    hosted_abi::MetadataRelease release_{};
-
-public:
-    explicit MetadataSourceOwner(std::uint64_t region) {
-        release_.region = region;
-        hosted_abi::MetadataCreate create{};
-        create.region = region;
-        aurora_test_metadata_create(&create, data());
-    }
-    ~MetadataSourceOwner() {
-        aurora_test_metadata_release(&release_);
-    }
-    MetadataSourceOwner(const MetadataSourceOwner &) = delete;
-    MetadataSourceOwner &operator=(const MetadataSourceOwner &) = delete;
-    void *data() {
-        return release_.store.storage.data();
-    }
-    const void *data() const {
-        return release_.store.storage.data();
-    }
-    bytes::NativeOwner descriptor(std::size_t offset) const {
-        if (offset > sizeof(release_.store) || sizeof(bytes::NativeOwner) > sizeof(release_.store) - offset)
-            invalidInitialization();
-        bytes::NativeOwner actual{};
-        // Observe a descriptor created by source code. Never synthesize or alter
-        // its allocation, generation, region, length or ownership identity.
-        std::memcpy(&actual, release_.store.storage.data() + offset, sizeof(actual));
-        return actual;
-    }
-    template <class Row> void set(std::size_t offset, std::size_t at, const Row &row) {
-        static_assert(std::is_standard_layout_v<Row> && std::is_trivially_copyable_v<Row>);
-        auto actual = descriptor(offset);
-        if (bytes::__au_runtime_values_set(&actual, argument(at), sizeof(Row), &row) != 1)
-            invalidInitialization();
-    }
-};
+constexpr std::uint64_t metadataQuota = std::uint64_t{1} << 30;
 } // namespace
+
+// The Aurora textual IR reader fills the pending store; full source metadata
+// admission decides whether the fixture is valid.
+// The read store, released before its Region closes, also when admission throws.
+class MetadataOwner final {
+public:
+    hosted_abi::MetadataRelease owner{};
+    bool live = false;
+    explicit MetadataOwner(std::uint64_t region) {
+        owner.region = region;
+    }
+    ~MetadataOwner() {
+        if (live)
+            aurora_hosted_metadata_release(&owner);
+    }
+    MetadataOwner(const MetadataOwner &) = delete;
+    MetadataOwner &operator=(const MetadataOwner &) = delete;
+};
 
 class Metadata::State final {
 public:
     const std::uint64_t facts;
     bytes::Region region;
-    MetadataSourceOwner owner;
+    MetadataOwner store;
+    hosted_abi::MetadataRelease &owner = store.owner;
 
-    explicit State(const MetadataInput &input) : facts(input.facts), region(input.quota()), owner(region.id()) {
-        hosted_abi::MetadataInitialize initialize{};
-        initialize.counts = input.counts;
-        initialize.callableCount = 1;
-        initialize.slotCount = argument(input.slots.size());
-        initialize.instructionBegin = argument(input.types.size());
-        if (aurora_test_metadata_initialize(owner.data(), &initialize) != 1 ||
-            aurora_test_metadata_allocated(owner.data()) != 1)
+    State(const std::string &module, std::uint64_t domain) : facts(domain), region(metadataQuota), store(region.id()) {
+        hosted_abi::AirRelease reader{};
+        reader.region = region.id();
+        hosted_abi::AirStart start{};
+        start.region = region.id();
+        aurora_hosted_air_start(&start, reader.reader.storage.data());
+        hosted_abi::AirRead text{};
+        text.source.backing = module.data();
+        text.source.length = argument(module.size());
+        if (aurora_hosted_air_read(reader.reader.storage.data(), &text) != 1) {
+            aurora_hosted_air_release(&reader);
+            throw Error("unreadable initialization test metadata fixture");
+        }
+        hosted_abi::AirMetadata input{};
+        input.region = region.id();
+        input.reader = reader.reader;
+        aurora_hosted_air_metadata(&input, owner.store.storage.data());
+        store.live = true;
+        if (aurora_hosted_metadata_allocated(owner.store.storage.data()) != 1)
             allocationFailure();
-        auto names = owner.descriptor(hosted_abi::metadataStore_bytesOffset);
-        for (std::size_t at = 0; at < input.names.size(); ++at)
-            if (bytes::__au_runtime_bytes_set(&names, argument(at), input.names[at]) != 1)
-                invalidInitialization();
-        for (std::size_t at = 0; at < input.types.size(); ++at)
-            owner.set(hosted_abi::metadataStore_typesOffset, at, input.types[at]);
-        for (std::size_t at = 0; at < input.classes.size(); ++at)
-            owner.set(hosted_abi::metadataStore_classesOffset, at, input.classes[at]);
-        for (std::size_t at = 0; at < input.fields.size(); ++at)
-            owner.set(hosted_abi::metadataStore_fieldsOffset, at, input.fields[at]);
-        for (std::size_t at = 0; at < input.slots.size(); ++at)
-            owner.set(hosted_abi::metadataStore_slotsOffset, at, input.slots[at]);
-        owner.set(hosted_abi::metadataStore_callablesOffset, 0, input.callable);
-        owner.set(hosted_abi::metadataStore_indicesOffset, 0, meta::IndexRow{0});
-        owner.set(hosted_abi::metadataStore_viewsOffset, 0, meta::ViewRow{});
-        const auto status = aurora_test_metadata_run(owner.data());
-        const auto reason = static_cast<meta::MetadataError>(aurora_test_metadata_error(owner.data()));
+        const auto status = aurora_hosted_metadata_run(owner.store.storage.data());
+        const auto reason = static_cast<meta::MetadataError>(aurora_hosted_metadata_error(owner.store.storage.data()));
         if (status == static_cast<std::int64_t>(meta::MetadataStatus::allocation))
             allocationFailure();
         if (status == static_cast<std::int64_t>(meta::MetadataStatus::invalid)) {
@@ -339,13 +156,15 @@ public:
         if (status != static_cast<std::int64_t>(meta::MetadataStatus::success) || reason != meta::MetadataError::none)
             invalidInitialization();
     }
+    State(const State &) = delete;
+    State &operator=(const State &) = delete;
 };
 
-Metadata::Metadata(const ir::Module &module) : state_(std::make_unique<State>(MetadataInput(module))) {
+Metadata::Metadata(const std::string &module, std::uint64_t facts) : state_(std::make_unique<State>(module, facts)) {
 }
 Metadata::~Metadata() = default;
-std::unique_ptr<Metadata> Metadata::import(const ir::Module &module) {
-    return std::unique_ptr<Metadata>(new Metadata(module));
+std::unique_ptr<Metadata> Metadata::read(const std::string &module, std::uint64_t facts) {
+    return std::unique_ptr<Metadata>(new Metadata(module, facts));
 }
 std::size_t Metadata::callableCount() const noexcept {
     return 1;
@@ -356,7 +175,7 @@ std::uint64_t Metadata::domainFacts(std::size_t callable) const {
     return state_->facts;
 }
 const void *Metadata::sourceOwner() const {
-    return state_->owner.data();
+    return state_->owner.store.storage.data();
 }
 
 class InitializationWorkspace::Capsule final {
@@ -374,16 +193,16 @@ public:
     Capsule(const Metadata &input, std::size_t id, const void *metadataOwner)
         : facts(input.domainFacts(id)), region(quota(facts)), owner(region.id()), metadata(input), callable(id),
           roots{owner.data(), metadataOwner} {
-        if (aurora_test_initialization_allocated(owner.data()) != 1)
+        if (aurora_hosted_initialization_allocated(owner.data()) != 1)
             failure();
-        const auto result = aurora_test_initialization_initialize(roots.data(), argument(callable));
+        const auto result = aurora_hosted_initialization_initialize(roots.data(), argument(callable));
         if (result != static_cast<std::int64_t>(wire::InitializationStatus::success))
             failure();
     }
     // Successful semantic operations cross once. Status distinguishes allocation
     // from integrity failure only after an error sentinel or invalid result.
     [[noreturn]] void failure() const {
-        if (aurora_test_initialization_status(owner.data()) ==
+        if (aurora_hosted_initialization_status(owner.data()) ==
             static_cast<std::int64_t>(wire::InitializationStatus::allocation))
             allocationFailure();
         invalidInitialization();
@@ -415,13 +234,13 @@ InitializationWorkspace::InitializationWorkspace(const Metadata &metadata, std::
 }
 InitializationWorkspace::~InitializationWorkspace() = default;
 void InitializationWorkspace::load(Id id) {
-    capsule_->succeeded(aurora_test_initialization_load(capsule_->owner.data(), argument(id)));
+    capsule_->succeeded(aurora_hosted_initialization_load(capsule_->owner.data(), argument(id)));
 }
 InitializationWorkspace::Id InitializationWorkspace::retain() {
-    return capsule_->counted(aurora_test_initialization_retain(capsule_->owner.data()), 65535);
+    return capsule_->counted(aurora_hosted_initialization_retain(capsule_->owner.data()), 65535);
 }
 bool InitializationWorkspace::join(Id id) {
-    const auto result = aurora_test_initialization_join(capsule_->owner.data(), argument(id));
+    const auto result = aurora_hosted_initialization_join(capsule_->owner.data(), argument(id));
     if (result == static_cast<std::int64_t>(wire::InitializationJoin::unchanged))
         return false;
     if (result == static_cast<std::int64_t>(wire::InitializationJoin::changed))
@@ -429,51 +248,51 @@ bool InitializationWorkspace::join(Id id) {
     capsule_->failure();
 }
 bool InitializationWorkspace::restoreFacts(std::size_t count) {
-    return capsule_->boolean(aurora_test_initialization_restore_facts(capsule_->owner.data(), argument(count)));
+    return capsule_->boolean(aurora_hosted_initialization_restore_facts(capsule_->owner.data(), argument(count)));
 }
 std::size_t InitializationWorkspace::currentCount() const {
-    return capsule_->counted(aurora_test_initialization_current_count(capsule_->owner.data()),
+    return capsule_->counted(aurora_hosted_initialization_current_count(capsule_->owner.data()),
                              static_cast<std::int64_t>(checkedSum(checkedProduct(capsule_->facts, 2), 2)));
 }
 std::size_t InitializationWorkspace::retainedCountAt(Id id) const {
-    return capsule_->counted(aurora_test_initialization_retained_count_at(capsule_->owner.data(), argument(id)),
+    return capsule_->counted(aurora_hosted_initialization_retained_count_at(capsule_->owner.data(), argument(id)),
                              static_cast<std::int64_t>(checkedSum(checkedProduct(capsule_->facts, 2), 2)));
 }
 std::size_t InitializationWorkspace::retainedCount() const {
-    return capsule_->counted(aurora_test_initialization_retained_count(capsule_->owner.data()), 65536);
+    return capsule_->counted(aurora_hosted_initialization_retained_count(capsule_->owner.data()), 65536);
 }
 std::size_t InitializationWorkspace::slotCount() const {
-    return capsule_->counted(aurora_test_initialization_slot_count(capsule_->owner.data()), 65536);
+    return capsule_->counted(aurora_hosted_initialization_slot_count(capsule_->owner.data()), 65536);
 }
 std::size_t InitializationWorkspace::wordCount() const {
-    return capsule_->counted(aurora_test_initialization_word_count(capsule_->owner.data()),
+    return capsule_->counted(aurora_hosted_initialization_word_count(capsule_->owner.data()),
                              static_cast<std::int64_t>(capsule_->facts / 64 + (capsule_->facts % 64 != 0)));
 }
 std::size_t InitializationWorkspace::logicalPayloadBytesPerSnapshot() const {
-    return capsule_->counted(aurora_test_initialization_payload_bytes(capsule_->owner.data()),
+    return capsule_->counted(aurora_hosted_initialization_payload_bytes(capsule_->owner.data()),
                              static_cast<std::int64_t>(snapshotBytes(capsule_->facts)));
 }
-bool InitializationWorkspace::acquireServiceLoan(int id, int root, service::Kind kind) {
-    return capsule_->boolean(aurora_test_initialization_acquire_service_loan(
+bool InitializationWorkspace::acquireServiceLoan(int id, int root, ServiceKind kind) {
+    return capsule_->boolean(aurora_hosted_initialization_acquire_service_loan(
         capsule_->owner.data(), id, root, static_cast<std::int64_t>(kind)));
 }
-bool InitializationWorkspace::releaseServiceLoan(int id, service::Kind kind) {
+bool InitializationWorkspace::releaseServiceLoan(int id, ServiceKind kind) {
     return capsule_->boolean(
-        aurora_test_initialization_release_service_loan(capsule_->owner.data(), id, static_cast<std::int64_t>(kind)));
+        aurora_hosted_initialization_release_service_loan(capsule_->owner.data(), id, static_cast<std::int64_t>(kind)));
 }
 bool InitializationWorkspace::serviceUnsuspended(int root) const {
-    return capsule_->boolean(aurora_test_initialization_service_unsuspended(capsule_->owner.data(), root));
+    return capsule_->boolean(aurora_hosted_initialization_service_unsuspended(capsule_->owner.data(), root));
 }
 InitializationWorkspace::ServiceCallState InitializationWorkspace::validateServiceCall(int first,
-                                                                                       service::Kind firstKind,
+                                                                                       ServiceKind firstKind,
                                                                                        int second,
-                                                                                       service::Kind secondKind) const {
+                                                                                       ServiceKind secondKind) const {
     switch (static_cast<wire::ServiceCallState>(
-        aurora_test_initialization_validate_service_call(capsule_->owner.data(),
-                                                         first,
-                                                         static_cast<std::int64_t>(firstKind),
-                                                         second,
-                                                         static_cast<std::int64_t>(secondKind)))) {
+        aurora_hosted_initialization_validate_service_call(capsule_->owner.data(),
+                                                           first,
+                                                           static_cast<std::int64_t>(firstKind),
+                                                           second,
+                                                           static_cast<std::int64_t>(secondKind)))) {
     case wire::ServiceCallState::ready:
         return ServiceCallState::ready;
     case wire::ServiceCallState::missing:
@@ -485,32 +304,33 @@ InitializationWorkspace::ServiceCallState InitializationWorkspace::validateServi
     }
 }
 void InitializationWorkspace::completeServiceCall(int first, int second) {
-    capsule_->succeeded(aurora_test_initialization_complete_service_call(capsule_->owner.data(), first, second));
+    capsule_->succeeded(aurora_hosted_initialization_complete_service_call(capsule_->owner.data(), first, second));
 }
 bool InitializationWorkspace::serviceLoansClosed() const {
-    return capsule_->boolean(aurora_test_initialization_service_loans_closed(capsule_->owner.data()));
+    return capsule_->boolean(aurora_hosted_initialization_service_loans_closed(capsule_->owner.data()));
 }
 bool InitializationWorkspace::sameServiceLoans(Id snapshot) const {
-    return capsule_->boolean(aurora_test_initialization_same_service_loans(capsule_->owner.data(), argument(snapshot)));
+    return capsule_->boolean(
+        aurora_hosted_initialization_same_service_loans(capsule_->owner.data(), argument(snapshot)));
 }
 unsigned InitializationWorkspace::scalarState(int offset) {
-    return capsule_->scalar(aurora_test_initialization_scalar_state(capsule_->roots.data(), offset));
+    return capsule_->scalar(aurora_hosted_initialization_scalar_state(capsule_->roots.data(), offset));
 }
 unsigned InitializationWorkspace::writeScalar(int offset) {
-    return capsule_->scalar(aurora_test_initialization_write_scalar(capsule_->roots.data(), offset));
+    return capsule_->scalar(aurora_hosted_initialization_write_scalar(capsule_->roots.data(), offset));
 }
 bool InitializationWorkspace::objectInitialized(int base) {
-    return capsule_->boolean(aurora_test_initialization_object_initialized(capsule_->roots.data(), base));
+    return capsule_->boolean(aurora_hosted_initialization_object_initialized(capsule_->roots.data(), base));
 }
 bool InitializationWorkspace::objectPristine(int base) {
-    return capsule_->boolean(aurora_test_initialization_object_pristine(capsule_->roots.data(), base));
+    return capsule_->boolean(aurora_hosted_initialization_object_pristine(capsule_->roots.data(), base));
 }
 bool InitializationWorkspace::objectWasConstructed(int base) {
-    return capsule_->boolean(aurora_test_initialization_object_was_constructed(capsule_->roots.data(), base));
+    return capsule_->boolean(aurora_hosted_initialization_object_was_constructed(capsule_->roots.data(), base));
 }
 InitializationWorkspace::ObjectCompletion InitializationWorkspace::objectCompletion(int base) {
     switch (static_cast<wire::ObjectCompletion>(
-        aurora_test_initialization_object_completion(capsule_->roots.data(), base))) {
+        aurora_hosted_initialization_object_completion(capsule_->roots.data(), base))) {
     case wire::ObjectCompletion::whole:
         return ObjectCompletion::whole;
     case wire::ObjectCompletion::physical:
@@ -524,22 +344,22 @@ InitializationWorkspace::ObjectCompletion InitializationWorkspace::objectComplet
     }
 }
 void InitializationWorkspace::markObject(int base) {
-    capsule_->succeeded(aurora_test_initialization_mark_object(capsule_->roots.data(), base));
+    capsule_->succeeded(aurora_hosted_initialization_mark_object(capsule_->roots.data(), base));
 }
 void InitializationWorkspace::clearObject(int base) {
-    capsule_->succeeded(aurora_test_initialization_clear_object(capsule_->roots.data(), base));
+    capsule_->succeeded(aurora_hosted_initialization_clear_object(capsule_->roots.data(), base));
 }
 unsigned InitializationWorkspace::receiverFieldState(int field) {
     return static_cast<unsigned>(
-        capsule_->counted(aurora_test_initialization_receiver_field_state(capsule_->roots.data(), field), 15));
+        capsule_->counted(aurora_hosted_initialization_receiver_field_state(capsule_->roots.data(), field), 15));
 }
 unsigned InitializationWorkspace::writeReceiverField(int field) {
     return static_cast<unsigned>(
-        capsule_->counted(aurora_test_initialization_write_receiver_field(capsule_->roots.data(), field), 15));
+        capsule_->counted(aurora_hosted_initialization_write_receiver_field(capsule_->roots.data(), field), 15));
 }
 InitializationWorkspace::ReceiverCompletion InitializationWorkspace::receiverCompletion() {
-    switch (
-        static_cast<wire::ReceiverCompletion>(aurora_test_initialization_receiver_completion(capsule_->roots.data()))) {
+    switch (static_cast<wire::ReceiverCompletion>(
+        aurora_hosted_initialization_receiver_completion(capsule_->roots.data()))) {
     case wire::ReceiverCompletion::complete:
         return ReceiverCompletion::complete;
     case wire::ReceiverCompletion::missing_physical:
@@ -551,7 +371,7 @@ InitializationWorkspace::ReceiverCompletion InitializationWorkspace::receiverCom
     }
 }
 std::optional<int> InitializationWorkspace::arrayFirstMissing(int offset, int length, int width) {
-    const auto result = aurora_test_initialization_array_first_missing(capsule_->roots.data(), offset, length, width);
+    const auto result = aurora_hosted_initialization_array_first_missing(capsule_->roots.data(), offset, length, width);
     if (result == -1)
         return std::nullopt;
     if (result < 0 || result >= length || result > std::numeric_limits<int>::max())
@@ -559,6 +379,6 @@ std::optional<int> InitializationWorkspace::arrayFirstMissing(int offset, int le
     return static_cast<int>(result);
 }
 void InitializationWorkspace::clearArray(int offset, int length, int width) {
-    capsule_->succeeded(aurora_test_initialization_clear_array(capsule_->roots.data(), offset, length, width));
+    capsule_->succeeded(aurora_hosted_initialization_clear_array(capsule_->roots.data(), offset, length, width));
 }
 } // namespace aurora::testing

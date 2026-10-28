@@ -89,24 +89,6 @@ ROWS = (
         "noexcept",
     ),
     (
-        "emitter_create(builtin::ByteRegion region) -> compiler_x86::EmitWorkspace",
-        "move compiler_x86::create(region)",
-        "EmitterCreate:region",
-        "noexcept",
-    ),
-    (
-        "emitter_release(builtin::ByteRegion region, compiler_x86::EmitWorkspace workspace) -> i64",
-        "direct compiler_x86::release(region, move(workspace))",
-        "EmitterRelease:region,workspace",
-        "noexcept,discard",
-    ),
-    (
-        "emitter_status(const compiler_x86::EmitWorkspace& workspace) -> compiler_x86::EmitStatus",
-        "direct workspace.status()",
-        "",
-        "noexcept",
-    ),
-    (
         "emitter_object_create(builtin::ByteRegion region) -> compiler_x86::ObjectWorkspace",
         "move compiler_x86::object_create(region)",
         "EmitterObjectCreate:region",
@@ -117,12 +99,6 @@ ROWS = (
         "direct compiler_x86::object_release(region, move(workspace))",
         "EmitterObjectRelease:region,workspace",
         "noexcept,discard",
-    ),
-    (
-        "emitter_object_status(const compiler_x86::ObjectWorkspace& workspace) -> compiler_x86::EmitStatus",
-        "direct workspace.status()",
-        "",
-        "noexcept",
     ),
     (
         "emitter_wrapper_run(compiler_x86::ObjectWorkspace& workspace, builtin::span<const u8> recipe) -> "
@@ -140,65 +116,6 @@ ROWS = (
     (
         "emitter_object_chunk(const compiler_x86::ObjectWorkspace& workspace, i64 offset) -> compiler_x86::EmitChunk",
         "copy workspace.chunk(offset)",
-        "",
-        "noexcept",
-    ),
-    (
-        "emitter_enable_object(compiler_x86::ObjectWorkspace& workspace) -> bool",
-        "direct workspace.enable_object()",
-        "",
-        "noexcept",
-    ),
-    (
-        "emitter_add_retained(compiler_x86::EmitWorkspace& workspace, i64 callable) -> bool",
-        "direct workspace.add_retained(callable)",
-        "",
-        "noexcept",
-    ),
-    (
-        "emitter_prepare_facts(compiler_x86::EmitWorkspace& workspace, compiler_x86::Artifact artifact) -> bool",
-        "direct workspace.prepare_facts(artifact)",
-        "",
-        "noexcept",
-    ),
-    (
-        "emitter_append_name(compiler_x86::EmitWorkspace& workspace, builtin::span<const u8> name) -> i64",
-        "direct workspace.append_name(name)",
-        "EmitterNameInput:name",
-        "noexcept",
-    ),
-    (
-        "emitter_add_abi_name(compiler_x86::EmitWorkspace& workspace, compiler_x86::AbiNameRow name) -> bool",
-        "direct workspace.add_abi_name(name)",
-        "EmitterAbiNameInput:name",
-        "noexcept",
-    ),
-    (
-        "emitter_run(compiler_x86::EmitWorkspace& workspace, compiler_x86::ObjectWorkspace& object, "
-        "const compiler_ir_metadata::MetadataStore& "
-        "metadata, const compiler_ir_instructions::InstructionStore& instructions, i64 binding, i64 "
-        "reflection) -> compiler_x86::EmitStatus",
-        "direct compiler_x86::run(workspace, object, metadata, instructions, binding, reflection)",
-        "",
-        "noexcept",
-    ),
-    (
-        "emitter_facts(compiler_x86::EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& "
-        "metadata, compiler_x86::Artifact artifact) -> compiler_x86::EmitStatus",
-        "direct compiler_x86::emitter_facts(workspace, metadata, artifact)",
-        "",
-        "noexcept",
-    ),
-    (
-        "emitter_size(const compiler_x86::EmitWorkspace& workspace, compiler_x86::Artifact artifact) -> i64",
-        "direct workspace.artifact_size(artifact)",
-        "",
-        "noexcept",
-    ),
-    (
-        "emitter_chunk(const compiler_x86::EmitWorkspace& workspace, compiler_x86::Artifact artifact, i64 "
-        "offset) -> compiler_x86::EmitChunk",
-        "copy workspace.chunk(artifact, offset)",
         "",
         "noexcept",
     ),
@@ -486,56 +403,6 @@ ROWS = (
         "noexcept",
     ),
     (
-        "graph_create_input(builtin::ByteRegion region, i64 functions, i64 edges) -> compiler_ir_graph::Input",
-        "move compiler_ir_graph::create_input(region, functions, edges)",
-        "GraphCreateInput:region,functions,edges",
-        "noexcept",
-    ),
-    (
-        "graph_create_workspace(builtin::ByteRegion region, i64 functions, i64 edges) -> compiler_ir_graph::Workspace",
-        "move compiler_ir_graph::create_workspace(region, functions, edges)",
-        "GraphCreateWorkspace:region,functions,edges",
-        "noexcept",
-    ),
-    (
-        "graph_release_input(builtin::ByteRegion region, compiler_ir_graph::Input input) -> i64",
-        "direct compiler_ir_graph::release_input(region, move(input))",
-        "GraphReleaseInput:region,input",
-        "noexcept,discard",
-    ),
-    (
-        "graph_release_workspace(builtin::ByteRegion region, compiler_ir_graph::Workspace workspace) -> i64",
-        "direct compiler_ir_graph::release_workspace(region, move(workspace))",
-        "GraphReleaseWorkspace:region,workspace",
-        "noexcept,discard",
-    ),
-    (
-        "graph_set_function(compiler_ir_graph::Input& input, i64 index, compiler_ir_graph::FunctionRow "
-        "function) -> bool",
-        "direct compiler_ir_graph::set_function(input, index, function)",
-        "GraphFunctionInput:index,function:0",
-        "noexcept",
-    ),
-    (
-        "graph_set_edge(compiler_ir_graph::Input& input, i64 index, i64 target) -> bool",
-        "direct compiler_ir_graph::set_edge(input, index, target)",
-        "GraphEdgeInput:index,target:0,1",
-        "noexcept",
-    ),
-    (
-        "graph_run(compiler_ir_graph::Workspace& workspace, const compiler_ir_graph::Input& input) -> "
-        "compiler_ir_graph::GraphStatus",
-        "direct compiler_ir_graph::run(workspace, input)",
-        "",
-        "noexcept",
-    ),
-    (
-        "graph_retained(const compiler_ir_graph::Workspace& workspace, i64 index) -> bool",
-        "direct compiler_ir_graph::retained(workspace, index)",
-        "",
-        "noexcept",
-    ),
-    (
         "catalog_summary() -> compiler_catalog::Summary",
         "copy compiler_catalog::summary()",
         "",
@@ -585,19 +452,6 @@ ROWS = (
         "noexcept",
     ),
     (
-        "metadata_object_leaf_root(const compiler_ir_metadata::MetadataStore& store, i64 callable, i64 offset) -> i64",
-        "direct compiler_ir_metadata::object_leaf_root(store, callable, offset)",
-        "",
-        "noexcept",
-    ),
-    (
-        "metadata_byte_array_element_root(const compiler_ir_metadata::MetadataStore& store, i64 callable, i64 "
-        "offset) -> i64",
-        "direct compiler_ir_metadata::byte_array_element_root(store, callable, offset)",
-        "",
-        "noexcept",
-    ),
-    (
         "instructions_create(builtin::ByteRegion region, i64 instructionCount, i64 operandCount, i64 "
         "literalCount, i64 bodyCount) -> compiler_ir_instructions::InstructionStore",
         "move compiler_ir_instructions::create(region, instructionCount, operandCount, literalCount, bodyCount)",
@@ -643,35 +497,6 @@ ROWS = (
         "",
         "noexcept",
     ),
-    (
-        "verification_create(builtin::ByteRegion region) -> compiler_ir_verification::VerificationWorkspace",
-        "move compiler_ir_verification::create(region)",
-        "VerificationCreate:region",
-        "noexcept",
-    ),
-    (
-        "verification_run(compiler_ir_verification::VerificationWorkspace& workspace, const "
-        "compiler_ir_metadata::MetadataStore& metadata, const "
-        "compiler_ir_instructions::InstructionStore& instructions, i64 callable) -> "
-        "compiler_ir_verification::VerificationStatus",
-        "direct compiler_ir_verification::run(workspace, metadata, instructions, callable)",
-        "",
-        "noexcept",
-    ),
-    (
-        "verification_report(const compiler_ir_verification::VerificationWorkspace& workspace) -> "
-        "compiler_ir_verification::VerificationReport",
-        "copy workspace.report()",
-        "",
-        "noexcept",
-    ),
-    (
-        "verification_release(builtin::ByteRegion region, "
-        "compiler_ir_verification::VerificationWorkspace workspace) -> i64",
-        "direct compiler_ir_verification::release(region, move(workspace))",
-        "VerificationRelease:region,workspace",
-        "noexcept,discard",
-    ),
 )
 
 # Rows only the textual IR test graph exports (tests/tools/frontend.au).
@@ -706,6 +531,96 @@ TEST_ROWS = (
         "AirRun:region,reader,options",
         "noexcept",
     ),
+    (
+        "air_metadata(builtin::ByteRegion region, compiler_air::Reader reader) -> compiler_ir_metadata::MetadataStore",
+        "move compiler_air::metadata(region, move(reader))",
+        "AirMetadata:region,reader",
+        "noexcept",
+    ),
+    (
+        "verification_create(builtin::ByteRegion region) -> compiler_ir_verification::VerificationWorkspace",
+        "move compiler_ir_verification::create(region)",
+        "VerificationCreate:region",
+        "noexcept",
+    ),
+    (
+        "verification_report(const compiler_ir_verification::VerificationWorkspace& workspace) -> "
+        "compiler_ir_verification::VerificationReport",
+        "copy workspace.report()",
+        "",
+        "noexcept",
+    ),
+    (
+        "verification_release(builtin::ByteRegion region, "
+        "compiler_ir_verification::VerificationWorkspace workspace) -> i64",
+        "direct compiler_ir_verification::release(region, move(workspace))",
+        "VerificationRelease:region,workspace",
+        "noexcept,discard",
+    ),
+)
+
+# The initialization workspace probes (tests/compiler/initialization_probe.au)
+# for initialization-facts: name, workspace and paired metadata roots, scalar
+# parameters, result.
+_WORKSPACE = "compiler_ir_verification::VerificationWorkspace& workspace"
+_PAIR = _WORKSPACE + ", const compiler_ir_metadata::MetadataStore& metadata"
+INITIALIZATION_PROBES = (
+    ("compare_metadata_bytes", "const " + _PAIR, "i64 left, i64 right, i64 count", "i64"),
+    ("allocated", "const " + _WORKSPACE, "", "bool"),
+    ("status", "const " + _WORKSPACE, "", "compiler_ir_verification::InitializationStatus"),
+    ("slot_count", "const " + _WORKSPACE, "", "i64"),
+    ("word_count", "const " + _WORKSPACE, "", "i64"),
+    ("payload_bytes", "const " + _WORKSPACE, "", "i64"),
+    ("acquire_service_loan", _WORKSPACE, "i64 id, i64 root, i64 kind", "i64"),
+    ("release_service_loan", _WORKSPACE, "i64 id, i64 kind", "i64"),
+    ("service_unsuspended", "const " + _WORKSPACE, "i64 root", "i64"),
+    (
+        "validate_service_call",
+        "const " + _WORKSPACE,
+        "i64 first, i64 first_kind, i64 second, i64 second_kind",
+        "compiler_ir_verification::ServiceCallState",
+    ),
+    ("complete_service_call", _WORKSPACE, "i64 first, i64 second", "bool"),
+    ("service_loans_closed", "const " + _WORKSPACE, "", "i64"),
+    ("same_service_loans", "const " + _WORKSPACE, "i64 id", "i64"),
+    ("retained_count", "const " + _WORKSPACE, "", "i64"),
+    ("current_count", "const " + _WORKSPACE, "", "i64"),
+    ("retained_count_at", "const " + _WORKSPACE, "i64 id", "i64"),
+    ("load", _WORKSPACE, "i64 id", "bool"),
+    ("retain", _WORKSPACE, "", "i64"),
+    ("join", _WORKSPACE, "i64 id", "compiler_ir_verification::InitializationJoin"),
+    ("restore_facts", _WORKSPACE, "i64 count", "bool"),
+    ("initialize", _PAIR, "i64 callable", "compiler_ir_verification::InitializationStatus"),
+    ("scalar_state", _PAIR, "i64 offset", "i64"),
+    ("write_scalar", _PAIR, "i64 offset", "i64"),
+    ("object_initialized", _PAIR, "i64 base", "i64"),
+    ("object_pristine", _PAIR, "i64 base", "i64"),
+    ("object_was_constructed", _PAIR, "i64 base", "i64"),
+    ("object_completion", _PAIR, "i64 base", "compiler_ir_verification::ObjectCompletion"),
+    ("mark_object", _PAIR, "i64 base", "bool"),
+    ("clear_object", _PAIR, "i64 base", "bool"),
+    ("receiver_field_state", _PAIR, "i64 field", "i64"),
+    ("write_receiver_field", _PAIR, "i64 field", "i64"),
+    ("receiver_completion", _PAIR, "", "compiler_ir_verification::ReceiverCompletion"),
+    ("array_first_missing", _PAIR, "i64 offset, i64 length, i64 width", "i64"),
+    ("clear_array", _PAIR, "i64 offset, i64 length, i64 width", "bool"),
+)
+TEST_ROWS += tuple(
+    (
+        f"initialization_{name}({roots}{', ' + tail if tail else ''}) -> {result}",
+        "direct compiler_initialization_probe::"
+        + name
+        + "("
+        + ", ".join(
+            ["workspace"]
+            + (["metadata"] if "metadata" in roots else [])
+            + [part.split()[1] for part in tail.split(", ") if part]
+        )
+        + ")",
+        "",
+        "noexcept",
+    )
+    for name, roots, tail, result in INITIALIZATION_PROBES
 )
 
 

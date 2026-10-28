@@ -9,7 +9,7 @@ import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_metadata_storage;
 
 // Dynamic transfers operate on the original admitted stores. Numeric forms and
-// operand positions are pinned by lowering_kinds and the instruction codec.
+// operand positions are fixed by lowering_kinds' InstructionForm and OperandRole.
 export namespace compiler_ir_verification {
     auto transfer_value(const compiler_ir_instructions::InstructionStore& s, i64 id, i64 field) -> i64 {
         return compiler_ir_instructions::call_value(s, id, field);

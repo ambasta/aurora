@@ -85,3 +85,11 @@ function probe_scalar
     Constant 42
     Return
 end
+
+; CASE: local binding keeps stack facts
+; BASE: branch and loop call maxima, reflection edges and pruned imports
+; RUN: emit local
+; CHECK-NOT: .globl
+; RUN: stack-facts
+; RUN: stack-facts local
+; CHECK-RUN-EQUAL: 2

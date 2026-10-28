@@ -26,8 +26,10 @@ verifies its output in one Aurora call. Aurora also decides module-loading polic
 source, resolver, lowering and lint diagnostic (`diagnostics.au`,
 `lowering_messages.au`): code, message and span, copied out 384 bytes at a time.
 Opening files under the explicit roots, module-loading and pipeline messages,
-diagnostic printing, allocation and artifact transport remain C++23, as does the textual-IR fixture path (`ir::validate`, `X86Emitter`), now test
-tooling outside the compiler's library.
+diagnostic printing, allocation and artifact transport remain C++23.
+Textual-IR test cases are read in Aurora (`tests/tools/air.au`, built into a
+test-only graph) straight into the same stores and run the same pipeline stages;
+there is no C++ IR model.
 The Aurora-native x86-64 emitter
 consumes the admitted source stores; the host retains artifact I/O.
 The same semantic traversal feeds typed x86 forms to the text backend or the
@@ -40,7 +42,7 @@ helpers with the same defining-module visibility and symbol-selection rules as
 text output. Neither backend adds reflection access to private values.
 
 Native console, UART and hosted frontend wrappers remain private bootstrap adapters.
-For frontend B/C, `frontend_wrapper.au` emits the 104 wrappers directly, using the
+For frontend B/C, `frontend_wrapper.au` emits the 77 wrappers directly, using the
 same table/ABI-derived recipe that renders predecessor frontend A and the GNU
 reference. The closed recipe admits at most 256 sorted hidden exports, 1024-byte
 identifier names and six ordered register moves or readonly record-lane loads
@@ -138,9 +140,9 @@ make -C compiler test
 ```
 
 Compiler-only testing uses the canonical Meson graph and is not root `full`.
-`ir-exhaustive` (release suite only) retains codec inventory checks and runs the CLI
-with temporary copies of the verifier or emitter, interposed on the pipeline entry,
-that observe unknown forms or operators or lack a handler. Aurora dispatch
+`ir-exhaustive` (release suite only) runs the CLI with temporary copies of the
+verifier or emitter, interposed on the pipeline entry, that observe unknown forms
+or operators or lack a handler. Aurora dispatch
 rejects these at runtime; it does not provide the former C++ visitor's compile-time exhaustiveness guarantee.
 [Development and qualification](../docs/developer-test-contract.md) defines exact
 routes, selected-artifact identity, explicit pinned compatibility and merge gates.

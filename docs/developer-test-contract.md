@@ -115,5 +115,6 @@ directives in [tests/compiler/ir/README.md](../tests/compiler/ir/README.md)).
 A new verifier or emitter case is a few lines of module text with its expected
 diagnostic or CHECK lines, not a C++ translation unit. The large native-ABI
 programs that loop over call shapes are generated at build time by
-`tests/compiler/ir/abi_programs.py` rather than stored. Only owner, view, writer
-and emitter-object API tests remain C++ (`tests/compiler/ir_api.cpp`).
+`tests/compiler/ir/abi_programs.py` rather than stored. The module text is read
+in Aurora (`tests/tools/air.au`) into the compiler's own stores and pipeline;
+the driver keeps only case resolution, patches and CHECK matching.

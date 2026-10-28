@@ -18,18 +18,6 @@
 
 using namespace aurora::hosted::bytes;
 
-#if defined(AURORA_HOSTED_BYTES_TESTING)
-namespace aurora::hosted::bytes::testing {
-// The production bridge is private to the sealed compiler Metadata owner.
-class MetadataObservation {
-public:
-    static std::span<const std::byte> bytes(const Region &region, const NativeOwner &owner) noexcept {
-        return region.observeMetadataBytes(owner);
-    }
-};
-} // namespace aurora::hosted::bytes::testing
-#endif
-
 static_assert(!std::is_copy_constructible_v<Region> && !std::is_copy_assignable_v<Region>);
 static_assert(!std::is_move_constructible_v<Region> && !std::is_move_assignable_v<Region>);
 static_assert(std::is_nothrow_constructible_v<Region, std::uint64_t>);
@@ -1143,78 +1131,6 @@ void typed_value_storage() {
     require(region.close(), "typed owners release all shared byte-region allocations");
 }
 
-#if defined(AURORA_HOSTED_BYTES_TESTING)
-void readonly_metadata_observations() {
-    AllocationTrace trace;
-    Region region(256, trace.allocator()), other(0);
-    NativeOwner owner;
-    const std::array<std::int64_t, 3> fill{11, 22, 33};
-    __au_runtime_values_allocate(region.id(), 2, sizeof(fill), fill.data(), &owner);
-    const auto descriptor = owner;
-    const auto metrics = region.metrics();
-    const auto calls = trace.calls, frees = trace.frees;
-    std::array<std::int64_t, 3> copied{};
-    {
-        const auto bytes = testing::MetadataObservation::bytes(region, owner);
-        static_assert(std::is_same_v<decltype(bytes)::element_type, const std::byte>);
-        require(bytes.size() == 2 * sizeof(fill), "metadata observation covers exact live byte extent");
-        std::memcpy(copied.data(), bytes.data() + sizeof(fill), sizeof(copied));
-        require(copied == fill, "metadata observation supports copied rows without typed payload aliasing");
-        const auto snapshot = testing::MetadataObservation::bytes(region, descriptor);
-        require(snapshot.data() == bytes.data() && snapshot.size() == bytes.size(),
-                "readonly descriptor observation identifies the same backing without another owner");
-        require(same_owner(owner, descriptor) && region.metrics() == metrics && trace.calls == calls &&
-                    trace.frees == frees,
-                "metadata observation neither mutates descriptors/accounting nor calls an allocator");
-    } // Destroy every byte view before any mutation or consuming cleanup.
-    invariant("metadata observation requires its exact Region", [&] {
-        testing::MetadataObservation::bytes(other, owner);
-    });
-    for (int field = 0; field < 4; ++field) {
-        invariant("metadata observation rejects forged descriptor words", [&] {
-            auto forged = owner;
-            if (field == 0)
-                forged.region = other.id();
-            if (field == 1)
-                forged.allocation = 0;
-            if (field == 2)
-                ++forged.length;
-            if (field == 3)
-                forged.success = 2;
-            testing::MetadataObservation::bytes(region, forged);
-        });
-    }
-    __au_runtime_bytes_drop(&owner);
-    require(copied == fill && trace.frees == frees + 1 && region.metrics().live_allocations == 0,
-            "copied metadata rows survive the single owner release");
-    invariant("metadata observation rejects a released descriptor", [&] {
-        testing::MetadataObservation::bytes(region, descriptor);
-    });
-    __au_runtime_values_allocate(region.id(), 0, sizeof(fill), fill.data(), &owner);
-    {
-        const auto empty = testing::MetadataObservation::bytes(region, owner);
-        require(empty.empty() && owner.success == 1 && region.metrics().live_allocations == 1,
-                "successful empty metadata pool is validated as a live owner");
-    }
-    const auto beforeResize = owner;
-    require(__au_runtime_values_resize(&owner, 1, sizeof(fill), fill.data()) == 1,
-            "prepare a replaced descriptor before new metadata observation");
-    invariant("metadata observation rejects a descriptor stale after resize", [&] {
-        testing::MetadataObservation::bytes(region, beforeResize);
-    });
-    __au_runtime_bytes_drop(&owner);
-    __au_runtime_values_allocate(region.id(), -1, sizeof(fill), fill.data(), &owner);
-    bounds("metadata observation rejects failed owner even with zero byte length", [&] {
-        testing::MetadataObservation::bytes(region, owner);
-    });
-    __au_runtime_bytes_drop(&owner);
-    require(region.close(), "metadata views leave no extra release obligation");
-    invariant("metadata observation rejects a closed Region", [&] {
-        testing::MetadataObservation::bytes(region, descriptor);
-    });
-}
-#endif
-
 } // namespace
 
 // The owner lookup cache is direct-mapped by allocation ID. Colliding, dropped,
@@ -1314,7 +1230,6 @@ int main() {
     resize_descriptor_validation();
     region_lifetime_and_failures();
 #if defined(AURORA_HOSTED_BYTES_TESTING)
-    readonly_metadata_observations();
     nonwrapping_identity_limits();
 #else
     std::puts("NOTE owned bytes host: overflow seam disabled; no ID-overflow execution claimed");

@@ -46,7 +46,6 @@ enum class TemplateArgumentKind {
     Type,
     Value
 };
-inline constexpr int maximumTemplateNesting = 4;
 class TemplateArgument {
 public:
     TemplateArgumentKind kind = TemplateArgumentKind::Type;
@@ -97,12 +96,6 @@ public:
     bool isClass() const {
         return kind == TypeKind::Class;
     }
-    bool isEnum() const {
-        return kind == TypeKind::Enum;
-    }
-    bool isArray() const {
-        return kind == TypeKind::Array;
-    }
     Type arrayElement() const {
         Type element(elementKind);
         element.className = elementParameter.empty() ? className : elementParameter;
@@ -119,26 +112,6 @@ public:
         resolvedClass = element.resolvedClass;
         templateArguments = element.templateArguments;
     }
-    bool isSpan() const {
-        return kind == TypeKind::ByteSpan;
-    }
-    bool isRegion() const {
-        return kind == TypeKind::ByteRegion;
-    }
-    bool isService() const {
-        return kind == TypeKind::ConsoleSession || kind == TypeKind::DisplaySession ||
-               kind == TypeKind::IommuEventSession || kind == TypeKind::CallSession ||
-               kind == TypeKind::Com1UartGrant || kind == TypeKind::ServeSession;
-    }
-    bool isBytes() const {
-        return kind == TypeKind::OwnedBytes;
-    }
-    bool isOwnedValues() const {
-        return kind == TypeKind::OwnedValues;
-    }
-    bool isOwnerStorage() const {
-        return isBytes() || isOwnedValues();
-    }
     Type ownedElement() const {
         Type element(className);
         element.displayName = displayName;
@@ -152,16 +125,10 @@ public:
         return type;
     }
     // Readonly view of copied elements; ownedElement() recovers the element.
-    bool isValueSpan() const {
-        return kind == TypeKind::ValueSpan;
-    }
     static Type valueSpan(const Type &element) {
         Type type = element;
         type.kind = TypeKind::ValueSpan;
         return type;
-    }
-    bool isResource() const {
-        return isRegion() || isOwnerStorage();
     }
     static Type enumeration(std::string name) {
         Type type(TypeKind::Enum);
@@ -268,12 +235,6 @@ inline std::string typeName(const Type &type) {
     }
     return "?";
 }
-inline bool scalar(Type t) {
-    return t == Type::I64 || t == Type::U64 || t == Type::U8 || t == Type::Bool;
-}
-inline bool scalarValue(const Type &type) {
-    return scalar(type) || type.isEnum();
-}
 
 // Sector-sized owned byte storage does not widen general scalar-array templates.
 inline constexpr int maximumClassByteArrayLength = 512;
@@ -282,8 +243,5 @@ inline constexpr int maximumCopiedByteLeaves = 512;
 inline constexpr int maximumCopiedNonByteLeaves = 64;
 inline constexpr int maximumCopiedClassLeaves = 513;
 inline constexpr int maximumCopiedClassBytes = 520;
-inline int maximumClassArrayLength(const Type &element) {
-    return element == Type::U8 ? maximumClassByteArrayLength : maximumClassScalarArrayLength;
-}
 
 } // namespace aurora

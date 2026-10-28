@@ -105,8 +105,8 @@ constexpr std::uint64_t regionQuota = std::uint64_t{16} << 30;
     throw ReadError("air:" + std::to_string(reader.check()) + ": invalid module text");
 }
 // The pipeline output for one request, or its first failure; metrics come back either way.
-PipelineOutput compile(const std::string &module, const std::string &abi, const EmissionRequest &request,
-                       Measured &measured) {
+PipelineOutput
+compile(const std::string &module, const std::string &abi, const EmissionRequest &request, Measured &measured) {
     hosted::bytes::Region region(regionQuota);
     Reader reader(region.id());
     if (!reader.read(module, abi))

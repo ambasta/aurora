@@ -477,11 +477,7 @@ def verification_abi(facts):
         if abi_record_owning(facts, symbol) or row["alignment"] != 8 or row["size"] != row["reserved"]:
             raise ValueError("private verification pool row changed: " + name)
         records[name] = (symbol, row)
-    _, raw_run = abi_declaration(facts, "functions", "compiler_frontend::verification_run")
-    run = normalize_function_abi(facts, raw_run)
-    if run["borrowed_root_count"] != 3 or run["borrowed_root_abi"]["kind"] != "tuple":
-        raise ValueError("private verification root tuple changed")
-    return records, run
+    return records
 
 
 def frontend_abi_header(facts, metadata_source=None, instruction_source=None, verification_source=None):
@@ -725,7 +721,7 @@ def frontend_abi_header(facts, metadata_source=None, instruction_source=None, ve
                 f"inline constexpr ::std::size_t instruction{row_name}PhysicalBytes = {stride};",
                 f"static_assert(sizeof({cpp_name(symbol)}) == instruction{row_name}PhysicalBytes);",
             ]
-    verification_records, verification_run = verification_abi(facts)
+    verification_records = verification_abi(facts)
     for row_name, (symbol, row) in verification_records.items():
         size = number(row["reserved"])
         if not size:
@@ -742,6 +738,14 @@ def frontend_abi_header(facts, metadata_source=None, instruction_source=None, ve
         if row_name in ("VerificationWorkspace", "VerificationReport"):
             name = "verification" + row_name.removeprefix("Verification") + "Alignment"
             lines.append(f"inline constexpr ::std::size_t {name} = {number(row['alignment'])};")
+        if row_name == "VerificationWorkspace":
+            for field in row["fields"]:
+                if field["kind"] == "owner":
+                    field_name = identifier(field["name"])
+                    lines.append(
+                        f"inline constexpr ::std::size_t verificationWorkspace_{field_name}Offset = "
+                        f"{number(field['offset'])};"
+                    )
         # Copied report lanes remain integer words, including Aurora bool. Host
         # validation can reject noncanonical 0/1 without reading a native bool.
         if row_name in ("VerificationReport", "VerificationError", "MetricsRow"):
@@ -752,21 +756,6 @@ def frontend_abi_header(facts, metadata_source=None, instruction_source=None, ve
                     f"inline constexpr ::std::size_t {prefix}_{field_name}Offset = {number(field['offset'])};",
                     f"inline constexpr ::std::size_t {prefix}_{field_name}Bytes = {number(field['bytes'])};",
                 ]
-    root_abi = verification_run["borrowed_root_abi"]
-    lines += [
-        f"inline constexpr ::std::size_t verificationRunRootCount = {verification_run['borrowed_root_count']};",
-        f"inline constexpr ::std::size_t verificationRunTuplePayloadBytes = {root_abi['tuple_payload_bytes']};",
-        f"inline constexpr ::std::size_t verificationRunTupleReservedBytes = {root_abi['tuple_reserved_bytes']};",
-    ]
-    record(
-        "VerificationRunRoots",
-        root_abi["tuple_reserved_bytes"],
-        8,
-        [
-            (8 * root["ordinal"], 8, "void *" if root["mutable"] else "const void *", name)
-            for root, name in zip(verification_run["borrowed_roots"], ("workspace", "metadata", "instructions"))
-        ],
-    )
     # The only manual physical shape is the trusted contiguous readonly span.
     # Source records and their nesting use the compiler's names and field facts.
     if facts["span_bytes"] != 56:

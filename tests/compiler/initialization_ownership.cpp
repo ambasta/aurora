@@ -1,7 +1,6 @@
 // Current source workspace ownership coverage, separated from the parser graph.
 // This fixture links only the test-only initialization source root and runtime.
-#include "initialization_probe_abi.hpp"
-#include "types.hpp"
+#include "hosted_frontend_abi.hpp"
 #include "../../runtime/hosted_bytes.hpp"
 #include <array>
 #include <cstdint>
@@ -48,8 +47,8 @@ public:
 void createMetadata(std::uint64_t region, const aurora::hosted_abi::MetadataInitialize &input, void *store) {
     aurora::hosted_abi::MetadataCreate create{};
     create.region = region;
-    aurora_test_metadata_create(&create, store);
-    aurora_test_metadata_initialize(store, &input);
+    aurora_hosted_metadata_create(&create, store);
+    aurora_hosted_metadata_initialize(store, &input);
 }
 
 void rawVerificationOwnership(bool serviceSignature) {
@@ -66,7 +65,7 @@ void rawVerificationOwnership(bool serviceSignature) {
     struct MetadataOwner {
         abi::MetadataRelease value{};
         ~MetadataOwner() {
-            aurora_test_metadata_release(&value);
+            aurora_hosted_metadata_release(&value);
         }
     } metadata;
     metadata.value.region = metadataRegion.id();
@@ -80,7 +79,7 @@ void rawVerificationOwnership(bool serviceSignature) {
     create.instructionBegin = 66 + parameterCount;
     auto *declarations = metadata.value.store.storage.data();
     createMetadata(metadataRegion.id(), create, declarations);
-    require(aurora_test_metadata_allocated(declarations) == 1, "initialization metadata fixture allocation failed");
+    require(aurora_hosted_metadata_allocated(declarations) == 1, "initialization metadata fixture allocation failed");
     const auto descriptor = [&](std::size_t offset) {
         bytes::NativeOwner result;
         std::memcpy(&result, declarations + offset, sizeof(result));
@@ -99,11 +98,11 @@ void rawVerificationOwnership(bool serviceSignature) {
     set(abi::metadataStore_typesOffset, 0, meta::RawTypeRow{});
     if (serviceSignature) {
         meta::RawTypeRow service{};
-        service.typeKind = static_cast<std::int64_t>(aurora::TypeKind::ConsoleSession);
+        service.typeKind = static_cast<std::int64_t>(meta::MetadataTypeKind::ConsoleSession);
         set(abi::metadataStore_typesOffset, 1, service);
     }
     meta::RawTypeRow byte{};
-    byte.typeKind = static_cast<std::int64_t>(aurora::TypeKind::U8);
+    byte.typeKind = static_cast<std::int64_t>(meta::MetadataTypeKind::U8);
     for (std::int64_t at = 0; at < 65; ++at)
         set(abi::metadataStore_typesOffset, at + 1 + parameterCount, byte);
     meta::CallableRow callable{};
@@ -122,7 +121,7 @@ void rawVerificationOwnership(bool serviceSignature) {
                           0});
     set(abi::metadataStore_indicesOffset, 0, meta::IndexRow{0});
     set(abi::metadataStore_viewsOffset, 0, meta::ViewRow{});
-    require(aurora_test_metadata_run(declarations) == static_cast<std::int64_t>(meta::MetadataStatus::success),
+    require(aurora_hosted_metadata_run(declarations) == static_cast<std::int64_t>(meta::MetadataStatus::success),
             "initialization fixture metadata did not admit");
 
     std::size_t successful = 0, partialKeyFailures = 0;
@@ -147,24 +146,24 @@ void rawVerificationOwnership(bool serviceSignature) {
                     value.region = region;
                     abi::VerificationCreate input{};
                     input.region = region;
-                    aurora_test_verification_create(&input, value.workspace.storage.data());
+                    aurora_hosted_verification_create(&input, value.workspace.storage.data());
                 }
                 ~Owner() {
-                    aurora_test_verification_release(&value);
+                    aurora_hosted_verification_release(&value);
                     releasedIntact = before == canary && after == canary;
                 }
             } owner(region.id(), releasedIntact);
             auto *workspace = owner.value.workspace.storage.data();
             // The test-only probe borrows the real generated workspace. It exposes
             // no production initialization entry or host semantic authority.
-            if (aurora_test_initialization_allocated(workspace) == 1)
+            if (aurora_hosted_initialization_allocated(workspace) == 1)
                 require(allocations.successful == 12 && region.metrics().live_allocations == 12,
                         "verification creation did not retain twelve distinct source owners");
             if (allowed < 12)
                 require(allocations.attempted == 12 && allocations.successful == allowed,
                         "failed initial verification owner skipped a declared allocation");
             const std::array<const void *, 2> roots{workspace, declarations};
-            const auto status = aurora_test_initialization_initialize(roots.data(), 0);
+            const auto status = aurora_hosted_initialization_initialize(roots.data(), 0);
             if (status == static_cast<std::int64_t>(wire::InitializationStatus::success)) {
                 // Same real admitted metadata owner; cover ordered high-bit bytes,
                 // overlapping windows and the unchanged malformed-range sentinel.
@@ -180,23 +179,23 @@ void rawVerificationOwnership(bool serviceSignature) {
                                                                                      {7, 5, 2, -1},
                                                                                      {-1, 100, 0, 0},
                                                                                      {1, 2, -1, 0}}})
-                    require(aurora_test_initialization_compare_metadata_bytes(
+                    require(aurora_hosted_initialization_compare_metadata_bytes(
                                 roots.data(), test[0], test[1], test[2]) == test[3],
                             "metadata byte comparison boundary/sentinel changed");
 
-                require(aurora_test_initialization_word_count(workspace) == 2 &&
-                            aurora_test_initialization_payload_bytes(workspace) == (serviceSignature ? 64 : 32) &&
-                            aurora_test_initialization_write_scalar(roots.data(), 64) == 0 &&
-                            aurora_test_initialization_write_scalar(roots.data(), 65) == 0,
+                require(aurora_hosted_initialization_word_count(workspace) == 2 &&
+                            aurora_hosted_initialization_payload_bytes(workspace) == (serviceSignature ? 64 : 32) &&
+                            aurora_hosted_initialization_write_scalar(roots.data(), 64) == 0 &&
+                            aurora_hosted_initialization_write_scalar(roots.data(), 65) == 0,
                         "word-boundary seed failed before retention");
                 if (dynamic) {
-                    completed = aurora_test_initialization_restore_facts(workspace, 33) == 1;
-                    published = aurora_test_initialization_retained_count(workspace);
+                    completed = aurora_hosted_initialization_restore_facts(workspace, 33) == 1;
+                    published = aurora_hosted_initialization_retained_count(workspace);
                     require(published == (completed ? 2 : -1),
                             "dynamic restore lost its real retained count or terminal state");
                 } else {
                     while (published < 130) {
-                        const auto retained = aurora_test_initialization_retain(workspace);
+                        const auto retained = aurora_hosted_initialization_retain(workspace);
                         if (retained == -1)
                             break;
                         require(retained == published++, "failed resize published a partial ordinal");
@@ -204,13 +203,13 @@ void rawVerificationOwnership(bool serviceSignature) {
                     completed = published == 130;
                 }
                 if (completed) {
-                    require(aurora_test_initialization_load(workspace, 0) == 1 &&
-                                aurora_test_initialization_current_count(workspace) == 4 &&
-                                aurora_test_initialization_retained_count_at(workspace, dynamic ? 1 : 129) == 4,
+                    require(aurora_hosted_initialization_load(workspace, 0) == 1 &&
+                                aurora_hosted_initialization_current_count(workspace) == 4 &&
+                                aurora_hosted_initialization_retained_count_at(workspace, dynamic ? 1 : 129) == 4,
                             "owner relocation lost an early row, high-bit fact or cached count");
                     if (stop == 1) {
-                        require(aurora_test_initialization_load(workspace, published) == 0 &&
-                                    aurora_test_initialization_status(workspace) ==
+                        require(aurora_hosted_initialization_load(workspace, published) == 0 &&
+                                    aurora_hosted_initialization_status(workspace) ==
                                         static_cast<std::int64_t>(wire::InitializationStatus::invalid),
                                 "invalid retained ordinal did not enter terminal failure");
                     } else if (stop == 2)
@@ -219,8 +218,8 @@ void rawVerificationOwnership(bool serviceSignature) {
             }
             if (dynamic && !completed) {
                 bytes::NativeOwner facts{}, keys{};
-                std::memcpy(&facts, workspace + initializationCurrentFactsOffset, sizeof(facts));
-                std::memcpy(&keys, workspace + initializationCurrentKeysOffset, sizeof(keys));
+                std::memcpy(&facts, workspace + abi::verificationWorkspace_currentFactsOffset, sizeof(facts));
+                std::memcpy(&keys, workspace + abi::verificationWorkspace_currentKeysOffset, sizeof(keys));
                 if (facts.success == 1 && keys.success == 1 &&
                     facts.length / abi::verificationActiveFactPhysicalBytes >
                         keys.length / abi::verificationFactKeyPhysicalBytes) {
@@ -232,15 +231,15 @@ void rawVerificationOwnership(bool serviceSignature) {
             }
             if (!completed || stop == 1) {
                 const auto attempts = allocations.attempted;
-                require(aurora_test_initialization_retain(workspace) == -1 &&
-                            aurora_test_initialization_load(workspace, 0) == 0 &&
-                            aurora_test_initialization_join(workspace, 0) ==
+                require(aurora_hosted_initialization_retain(workspace) == -1 &&
+                            aurora_hosted_initialization_load(workspace, 0) == 0 &&
+                            aurora_hosted_initialization_join(workspace, 0) ==
                                 static_cast<std::int64_t>(wire::InitializationJoin::error) &&
-                            aurora_test_initialization_retained_count(workspace) == -1 &&
+                            aurora_hosted_initialization_retained_count(workspace) == -1 &&
                             allocations.attempted == attempts,
                         "terminal owner retried allocation, revived a row or changed its published count");
                 if (!completed)
-                    require(aurora_test_initialization_status(workspace) ==
+                    require(aurora_hosted_initialization_status(workspace) ==
                                 static_cast<std::int64_t>(wire::InitializationStatus::allocation),
                             "initial or partial-growth allocation failure lost its reason");
                 struct Report {
@@ -248,7 +247,7 @@ void rawVerificationOwnership(bool serviceSignature) {
                     wire::VerificationReport value{};
                     std::uint64_t after = canary;
                 } report;
-                aurora_test_verification_report(workspace, &report.value);
+                aurora_hosted_verification_report(workspace, &report.value);
                 require(
                     report.before == canary && report.after == canary &&
                         report.value.statusValue ==

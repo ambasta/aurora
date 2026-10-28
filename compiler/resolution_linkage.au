@@ -142,7 +142,7 @@ export namespace compiler_resolver {
         }
         return 0;
     }
-    // These native ordinals are pinned with MetadataTypeKind in hosted_ir_metadata.
+    // These ordinals are MetadataTypeKind's (ir_metadata_storage.au).
     // Aurora enums intentionally have no integer conversion; ResolvedTypeKind's
     // unrelated ordinal is never serialized into a name.
     auto linkage_parameter_kind(Session& session, ResolvedTypeKind kind) -> i64 {

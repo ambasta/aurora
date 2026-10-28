@@ -2808,6 +2808,24 @@ export namespace compiler_air {
         const compiler_ir_metadata::IndexRow result = compiler_ir_metadata::IndexRow(line);
         return result;
     }
+    // The module's metadata alone, measured and filled for source admission.
+    auto metadata(builtin::ByteRegion region, Reader input) -> compiler_ir_metadata::MetadataStore {
+        Reader reader = move(input);
+        compiler_ir_metadata::MetadataStore result = compiler_ir_metadata::create(region);
+        compiler_ir_metadata::MetadataStore empty_metadata = compiler_ir_metadata::create(region);
+        empty_metadata.initialize(compiler_pipeline::zero_counts(), 0, 0, 0);
+        compiler_ir_instructions::InstructionStore empty_instructions = compiler_ir_instructions::create(region, 0, 0,
+            0, 0);
+        if (reader.good() && emit(reader, empty_metadata, empty_instructions, false) && result.initialize(
+            reader.input_counts(), reader.count(10), reader.count(11), reader.instruction_begin())) {
+            compiler_ir_instructions::InstructionStore instructions = compiler_ir_instructions::create(region,
+                reader.count(12), reader.count(13), reader.count(14), reader.count(15));
+            if (instructions.allocated()) {
+                emit(reader, result, instructions, true);
+            }
+        }
+        return move(result);
+    }
     // One read module through the compiler's own pipeline stages. A module the
     // reader rejects stops at Stage::projection; check() names its line.
     auto run(builtin::ByteRegion region, Reader input, u64 options) -> compiler_pipeline::Result {
