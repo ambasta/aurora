@@ -28,8 +28,10 @@ import aurora.compiler.pipeline;
 // reach source admission unchanged, so malformed modules can be written down.
 export namespace compiler_air {
     // Token kinds: 0 word, 1 decoded string, 2 '[', 3 '(', 4 closing bracket,
-    // 5 a key (its value is the next node), 6 end of line. An opening bracket's
-    // extra is its closing token; an end of line's extra is its source line.
+    // 5 a key (its value is the next node), 6 end of line. Extra: an opening
+    // bracket's closing token and a closing bracket's opening one; an end of
+    // line's source line; a key's own kind; a word's cached line code or type
+    // kind plus one, or -1 for an {a,s} spelling in a repeat block.
     class Token {
         i64 kindValue;
         i64 firstValue;
@@ -217,6 +219,7 @@ export namespace compiler_air {
         // scope, receiver, roots, rootmut and spanfield (or -1), then its code lines.
         builtin::OwnedValues<compiler_ir_metadata::IndexRow> lines;
         builtin::OwnedValues<compiler_ir_metadata::IndexRow> functions;
+        // The tokenizer's open brackets, and the list nesting of item expansion.
         builtin::OwnedValues<compiler_ir_metadata::IndexRow> stack;
         // Spellings: words 0..84 forms, 85..106 type kinds, 107..191 codecs
         // (compiled: their fields follow the sorted line words), 192..227
@@ -253,7 +256,7 @@ export namespace compiler_air {
         i64 operandCount;
         i64 literalCount;
         i64 bodyCount;
-        bool filling_;
+        bool fillingValue;
     public:
         Reader(builtin::ByteRegion region) : text(region.try_allocate(0)), tokens(token_pool(region)),
             entries(entry_pool(region)), grouped(entry_pool(region)), lines(index_pool(region)),
@@ -262,10 +265,10 @@ export namespace compiler_air {
             viewsLine(-1), sourceLine(0), failedLine(0), valid(true), byteCount(0), typeCount(0), classCount(0),
             fieldCount(0), leafCount(0), storageCount(0), indexCount(0), descriptorCount(0), viewCount(0), enumCount(0),
             callableCount(0), slotCount(0), instructionBegin(0), instructionCount(0), operandCount(0), literalCount(0),
-            bodyCount(0), filling_(false) {
+            bodyCount(0), fillingValue(false) {
         }
         auto filling() const -> bool {
-            return filling_;
+            return fillingValue;
         }
         auto allocated() const -> bool {
             return text.ok() && tokens.ok() && entries.ok() && grouped.ok() && lines.ok() && functions.ok()
@@ -554,21 +557,6 @@ export namespace compiler_air {
         }
         auto words_ready() const -> bool {
             return wordSize == 254;
-        }
-        // Whether token's bytes equal the text range [first, first + count).
-        auto same(i64 token, i64 first, i64 count) const -> bool {
-            const Token value = token_at(token);
-            if ((value.kind() != 0 && value.kind() != 1) || value.count() != count) {
-                return false;
-            }
-            i64 at = 0;
-            while (at < count) {
-                if (text.at(value.first() + at) != text.at(first + at)) {
-                    return false;
-                }
-                at = at + 1;
-            }
-            return true;
         }
         // A word or key spelled exactly expected.
         auto is(i64 token, builtin::span<const u8> expected) const -> bool {
@@ -1998,7 +1986,7 @@ export namespace compiler_air {
         // 5 storage, 6 indices, 7 descriptors, 8 views, 9 enums, 10 callables,
         // 11 slots, 12 instructions, 13 operands, 14 literals, 15 bodies.
         auto reset(bool fill) -> bool {
-            filling_ = fill;
+            fillingValue = fill;
             byteCount = 0;
             typeCount = 0;
             classCount = 0;
