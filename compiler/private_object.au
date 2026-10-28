@@ -745,6 +745,16 @@ export namespace compiler_private_object {
             }
             return outputSize;
         }
+        // The composed object; empty until it is complete.
+        auto bytes() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(output);
+            i64 count = 0;
+            if (outcome == compiler_x86::EmitStatus::complete) {
+                count = outputSize;
+            }
+            const builtin::span<const u8> result = all.subspan(0, count);
+            return result;
+        }
         auto chunk(i64 offset) const -> compiler_x86::EmitChunk {
             compiler_x86::EmitChunk result = compiler_x86::EmitChunk();
             if (outcome != compiler_x86::EmitStatus::complete || offset < 0 || offset > outputSize) {

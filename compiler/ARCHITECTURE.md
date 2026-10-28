@@ -180,8 +180,8 @@ reduce that independent budget: up to 65,536 retained local-state snapshots
 dominate it, and pools allocate on demand rather than reserving the ceiling.
 
 The verifier protects the backend against malformed internal IR. It is not a
-verified compiler or a proof of Rust-equivalent safety. C++ host code, generated
-bridges and Aurora emission remain trusted. Kernel execution also needs its separate
+verified compiler or a proof of Rust-equivalent safety. The hosted runtime
+(`aurora.host`, `aurora.memory`), the driver and Aurora emission remain trusted. Kernel execution also needs its separate
 image, stack and authority checks.
 
 ## Aurora emission boundary
@@ -215,8 +215,8 @@ seals first; a named `Artifact` selector prepares one shared optional suffix for
 stack or ABI JSON. A new request discards only that suffix and ABI name ingress,
 so stack/ABI ordering and retry after a malformed optional request preserve the
 executable and source facts. Failed executable emission requires a fresh workspace.
-Incomplete/failed artifacts are not extractable. The host reads copied 512-byte
-chunks; `ArtifactWriter` retains its single-write 64 MiB limit and atomic replacement.
+Incomplete/failed artifacts are not extractable. The driver writes each sealed
+artifact through one HostFiles output, with its 64 MiB limit and atomic replacement.
 A compilation copies code, stack facts and ABI facts into its `Result` as each is
 sealed. Requested stack JSON has a checked bound of twice assembly bytes plus
 conservative per-function/per-call overhead.

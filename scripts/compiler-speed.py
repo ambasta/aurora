@@ -31,11 +31,14 @@ INPUTS = (
     ("library/console/session_files.au", ("library",)),
     ("library/package/graph.au", ("library",)),
     ("examples/kernel-graphical-console.au", ("library", "kernel/policies")),
-    ("compiler/frontend.au", None),
+    ("compiler/aurorac.au", None),
 )
 
 
 def measure(compiler, source, roots, output, repeat, compiler_flags=()):
+    # The compiler itself: its modules, staged, and this tree's runtime root.
+    if roots and roots[0].name == "modules":
+        compiler_flags = [*compiler_flags, "--runtime-root", str(ROOT / "runtime/linux")]
     best_wall = best_cpu = math.inf
     peak_rss = 0
     for _ in range(repeat):
@@ -66,7 +69,11 @@ def main():
         work = Path(temporary)
         stage_modules(
             work / "modules",
-            [*(ROOT / "compiler").glob("*.au"), ROOT / "library/std/decimal_digits.au", ROOT / "library/std/binary.au"],
+            [
+                *(path for path in (ROOT / "compiler").glob("*.au") if path.name != "aurorac.au"),
+                ROOT / "library/std/decimal_digits.au",
+                ROOT / "library/std/binary.au",
+            ],
         )
         ratios = []
         rss_unit = {"linux": "KiB", "darwin": "bytes"}.get(sys.platform, "platform units")
@@ -84,9 +91,7 @@ def main():
                     (
                         measure(
                             str(compiler.resolve()),
-                            work / "modules/aurora/compiler/frontend.au"
-                            if name == "compiler/frontend.au"
-                            else ROOT / name,
+                            ROOT / name,
                             roots,
                             output,
                             args.repeat,

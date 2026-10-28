@@ -1,7 +1,6 @@
 #include "frontend.hpp"
 #include <fstream>
 #include <iostream>
-#include <sstream>
 
 namespace {
 void require(bool condition, const std::string &message) {
@@ -27,16 +26,6 @@ void check(const std::filesystem::path &input) {
     require(warning.span.source == snapshot && warning.span.begin.line == 4 && warning.span.begin.column == 12 &&
                 warning.span.end.column == 18,
             "warning uses exact overlay snapshot and byte columns");
-    std::ostringstream json;
-    writeDiagnosticsJson(json, linted.lintDiagnostics);
-    require(json.str().find("\"success\":true") != std::string::npos &&
-                json.str().find("\"severity\":\"warning\"") != std::string::npos,
-            "warning JSON remains successful");
-    std::ostringstream mixed;
-    writeDiagnosticsJson(mixed, {warning, {DiagnosticCode::Semantic, "error", {}}});
-    require(mixed.str().find("\"success\":false") != std::string::npos &&
-                mixed.str().find("\"severity\":\"error\"") != std::string::npos,
-            "mixed severity JSON fails and legacy default remains error");
     const auto rejected = std::make_shared<const SourceText>(
         path.string(), "module demo; auto test() -> i64 { i64 unused = 1; return false; }");
     bool failed = false;
@@ -49,7 +38,7 @@ void check(const std::filesystem::path &input) {
                 "failed analysis must preserve source error");
     }
     require(failed, "lint accepted rejected overlay");
-    std::cout << "PASS lint frontend: 10 contract checks\n";
+    std::cout << "PASS lint frontend: 8 contract checks\n";
 }
 } // namespace
 int main(int argc, char **argv) {

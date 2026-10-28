@@ -201,7 +201,39 @@ auto label(builtin::HostFiles& files, i64 value) -> builtin::HostStatus {
 }
 
 auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {
-    array<u64, 32> devices = {
+    array<u64, 64> devices = {
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
         0u64,
         0u64,
         0u64,
@@ -235,7 +267,39 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
         0u64,
         0u64
     };
-    array<u64, 32> inodes = {
+    array<u64, 64> inodes = {
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
         0u64,
         0u64,
         0u64,
@@ -270,7 +334,39 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
         0u64
     };
     i64 seen = 0;
-    array<u64, 32> ids = {
+    array<u64, 64> ids = {
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
         0u64,
         0u64,
         0u64,
@@ -307,7 +403,7 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
     i64 index = 1;
     i64 ordinal = 1;
     i64 begin = 0;
-    while (begin >= 0 && ordinal < 32) {
+    while (begin >= 0 && ordinal < 64) {
         const Word head = argument(arguments, index);
         const Word first = argument(arguments, index + 1);
         const Word second = argument(arguments, index + 2);
@@ -448,7 +544,7 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                         }
                         at = at + 1;
                     }
-                    if (found == 0 && seen < 32) {
+                    if (found == 0 && seen < 64) {
                         devices[seen] = device;
                         inodes[seen] = inode;
                         seen = seen + 1;

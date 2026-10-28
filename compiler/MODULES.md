@@ -58,11 +58,17 @@ This is lexical/API privacy, not confidentiality against an API author or a host
 
 ## Bounded, descriptor-relative source access
 
-`host_sources.hpp` isolates the trusted Linux-host adapter. Directory/file handles are move-only RAII objects. Explicit roots are opened once and identified by directory inode/device; duplicate root identities are rejected. Relative imports are opened against those retained descriptors using Linux `openat2` with `RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS` and `RESOLVE_NO_MAGICLINKS`. The exact policy is probed; unsupported kernels/policies fail closed with no weaker fallback.
+aurorac reads sources through its `builtin::HostFiles` capability
+([SERVICES.md](SERVICES.md#hosted-files)). Explicit roots are opened once with
+`open_directory` and identified by device and inode; duplicate root identities are
+rejected. Imports are opened beneath those retained descriptors with
+`open_beneath` (Linux `openat2` with `RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS` and
+`RESOLVE_NO_MAGICLINKS`), the input and the runtime root with the same no-symlink
+policy at any path. Kernels without `openat2` fail closed with no weaker fallback.
 
-All symlinks are rejected, including links whose current targets appear to be inside a root. Root paths and the explicitly supplied root source also use a no-symlink policy. The loader reads from the successfully opened descriptor without a canonical-check/path-reopen gap. Replacing the root pathname after opening it does not redirect the retained directory authority. Sources must be regular files; nonblocking open avoids hanging on a FIFO before the regular-file check.
+All symlinks are rejected, including links whose current targets appear to be inside a root. The loader reads from the successfully opened descriptor without a canonical-check/path-reopen gap. Replacing the root pathname after opening it does not redirect the retained directory authority. Sources must be regular files; nonblocking open avoids hanging on a FIFO before the regular-file check. Each file is closed once read. A session holds at most 32 open directories and files, enough for the 16 roots, the file being read and, once a reserved import needs it, the runtime root.
 
-The host adapter uses Linux/POSIX declarations solely as bootstrap OS machinery. Those host headers, descriptors and calls are not exposed as Aurora language features, target runtime APIs or C interoperability promises. A future native directory-capability API should replace this adapter.
+The optional language server keeps the former C++ loader (`frontend.hpp`, `host_sources.hpp`) for its in-memory [source overlays](SOURCE-OVERLAYS.md), with the same policy.
 
 Current limits:
 
@@ -83,21 +89,30 @@ These byte/depth limits intentionally reject overly deep otherwise-grammatical p
 
 ## Atomic artifact output
 
-The caller-selected output parent directory is also pinned through the no-symlink host adapter. The output is a single filename leaf. Existing symlink/directory/nonregular destinations are rejected, and destination inode/device identities are compared with the root and every imported source captured from opened descriptors. Accidental output=input and hard-link source aliases are rejected.
+aurorac writes every artifact through `create_output`, `write` and `commit`
+([SERVICES.md](SERVICES.md#hosted-files)). The output is a single filename leaf in
+a parent directory opened without following symlinks. Existing symlink, directory
+and other nonregular destinations are rejected, and the destination's device and
+inode are compared with every source read, so output = input and hard-link source
+aliases are rejected; two outputs of one run naming the same leaf of the same
+directory are a command-line error. Each output is an exclusive mode-0600
+temporary beside the destination (at most 32 name attempts, 64 MiB of bytes);
+existing files are never opened for writing or truncated. Commit checks the
+destination again (regular or absent) and renames the temporary over it; a failed
+write or commit removes the temporary, and uncommitted outputs are removed when
+`main` returns, so a rejection leaves existing artifacts unchanged. Code, then
+stack facts, then ABI facts are created; ABI facts, stack facts and code are
+committed in that order.
 
-The writer creates a separate exclusive mode-0600 regular temporary in the pinned parent. A temporary candidate equal to the destination leaf is skipped. It accepts at most 64 MiB of artifact bytes, 8192 write calls, 128 interrupted-write retries and 32 temporary-name attempts. Existing output files are never opened for writing or truncated. Only a complete successful write can be atomically renamed over the destination leaf, without following a destination symlink. The transaction becomes permanently failed if writing or committing fails; a partial write cannot be retried and accidentally published.
+This provides ordinary atomic replacement and prevents target symlink/hard-link swaps from causing writes through a source inode. The source-alias check is made when the output is created, not again at commit. It is not a claim of crash durability (there is no file/directory fsync protocol), multi-file transactions, or artifact integrity against a privileged or caller-equivalent actor that can tamper with private temporary entries or rewrite the output directory. Such an actor can also replace artifacts after commit. A process killed by a signal leaves its `.aurora-output-*` temporary. Inputs are captured byte buffers, not atomic file/repository versions.
 
-Precommit failures preserve existing source/output bytes. Cleanup addresses only the reserved temporary leaf when its inode still matches the writer's file; a changed replacement entry is left alone. I/O cleanup errors can leave an owned temporary, and process crashes can also leave one. The writer does not scan/delete unrelated stale temporaries.
-
-This provides ordinary atomic replacement and prevents target symlink/hard-link swaps from causing writes through a source inode. It is not a claim of crash durability (there is no file/directory fsync protocol), multi-file transactions, or artifact integrity against a privileged or caller-equivalent actor that can tamper with private temporary entries or rewrite the output directory. Such an actor can also replace artifacts after commit. Inputs are captured byte buffers, not atomic file/repository versions.
-
-Native tests cover the destination/temp-name collision, poisoned partial writes, source aliases, destination swaps, pinned-parent replacement, own-temp cleanup and actual OS write/rename failures. The rename-denial fault gate requires an unprivileged test user; it fails explicitly rather than silently skipping that check under root.
+`tests/compiler/diagnostics.py` and `tests/modules/run.py` cover aliases, symlinked and shared destinations, a failing write (a file-size limit) and preserved artifacts; `tests/host-files` covers the capability itself.
 
 ## Loading boundary
 
 Aurora lexes, parses and admits each source in one reused parser arena and
 ingests it into the resolver Session, which keeps its header and imports. Only a
-diagnostic or the header name returns to the host. The Session
+diagnostic or the header name returns to the driver. The Session
 owns import traversal and dependency postorder: each step returns the next
 requested import as bytes of the requesting source, or completion, and Aurora
 binds every import to the module whose header spells it. Temporary ancestry
@@ -107,7 +122,8 @@ requires an explicit root, validates the requested name and maps it to its
 relative path, charges each source against the file and graph byte limits, and
 at the next step checks that the requested module's header spells the name in
 an `export module` interface, recording each request in one Session index entry.
-The host only opens that path under each root (rejecting a missing or ambiguous
-module), captures at most one byte past the file limit or supplies an
-authorized overlay, and reports those loading rejections. Explicit-order in-memory
-resolution remains supported independently of filesystem traversal.
+The driver (`aurorac.au`) only opens that path under each root (rejecting a
+missing, ambiguous or misplaced reserved module), captures at most one byte past
+the file limit and reports those loading rejections; the language server's C++
+loader may also supply an authorized overlay. Explicit-order in-memory resolution
+remains supported for the C++ test drivers independently of filesystem traversal.

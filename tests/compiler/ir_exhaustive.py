@@ -9,125 +9,44 @@ ABI and exact-trap checks.
 
 from pathlib import Path
 import argparse
-import json
-import os
-import shlex
 import subprocess
 import sys
 import tempfile
-from unittest import mock
 
 from integer_oracle import command
 
 ROOT = Path(__file__).resolve().parents[2]
-COMPILER = shlex.split(os.environ.get("CXX", "g++"))
 # Verified textual IR cases; the aurora-ir-check driver prints their assembly.
 AIR = ROOT / "tests/compiler/ir/ir-tests/abi.air"
-
-
-PIPELINE_FIXTURE = r"""
-#include "hosted_frontend_abi.hpp"
-#include <cstdlib>
-namespace {
-unsigned entered = 0;
-struct RequireEntry {
-    ~RequireEntry() { if (entered == 0) std::abort(); }
-} requireEntry;
-}
-extern "C" void probe_pipeline_run(const void *, void *) noexcept;
-extern "C" void __wrap_aurora_hosted_pipeline_run(const void *input, void *output) noexcept {
-    ++entered;
-    probe_pipeline_run(input, output);
-}
-"""
-# The probe frontend exposes only the pipeline entry, built from mutated copies.
-PIPELINE_SOURCE = """
-export module aurora.compiler.frontend;
-import aurora.compiler.lexer;
-import aurora.compiler.syntax_arena;
-import aurora.compiler.resolution_kinds;
-import aurora.compiler.resolution_rows;
-import aurora.compiler.lowering_errors;
-import aurora.compiler.lowering_kinds;
-import aurora.compiler.lowering_storage;
-import aurora.compiler.resolution_arena;
-import aurora.compiler.ir_graph;
-import aurora.compiler.ir_metadata_storage;
-import aurora.compiler.ir_instruction_storage;
-import aurora.compiler.ir_verification_errors;
-import aurora.compiler.ir_verification_storage;
-import aurora.compiler.x86_object_storage;
-import aurora.compiler.x86_storage;
-import aurora.compiler.pipeline;
-import aurora.compiler.diagnostics;
-export namespace compiler_frontend {
-    auto pipeline_run(builtin::ByteRegion region, compiler_resolver::Session session, i64 root, i64 diagnostic,
-        u64 options) -> compiler_pipeline::Result {
-        compiler_pipeline::Result result = compiler_pipeline::run(region, move(session), root, diagnostic, options);
-        return move(result);
-    }
-}
-"""
 
 
 BUILT = {}
 
 
-def pipeline_probe(bootstrap, directory, args, modules, label, fixture_object):
-    """Compile the mutated module copies into a probe pipeline and link it into
-    the real CLI, interposed on the one pipeline entry. Both probes share the
-    unchanged build."""
+def pipeline_probe(bootstrap, directory, args, modules, label):
+    """Build a whole probe compiler from the staged, partly mutated module
+    copies and the configured driver, linked as aurorac is. Both probes share
+    the unchanged build."""
     if label == "unchanged" and label in BUILT:
         return BUILT[label]
-    source = directory / "pipeline-probe.au"
-    source.write_text(PIPELINE_SOURCE)
-    assembly = directory / (label + ".s")
-    facts_path = directory / (label + ".json")
-    command(
-        [args.compiler, "--local-symbols", "--module-root", modules, source, "--abi-facts", facts_path, "-o", assembly],
-        timeout=120,
-    )
-    facts = json.loads(facts_path.read_text())
-    original = json.loads(args.abi_facts.read_text())
-    # The real host and frontend exchange these owners with the probe pipeline.
-    for group, name in (
-        ("records", "compiler_resolver::Session"),
-        ("records", "compiler_pipeline::Result"),
-        ("functions", "compiler_frontend::pipeline_run"),
-    ):
-        if bootstrap.abi_declaration(facts, group, name) != bootstrap.abi_declaration(original, group, name):
-            raise AssertionError(label + ": pipeline probe ABI differs: " + name)
-    with mock.patch.object(bootstrap, "PASS_ENTRIES", {"pipeline_run": bootstrap.PASS_ENTRIES["pipeline_run"]}):
-        bridge = "\n".join(bootstrap.pass_bridges(facts)[1]).replace("aurora_hosted_pipeline_run", "probe_pipeline_run")
-    assembly.write_text(assembly.read_text() + "\n" + bridge + "\n")
     executable = directory / label
     command(
-        COMPILER
-        + [
-            fixture_object,
-            assembly,
-            args.main_library,
-            args.frontend_library,
-            "-Wl,--wrap=aurora_hosted_pipeline_run",
+        [
+            args.compiler,
+            "--emit-object",
+            "--runtime-root",
+            args.runtime_root,
+            "--module-root",
+            modules,
+            args.driver,
             "-o",
-            executable,
+            executable.with_suffix(".o"),
         ],
-        timeout=45,
+        timeout=300,
     )
+    command(["ld", "-static", "-e", "_start", "-o", executable, executable.with_suffix(".o")], timeout=45)
     BUILT[label] = executable
     return executable
-
-
-def pipeline_fixture(directory, args):
-    fixture = directory / "pipeline-probe.cpp"
-    fixture.write_text(PIPELINE_FIXTURE)
-    fixture_object = fixture.with_suffix(".o")
-    command(
-        COMPILER
-        + ["-std=c++23", "-I", ROOT / "compiler", "-I", args.abi_header.parent, "-c", fixture, "-o", fixture_object],
-        timeout=45,
-    )
-    return fixture_object
 
 
 def staged_modules(bootstrap, directory):
@@ -135,7 +54,7 @@ def staged_modules(bootstrap, directory):
     bootstrap.stage_modules(
         modules,
         [
-            *sorted((ROOT / "compiler").glob("*.au")),
+            *sorted(path for path in (ROOT / "compiler").glob("*.au") if path.name != "aurorac.au"),
             ROOT / "library/std/decimal_digits.au",
             ROOT / "library/std/binary.au",
         ],
@@ -144,14 +63,13 @@ def staged_modules(bootstrap, directory):
 
 
 def source_verifier_probes(directory, args):
-    # Intentional mutation-test interposition, as in the emitter probe below:
-    # the pipeline entry runs a copy whose verifier observes a hostile form or
-    # lacks a handler; every other stage is the unchanged source.
+    # Intentional mutation tests, as in the emitter probe below: a probe
+    # compiler whose verifier copy observes a hostile form or lacks a handler;
+    # every other module is the unchanged source.
     sys.path.insert(0, str(ROOT / "scripts"))
     import bootstrap_frontend as bootstrap
 
     directory.mkdir(parents=True)
-    fixture_object = pipeline_fixture(directory, args)
     modules = staged_modules(bootstrap, directory)
     transfer = modules / "aurora/compiler/ir_verification_transfer.au"
     original_transfer = transfer.read_text()
@@ -175,7 +93,7 @@ def source_verifier_probes(directory, args):
             # Remove the actual Constant route while preserving all other routes.
             changed = replace_once(changed, "(form >= 5 && form <= 19)", "(form >= 6 && form <= 19)")
         transfer.write_text(changed)
-        executable = pipeline_probe(bootstrap, directory, args, modules, mutation, fixture_object)
+        executable = pipeline_probe(bootstrap, directory, args, modules, mutation)
         for case, path, expected in inputs:
             for existing in (False, True):
                 output = directory / (mutation + "-" + case + "-" + str(existing) + ".s")
@@ -203,14 +121,13 @@ def source_verifier_probes(directory, args):
 
 
 def source_emitter_probes(directory, args):
-    # The same interposition with the emitter's copies mutated: it observes
+    # The same probes with the emitter's copies mutated: it observes
     # unknown forms or operators, or loses the scalar family's handler, while
     # admission and verification run unchanged sources.
     sys.path.insert(0, str(ROOT / "scripts"))
     import bootstrap_frontend as bootstrap
 
     directory.mkdir(parents=True)
-    fixture_object = pipeline_fixture(directory, args)
     # The constant positive control checks successful handler admission here;
     # packed numeric execution and GNU-reference tests check its value/encoding.
     inputs = {}
@@ -268,7 +185,7 @@ def source_emitter_probes(directory, args):
             # Remove one real family, not an independently enumerated form list.
             prefix, signature = originals[scalar].split("    auto emit_scalar(", 1)
             scalar.write_text(prefix + "    auto emit_scalar(" + signature.split("{", 1)[0] + "{ return false; }\n}\n")
-        executable = pipeline_probe(bootstrap, directory, args, modules, mutation, fixture_object)
+        executable = pipeline_probe(bootstrap, directory, args, modules, mutation)
         for case in cases:
             path, expected = inputs[case]
             for existing in (True,) if mutation == "unchanged" else (False, True):
@@ -297,11 +214,9 @@ def replace_once(source, old, new):
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("ir_tests", type=Path, nargs="?")
-parser.add_argument("--abi-header", type=Path, required=True)
-parser.add_argument("--abi-facts", type=Path, required=True)
 parser.add_argument("--compiler", type=Path, required=True)
-parser.add_argument("--frontend-library", type=Path, required=True)
-parser.add_argument("--main-library", type=Path, required=True)
+parser.add_argument("--driver", type=Path, required=True, help="the configured compiler/aurorac.au")
+parser.add_argument("--runtime-root", type=Path, required=True)
 args = parser.parse_args()
 
 

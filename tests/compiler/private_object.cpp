@@ -1,9 +1,8 @@
 // One driver: real emitter input, closed wrapper recipes, malformed data, and
 // semantic comparison against GNU ld -r. ELF decoding here is test observation,
 // not a second composer or a production admission path.
-#include "diagnostics.hpp"
-#include "hosted_private_object.hpp"
-#include "hosted_frontend_abi.hpp"
+#include "hosted_pipeline.hpp"
+#include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdlib>
@@ -12,6 +11,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -32,6 +32,115 @@ void writeFile(const std::string &path, std::string_view bytes) {
     std::ofstream output(path, std::ios::binary);
     output.write(bytes.data(), bytes.size());
     require(bool(output), "cannot write fixture " + path);
+}
+// The Aurora composition and wrapper emission through the bridged test graph,
+// each over its own bounded region, so every allocation failure is observable.
+namespace wire = hosted_abi::compiler_private_object;
+using Status = hosted_abi::compiler_x86::EmitStatus;
+constexpr std::uint64_t artifactLimit = 64 * 1024 * 1024;
+void checkStatus(std::int64_t status, bool wrapper) {
+    if (status == static_cast<std::int64_t>(Status::complete))
+        return;
+    throw Error(copyReport([&](std::int64_t offset) {
+        hosted_abi::ObjectReport input{};
+        input.status = static_cast<Status>(status);
+        input.wrapper = wrapper;
+        input.offset = offset;
+        hosted_abi::compiler_resolver::Report report{};
+        aurora_hosted_object_report(&input, &report);
+        return report;
+    }));
+}
+void addExtent(std::uint64_t &total, std::uint64_t count, std::uint64_t stride) {
+    require(stride == 0 || count <= (std::numeric_limits<std::uint64_t>::max() - total) / stride,
+            "private object workspace extent overflow");
+    total += count * stride;
+}
+template <class Run, class Size, class Chunk>
+std::string copyObject(void *workspace, Run run, Size size, Chunk chunk, bool wrapper) {
+    checkStatus(run(workspace), wrapper);
+    const auto bytes = size(workspace);
+    require(bytes >= 0 && static_cast<std::uint64_t>(bytes) <= artifactLimit, "invalid object transport");
+    std::string result;
+    for (std::int64_t offset = 0; offset < bytes;) {
+        hosted_abi::compiler_x86::EmitChunk part{};
+        chunk(workspace, offset, &part);
+        require(part.byteCount == std::min<std::int64_t>(512, bytes - offset), "invalid object transport");
+        result.append(reinterpret_cast<const char *>(part.payload.data()), static_cast<std::size_t>(part.byteCount));
+        offset += part.byteCount;
+    }
+    return result;
+}
+// Source admission derives exact row counts; these are upper extents.
+std::string composePrivateObject(std::string_view source,
+                                 std::string_view wrapper,
+                                 std::string_view selected,
+                                 hosted::bytes::Allocator allocator = hosted::bytes::system_allocator()) {
+    std::uint64_t quota = artifactLimit;
+    addExtent(quota, source.size() / 24, sizeof(wire::NameRow));
+    addExtent(quota, wrapper.size() / 24, sizeof(wire::NameRow) + sizeof(hosted_abi::compiler_x86::ObjectIndexRow));
+    addExtent(quota, selected.size() / 2, sizeof(wire::NameRow));
+    hosted::bytes::Region region(quota, allocator);
+    if (!region.is_open())
+        throw Error(DiagnosticCode::Internal, "private object composition region allocation failed");
+    hosted_abi::PrivateObjectRelease owner{};
+    owner.region = region.id();
+    hosted_abi::PrivateObjectCreate create{};
+    create.region = region.id();
+    aurora_hosted_private_object_create(&create, owner.workspace.storage.data());
+    struct Release {
+        hosted_abi::PrivateObjectRelease &owner;
+        ~Release() {
+            aurora_hosted_private_object_release(&owner);
+        }
+    } release{owner};
+    return copyObject(
+        owner.workspace.storage.data(),
+        [&](void *workspace) {
+            hosted_abi::PrivateObjectRun input{};
+            input.source.backing = source.data();
+            input.source.length = static_cast<std::int64_t>(source.size());
+            input.wrapper.backing = wrapper.data();
+            input.wrapper.length = static_cast<std::int64_t>(wrapper.size());
+            input.selected.backing = selected.data();
+            input.selected.length = static_cast<std::int64_t>(selected.size());
+            return aurora_hosted_private_object_run(workspace, &input);
+        },
+        aurora_hosted_private_object_size,
+        aurora_hosted_private_object_chunk,
+        false);
+}
+// Recipe names and the object each need at most twice their logical extent
+// while growing; the fixed allowance covers the bounded pools and headers.
+std::string emitFrontendWrapper(std::string_view recipe,
+                                hosted::bytes::Allocator allocator = hosted::bytes::system_allocator()) {
+    std::uint64_t quota = 512 * 1024;
+    addExtent(quota, recipe.size(), 4);
+    hosted::bytes::Region region(quota, allocator);
+    if (!region.is_open())
+        throw Error(DiagnosticCode::Internal, "frontend wrapper region allocation failed");
+    hosted_abi::EmitterObjectRelease owner{};
+    owner.region = region.id();
+    hosted_abi::EmitterObjectCreate create{};
+    create.region = region.id();
+    aurora_hosted_emitter_object_create(&create, owner.workspace.storage.data());
+    struct Release {
+        hosted_abi::EmitterObjectRelease &owner;
+        ~Release() {
+            aurora_hosted_emitter_object_release(&owner);
+        }
+    } release{owner};
+    return copyObject(
+        owner.workspace.storage.data(),
+        [&](void *workspace) {
+            hosted_abi::EmitterWrapperInput input{};
+            input.recipe.backing = recipe.data();
+            input.recipe.length = static_cast<std::int64_t>(recipe.size());
+            return aurora_hosted_emitter_wrapper_run(workspace, &input);
+        },
+        aurora_hosted_emitter_object_size,
+        aurora_hosted_emitter_object_chunk,
+        true);
 }
 template <class T> T read(std::string_view bytes, std::size_t offset) {
     require(offset <= bytes.size() && sizeof(T) <= bytes.size() - offset, "fixture ELF range");

@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Emit the private hosted frontend and its compiler-described ABI.
+"""Stage the compiler modules and build the compiler or its bridged test graph.
 
-The compiler-module root contains exact exported source copies. Generated Aurora
-bindings remain local; only trusted register bridges expose host entries.
+The compiler-module root contains exact exported source copies. The compiler
+itself is one hosted Aurora program over them. The test graph's generated
+Aurora bindings remain local; only trusted register bridges expose host entries
+to the C++ test drivers.
 """
 
 from pathlib import Path
 import re
-import shutil
 import importlib.util
 import json
 import struct
@@ -860,109 +861,87 @@ def stage_modules(module_root, modules):
         destination = module_root.joinpath(*parts[:-1])
         destination.mkdir(parents=True, exist_ok=True)
         content = source.read_bytes()
-        if b"// @generated-forwarders" in content or b"// @generated-test-forwarders" in content:
+        if b"// @generated-forwarders" in content:
             content = render(content.decode()).encode()
         (destination / (parts[-1] + ".au")).write_bytes(content)
 
 
-def write_frontend_header(facts, header, compatible_header=None):
-    """Render the admitted facts; reject incompatible shared ABI before writing."""
-    content = frontend_abi_header(facts).encode()
-    if compatible_header is not None and compatible_header.read_bytes() != content:
-        raise ValueError("stage2 ABI header differs from the header used by shared host objects")
-    if not header.exists() or header.read_bytes() != content:
-        header.write_bytes(content)
-
-
-def emit(compiler, source, output, module_root, compatible_header=None, *, output_mode="text"):
-    if output_mode not in ("text", "object"):
-        raise ValueError("unsupported frontend output mode")
-    raw = output.with_suffix(".generated.o" if output_mode == "object" else ".generated.s")
+def emit(compiler, source, output, module_root):
+    """Emit the bridged test graph as one composed object with its facts and header."""
+    raw = output.with_suffix(".generated.o")
     facts_output = output.with_suffix(".abi.json")
-    command = ["--local-symbols", "--abi-facts", str(facts_output.resolve())]
-    if output_mode == "object":
-        command += [
-            "--emit-object",
-            "--referenced-reflection-only",
-            "--stack-facts",
-            str(output.with_suffix(".stack.json").resolve()),
-        ]
+    command = [
+        "--local-symbols",
+        "--abi-facts",
+        str(facts_output.resolve()),
+        "--emit-object",
+        "--referenced-reflection-only",
+        "--stack-facts",
+        str(output.with_suffix(".stack.json").resolve()),
+    ]
     command += ["--module-root", str(module_root.resolve())]
     command += [str(source.resolve()), "-o", str(raw.resolve())]
     subprocess.run([str(compiler.resolve()), *command], check=True)
     facts = json.loads(facts_output.read_text())
     header = output.parent / (output.stem.replace("-", "_") + "_abi.hpp")
-    write_frontend_header(facts, header, compatible_header)
+    content = frontend_abi_header(facts).encode()
+    if not header.exists() or header.read_bytes() != content:
+        header.write_bytes(content)
     # Symbol spellings come from this emitted module; only register moves are trusted.
-    if output_mode == "object":
-        # The current compiler composes this closed frontend directly; the pinned
-        # predecessor still uses the text route below.
-        selected = sorted(abi_function_symbol(facts, "compiler_frontend::" + alias) for alias in PASS_ENTRIES)
-        with tempfile.TemporaryDirectory(prefix=".aurora-frontend-", dir=output.parent) as directory:
-            work = Path(directory)
-            recipe, wrapper_object, selection = work / "wrapper.recipe", work / "wrapper.o", work / "selected.txt"
-            recipe.write_bytes(frontend_wrapper_recipe(facts))
-            selection.write_text("\n".join(selected) + "\n")
-            subprocess.run(
-                [str(compiler.resolve()), "--emit-frontend-wrapper", str(recipe), "-o", str(wrapper_object)], check=True
-            )
-            subprocess.run(
-                [
-                    str(compiler.resolve()),
-                    "--compose-private-object",
-                    str(raw.resolve()),
-                    str(wrapper_object.resolve()),
-                    str(selection.resolve()),
-                    "-o",
-                    str(output.resolve()),
-                ],
-                check=True,
-            )
-    else:
-        output.write_bytes(b"\n".join([raw.read_bytes(), frontend_bridge(None, facts).encode()]))
+    selected = sorted(abi_function_symbol(facts, "compiler_frontend::" + alias) for alias in PASS_ENTRIES)
+    with tempfile.TemporaryDirectory(prefix=".aurora-frontend-", dir=output.parent) as directory:
+        work = Path(directory)
+        recipe, wrapper_object, selection = work / "wrapper.recipe", work / "wrapper.o", work / "selected.txt"
+        recipe.write_bytes(frontend_wrapper_recipe(facts))
+        selection.write_text("\n".join(selected) + "\n")
+        subprocess.run(
+            [str(compiler.resolve()), "--emit-frontend-wrapper", str(recipe), "-o", str(wrapper_object)], check=True
+        )
+        subprocess.run(
+            [
+                str(compiler.resolve()),
+                "--compose-private-object",
+                str(raw.resolve()),
+                str(wrapper_object.resolve()),
+                str(selection.resolve()),
+                "-o",
+                str(output.resolve()),
+            ],
+            check=True,
+        )
 
 
 def main():
-    # COMPILER [--output-mode text|object] [--test-entries] --output OUTPUT INPUT...: .au
-    # inputs are the compiler modules, and an optional .hpp is the header stage-2 output
-    # must reproduce. --test-entries also bridges the test-only rows.
-    global ENTRIES
+    # COMPILER --output OUTPUT INPUT...: the bridged test graph of the compiler
+    # modules, whose scaffold is frontend.au.
+    # COMPILER --program RUNTIME --output OUTPUT ROOT INPUT...: the hosted
+    # program ROOT over the compiler modules, as one object.
     arguments = sys.argv[1:]
-    if "--test-entries" in arguments:
-        arguments.remove("--test-entries")
-        ENTRIES = _bridge.TEST_ENTRIES
-        PASS_ENTRIES.clear()
-        PASS_ENTRIES.update(signatures(ENTRIES))
-    output_mode = "text"
-    if len(arguments) > 2 and arguments[1] == "--output-mode":
-        output_mode = arguments[2]
+    runtime = None
+    if len(arguments) > 2 and arguments[1] == "--program":
+        runtime = arguments[2]
         del arguments[1:3]
-    if output_mode not in ("text", "object"):
-        raise ValueError("--output-mode must be text or object")
     if len(arguments) < 4 or arguments[1] != "--output":
-        raise ValueError("expected COMPILER [--output-mode text|object] --output OUTPUT INPUT...")
+        raise ValueError("expected COMPILER [--program RUNTIME] --output OUTPUT INPUT...")
     compiler, output = Path(arguments[0]), Path(arguments[2])
     inputs = [Path(argument) for argument in arguments[3:]]
-    modules = [path for path in inputs if path.suffix == ".au"]
-    headers = [path for path in inputs if path.suffix == ".hpp"]
-    names = [path.name for path in modules]
+    root = inputs.pop(0) if runtime is not None else None
+    names = [path.name for path in inputs]
     if (
-        len(modules) + len(headers) != len(inputs)
-        or len(headers) > 1
+        any(path.suffix != ".au" for path in inputs)
         or len(set(names)) != len(names)
-        or "frontend.au" not in names
+        or (root is None and "frontend.au" not in names)
     ):
-        raise ValueError("expected unique .au modules including frontend.au and at most one .hpp header")
+        raise ValueError("expected unique .au modules, including frontend.au for the bridged graph")
     module_root = output.parent / (output.stem + "-modules")
-    stage_modules(module_root, modules)
-    emit(
-        compiler,
-        module_root / "aurora/compiler/frontend.au",
-        output,
-        module_root,
-        headers[0] if headers else None,
-        output_mode=output_mode,
-    )
+    stage_modules(module_root, inputs)
+    if root is None:
+        emit(compiler, module_root / "aurora/compiler/frontend.au", output, module_root)
+        return
+    # A closed image: only _start is global and only queried reflection is kept.
+    command = ["--emit-object", "--local-symbols", "--referenced-reflection-only", "--runtime-root", runtime]
+    command += ["--module-root", str(module_root.resolve())]
+    subprocess.run([str(compiler.resolve()), *command, str(root.resolve()), "-o", str(output.resolve())], check=True)
 
 
 if __name__ == "__main__":

@@ -44,4 +44,4 @@ import aurora.tests.initialization_probe;
 // The textual IR test graph: the compiler frontend plus the .air reader.
 // Private bridge forwarders, test rows included, come from scripts/frontend_bridge.py.
 // This import scaffold is test tooling, never linked into the compiler.
-// @generated-test-forwarders
+// @generated-forwarders

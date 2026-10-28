@@ -30,10 +30,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("formatter", type=pathlib.Path)
     parser.add_argument("compiler", type=pathlib.Path)
-    parser.add_argument("helper", type=pathlib.Path)
     parser.add_argument("--baseline", type=pathlib.Path)
     args = parser.parse_args()
-    formatter, compiler, helper = (path.resolve(strict=True) for path in (args.formatter, args.compiler, args.helper))
+    formatter, compiler = (path.resolve(strict=True) for path in (args.formatter, args.compiler))
     baseline = args.baseline.resolve(strict=True) if args.baseline else None
     with tempfile.TemporaryDirectory(prefix="aurora-lint-") as scratch:
         root = pathlib.Path(scratch).resolve()
@@ -319,18 +318,13 @@ def main():
         run(["as", "--64", bridge, "-o", root / "entry.o"])
         run(["ld", "-o", root / "side-effect", root / "entry.o", root / "side-effect.o"])
         run([root / "side-effect"])
-        before = effect_path.read_bytes()
-        frontend = run([helper, effect_path])
-        require(effect_path.read_bytes() == before, "frontend overlay test changed disk source")
-        (root / "frontend.log").write_bytes(frontend.stdout)
         summary = {
             "cases": len(records),
             "native_side_effect_result": 42,
-            "frontend_contract": "passed",
             "baseline_assembly_equal": bool(baseline),
         }
         (root / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-        print(f"PASS semantic lint: {len(records)} CLI cases, frontend contracts and retained native side effect")
+        print(f"PASS semantic lint: {len(records)} CLI cases and retained native side effect")
 
 
 if __name__ == "__main__":

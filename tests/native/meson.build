@@ -182,7 +182,7 @@ foreach mode : range(17)
   test('native-kernel-uefi-owned-views-' + mode.to_string(), native_host, args: [mode.to_string()],
        suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, timeout: 60)
 endforeach
-test('native-unsigned-source', python, args: native_adapter_args + ['--compiler', aurorac] + ['--', python] + ['-B', files('../../tests/kernel-unsigned-source.py')],
+test('native-unsigned-source', python, args: native_adapter_args + ['--compiler', aurorac.full_path()] + ['--', python] + ['-B', files('../../tests/kernel-unsigned-source.py')],
      suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180, depends: aurorac)
 test('native-storage-test-durability-optimized', python, args: ['-B', '-O', files('../../storage/design/model/test_durability.py')],
@@ -194,7 +194,7 @@ test('native-storage-check-traceability-optimized', python, args: ['-B', '-O', f
 test('native-storage-test-traceability-optimized', python, args: ['-B', '-O', files('../../storage/design/model/test_traceability.py')],
      suite: ['full', 'merge', 'slow', 'storage'], env: native_test_env,
      workdir: native_root, timeout: 180)
-test('native-semantics', python, args: ['-B', files('../../tests/semantics/run.py'), aurorac],
+test('native-semantics', python, args: ['-B', files('../../tests/semantics/run.py'), aurorac.full_path()],
      suite: ['full', 'merge', 'slow', 'semantics'], env: native_test_env,
      workdir: native_output, timeout: 300, depends: aurorac)
 # Protected snapshot and note replays: each generated root is compiled and
@@ -290,7 +290,7 @@ foreach adapter : [['ipc-transition', 'aurora_kernel_ipc_transition', '../../tes
        env: native_test_env, timeout: 60)
 endforeach
 test('native-policy-rejections', python,
-     args: ['-B', golden_runner, files('../../tests/kernel-policy-rejections.golden'), '--reject', '--', aurorac,
+     args: ['-B', golden_runner, files('../../tests/kernel-policy-rejections.golden'), '--reject', '--', aurorac.full_path(),
             '--module-root', native_root / 'kernel/policies'],
      suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, timeout: 120, depends: aurorac)
 # Pin ledger, NVMe queue and dormant-table models: programs whose testing macros
@@ -327,7 +327,7 @@ test('kernel-compile-fail', python,
      suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, timeout: 120)
 if get_option('kernel_images')
   test('native-uefi-span-integration', python,
-       args: ['-B', files('../../tests/kernel-uefi-span.py'), aurorac,
+       args: ['-B', files('../../tests/kernel-uefi-span.py'), aurorac.full_path(),
               meson.project_build_root() / 'kernel-images/uefi/runtime-fixture'],
        suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, workdir: native_root,
        timeout: 120, depends: [aurorac, kernel_profile_users['uefi/runtime-fixture']])

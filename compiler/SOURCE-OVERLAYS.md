@@ -1,5 +1,8 @@
 # Existing-file source overlays
 
+Overlays belong to the optional language server's C++ loader (`frontend.hpp`);
+aurorac and aurora-fmt read files only. Its tests run in the `lsp` suite.
+
 `checkSource(input, roots, overlays)` accepts a `SourceOverlays` map from absolute,
 lexically normalized filesystem paths to shared immutable `SourceText` snapshots.
 Each snapshot's path must exactly match its map key; repeated separators and
@@ -20,8 +23,7 @@ is copied for a synchronous check; immutable snapshots cannot change mid-analysi
 Unused overlays may stay cached, but are not read as modules or given path access.
 Hard links follow the existing host policy: distinct authorized paths can select
 independent overlay snapshots. They are not coalesced by inode. Opened-file inode
-identities remain in the checked result, so the artifact writer still rejects
-an output hard-link alias of a root or imported source.
+identities remain in the checked result.
 
 Limits apply before parsing: at most 64 overlays, 1 MiB per snapshot and 4 MiB total
 cached overlay bytes. Analyzed graph bytes, combining disk and overlay files,

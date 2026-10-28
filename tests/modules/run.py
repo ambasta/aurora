@@ -522,6 +522,16 @@ check(
 )
 check("path traversal syntax rejected", app("return 42;", "import ../escape;"), error="expected identifier")
 check("too many roots", app("return 42;"), root_sets=[{} for _ in range(17)], error="at most 16")
+# All 16 roots stay open while the input, an import and a reserved import's
+# runtime root are read: the HostFiles session has a handle for every one.
+check(
+    "16 roots with an import and a reserved import",
+    "module app; import aurora.host; import dep;"
+    + "auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {"
+    + " return builtin::HostExit::success; }",
+    root_sets=[{} for _ in range(15)] + [{"dep": "export module dep; export auto answer()->i64{return 42;}"}],
+    check_only=True,
+)
 check(
     "FIFO source rejected without blocking",
     app("return 42;", "import pipe;"),

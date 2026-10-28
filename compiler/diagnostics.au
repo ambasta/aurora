@@ -51,6 +51,31 @@ export namespace compiler_resolver {
         auto code() const -> i64 {
             return family;
         }
+        auto warns() const -> bool {
+            return warning;
+        }
+        auto source_index() const -> i64 {
+            return source;
+        }
+        // The span: 0 begin, 1 its line, 2 its column, 3 end, 4 its line, 5 its column.
+        auto position(i64 which) const -> i64 {
+            if (which == 0) {
+                return begin;
+            }
+            if (which == 1) {
+                return begin_line;
+            }
+            if (which == 2) {
+                return begin_column;
+            }
+            if (which == 3) {
+                return end;
+            }
+            if (which == 4) {
+                return end_line;
+            }
+            return end_column;
+        }
         auto byte(i64 index) const -> u8 {
             return payload[index];
         }
