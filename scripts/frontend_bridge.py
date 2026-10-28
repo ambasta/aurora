@@ -674,10 +674,44 @@ ROWS = (
     ),
 )
 
+# Rows only the textual IR test graph exports (tests/tools/frontend.au).
+TEST_ROWS = (
+    (
+        "air_start(builtin::ByteRegion region) -> compiler_air::Reader",
+        "move compiler_air::start(region)",
+        "AirStart:region",
+        "noexcept",
+    ),
+    (
+        "air_release(builtin::ByteRegion region, compiler_air::Reader reader) -> i64",
+        "direct compiler_air::release(region, move(reader))",
+        "AirRelease:region,reader",
+        "noexcept,discard",
+    ),
+    (
+        "air_read(compiler_air::Reader& reader, builtin::span<const u8> source, builtin::span<const u8> abi) -> bool",
+        "direct compiler_air::read_module(reader, source, abi)",
+        "AirRead:source,abi",
+        "noexcept",
+    ),
+    (
+        "air_check(builtin::ByteRegion region, compiler_air::Reader reader) -> compiler_ir_metadata::IndexRow",
+        "copy compiler_air::check(region, move(reader))",
+        "AirCheck:region,reader",
+        "noexcept",
+    ),
+    (
+        "air_run(builtin::ByteRegion region, compiler_air::Reader reader, u64 options) -> compiler_pipeline::Result",
+        "move compiler_air::run(region, move(reader), options)",
+        "AirRun:region,reader,options",
+        "noexcept",
+    ),
+)
 
-def declarations():
+
+def declarations(rows=ROWS):
     entries = []
-    for signature, forward, transport, policy in ROWS:
+    for signature, forward, transport, policy in rows:
         match = re.fullmatch(r"(\w+)\((.*)\) -> ([\w:]+)", signature)
         if match is None:
             raise ValueError("invalid private bridge signature")
@@ -718,12 +752,13 @@ def declarations():
 
 
 ENTRIES = declarations()
+TEST_ENTRIES = declarations(ROWS + TEST_ROWS)
 
 
-def signatures():
+def signatures(table=ENTRIES):
     """Read the deliberately closed source signature spelling in the table."""
     entries = {}
-    for name, arguments, result, expression, mode, record, host, noexcept, discard, loads in ENTRIES:
+    for name, arguments, result, expression, mode, record, host, noexcept, discard, loads in table:
         roots, parameters = [], []
         for argument in arguments.split(", ") if arguments else ():
             spelling, parameter = argument.rsplit(" ", 1)
@@ -742,12 +777,15 @@ def signatures():
 
 
 def render(source):
-    """Expand only the explicit scaffold marker; existing source/probes stay exact."""
-    marker = "// @generated-forwarders"
+    """Expand only the explicit scaffold marker; existing source/probes stay exact.
+    The test marker also forwards the textual IR test rows."""
+    table, marker = TEST_ENTRIES, "// @generated-test-forwarders"
+    if marker not in source:
+        table, marker = ENTRIES, "// @generated-forwarders"
     if marker not in source:
         return source
     lines = ["export namespace compiler_frontend {"]
-    for name, arguments, result, expression, mode, *_ in ENTRIES:
+    for name, arguments, result, expression, mode, *_ in table:
         lines.append(f"    auto {name}({arguments}) -> {result} {{")
         if mode == "direct":
             lines.append(f"        return {expression};")

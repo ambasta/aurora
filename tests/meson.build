@@ -139,8 +139,24 @@ ir_text = static_library('ir-text', files('../compiler/ir_text.cpp', '../compile
                                           '../compiler/hosted_ir_instructions.cpp', '../compiler/ir_verify.cpp',
                                           '../compiler/hosted_graph.cpp', '../compiler/hosted_x86.cpp'),
     dependencies: hosted_frontend, native: true, override_options: fixture_options, install: false)
-aurora_ir_check = executable('aurora-ir-check', 'tools/aurora_ir_check.cpp',
-    dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),
+# The textual IR test graph: the compiler's own modules plus the Aurora .air
+# reader (tools/air.au), built by C1 with the test bridge rows into its own
+# object and header. Only test tools link it; the compiler never does.
+air_forwarders = custom_target('air-frontend-forwarders', input: 'tools/frontend.au', output: 'frontend.au',
+    command: [python, '-B', bridge_table, '@INPUT@', '@OUTPUT@'])
+air_frontend = custom_target('air-frontend', input: frontend_modules + files('tools/air.au') + [air_forwarders],
+    output: ['hosted-frontend.o', 'hosted-frontend.generated.o', 'hosted-frontend.abi.json',
+             'hosted_frontend_abi.hpp', 'hosted-frontend.stack.json'],
+    command: [python, '-B', files('../scripts/bootstrap_frontend.py'), aurorac, '--output-mode', 'object',
+              '--test-entries', '--output', '@OUTPUT0@', '@INPUT@'],
+    depend_files: bridge_table)
+air_frontend_library = static_library('air-frontend',
+    [air_frontend[0], air_frontend[3], files('../compiler/hosted_pipeline.cpp', '../runtime/hosted_bytes.cpp')],
+    include_directories: include_directories('.', '../compiler'), native: true, override_options: fixture_options,
+    install: false)
+air_frontend_dep = declare_dependency(link_with: air_frontend_library, sources: air_frontend[3],
+                                      include_directories: include_directories('.', '../compiler'))
+aurora_ir_check = executable('aurora-ir-check', 'tools/aurora_ir_check.cpp', dependencies: air_frontend_dep,
     native: true, override_options: fixture_options, install: false)
 air_lit = files('tools/air_lit.py')
 # The large native-ABI programs are loops over call shapes; abi_programs.py
@@ -194,7 +210,7 @@ private_object_wrapper = custom_target(
     command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '-Wa,-mx86-used-note=no', '@INPUT@', '-o', '@OUTPUT@'],
 )
 private_object_test = executable('private-object-test', 'compiler/private_object.cpp',
-    dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),
+    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
     native: true, override_options: fixture_options, install: false)
 
 test(
@@ -584,9 +600,9 @@ subdir('native')
 
 test('private-object', python,
      args: ['-B', files('compiler/private_object.py'), private_object_test, aurorac, private_object_wrapper,
-            '--frontend', frontend_stage2_output[1], frontend_stage2_output[0], frontend_stage2_output[2],
+            aurora_ir_check, '--frontend', frontend_stage2_output[1], frontend_stage2_output[0], frontend_stage2_output[2],
             '--uart', native_uart_object, '--terminal', graphical_terminal_object],
-     depends: [private_object_test, private_object_wrapper, aurorac, frontend_stage2_output,
+     depends: [private_object_test, private_object_wrapper, aurorac, aurora_ir_check, frontend_stage2_output,
                native_uart_object, graphical_terminal_object],
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 

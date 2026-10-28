@@ -1,0 +1,2870 @@
+export module aurora.tests.air;
+import aurora.compiler.lexer;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.ir_graph;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.ir_instructions;
+import aurora.compiler.ir_verification_errors;
+import aurora.compiler.ir_verification_storage;
+import aurora.compiler.x86_object_storage;
+import aurora.compiler.x86_storage;
+import aurora.compiler.ir_listing;
+import aurora.compiler.pipeline_declarations;
+import aurora.compiler.pipeline;
+
+// Textual IR (.air) modules, read straight into the pending metadata and
+// instruction stores lowering's projection fills, then run through the
+// compiler's own admission, verification, call graph, publication and
+// emission (compiler_pipeline::stages). The format is described in
+// tests/compiler/ir/README.md. The reader checks syntax only: hostile values
+// reach source admission unchanged, so malformed modules can be written down.
+export namespace compiler_air {
+    // Token kinds: 0 word, 1 decoded string, 2 '[', 3 '(', 4 closing bracket,
+    // 5 a key (its value is the next node), 6 end of line. An opening bracket's
+    // extra is its closing token; an end of line's extra is its source line.
+    class Token {
+        i64 kindValue;
+        i64 firstValue;
+        i64 countValue;
+        i64 extraValue;
+    public:
+        Token(i64 kind, i64 first, i64 count, i64 extra) : kindValue(kind), firstValue(first), countValue(count),
+            extraValue(extra) {
+        }
+        auto kind() const -> i64 {
+            return kindValue;
+        }
+        auto first() const -> i64 {
+            return firstValue;
+        }
+        auto count() const -> i64 {
+            return countValue;
+        }
+        auto extra() const -> i64 {
+            return extraValue;
+        }
+    };
+    // A sortable declaration. Categories: 0 class declarations (number: layout,
+    // fields, storage, carrier), 1 descriptors, 2 views, 3 visible descriptor
+    // IDs (group: scope), 4 enums, 5 frame slots (group: function * 16 + slot
+    // ordinal), 6 the callable name index (sequence: callable ID).
+    class Entry {
+        i64 categoryValue;
+        i64 groupValue;
+        i64 nameValue;
+        i64 numberValue;
+        i64 sequenceValue;
+        i64 tokenValue;
+    public:
+        Entry(i64 category, i64 group, i64 name, i64 number, i64 sequence, i64 token) : categoryValue(category),
+            groupValue(group), nameValue(name), numberValue(number), sequenceValue(sequence), tokenValue(token) {
+        }
+        auto category() const -> i64 {
+            return categoryValue;
+        }
+        auto group() const -> i64 {
+            return groupValue;
+        }
+        auto name() const -> i64 {
+            return nameValue;
+        }
+        auto number() const -> i64 {
+            return numberValue;
+        }
+        auto sequence() const -> i64 {
+            return sequenceValue;
+        }
+        auto token() const -> i64 {
+            return tokenValue;
+        }
+    };
+    auto token_pool(builtin::ByteRegion region) -> builtin::OwnedValues<Token> {
+        const Token fill = Token(-1, 0, 0, 0);
+        builtin::OwnedValues<Token> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    auto entry_pool(builtin::ByteRegion region) -> builtin::OwnedValues<Entry> {
+        const Entry fill = Entry(-1, 0, -1, 0, 0, -1);
+        builtin::OwnedValues<Entry> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    auto index_pool(builtin::ByteRegion region) -> builtin::OwnedValues<compiler_ir_metadata::IndexRow> {
+        const compiler_ir_metadata::IndexRow fill = compiler_ir_metadata::IndexRow(-1);
+        builtin::OwnedValues<compiler_ir_metadata::IndexRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    auto grown(i64 size) -> i64 {
+        if (size < 64) {
+            return 64;
+        }
+        return size * 2;
+    }
+    // The two's-complement bits of a signed constant, for unsigned payloads.
+    auto bits(i64 value) -> u64 {
+        if (value >= 0) {
+            return u64(value);
+        }
+        return u64(value + 9223372036854775807 + 1) + 9223372036854775808u64;
+    }
+    auto space(i64 value) -> bool {
+        return value == 32 || value == 9 || value == 13;
+    }
+    // Bytes that end a word: space, tab, CR, brackets, quote, ';', '=' and '*'.
+    auto delimiter(i64 value) -> bool {
+        return space(value) || value == i64('[') || value == i64(']') || value == i64('(') || value == i64(')') || value
+            == i64('"') || value == i64(';') || value == i64('=') || value == i64('*');
+    }
+    auto digit(i64 value) -> bool {
+        return value >= i64('0') && value <= i64('9');
+    }
+    auto hex_value(i64 value) -> i64 {
+        if (digit(value)) {
+            return value - 48;
+        }
+        if (value >= i64('a') && value <= i64('f')) {
+            return value - 87;
+        }
+        if (value >= i64('A') && value <= i64('F')) {
+            return value - 55;
+        }
+        return -1;
+    }
+    // Every operand of each instruction form, in compiler_lowering::InstructionForm
+    // order. i/j: integer (j defaults to -1), b: boolean, t: type, l: offset
+    // list, each with its compiler_lowering::OperandRole ordinal; c: callee,
+    // n: class name, m: module scope, k: service kind, o: service operation,
+    // s: service arguments, r: borrowed roots, x: literal bytes, v: typed
+    // constant, u/y/p/q: unary, binary, comparison or query operation.
+    auto codec(compiler_ir_listing::Listing& out) -> bool {
+        return out.word("i1,i2,k i4,i2,k i4,k i2,o,i6,k c,i4,i6,l8,k,s,l21,i34 v t12,i13 i2,t12 i2,t12 - - u,t14 ")
+            && out.word("y,t14 t15,t16 p,t14 i2,i17,t18 i2,i17,t18 i2,i17,t18 i19,t20 c c,l21,i6,l8 i2 i2 i2 ")
+            && out.word("i22,i6 i22,i23,i6 i24,i23,i22 i24,i23,i22 i24,i23,l25 i24,i23 i24,i23,i6 i24,i23,i22 ")
+            && out.word("i23,t12 i23,t12 i23 i23 i23 i23 c,i26,l21,i6,j27,l8 q,m i29 i30 i30 - i2 i1,i2,t12 ")
+            && out.word("i1,i2,n i2 i2 i32,i6 i23,i6 x,i6 i2,i23,i6 i2 i22,i6 i22,i6 i2 i2 i2 i1,i2 i2 i34,i6 ")
+            && out.word("i34,i6,i35 i2,i23,i6 i2,i23,i36 i2,i23,i35 i22,i6 i2,j23 i2,j23 i2,j23 i2,j23 i2,j23 i2 ")
+            && out.word("i1,i2 i1,i2 c,i34,l37,i6,i26 i2 i24,i23,i22 i22,i6 i1,i2,n i2 i4,i38,b39,j23 i4 ")
+            && out.word("c,r,l21,i6,l8 i2,i6 ");
+    }
+    // Enumerator spellings: service kinds, service operations, then the unary,
+    // binary, comparison and query operations.
+    auto enumerators(compiler_ir_listing::Listing& out) -> bool {
+        return out.word("Console Display IommuEvent Call Port Serve ")
+            && out.word("Next Put Pixel IommuPoll IommuAcknowledge Call PortRead8 PortWrite8 ServeExchange ")
+            && out.word("CheckedNegate LogicalNot BitNot ")
+            && out.word("CheckedAdd CheckedSubtract CheckedMultiply CheckedDivide CheckedRemainder BitAnd BitOr ")
+            && out.word("BitXor ShiftLeft ShiftRight Equal NotEqual Less Greater LessEqual GreaterEqual ")
+            && out.word("Size PublicFieldCount ");
+    }
+    // The first word of each enumeration in enumerators() and its size.
+    auto enumeration_first(i64 table) -> i64 {
+        if (table == 0) {
+            return 0;
+        }
+        if (table == 1) {
+            return 6;
+        }
+        if (table == 2) {
+            return 15;
+        }
+        if (table == 3) {
+            return 18;
+        }
+        if (table == 4) {
+            return 28;
+        }
+        return 34;
+    }
+    auto enumeration_size(i64 table) -> i64 {
+        if (table == 0) {
+            return 6;
+        }
+        if (table == 1) {
+            return 9;
+        }
+        if (table == 2) {
+            return 3;
+        }
+        if (table == 3) {
+            return 10;
+        }
+        if (table == 4) {
+            return 6;
+        }
+        return 2;
+    }
+
+    class Reader {
+        builtin::OwnedBytes text;
+        builtin::OwnedValues<Token> tokens;
+        builtin::OwnedValues<Entry> entries;
+        // Per function: its name token, then the lines of result, params, frame,
+        // scope, receiver, roots, rootmut and spanfield (or -1), then its code lines.
+        builtin::OwnedValues<compiler_ir_metadata::IndexRow> lines;
+        builtin::OwnedValues<compiler_ir_metadata::IndexRow> functions;
+        builtin::OwnedValues<compiler_ir_metadata::IndexRow> stack;
+        // Spellings: words 0..84 forms, 85..106 type kinds, 107..191 codecs,
+        // then the enumerators.
+        builtin::OwnedValues<Token> words;
+        i64 textSize;
+        i64 tokenSize;
+        i64 entrySize;
+        i64 lineSize;
+        i64 functionSize;
+        i64 stackSize;
+        i64 wordSize;
+        i64 abiTokens;
+        i64 viewsLine;
+        i64 sourceLine;
+        i64 failedLine;
+        bool valid;
+        // Positions of the store being measured or filled.
+        i64 byteCount;
+        i64 typeCount;
+        i64 classCount;
+        i64 fieldCount;
+        i64 leafCount;
+        i64 storageCount;
+        i64 indexCount;
+        i64 descriptorCount;
+        i64 viewCount;
+        i64 enumCount;
+        i64 callableCount;
+        i64 slotCount;
+        i64 instructionBegin;
+        i64 instructionCount;
+        i64 operandCount;
+        i64 literalCount;
+        i64 bodyCount;
+        bool filling_;
+    public:
+        Reader(builtin::ByteRegion region) : text(region.try_allocate(0)), tokens(token_pool(region)),
+            entries(entry_pool(region)), lines(index_pool(region)), functions(index_pool(region)),
+            stack(index_pool(region)), words(token_pool(region)), textSize(0), tokenSize(0), entrySize(0), lineSize(0),
+            functionSize(0), stackSize(0), wordSize(0), abiTokens(0), viewsLine(-1), sourceLine(0), failedLine(0),
+            valid(true), byteCount(0), typeCount(0), classCount(0), fieldCount(0), leafCount(0), storageCount(0),
+            indexCount(0), descriptorCount(0), viewCount(0), enumCount(0), callableCount(0), slotCount(0),
+            instructionBegin(0), instructionCount(0), operandCount(0), literalCount(0), bodyCount(0), filling_(false) {
+        }
+        auto filling() const -> bool {
+            return filling_;
+        }
+        auto allocated() const -> bool {
+            return text.ok() && tokens.ok() && entries.ok() && lines.ok() && functions.ok() && stack.ok() && words.ok();
+        }
+        // Owners stay allocated after start: every failed growth fails the reader.
+        auto good() const -> bool {
+            return valid;
+        }
+        // Sticky: the first failure keeps its source line.
+        auto fail() -> bool {
+            if (valid) {
+                failedLine = sourceLine;
+                if (failedLine < 1) {
+                    failedLine = 1;
+                }
+            }
+            valid = false;
+            return false;
+        }
+        auto failed_line() const -> i64 {
+            return failedLine;
+        }
+        auto at_line(i64 line) -> bool {
+            sourceLine = line;
+            return good();
+        }
+
+        // ---- owned pools
+        auto put(u8 value) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (textSize == text.size() && !text.try_resize(grown(textSize))) {
+                return fail();
+            }
+            text.set(textSize, value);
+            textSize = textSize + 1;
+            return true;
+        }
+        auto put_text(builtin::span<const u8> value) -> bool {
+            i64 at = 0;
+            while (at < value.size()) {
+                if (!put(value.at(at))) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return good();
+        }
+        auto copy(i64 begin, i64 end) -> bool {
+            i64 at = begin;
+            while (at < end) {
+                if (!put(text.at(at))) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return good();
+        }
+        auto put_number(i64 value) -> bool {
+            if (value < 0) {
+                if (!put('-')) {
+                    return false;
+                }
+                const u64 magnitude = u64(-(value + 1)) + 1u64;
+                return put_natural(magnitude);
+            }
+            return put_natural(u64(value));
+        }
+        auto put_natural(u64 value) -> bool {
+            u64 place = 1u64;
+            while (value / place >= 10u64) {
+                place = place * 10u64;
+            }
+            while (place > 0u64) {
+                if (!put(u8(48u64 + value / place % 10u64))) {
+                    return false;
+                }
+                place = place / 10u64;
+            }
+            return true;
+        }
+        auto byte_at(i64 at) const -> i64 {
+            if (at < 0 || at >= textSize) {
+                return -1;
+            }
+            return i64(text.at(at));
+        }
+        auto text_size() const -> i64 {
+            return textSize;
+        }
+        auto view(i64 first, i64 count) const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(text);
+            if (first < 0 || count < 0 || first > textSize || count > textSize - first) {
+                const builtin::span<const u8> empty = all.subspan(0, 0);
+                return empty;
+            }
+            const builtin::span<const u8> result = all.subspan(first, count);
+            return result;
+        }
+        auto add_token(Token value) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (tokenSize == tokens.size()) {
+                const Token fill = Token(-1, 0, 0, 0);
+                if (!tokens.try_resize(grown(tokenSize), fill)) {
+                    return fail();
+                }
+            }
+            tokens.set(tokenSize, value);
+            tokenSize = tokenSize + 1;
+            return true;
+        }
+        auto set_token(i64 index, Token value) -> bool {
+            if (index < 0 || index >= tokenSize) {
+                return fail();
+            }
+            tokens.set(index, value);
+            return good();
+        }
+        auto token_at(i64 index) const -> Token {
+            if (index < 0 || index >= tokenSize) {
+                const Token invalid = Token(6, 0, 0, 0);
+                return invalid;
+            }
+            const Token result = tokens.at(index);
+            return result;
+        }
+        auto token_count() const -> i64 {
+            return tokenSize;
+        }
+        auto kind(i64 index) const -> i64 {
+            const Token value = token_at(index);
+            return value.kind();
+        }
+        auto add_entry(i64 category, i64 group, i64 name, i64 number, i64 token) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (entrySize == entries.size()) {
+                const Entry fill = Entry(-1, 0, -1, 0, 0, -1);
+                if (!entries.try_resize(grown(entrySize), fill)) {
+                    return fail();
+                }
+            }
+            const Entry value = Entry(category, group, name, number, entrySize, token);
+            entries.set(entrySize, value);
+            entrySize = entrySize + 1;
+            return true;
+        }
+        auto entry_at(i64 index) const -> Entry {
+            const Entry result = entries.at(index);
+            return result;
+        }
+        auto entry_count() const -> i64 {
+            return entrySize;
+        }
+        auto add_line(i64 value) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (lineSize == lines.size()) {
+                const compiler_ir_metadata::IndexRow fill = compiler_ir_metadata::IndexRow(-1);
+                if (!lines.try_resize(grown(lineSize), fill)) {
+                    return fail();
+                }
+            }
+            const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(value);
+            lines.set(lineSize, row);
+            lineSize = lineSize + 1;
+            return true;
+        }
+        auto set_line(i64 index, i64 value) -> bool {
+            if (index < 0 || index >= lineSize) {
+                return fail();
+            }
+            const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(value);
+            lines.set(index, row);
+            return good();
+        }
+        auto line_at(i64 index) const -> i64 {
+            if (index < 0 || index >= lineSize) {
+                return -1;
+            }
+            const compiler_ir_metadata::IndexRow row = lines.at(index);
+            return row.value();
+        }
+        auto add_function() -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (functionSize == functions.size()) {
+                const compiler_ir_metadata::IndexRow fill = compiler_ir_metadata::IndexRow(-1);
+                if (!functions.try_resize(grown(functionSize), fill)) {
+                    return fail();
+                }
+            }
+            const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(lineSize);
+            functions.set(functionSize, row);
+            functionSize = functionSize + 1;
+            return true;
+        }
+        auto function_count() const -> i64 {
+            return functionSize;
+        }
+        // The first lines index of a function's header.
+        auto function_at(i64 index) const -> i64 {
+            const compiler_ir_metadata::IndexRow row = functions.at(index);
+            return row.value();
+        }
+        auto function_end(i64 index) const -> i64 {
+            if (index + 1 >= functionSize) {
+                return lineSize;
+            }
+            return function_at(index + 1);
+        }
+        auto push(i64 value) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (stackSize == stack.size()) {
+                const compiler_ir_metadata::IndexRow fill = compiler_ir_metadata::IndexRow(-1);
+                if (!stack.try_resize(grown(stackSize), fill)) {
+                    return fail();
+                }
+            }
+            const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(value);
+            stack.set(stackSize, row);
+            stackSize = stackSize + 1;
+            return true;
+        }
+        auto pop() -> i64 {
+            if (stackSize == 0) {
+                fail();
+                return -1;
+            }
+            stackSize = stackSize - 1;
+            const compiler_ir_metadata::IndexRow row = stack.at(stackSize);
+            return row.value();
+        }
+        auto top() const -> i64 {
+            if (stackSize == 0) {
+                return -1;
+            }
+            const compiler_ir_metadata::IndexRow row = stack.at(stackSize - 1);
+            return row.value();
+        }
+        auto clear_stack() -> bool {
+            stackSize = 0;
+            return good();
+        }
+
+        // ---- spellings
+        // Splits text [begin, textSize) at spaces into words.
+        auto add_words(i64 begin) -> bool {
+            i64 at = begin;
+            while (at < textSize) {
+                const i64 first = at;
+                while (at < textSize && text.at(at) != ' ') {
+                    at = at + 1;
+                }
+                if (at > first) {
+                    if (wordSize == words.size()) {
+                        const Token fill = Token(-1, 0, 0, 0);
+                        if (!words.try_resize(grown(wordSize), fill)) {
+                            return fail();
+                        }
+                    }
+                    const Token value = Token(0, first, at - first, 0);
+                    words.set(wordSize, value);
+                    wordSize = wordSize + 1;
+                }
+                at = at + 1;
+            }
+            return good();
+        }
+        auto word_at(i64 index) const -> Token {
+            if (index < 0 || index >= wordSize) {
+                const Token invalid = Token(-1, 0, 0, 0);
+                return invalid;
+            }
+            const Token result = words.at(index);
+            return result;
+        }
+        auto words_ready() const -> bool {
+            return wordSize == 192 + 36;
+        }
+        // Whether token's bytes equal the text range [first, first + count).
+        auto same(i64 token, i64 first, i64 count) const -> bool {
+            const Token value = token_at(token);
+            if ((value.kind() != 0 && value.kind() != 1) || value.count() != count) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < count) {
+                if (text.at(value.first() + at) != text.at(first + at)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        // A word or key spelled exactly expected.
+        auto is(i64 token, builtin::span<const u8> expected) const -> bool {
+            const Token value = token_at(token);
+            if ((value.kind() != 0 && value.kind() != 5) || value.count() != expected.size()) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < value.count()) {
+                if (text.at(value.first() + at) != expected.at(at)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        // The word index in [first, first + count) spelled by token, or -1.
+        auto lookup(i64 token, i64 first, i64 count) const -> i64 {
+            const Token spelled = token_at(token);
+            if (spelled.kind() != 0 && spelled.kind() != 1) {
+                return -1;
+            }
+            i64 at = 0;
+            while (at < count) {
+                const Token value = word_at(first + at);
+                if (value.count() == spelled.count() && compare_text(value.first(), value.count(), spelled.first(),
+                    spelled.count()) == 0) {
+                    return at;
+                }
+                at = at + 1;
+            }
+            return -1;
+        }
+        // Bytewise order of two text ranges.
+        auto compare_text(i64 left, i64 left_count, i64 right, i64 right_count) const -> i64 {
+            const builtin::span<const u8> all = borrow_bytes(text);
+            i64 at = 0;
+            while (at < left_count && at < right_count) {
+                const u8 x = all.at(left + at);
+                const u8 y = all.at(right + at);
+                if (x < y) {
+                    return -1;
+                }
+                if (x > y) {
+                    return 1;
+                }
+                at = at + 1;
+            }
+            if (left_count < right_count) {
+                return -1;
+            }
+            if (left_count > right_count) {
+                return 1;
+            }
+            return 0;
+        }
+        // Form spellings in name order follow the other words; extra is the form.
+        auto sort_forms() -> bool {
+            i64 form = 0;
+            while (form < 85 && good()) {
+                const Token value = word_at(form);
+                const Token sorted = Token(0, value.first(), value.count(), form);
+                if (wordSize == words.size()) {
+                    const Token fill = Token(-1, 0, 0, 0);
+                    if (!words.try_resize(grown(wordSize), fill)) {
+                        return fail();
+                    }
+                }
+                i64 at = wordSize;
+                bool shifting = true;
+                while (shifting && at > 228) {
+                    const Token previous = words.at(at - 1);
+                    shifting = compare_text(previous.first(), previous.count(), value.first(), value.count()) > 0;
+                    if (shifting) {
+                        words.set(at, previous);
+                        at = at - 1;
+                    }
+                }
+                words.set(at, sorted);
+                wordSize = wordSize + 1;
+                form = form + 1;
+            }
+            return good();
+        }
+        // An instruction line's form, cached in its keyword once found.
+        auto form(i64 token) const -> i64 {
+            const Token value = token_at(token);
+            if (value.kind() == 0 && value.extra() > 0) {
+                return value.extra() - 1;
+            }
+            if (value.kind() != 0) {
+                return -1;
+            }
+            i64 low = 228;
+            i64 high = 228 + 85;
+            while (low < high) {
+                const i64 middle = low + (high - low) / 2;
+                const Token candidate = word_at(middle);
+                if (compare_text(candidate.first(), candidate.count(), value.first(), value.count()) < 0) {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            }
+            const Token found = word_at(low);
+            if (low < 228 + 85 && compare_text(found.first(), found.count(), value.first(), value.count()) == 0) {
+                return found.extra();
+            }
+            return -1;
+        }
+        auto codec_at(i64 form) const -> Token {
+            return word_at(107 + form);
+        }
+
+        // ---- values
+        auto integer(i64 token) -> i64 {
+            const Token value = token_at(token);
+            if (value.kind() != 0 || value.count() == 0) {
+                fail();
+                return 0;
+            }
+            i64 at = value.first();
+            const i64 end = value.first() + value.count();
+            bool negative = false;
+            if (text.at(at) == '-') {
+                negative = true;
+                at = at + 1;
+            }
+            if (at == end) {
+                fail();
+                return 0;
+            }
+            // Accumulate negatively so the minimum i64 is representable.
+            i64 result = 0;
+            while (at < end) {
+                const i64 next = i64(text.at(at));
+                if (!digit(next) || result < -922337203685477580 || (result == -922337203685477580 && next - 48 > 8)) {
+                    fail();
+                    return 0;
+                }
+                result = result * 10 - (next - 48);
+                at = at + 1;
+            }
+            if (!negative) {
+                if (result == -9223372036854775807 - 1) {
+                    fail();
+                    return 0;
+                }
+                return -result;
+            }
+            return result;
+        }
+        auto boolean(i64 token) -> i64 {
+            if (is(token, "true") || is(token, "1")) {
+                return 1;
+            }
+            if (is(token, "false") || is(token, "0")) {
+                return 0;
+            }
+            fail();
+            return 0;
+        }
+        // A spelled enumerator of one table, or any integer.
+        auto enumerator(i64 token, i64 first, i64 count) -> i64 {
+            const Token value = token_at(token);
+            if (value.kind() != 0 || value.count() == 0) {
+                fail();
+                return 0;
+            }
+            const i64 found = lookup(token, first, count);
+            if (found >= 0) {
+                return found;
+            }
+            const i64 lead = i64(text.at(value.first()));
+            if (lead == i64('-') || digit(lead)) {
+                return integer(token);
+            }
+            fail();
+            return 0;
+        }
+        auto type_kind(i64 token) -> i64 {
+            return enumerator(token, 85, 22);
+        }
+        auto operation(i64 token, i64 table) -> i64 {
+            return enumerator(token, 192 + enumeration_first(table), enumeration_size(table));
+        }
+        // A word or string node.
+        auto name(i64 token) -> bool {
+            const i64 value = kind(token);
+            if (value != 0 && value != 1) {
+                return fail();
+            }
+            return true;
+        }
+        // The token after the node starting at token.
+        auto next(i64 token) const -> i64 {
+            i64 at = token;
+            while (kind(at) == 5) {
+                at = at + 1;
+            }
+            const Token value = token_at(at);
+            if (value.kind() == 2 || value.kind() == 3) {
+                return value.extra() + 1;
+            }
+            return at + 1;
+        }
+        // Nodes of a line starting at token.
+        auto nodes(i64 token) const -> i64 {
+            i64 count = 0;
+            i64 at = token;
+            while (kind(at) != 6) {
+                at = next(at);
+                count = count + 1;
+            }
+            return count;
+        }
+        auto node(i64 line, i64 ordinal) const -> i64 {
+            i64 at = line;
+            i64 count = 0;
+            while (count < ordinal && kind(at) != 6) {
+                at = next(at);
+                count = count + 1;
+            }
+            return at;
+        }
+        auto arity(i64 line, i64 minimum, i64 maximum) -> bool {
+            const i64 count = nodes(line);
+            if (count < minimum || count > maximum) {
+                return fail();
+            }
+            return true;
+        }
+        // Items of a list (2) or tuple (3) node.
+        auto items(i64 token, i64 bracket) -> i64 {
+            const Token value = token_at(token);
+            if (value.kind() != bracket) {
+                fail();
+                return 0;
+            }
+            i64 count = 0;
+            i64 at = token + 1;
+            while (at < value.extra()) {
+                at = next(at);
+                count = count + 1;
+            }
+            return count;
+        }
+        auto item(i64 token, i64 ordinal) const -> i64 {
+            i64 at = token + 1;
+            i64 count = 0;
+            while (count < ordinal) {
+                at = next(at);
+                count = count + 1;
+            }
+            return at;
+        }
+
+        // ---- text expansion
+        auto keyword_is(i64 begin, i64 end, builtin::span<const u8> expected) const -> bool {
+            i64 at = begin;
+            while (at < end && (text.at(at) == ' ' || text.at(at) == '\t')) {
+                at = at + 1;
+            }
+            i64 stop = at;
+            while (stop < end && text.at(stop) != ' ' && text.at(stop) != '\t' && text.at(stop) != '\r' && text.at(stop)
+                != ';') {
+                stop = stop + 1;
+            }
+            if (stop - at != expected.size()) {
+                return false;
+            }
+            i64 index = 0;
+            while (index < expected.size()) {
+                if (text.at(at + index) != expected.at(index)) {
+                    return false;
+                }
+                index = index + 1;
+            }
+            return true;
+        }
+        auto line_end(i64 begin, i64 end) const -> i64 {
+            i64 at = begin;
+            while (at < end && text.at(at) != '\n') {
+                at = at + 1;
+            }
+            return at;
+        }
+        // A decimal field of a {start,step} template.
+        auto template_number(i64 begin, i64 end) -> i64 {
+            i64 at = begin;
+            bool negative = false;
+            if (at < end && text.at(at) == '-') {
+                negative = true;
+                at = at + 1;
+            }
+            if (at == end) {
+                fail();
+                return 0;
+            }
+            i64 result = 0;
+            while (at < end) {
+                const i64 next_digit = i64(text.at(at));
+                if (!digit(next_digit) || result > 922337203685477580) {
+                    fail();
+                    return 0;
+                }
+                result = result * 10 + next_digit - 48;
+                at = at + 1;
+            }
+            if (negative) {
+                return -result;
+            }
+            return result;
+        }
+        // Appends [begin, end) with each {a,s} spelled as a + s * index.
+        auto expand_template(i64 begin, i64 end, i64 index) -> bool {
+            i64 at = begin;
+            while (at < end && good()) {
+                if (text.at(at) != '{') {
+                    put(text.at(at));
+                    at = at + 1;
+                } else {
+                    i64 comma = at;
+                    while (comma < end && text.at(comma) != ',') {
+                        comma = comma + 1;
+                    }
+                    i64 close = at;
+                    while (close < end && text.at(close) != '}') {
+                        close = close + 1;
+                    }
+                    if (close == end || comma == end || comma > close) {
+                        return fail();
+                    }
+                    const i64 start = template_number(at + 1, comma);
+                    const i64 step = template_number(comma + 1, close);
+                    if (index != 0 && (step > 9223372036854775807 / index || step < -9223372036854775807 / index)) {
+                        return fail();
+                    }
+                    const i64 offset = step * index;
+                    if ((offset > 0 && start > 9223372036854775807 - offset) || (offset < 0 && start
+                        < -9223372036854775807 - 1 - offset)) {
+                        return fail();
+                    }
+                    put_number(start + offset);
+                    at = close + 1;
+                }
+            }
+            return good();
+        }
+        auto string_end(i64 begin, i64 end) const -> i64 {
+            i64 at = begin + 1;
+            while (at < end && text.at(at) != '"') {
+                if (text.at(at) == '\\') {
+                    at = at + 1;
+                }
+                at = at + 1;
+            }
+            if (at >= end) {
+                return -1;
+            }
+            return at + 1;
+        }
+        auto skip_space(i64 begin, i64 end) const -> i64 {
+            i64 at = begin;
+            while (at < end && space(i64(text.at(at)))) {
+                at = at + 1;
+            }
+            return at;
+        }
+        auto bracket_end(i64 begin, i64 end) const -> i64 {
+            i64 depth = 0;
+            i64 at = begin;
+            while (at < end) {
+                const u8 value = text.at(at);
+                if (value == '"') {
+                    at = string_end(at, end);
+                    if (at < 0) {
+                        return -1;
+                    }
+                } else {
+                    if (value == '[' || value == '(') {
+                        depth = depth + 1;
+                    }
+                    if (value == ']' || value == ')') {
+                        depth = depth - 1;
+                        if (depth == 0) {
+                            return at + 1;
+                        }
+                    }
+                    at = at + 1;
+                }
+            }
+            return -1;
+        }
+        // The end of the node starting at begin, a key's value included, or -1.
+        auto node_end(i64 begin, i64 end) const -> i64 {
+            i64 at = begin;
+            while (at < end) {
+                const u8 first = text.at(at);
+                if (first == '[' || first == '(') {
+                    return bracket_end(at, end);
+                }
+                if (first == '"') {
+                    at = string_end(at, end);
+                    if (at < 0) {
+                        return -1;
+                    }
+                } else {
+                    while (at < end && !delimiter(i64(text.at(at)))) {
+                        at = at + 1;
+                    }
+                }
+                const i64 after = skip_space(at, end);
+                if (after >= end || text.at(after) != '=') {
+                    return at;
+                }
+                at = skip_space(after + 1, end);
+            }
+            return -1;
+        }
+        // Spells each repeated list item (ITEM*N) as N copies, outermost
+        // first. An item with {a,s} templates spells a + s * i in copy i, so a
+        // template belongs to the outermost repetition around it. Appends the
+        // expanded line; returns 1 when a copy repeats again, 0 when done.
+        auto expand_items(i64 begin, i64 end) -> i64 {
+            clear_stack();
+            i64 again = 0;
+            i64 at = begin;
+            while (at < end && good()) {
+                const u8 value = text.at(at);
+                bool plain = true;
+                if (value == '"') {
+                    const i64 close = string_end(at, end);
+                    if (close < 0) {
+                        copy(at, end);
+                        at = end;
+                    } else {
+                        copy(at, close);
+                        at = close;
+                    }
+                    plain = false;
+                }
+                if (plain && value == ';') {
+                    copy(at, end);
+                    at = end;
+                    plain = false;
+                }
+                if (plain && top() == 2 && !space(i64(value)) && value != ']' && value != ')') {
+                    const i64 item_end = node_end(at, end);
+                    const i64 star = skip_space(item_end, end);
+                    if (item_end > at && star < end && text.at(star) == '*') {
+                        i64 last = star + 1;
+                        while (last < end && digit(i64(text.at(last)))) {
+                            last = last + 1;
+                        }
+                        if (last == star + 1) {
+                            fail();
+                            return -1;
+                        }
+                        const i64 count = template_number(star + 1, last);
+                        if (count < 1 || count > 1048576) {
+                            fail();
+                            return -1;
+                        }
+                        bool braces = false;
+                        i64 scan = at;
+                        while (scan < item_end) {
+                            if (text.at(scan) == '{') {
+                                braces = true;
+                            }
+                            if (text.at(scan) == '*') {
+                                again = 1;
+                            }
+                            scan = scan + 1;
+                        }
+                        i64 copy_index = 0;
+                        while (copy_index < count && good()) {
+                            if (copy_index > 0) {
+                                put(' ');
+                            }
+                            if (braces) {
+                                expand_template(at, item_end, copy_index);
+                            } else {
+                                copy(at, item_end);
+                            }
+                            copy_index = copy_index + 1;
+                        }
+                        at = last;
+                        plain = false;
+                    } else {
+                        if (item_end > at && value != '[' && value != '(') {
+                            copy(at, item_end);
+                            at = item_end;
+                            plain = false;
+                        }
+                    }
+                }
+                if (plain) {
+                    if (value == '[') {
+                        push(2);
+                    }
+                    if (value == '(') {
+                        push(3);
+                    }
+                    if ((value == ']' || value == ')') && top() != -1) {
+                        pop();
+                    }
+                    put(value);
+                    at = at + 1;
+                }
+            }
+            if (!good()) {
+                return -1;
+            }
+            return again;
+        }
+        auto escaped(u8 escape) const -> i64 {
+            if (escape == 'n') {
+                return 10;
+            }
+            if (escape == 't') {
+                return 9;
+            }
+            if (escape == '"' || escape == '\\') {
+                return i64(escape);
+            }
+            return -1;
+        }
+        // A quoted string decoded at the end of text as a string token; the
+        // position after its closing quote.
+        auto string_token(i64 begin, i64 end) -> i64 {
+            const i64 first = textSize;
+            i64 at = begin + 1;
+            bool open = true;
+            while (open && good()) {
+                if (at >= end) {
+                    fail();
+                    return end;
+                }
+                const u8 value = text.at(at);
+                at = at + 1;
+                if (value == '"') {
+                    open = false;
+                }
+                if (open && value != '\\') {
+                    put(value);
+                }
+                if (open && value == '\\') {
+                    if (at >= end) {
+                        fail();
+                        return end;
+                    }
+                    const u8 escape = text.at(at);
+                    at = at + 1;
+                    const i64 simple = escaped(escape);
+                    if (simple >= 0) {
+                        put(u8(simple));
+                    } else {
+                        if (escape != 'x' || at + 2 > end || hex_value(i64(text.at(at))) < 0 || hex_value(i64(text.at(at
+                            + 1))) < 0) {
+                            fail();
+                            return end;
+                        }
+                        put(u8(hex_value(i64(text.at(at))) * 16 + hex_value(i64(text.at(at + 1)))));
+                        at = at + 2;
+                    }
+                }
+            }
+            const Token value = Token(1, first, textSize - first, 0);
+            add_token(value);
+            return at;
+        }
+        auto open_bracket(i64 at, u8 value) -> bool {
+            i64 bracket = 2;
+            if (value == '(') {
+                bracket = 3;
+            }
+            const Token open = Token(bracket, at, 1, -1);
+            return push(tokenSize) && add_token(open);
+        }
+        auto close_bracket(i64 at, u8 value) -> bool {
+            const i64 opened = pop();
+            const Token open = token_at(opened);
+            if (opened < 0 || (value == ']' && open.kind() != 2) || (value == ')' && open.kind() != 3)) {
+                return fail();
+            }
+            const Token closed = Token(open.kind(), open.first(), 1, tokenSize);
+            const Token close = Token(4, at, 1, opened);
+            return set_token(opened, closed) && add_token(close);
+        }
+        // A word or string node, a key when '=' follows; the position after it.
+        auto word_token(i64 begin, i64 end) -> i64 {
+            i64 at = begin;
+            if (text.at(at) == '"') {
+                at = string_token(at, end);
+            } else {
+                while (at < end && !delimiter(i64(text.at(at)))) {
+                    at = at + 1;
+                }
+                const Token word = Token(0, begin, at - begin, 0);
+                add_token(word);
+            }
+            const i64 after = skip_space(at, end);
+            if (good() && after < end && text.at(after) == '=') {
+                const Token key = token_at(tokenSize - 1);
+                const Token marked = Token(5, key.first(), key.count(), key.kind());
+                set_token(tokenSize - 1, marked);
+                at = skip_space(after + 1, end);
+                if (at >= end || text.at(at) == ']' || text.at(at) == ')' || text.at(at) == '=' || text.at(at) == '*'
+                    || text.at(at) == ';') {
+                    fail();
+                }
+            }
+            return at;
+        }
+        // The tokens of one module line, then its end-of-line token.
+        auto tokenize(i64 begin, i64 end, i64 line) -> bool {
+            clear_stack();
+            i64 at = skip_space(begin, end);
+            while (at < end && good()) {
+                const u8 value = text.at(at);
+                if (value == ';') {
+                    at = end;
+                } else {
+                    if (value == '[' || value == '(') {
+                        open_bracket(at, value);
+                        at = at + 1;
+                    } else {
+                        if (value == ']' || value == ')') {
+                            close_bracket(at, value);
+                            at = at + 1;
+                        } else {
+                            if (value == '=' || value == '*') {
+                                return fail();
+                            }
+                            at = word_token(at, end);
+                        }
+                    }
+                    at = skip_space(at, end);
+                }
+            }
+            if (stackSize != 0) {
+                return fail();
+            }
+            const Token stop = Token(6, 0, 0, line);
+            return add_token(stop);
+        }
+        auto has_star(i64 begin, i64 end) const -> bool {
+            i64 at = begin;
+            while (at < end) {
+                if (text.at(at) == '*') {
+                    return true;
+                }
+                at = at + 1;
+            }
+            return false;
+        }
+        auto process(i64 begin, i64 end, i64 line) -> bool {
+            at_line(line);
+            i64 first = begin;
+            i64 last = end;
+            bool repeating = has_star(begin, end);
+            while (repeating && good()) {
+                const i64 expanded = textSize;
+                repeating = expand_items(first, last) == 1;
+                first = expanded;
+                last = textSize;
+            }
+            return tokenize(first, last, line);
+        }
+        // Copies the spellings and splits them into words.
+        auto load_words(builtin::span<const u8> spellings) -> bool {
+            const i64 first = textSize;
+            return put_text(spellings) && add_words(first) && words_ready() && sort_forms();
+        }
+        // The line after a repeat block's "endrepeat", or -1.
+        auto block_end(i64 begin, i64 end) const -> i64 {
+            i64 at = begin;
+            while (at <= end) {
+                const i64 stop = line_end(at, end);
+                if (keyword_is(at, stop, "endrepeat")) {
+                    return at;
+                }
+                if (keyword_is(at, stop, "repeat")) {
+                    return -1;
+                }
+                at = stop + 1;
+            }
+            return -1;
+        }
+        // Spells the block lines [begin, close) once per repetition.
+        auto repeat_block(i64 begin, i64 close, i64 end, i64 line, i64 count) -> bool {
+            i64 repetition = 0;
+            while (repetition < count && good()) {
+                i64 at = begin;
+                i64 at_number = line;
+                while (at < close && good()) {
+                    const i64 stop = line_end(at, end);
+                    at_line(at_number);
+                    const i64 expanded = textSize;
+                    if (expand_template(at, stop, repetition)) {
+                        process(expanded, textSize, at_number);
+                    }
+                    at = stop + 1;
+                    at_number = at_number + 1;
+                }
+                repetition = repetition + 1;
+            }
+            return good();
+        }
+        auto lines_between(i64 begin, i64 end) const -> i64 {
+            i64 count = 0;
+            i64 at = begin;
+            while (at < end) {
+                if (text.at(at) == '\n') {
+                    count = count + 1;
+                }
+                at = at + 1;
+            }
+            return count;
+        }
+        // Copies one module and tokenizes every line, expanding repeat blocks:
+        // "repeat N" ... "endrepeat" spells its lines N times, each {a,s} in
+        // repetition i as a + s * i.
+        auto load(builtin::span<const u8> source) -> bool {
+            const i64 begin = textSize;
+            if (!put_text(source)) {
+                return false;
+            }
+            const i64 end = textSize;
+            i64 at = begin;
+            i64 line = 1;
+            while (at <= end && good()) {
+                const i64 stop = line_end(at, end);
+                at_line(line);
+                if (keyword_is(at, stop, "endrepeat")) {
+                    return fail();
+                }
+                if (keyword_is(at, stop, "repeat")) {
+                    const i64 mark = tokenSize;
+                    if (!tokenize(at, stop, line) || nodes(mark) != 2) {
+                        return fail();
+                    }
+                    const i64 count = integer(mark + 1);
+                    tokenSize = mark;
+                    const i64 close = block_end(stop + 1, end);
+                    if (!good() || count < 0 || count > 16777216 || close < 0) {
+                        return fail();
+                    }
+                    repeat_block(stop + 1, close, end, line + 1, count);
+                    const i64 after = line_end(close, end) + 1;
+                    line = line + lines_between(at, after);
+                    at = after;
+                } else {
+                    process(at, stop, line);
+                    at = stop + 1;
+                    line = line + 1;
+                }
+            }
+            abiTokens = tokenSize;
+            return good();
+        }
+        // ABI declaration lines follow the module's tokens.
+        auto load_abi(builtin::span<const u8> source) -> bool {
+            const i64 begin = textSize;
+            if (!put_text(source)) {
+                return false;
+            }
+            const i64 end = textSize;
+            i64 at = begin;
+            while (at < end && good()) {
+                const i64 stop = line_end(at, end);
+                tokenize(at, stop, 0);
+                at = stop + 1;
+            }
+            return good();
+        }
+        auto abi_begin() const -> i64 {
+            return abiTokens;
+        }
+
+        // ---- declarations
+        auto line_end_token(i64 line) const -> i64 {
+            i64 at = line;
+            while (kind(at) != 6) {
+                at = next(at);
+            }
+            return at;
+        }
+        auto header(i64 function, i64 field) const -> i64 {
+            return line_at(function_at(function) + field);
+        }
+        auto set_header(i64 field, i64 line) -> bool {
+            if (functionSize == 0) {
+                return fail();
+            }
+            return set_line(function_at(functionSize - 1) + field, line);
+        }
+        auto slot_line(i64 line, i64 ordinal, i64 expected) -> bool {
+            if (!arity(line, expected, expected)) {
+                return false;
+            }
+            const i64 offset = integer(node(line, 1));
+            return add_entry(5, (functionSize - 1) * 16 + ordinal, -1, offset, line);
+        }
+        // The function header field a keyword sets, or 0.
+        auto header_field(i64 line) const -> i64 {
+            if (is(line, "result")) {
+                return 1;
+            }
+            if (is(line, "params")) {
+                return 2;
+            }
+            if (is(line, "frame")) {
+                return 3;
+            }
+            if (is(line, "scope")) {
+                return 4;
+            }
+            if (is(line, "receiver")) {
+                return 5;
+            }
+            if (is(line, "roots")) {
+                return 6;
+            }
+            if (is(line, "rootmut")) {
+                return 7;
+            }
+            if (is(line, "spanfield")) {
+                return 8;
+            }
+            return 0;
+        }
+        // The frame slot ordinal a keyword declares, or -1.
+        auto slot_ordinal(i64 line) const -> i64 {
+            if (is(line, "slot")) {
+                return 0;
+            }
+            if (is(line, "object")) {
+                return 1;
+            }
+            if (is(line, "array")) {
+                return 2;
+            }
+            if (is(line, "span")) {
+                return 3;
+            }
+            if (is(line, "service")) {
+                return 4;
+            }
+            if (is(line, "region")) {
+                return 5;
+            }
+            if (is(line, "bytes")) {
+                return 6;
+            }
+            if (is(line, "values")) {
+                return 7;
+            }
+            if (is(line, "spanvalues")) {
+                return 8;
+            }
+            return -1;
+        }
+        auto slot_arity(i64 ordinal) const -> i64 {
+            if (ordinal == 1) {
+                return 4;
+            }
+            if (ordinal >= 3 && ordinal <= 5) {
+                return 2;
+            }
+            return 3;
+        }
+        // One line inside a function: 1 handled, 2 its end, 0 a failure.
+        auto function_line(i64 line) -> i64 {
+            const i64 found = form(line);
+            if (found >= 0) {
+                const Token keyword = token_at(line);
+                const Token cached = Token(0, keyword.first(), keyword.count(), found + 1);
+                if (!set_token(line, cached) || !add_line(line)) {
+                    return 0;
+                }
+                return 1;
+            }
+            if (is(line, "end")) {
+                if (!arity(line, 1, 1)) {
+                    return 0;
+                }
+                return 2;
+            }
+            const i64 field = header_field(line);
+            if (field != 0) {
+                i64 maximum = 2;
+                i64 minimum = 2;
+                if (field == 5) {
+                    minimum = 4;
+                    maximum = 5;
+                }
+                if (!arity(line, minimum, maximum) || !set_header(field, line)) {
+                    return 0;
+                }
+                return 1;
+            }
+            const i64 ordinal = slot_ordinal(line);
+            if (ordinal < 0 || !slot_line(line, ordinal, slot_arity(ordinal))) {
+                fail();
+                return 0;
+            }
+            return 1;
+        }
+        auto declaration(i64 line, i64 expected, i64 number) -> bool {
+            return arity(line, expected, expected) && name(node(line, 1)) && add_entry(0, 0, node(line, 1), number,
+                line);
+        }
+        auto module_line(i64 line) -> bool {
+            if (is(line, "function")) {
+                if (!arity(line, 2, 2) || !name(node(line, 1)) || !add_entry(6, 0, node(line, 1), functionSize, line)
+                    || !add_function() || !add_line(node(line, 1))) {
+                    return false;
+                }
+                i64 field = 1;
+                while (field < 9) {
+                    add_line(-1);
+                    field = field + 1;
+                }
+                return good();
+            }
+            if (is(line, "layout")) {
+                return declaration(line, 3, 0);
+            }
+            if (is(line, "fields")) {
+                return declaration(line, 3, 1);
+            }
+            if (is(line, "storage")) {
+                return declaration(line, 7, 2);
+            }
+            if (is(line, "carrier")) {
+                return declaration(line, 2, 3);
+            }
+            if (is(line, "descriptor")) {
+                return arity(line, 4, 4) && add_entry(1, 0, -1, integer(node(line, 1)), line);
+            }
+            if (is(line, "views")) {
+                viewsLine = line;
+                return arity(line, 2, 2);
+            }
+            if (is(line, "enum")) {
+                return arity(line, 3, 3) && name(node(line, 1)) && add_entry(4, 0, node(line, 1), 0, line);
+            }
+            return fail();
+        }
+        // The last views line replaces the default single empty scope-zero view.
+        auto view_entries() -> bool {
+            if (viewsLine < 0) {
+                return add_entry(2, 0, -1, 0, -1);
+            }
+            const i64 list = node(viewsLine, 1);
+            const i64 count = items(list, 2);
+            i64 at = 0;
+            i64 view = list + 1;
+            while (at < count && good()) {
+                if (items(view, 3) != 2) {
+                    return fail();
+                }
+                const i64 scope = integer(item(view, 0));
+                const i64 identities = item(view, 1);
+                add_entry(2, 0, -1, scope, viewsLine);
+                const i64 size = items(identities, 2);
+                i64 index = 0;
+                i64 identity = identities + 1;
+                while (index < size && good()) {
+                    add_entry(3, scope, -1, integer(identity), viewsLine);
+                    identity = next(identity);
+                    index = index + 1;
+                }
+                view = next(view);
+                at = at + 1;
+            }
+            return good();
+        }
+        auto structure() -> bool {
+            bool inside = false;
+            i64 at = 0;
+            while (at < abiTokens && good()) {
+                const i64 stop = line_end_token(at);
+                const Token end_token = token_at(stop);
+                at_line(end_token.extra());
+                if (stop != at) {
+                    if (kind(at) != 0) {
+                        return fail();
+                    }
+                    if (inside) {
+                        const i64 handled = function_line(at);
+                        if (handled == 0) {
+                            return fail();
+                        }
+                        inside = handled != 2;
+                    } else {
+                        if (!module_line(at)) {
+                            return false;
+                        }
+                        inside = is(at, "function");
+                    }
+                }
+                at = stop + 1;
+            }
+            if (inside) {
+                return fail();
+            }
+            return view_entries() && sort_entries();
+        }
+        // Entry order: category, group, name bytes, number, insertion.
+        auto compare_names(i64 left, i64 right) const -> i64 {
+            i64 a_first = 0;
+            i64 a_count = 0;
+            i64 b_first = 0;
+            i64 b_count = 0;
+            if (left >= 0) {
+                const Token a = token_at(left);
+                a_first = a.first();
+                a_count = a.count();
+            }
+            if (right >= 0) {
+                const Token b = token_at(right);
+                b_first = b.first();
+                b_count = b.count();
+            }
+            i64 at = 0;
+            while (at < a_count && at < b_count) {
+                const u8 x = text.at(a_first + at);
+                const u8 y = text.at(b_first + at);
+                if (x < y) {
+                    return -1;
+                }
+                if (x > y) {
+                    return 1;
+                }
+                at = at + 1;
+            }
+            if (a_count < b_count) {
+                return -1;
+            }
+            if (a_count > b_count) {
+                return 1;
+            }
+            return 0;
+        }
+        // -1, 0 or 1 by every key except insertion order.
+        auto compare_keys(Entry left, Entry right) const -> i64 {
+            if (left.category() != right.category()) {
+                if (left.category() < right.category()) {
+                    return -1;
+                }
+                return 1;
+            }
+            if (left.group() != right.group()) {
+                if (left.group() < right.group()) {
+                    return -1;
+                }
+                return 1;
+            }
+            const i64 names = compare_names(left.name(), right.name());
+            if (names != 0) {
+                return names;
+            }
+            if (left.number() != right.number()) {
+                if (left.number() < right.number()) {
+                    return -1;
+                }
+                return 1;
+            }
+            return 0;
+        }
+        auto before(i64 left, i64 right) const -> bool {
+            const Entry a = entries.at(left);
+            const Entry b = entries.at(right);
+            const i64 keys = compare_keys(a, b);
+            return keys < 0 || (keys == 0 && a.sequence() < b.sequence());
+        }
+        auto swap_entries(i64 left, i64 right) -> bool {
+            const Entry a = entries.at(left);
+            const Entry b = entries.at(right);
+            entries.set(left, b);
+            entries.set(right, a);
+            return true;
+        }
+        auto sift(i64 root, i64 count) -> bool {
+            i64 parent = root;
+            bool sifting = true;
+            while (sifting) {
+                const i64 child = parent * 2 + 1;
+                sifting = child < count;
+                if (sifting) {
+                    i64 larger = child;
+                    if (child + 1 < count && before(child, child + 1)) {
+                        larger = child + 1;
+                    }
+                    sifting = before(parent, larger);
+                    if (sifting) {
+                        swap_entries(parent, larger);
+                        parent = larger;
+                    }
+                }
+            }
+            return true;
+        }
+        // Heapsort, then reject duplicate declarations; visible IDs may repeat.
+        auto sort_entries() -> bool {
+            i64 at = entrySize / 2;
+            while (at > 0) {
+                at = at - 1;
+                sift(at, entrySize);
+            }
+            i64 end = entrySize;
+            while (end > 1) {
+                end = end - 1;
+                swap_entries(0, end);
+                sift(0, end);
+            }
+            at = 1;
+            while (at < entrySize) {
+                const Entry previous = entries.at(at - 1);
+                const Entry current = entries.at(at);
+                if (current.category() != 3 && current.category() != 6 && compare_keys(previous, current) == 0) {
+                    if (current.token() >= 0) {
+                        const Token stop = token_at(line_end_token(current.token()));
+                        at_line(stop.extra());
+                    }
+                    return fail();
+                }
+                at = at + 1;
+            }
+            return good();
+        }
+
+        // ---- types
+        // One key of a type tuple: the parsed element kind, length or
+        // parameter/argument extent, or 0 for keys that do not reach metadata.
+        auto type_key(i64 field) -> i64 {
+            const Token value = token_at(field + 1);
+            if (is(field, "display") || is(field, "eparam") || is(field, "lparam")) {
+                name(field + 1);
+                return value.count();
+            }
+            if (is(field, "resolved")) {
+                return boolean(field + 1);
+            }
+            if (is(field, "elem")) {
+                return type_kind(field + 1);
+            }
+            if (is(field, "len")) {
+                return integer(field + 1);
+            }
+            if (is(field, "targs")) {
+                return items(field + 1, 2);
+            }
+            fail();
+            return 0;
+        }
+        // A type node with its name as a range of this text: a kind word, or
+        // (kind [name] key=value...).
+        auto parse_type(i64 token, i64 nominal) -> compiler_ir_metadata::RawTypeRow {
+            if (nominal >= 0) {
+                return named_type(nominal, token);
+            }
+            i64 type_kind_value = 0;
+            i64 name_first = 0;
+            i64 name_count = 0;
+            i64 element = 0;
+            i64 length = 0;
+            i64 element_parameter = 0;
+            i64 length_parameter = 0;
+            i64 arguments = 0;
+            if (token >= 0 && kind(token) == 0) {
+                type_kind_value = type_kind(token);
+            }
+            if (token >= 0 && kind(token) != 0) {
+                const i64 count = items(token, 3);
+                if (count < 1 || count > 16) {
+                    fail();
+                }
+                type_kind_value = type_kind(item(token, 0));
+                i64 at = 1;
+                while (at < count && good()) {
+                    const i64 field = item(token, at);
+                    if (kind(field) != 5) {
+                        const Token spelled = token_at(field);
+                        if (at != 1 || !name(field)) {
+                            fail();
+                        }
+                        name_first = spelled.first();
+                        name_count = spelled.count();
+                    } else {
+                        const i64 value = type_key(field);
+                        if (is(field, "elem")) {
+                            element = value;
+                        }
+                        if (is(field, "len")) {
+                            length = value;
+                        }
+                        if (is(field, "eparam")) {
+                            element_parameter = value;
+                        }
+                        if (is(field, "lparam")) {
+                            length_parameter = value;
+                        }
+                        if (is(field, "targs")) {
+                            arguments = value;
+                        }
+                    }
+                    at = at + 1;
+                }
+            }
+            const compiler_ir_metadata::RawTypeTail tail = compiler_ir_metadata::RawTypeTail(element, length,
+                u64(element_parameter), u64(length_parameter), u64(arguments));
+            const compiler_ir_metadata::RawTypeRow result = compiler_ir_metadata::RawTypeRow(type_kind_value,
+                compiler_ir_metadata::ByteRange(name_first, name_count), tail);
+            return result;
+        }
+        // A nominal type of one kind, spelled by a name node.
+        auto named_type(i64 type_kind_value, i64 token) -> compiler_ir_metadata::RawTypeRow {
+            name(token);
+            const Token spelled = token_at(token);
+            const compiler_ir_metadata::RawTypeTail tail = compiler_ir_metadata::RawTypeTail(0, 0, 0u64, 0u64, 0u64);
+            const compiler_ir_metadata::RawTypeRow result = compiler_ir_metadata::RawTypeRow(type_kind_value,
+                compiler_ir_metadata::ByteRange(spelled.first(), spelled.count()), tail);
+            return result;
+        }
+
+        // ---- store positions
+        // Position counters: 0 bytes, 1 types, 2 classes, 3 fields, 4 leaves,
+        // 5 storage, 6 indices, 7 descriptors, 8 views, 9 enums, 10 callables,
+        // 11 slots, 12 instructions, 13 operands, 14 literals, 15 bodies.
+        auto reset(bool fill) -> bool {
+            filling_ = fill;
+            byteCount = 0;
+            typeCount = 0;
+            classCount = 0;
+            fieldCount = 0;
+            leafCount = 0;
+            storageCount = 0;
+            indexCount = 0;
+            descriptorCount = 0;
+            viewCount = 0;
+            enumCount = 0;
+            callableCount = 0;
+            slotCount = 0;
+            instructionBegin = 0;
+            instructionCount = 0;
+            operandCount = 0;
+            literalCount = 0;
+            bodyCount = 0;
+            return good();
+        }
+        auto count(i64 pool) const -> i64 {
+            if (pool == 0) {
+                return byteCount;
+            }
+            if (pool == 1) {
+                return typeCount;
+            }
+            if (pool == 2) {
+                return classCount;
+            }
+            if (pool == 3) {
+                return fieldCount;
+            }
+            if (pool == 4) {
+                return leafCount;
+            }
+            if (pool == 5) {
+                return storageCount;
+            }
+            if (pool == 6) {
+                return indexCount;
+            }
+            if (pool == 7) {
+                return descriptorCount;
+            }
+            if (pool == 8) {
+                return viewCount;
+            }
+            if (pool == 9) {
+                return enumCount;
+            }
+            if (pool == 10) {
+                return callableCount;
+            }
+            if (pool == 11) {
+                return slotCount;
+            }
+            if (pool == 12) {
+                return instructionCount;
+            }
+            if (pool == 13) {
+                return operandCount;
+            }
+            if (pool == 14) {
+                return literalCount;
+            }
+            return bodyCount;
+        }
+        auto advance(i64 pool, i64 amount) -> bool {
+            if (amount < 0 || count(pool) > 9223372036854775807 - amount) {
+                return fail();
+            }
+            if (pool == 0) {
+                byteCount = byteCount + amount;
+            }
+            if (pool == 1) {
+                typeCount = typeCount + amount;
+            }
+            if (pool == 2) {
+                classCount = classCount + amount;
+            }
+            if (pool == 3) {
+                fieldCount = fieldCount + amount;
+            }
+            if (pool == 4) {
+                leafCount = leafCount + amount;
+            }
+            if (pool == 5) {
+                storageCount = storageCount + amount;
+            }
+            if (pool == 6) {
+                indexCount = indexCount + amount;
+            }
+            if (pool == 7) {
+                descriptorCount = descriptorCount + amount;
+            }
+            if (pool == 8) {
+                viewCount = viewCount + amount;
+            }
+            if (pool == 9) {
+                enumCount = enumCount + amount;
+            }
+            if (pool == 10) {
+                callableCount = callableCount + amount;
+            }
+            if (pool == 11) {
+                slotCount = slotCount + amount;
+            }
+            if (pool == 12) {
+                instructionCount = instructionCount + amount;
+            }
+            if (pool == 13) {
+                operandCount = operandCount + amount;
+            }
+            if (pool == 14) {
+                literalCount = literalCount + amount;
+            }
+            if (pool == 15) {
+                bodyCount = bodyCount + amount;
+            }
+            return good();
+        }
+        auto set_operands(i64 value) -> bool {
+            operandCount = value;
+            return good();
+        }
+        auto begin_instructions() -> bool {
+            instructionBegin = typeCount;
+            return good();
+        }
+        auto instruction_begin() const -> i64 {
+            return instructionBegin;
+        }
+        auto input_counts() const -> compiler_ir_metadata::InputCounts {
+            const compiler_ir_metadata::InputCounts result = compiler_ir_metadata::InputCounts(
+                compiler_ir_metadata::CoreCounts(byteCount, typeCount, classCount, fieldCount, leafCount),
+                compiler_ir_metadata::MapCounts(storageCount, indexCount, descriptorCount, viewCount, enumCount));
+            return result;
+        }
+    };
+    auto create(builtin::ByteRegion region) -> Reader {
+        Reader result = Reader(region);
+        return move(result);
+    }
+    auto release(builtin::ByteRegion region, Reader reader) -> i64 {
+        return 0;
+    }
+
+    // ---- the pending stores, measured (fill false) and then filled in one walk
+    // Copies reader text [first, first + count) to the metadata bytes; returns
+    // its position, or -1.
+    auto text_range(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, i64 first, i64 count,
+        bool fill) -> i64 {
+        const i64 begin = reader.count(0);
+        i64 at = 0;
+        while (fill && at < count) {
+            const i64 value = reader.byte_at(first + at);
+            if (value < 0 || !metadata.ingress_byte(begin + at, u8(value))) {
+                reader.fail();
+                return -1;
+            }
+            at = at + 1;
+        }
+        if (!reader.advance(0, count)) {
+            return -1;
+        }
+        return begin;
+    }
+    auto token_text(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, i64 token, bool fill) -> i64 {
+        const Token value = reader.token_at(token);
+        if (token < 0) {
+            return text_range(reader, metadata, 0, 0, fill);
+        }
+        return text_range(reader, metadata, value.first(), value.count(), fill);
+    }
+    auto token_size(const Reader& reader, i64 token) -> i64 {
+        if (token < 0) {
+            return 0;
+        }
+        const Token value = reader.token_at(token);
+        return value.count();
+    }
+    // One type row at position: the type node at token, or with nominal >= 0
+    // the type of that kind named by token. Every type takes the next type count.
+    auto emit_type(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, i64 token, i64 nominal, i64 position,
+        bool fill) -> bool {
+        const compiler_ir_metadata::RawTypeRow parsed = reader.parse_type(token, nominal);
+        const compiler_ir_metadata::ByteRange spelled = parsed.name();
+        const i64 begin = text_range(reader, metadata, spelled.begin(), spelled.count(), fill);
+        const compiler_ir_metadata::RawTypeRow row = compiler_ir_metadata::RawTypeRow(parsed.kind(),
+            compiler_ir_metadata::ByteRange(begin, spelled.count()), parsed.tail());
+        if (!reader.good() || (fill && !metadata.ingress_type(position, row))) {
+            return reader.fail();
+        }
+        return reader.advance(1, 1);
+    }
+    // Index rows for the integers of a list node; returns the first position.
+    auto copy_indices(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, i64 list, bool fill) -> i64 {
+        const i64 begin = reader.count(6);
+        const i64 size = reader.items(list, 2);
+        i64 at = 0;
+        i64 item = list + 1;
+        while (at < size && reader.good()) {
+            const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(reader.integer(item));
+            item = reader.next(item);
+            if (fill && !metadata.ingress_index(reader.count(6), row)) {
+                reader.fail();
+            }
+            reader.advance(6, 1);
+            at = at + 1;
+        }
+        return begin;
+    }
+    auto emit_leaves(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, i64 line, bool fill) -> bool {
+        const i64 list = reader.node(line, 2);
+        const i64 size = reader.items(list, 2);
+        i64 at = 0;
+        i64 leaf = list + 1;
+        while (at < size && reader.good()) {
+            const i64 position = reader.count(4);
+            emit_type(reader, metadata, leaf, -1, position, fill);
+            reader.advance(4, 1);
+            leaf = reader.next(leaf);
+            at = at + 1;
+        }
+        return reader.good();
+    }
+    // Field types follow every class's leaf types.
+    auto emit_fields(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, i64 line, bool fill) -> bool {
+        const i64 list = reader.node(line, 2);
+        const i64 size = reader.items(list, 2);
+        i64 leaves = 0;
+        if (fill) {
+            leaves = metadata.leaf_count();
+        }
+        i64 at = 0;
+        i64 field = list + 1;
+        while (at < size && reader.good()) {
+            const i64 values = reader.items(field, 3);
+            if (values < 4 || values > 5) {
+                return reader.fail();
+            }
+            const i64 type = leaves + reader.count(3);
+            const i64 field_type = reader.item(field, 0);
+            emit_type(reader, metadata, field_type, -1, type, fill);
+            i64 elements = 1;
+            if (values == 5) {
+                elements = reader.integer(reader.item(field, 4));
+            }
+            const compiler_ir_metadata::FieldRow row = compiler_ir_metadata::FieldRow(type,
+                reader.integer(reader.item(field, 1)), reader.integer(reader.item(field, 2)),
+                reader.boolean(reader.item(field, 3)), elements);
+            if (reader.good() && fill && !metadata.ingress_field(reader.count(3), row)) {
+                reader.fail();
+            }
+            reader.advance(3, 1);
+            field = reader.next(field);
+            at = at + 1;
+        }
+        return reader.good();
+    }
+    auto emit_storage(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, i64 line, bool fill) -> bool {
+        const i64 leaf_list = reader.node(line, 2);
+        const i64 field_list = reader.node(line, 3);
+        const i64 leaves = copy_indices(reader, metadata, leaf_list, fill);
+        const i64 fields = copy_indices(reader, metadata, field_list, fill);
+        const compiler_ir_metadata::StorageRow row = compiler_ir_metadata::StorageRow(compiler_ir_metadata::IndexRange(
+            leaves, reader.items(reader.node(line, 2), 2)), compiler_ir_metadata::IndexRange(fields,
+            reader.items(reader.node(line, 3), 2)),
+            compiler_ir_metadata::PhysicalExtent(reader.integer(reader.node(line, 4)), reader.integer(reader.node(line,
+            5)), reader.integer(reader.node(line, 6))));
+        if (reader.good() && fill && !metadata.ingress_storage(reader.count(5), row)) {
+            reader.fail();
+        }
+        return reader.advance(5, 1);
+    }
+    // One class per name of a layout, fields, storage or carrier declaration,
+    // in name order; entries [at, end) are its declarations.
+    auto emit_class(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, i64 at, i64 end, bool fill) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::flag_masks();
+        const Entry first = reader.entry_at(at);
+        const i64 name = first.name();
+        const i64 begin = token_text(reader, metadata, name, fill);
+        const i64 leaves = reader.count(4);
+        const i64 fields = reader.count(3);
+        i64 storage = -1;
+        u64 membership = 0u64;
+        i64 index = at;
+        while (index < end && reader.good()) {
+            const Entry declaration = reader.entry_at(index);
+            const i64 line = declaration.token();
+            if (declaration.number() == 0) {
+                membership = membership | masks.class_layout();
+                emit_leaves(reader, metadata, line, fill);
+            }
+            if (declaration.number() == 1) {
+                membership = membership | masks.class_fields();
+                emit_fields(reader, metadata, line, fill);
+            }
+            if (declaration.number() == 2) {
+                membership = membership | masks.class_storage();
+                storage = reader.count(5);
+                emit_storage(reader, metadata, line, fill);
+            }
+            if (declaration.number() == 3) {
+                membership = membership | masks.class_array_carrier();
+            }
+            index = index + 1;
+        }
+        const compiler_ir_metadata::ClassRow row = compiler_ir_metadata::ClassRow(compiler_ir_metadata::ByteRange(begin,
+            token_size(reader, name)), compiler_ir_metadata::IndexRange(leaves, reader.count(4) - leaves),
+            compiler_ir_metadata::IndexRange(fields, reader.count(3) - fields), storage, membership);
+        if (reader.good() && fill && !metadata.ingress_class(reader.count(2), row)) {
+            reader.fail();
+        }
+        return reader.advance(2, 1);
+    }
+    auto emit_classes(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, bool fill) -> bool {
+        i64 at = 0;
+        while (at < reader.entry_count() && reader.good()) {
+            const Entry first = reader.entry_at(at);
+            i64 end = at + 1;
+            bool same = first.category() == 0;
+            while (same && end < reader.entry_count()) {
+                const Entry next = reader.entry_at(end);
+                same = next.category() == 0 && reader.compare_names(first.name(), next.name()) == 0;
+                if (same) {
+                    end = end + 1;
+                }
+            }
+            if (first.category() == 0) {
+                emit_class(reader, metadata, at, end, fill);
+            }
+            at = end;
+        }
+        return reader.good();
+    }
+    auto emit_tables(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, bool fill) -> bool {
+        i64 at = 0;
+        i64 identities = 0;
+        bool seeking = true;
+        while (seeking && identities < reader.entry_count()) {
+            const Entry entry = reader.entry_at(identities);
+            seeking = entry.category() < 3;
+            if (seeking) {
+                identities = identities + 1;
+            }
+        }
+        while (at < reader.entry_count() && reader.good()) {
+            const Entry entry = reader.entry_at(at);
+            const i64 line = entry.token();
+            if (entry.category() == 1) {
+                const compiler_ir_metadata::DescriptorRow row = compiler_ir_metadata::DescriptorRow(entry.number(),
+                    reader.integer(reader.node(line, 2)), reader.integer(reader.node(line, 3)));
+                if (reader.good() && fill && !metadata.ingress_descriptor(reader.count(7), row)) {
+                    reader.fail();
+                }
+                reader.advance(7, 1);
+            }
+            if (entry.category() == 2) {
+                // Visible descriptor IDs are sorted and unique.
+                const i64 begin = reader.count(6);
+                bool seen = false;
+                i64 last = 0;
+                bool scanning = true;
+                while (scanning && identities < reader.entry_count()) {
+                    const Entry visible = reader.entry_at(identities);
+                    scanning = visible.category() == 3 && visible.group() <= entry.number();
+                    if (scanning && visible.group() == entry.number() && (!seen || visible.number() != last)) {
+                        const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(visible.number());
+                        if (fill && !metadata.ingress_index(reader.count(6), row)) {
+                            reader.fail();
+                        }
+                        reader.advance(6, 1);
+                        seen = true;
+                        last = visible.number();
+                    }
+                    if (scanning) {
+                        identities = identities + 1;
+                    }
+                }
+                const compiler_ir_metadata::ViewRow row = compiler_ir_metadata::ViewRow(entry.number(),
+                    compiler_ir_metadata::IndexRange(begin, reader.count(6) - begin));
+                if (fill && !metadata.ingress_view(reader.count(8), row)) {
+                    reader.fail();
+                }
+                reader.advance(8, 1);
+            }
+            if (entry.category() == 4) {
+                const i64 begin = token_text(reader, metadata, entry.name(), fill);
+                const compiler_ir_metadata::EnumRow row = compiler_ir_metadata::EnumRow(compiler_ir_metadata::ByteRange(
+                    begin, token_size(reader, entry.name())), reader.integer(reader.node(line, 2)));
+                if (reader.good() && fill && !metadata.ingress_enum(reader.count(9), row)) {
+                    reader.fail();
+                }
+                reader.advance(9, 1);
+            }
+            at = at + 1;
+        }
+        return reader.good();
+    }
+    auto slot_kind(i64 ordinal) -> i64 {
+        if (ordinal == 8) {
+            return 27;
+        }
+        return 10 + ordinal;
+    }
+    auto emit_slot(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, i64 index, bool fill) -> bool {
+        const Entry entry = reader.entry_at(index);
+        const i64 ordinal = entry.group() % 16;
+        const i64 line = entry.token();
+        i64 type = 0;
+        i64 length = 0;
+        i64 mutable_value = 0;
+        if (ordinal == 0 || ordinal == 1 || ordinal == 7 || ordinal == 8) {
+            type = reader.count(1);
+            i64 nominal = -1;
+            if (ordinal == 1) {
+                nominal = 5;
+            }
+            if (ordinal == 7) {
+                nominal = 17;
+            }
+            if (ordinal == 8) {
+                nominal = 21;
+            }
+            const i64 spelled = reader.node(line, 2);
+            emit_type(reader, metadata, spelled, nominal, type, fill);
+        }
+        if (ordinal == 1) {
+            mutable_value = reader.boolean(reader.node(line, 3));
+        }
+        if (ordinal == 2) {
+            length = reader.integer(reader.node(line, 2));
+        }
+        if (ordinal == 6) {
+            mutable_value = reader.boolean(reader.node(line, 2));
+        }
+        const compiler_ir_metadata::SlotRow row = compiler_ir_metadata::SlotRow(slot_kind(ordinal), entry.number(),
+            type, length, mutable_value);
+        if (reader.good() && fill && !metadata.ingress_slot(reader.count(11), row)) {
+            reader.fail();
+        }
+        return reader.advance(11, 1);
+    }
+    // A function header value, or zero when the line is absent.
+    auto header_integer(Reader& reader, i64 function, i64 field) -> i64 {
+        const i64 line = reader.header(function, field);
+        if (line < 0) {
+            return 0;
+        }
+        return reader.integer(reader.node(line, 1));
+    }
+    // One callable: its name, result and parameter types, then its frame slots
+    // in kind and offset order (entries from slot), then its receiver.
+    auto emit_callable(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, i64 function, i64 slot,
+        bool fill) -> i64 {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::flag_masks();
+        const i64 name = reader.header(function, 0);
+        const i64 begin = token_text(reader, metadata, name, fill);
+        const i64 types = reader.count(1);
+        i64 result = -1;
+        if (reader.header(function, 1) >= 0) {
+            result = reader.node(reader.header(function, 1), 1);
+        }
+        emit_type(reader, metadata, result, -1, types, fill);
+        i64 parameters = 0;
+        if (reader.header(function, 2) >= 0) {
+            const i64 list = reader.node(reader.header(function, 2), 1);
+            parameters = reader.items(list, 2);
+            i64 at = 0;
+            i64 parameter = list + 1;
+            while (at < parameters && reader.good()) {
+                const i64 position = reader.count(1);
+                emit_type(reader, metadata, parameter, -1, position, fill);
+                parameter = reader.next(parameter);
+                at = at + 1;
+            }
+        }
+        const i64 slots = reader.count(11);
+        i64 cursor = slot;
+        bool scanning = true;
+        while (scanning && cursor < reader.entry_count() && reader.good()) {
+            const Entry entry = reader.entry_at(cursor);
+            scanning = entry.category() == 5 && entry.group() < (function + 1) * 16;
+            if (scanning) {
+                emit_slot(reader, metadata, cursor, fill);
+                cursor = cursor + 1;
+            }
+        }
+        u64 flags = 0u64;
+        i64 receiver_begin = 0;
+        i64 receiver_count = 0;
+        u64 receiver_flags = 0u64;
+        const i64 receiver = reader.header(function, 5);
+        if (receiver >= 0) {
+            flags = flags | masks.callable_receiver();
+            const i64 receiver_name = reader.node(receiver, 1);
+            receiver_begin = token_text(reader, metadata, receiver_name, fill);
+            receiver_count = token_size(reader, receiver_name);
+            reader.name(reader.node(receiver, 1));
+            if (reader.boolean(reader.node(receiver, 2)) == 1) {
+                receiver_flags = receiver_flags | masks.receiver_mutable();
+            }
+            if (reader.boolean(reader.node(receiver, 3)) == 1) {
+                receiver_flags = receiver_flags | masks.receiver_constructor();
+            }
+            if (reader.nodes(receiver) == 4 || reader.boolean(reader.node(receiver, 4)) == 1) {
+                receiver_flags = receiver_flags | masks.receiver_public();
+            }
+        }
+        i64 span = 0;
+        if (reader.header(function, 8) >= 0) {
+            flags = flags | masks.callable_span_summary();
+            span = header_integer(reader, function, 8);
+        }
+        const compiler_ir_metadata::CallableRow row = compiler_ir_metadata::CallableRow(compiler_ir_metadata::ByteRange(
+            begin, token_size(reader, name)), compiler_ir_metadata::IndexRange(types, 1 + parameters),
+            header_integer(reader, function, 4),
+            compiler_ir_metadata::ReceiverShape(compiler_ir_metadata::ByteRange(receiver_begin, receiver_count),
+            receiver_flags), compiler_ir_metadata::CallableOptions(flags, span, header_integer(reader, function, 3),
+            header_integer(reader, function, 6), header_integer(reader, function, 7)),
+            compiler_ir_metadata::IndexRange(slots, reader.count(11) - slots));
+        if (reader.good() && fill && !metadata.ingress_callable(reader.count(10), row)) {
+            reader.fail();
+        }
+        reader.advance(10, 1);
+        return cursor;
+    }
+    auto emit_callables(Reader& reader, compiler_ir_metadata::MetadataStore& metadata, bool fill) -> bool {
+        i64 slot = 0;
+        bool seeking = true;
+        while (seeking && slot < reader.entry_count()) {
+            const Entry entry = reader.entry_at(slot);
+            seeking = entry.category() < 5;
+            if (seeking) {
+                slot = slot + 1;
+            }
+        }
+        i64 function = 0;
+        while (function < reader.function_count() && reader.good()) {
+            slot = emit_callable(reader, metadata, function, slot, fill);
+            function = function + 1;
+        }
+        // The name-sorted callable ID index ends the index rows.
+        i64 at = 0;
+        while (at < reader.entry_count() && reader.good()) {
+            const Entry entry = reader.entry_at(at);
+            if (entry.category() == 6) {
+                const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(entry.number());
+                if (fill && !metadata.ingress_index(reader.count(6), row)) {
+                    reader.fail();
+                }
+                reader.advance(6, 1);
+            }
+            at = at + 1;
+        }
+        return reader.begin_instructions();
+    }
+    auto put_value(Reader& reader, compiler_ir_instructions::InstructionStore& instructions, i64 index, i64 role,
+        i64 value) -> bool {
+        const compiler_ir_instructions::RawOperandRow row = compiler_ir_instructions::RawOperandRow(role, value, 0u64,
+            0, 0);
+        if (reader.filling() && !instructions.ingress_operand(index, row)) {
+            return reader.fail();
+        }
+        return reader.good();
+    }
+    auto put_unsigned(Reader& reader, compiler_ir_instructions::InstructionStore& instructions, i64 index,
+        u64 value) -> bool {
+        const compiler_ir_instructions::RawOperandRow row = compiler_ir_instructions::RawOperandRow(11, 0, value, 0, 0);
+        if (reader.filling() && !instructions.ingress_operand(index, row)) {
+            return reader.fail();
+        }
+        return reader.good();
+    }
+    auto put_slice(Reader& reader, compiler_ir_instructions::InstructionStore& instructions, i64 index, i64 role,
+        i64 begin, i64 count) -> bool {
+        const compiler_ir_instructions::RawOperandRow row = compiler_ir_instructions::RawOperandRow(role, 0, 0u64,
+            begin, count);
+        if (reader.filling() && !instructions.ingress_operand(index, row)) {
+            return reader.fail();
+        }
+        return reader.good();
+    }
+    // A nested list after the prefix: offsets (width 1), service arguments
+    // (width 2) or borrowed roots (width 3). Returns the rows written.
+    auto put_list(Reader& reader, compiler_ir_instructions::InstructionStore& instructions, i64 list, i64 width,
+        i64 begin, bool fill) -> i64 {
+        if (list < 0) {
+            return 0;
+        }
+        const i64 size = reader.items(list, 2);
+        i64 at = 0;
+        i64 entry = list + 1;
+        while (at < size && reader.good()) {
+            const i64 base = begin + at * width;
+            if (width == 1) {
+                const i64 offset = reader.integer(entry);
+                put_value(reader, instructions, base, 2, offset);
+            } else {
+                if (reader.items(entry, 3) != width) {
+                    reader.fail();
+                }
+                if (width == 2) {
+                    const i64 loan = reader.integer(reader.item(entry, 0));
+                    const i64 service = reader.operation(reader.item(entry, 1), 0);
+                    put_value(reader, instructions, base, 79, loan);
+                    put_value(reader, instructions, base + 1, 3, service);
+                } else {
+                    const i64 root = reader.integer(reader.item(entry, 0));
+                    const i64 loan = reader.integer(reader.item(entry, 1));
+                    const i64 field = reader.integer(reader.item(entry, 2));
+                    put_value(reader, instructions, base, 38, root);
+                    put_value(reader, instructions, base + 1, 4, loan);
+                    put_value(reader, instructions, base + 2, 23, field);
+                }
+            }
+            entry = reader.next(entry);
+            at = at + 1;
+        }
+        return size * width;
+    }
+    // Prefix operands a codec spells: a constant spells two, operations none.
+    auto prefix_size(const Reader& reader, i64 form) -> i64 {
+        const Token codec = reader.codec_at(form);
+        i64 size = 0;
+        i64 at = 0;
+        bool field = true;
+        while (at < codec.count()) {
+            const i64 value = reader.byte_at(codec.first() + at);
+            if (field && value != i64('-')) {
+                if (value == i64('v')) {
+                    size = size + 2;
+                }
+                if (value != i64('v') && value != i64('u') && value != i64('y') && value != i64('p') && value
+                    != i64('q')) {
+                    size = size + 1;
+                }
+            }
+            field = value == i64(',');
+            at = at + 1;
+        }
+        return size;
+    }
+    // The decimal role after a codec letter at position at.
+    auto codec_role(const Reader& reader, i64 at) -> i64 {
+        i64 role = 0;
+        i64 cursor = at + 1;
+        while (digit(reader.byte_at(cursor))) {
+            role = role * 10 + reader.byte_at(cursor) - 48;
+            cursor = cursor + 1;
+        }
+        return role;
+    }
+    auto type_operand(Reader& reader, compiler_ir_metadata::MetadataStore& metadata,
+        compiler_ir_instructions::InstructionStore& instructions, i64 token, i64 index, i64 role) -> bool {
+        const i64 position = reader.count(1);
+        const bool fill = reader.filling();
+        return emit_type(reader, metadata, token, -1, position, fill) && put_value(reader, instructions, index, role,
+            position);
+    }
+    // One instruction line, by its form's codec; omitted trailing operands keep
+    // their defaults.
+    auto emit_instruction(Reader& reader, compiler_ir_metadata::MetadataStore& metadata,
+        compiler_ir_instructions::InstructionStore& instructions, i64 line, bool fill) -> bool {
+        const i64 form = reader.form(line);
+        const Token codec = reader.codec_at(form);
+        const i64 begin = reader.count(13);
+        const i64 prefix = prefix_size(reader, form);
+        i64 nested = 0;
+        i64 written = 0;
+        i64 unary = 0;
+        i64 binary = 0;
+        i64 comparison = 0;
+        i64 query = 0;
+        i64 operand = reader.next(line);
+        i64 at = 0;
+        while (at < codec.count() && reader.good()) {
+            const i64 letter = reader.byte_at(codec.first() + at);
+            const i64 role = codec_role(reader, codec.first() + at);
+            const i64 token = operand;
+            const bool present = reader.kind(token) != 6;
+            i64 value = 0;
+            if (present && letter != i64('-')) {
+                operand = reader.next(operand);
+            }
+            const i64 index = begin + written;
+            if (letter == i64('i') || letter == i64('j') || letter == i64('b') || letter == i64('m') || letter
+                == i64('k') || letter == i64('o')) {
+                if (letter == i64('j')) {
+                    value = -1;
+                }
+                if (present && (letter == i64('i') || letter == i64('j') || letter == i64('m'))) {
+                    value = reader.integer(token);
+                }
+                if (present && letter == i64('b')) {
+                    value = reader.boolean(token);
+                }
+                if (present && letter == i64('k')) {
+                    value = reader.operation(token, 0);
+                }
+                if (present && letter == i64('o')) {
+                    value = reader.operation(token, 1);
+                }
+                i64 spelled = role;
+                if (letter == i64('m')) {
+                    spelled = 28;
+                }
+                if (letter == i64('k')) {
+                    spelled = 3;
+                }
+                if (letter == i64('o')) {
+                    spelled = 5;
+                }
+                put_value(reader, instructions, index, spelled, value);
+                written = written + 1;
+            }
+            if (letter == i64('t')) {
+                i64 type = -1;
+                if (present) {
+                    type = token;
+                }
+                type_operand(reader, metadata, instructions, type, index, role);
+                written = written + 1;
+            }
+            if (letter == i64('c') || letter == i64('n')) {
+                i64 name = -1;
+                if (present && reader.name(token)) {
+                    name = token;
+                }
+                const i64 first = token_text(reader, metadata, name, fill);
+                i64 spelled = 100;
+                if (letter == i64('n')) {
+                    spelled = 101;
+                }
+                const i64 size = token_size(reader, name);
+                put_slice(reader, instructions, index, spelled, first, size);
+                written = written + 1;
+            }
+            if (letter == i64('l') || letter == i64('s') || letter == i64('r')) {
+                i64 list = -1;
+                if (present) {
+                    list = token;
+                }
+                i64 width = 1;
+                i64 spelled = role;
+                if (letter == i64('s')) {
+                    width = 2;
+                    spelled = 9;
+                }
+                if (letter == i64('r')) {
+                    width = 3;
+                    spelled = 102;
+                }
+                const i64 rows = put_list(reader, instructions, list, width, begin + prefix + nested, fill);
+                put_slice(reader, instructions, index, spelled, begin + prefix + nested, rows);
+                nested = nested + rows;
+                written = written + 1;
+            }
+            if (letter == i64('x')) {
+                const i64 literal = reader.count(14);
+                i64 size = 0;
+                if (present) {
+                    const Token bytes = reader.token_at(token);
+                    if (bytes.kind() != 1) {
+                        reader.fail();
+                    }
+                    size = bytes.count();
+                    i64 byte = 0;
+                    while (fill && byte < size && reader.good()) {
+                        if (!instructions.ingress_literal(literal + byte, u8(reader.byte_at(bytes.first() + byte)))) {
+                            reader.fail();
+                        }
+                        byte = byte + 1;
+                    }
+                }
+                put_slice(reader, instructions, index, 33, literal, size);
+                reader.advance(14, size);
+                written = written + 1;
+            }
+            if (letter == i64('v')) {
+                if (present) {
+                    value = reader.integer(token);
+                }
+                const i64 type = operand;
+                i64 type_token = -1;
+                i64 type_kind = 0;
+                if (reader.kind(type) != 6) {
+                    operand = reader.next(operand);
+                    type_token = type;
+                    const compiler_ir_metadata::RawTypeRow parsed = reader.parse_type(type, -1);
+                    type_kind = parsed.kind();
+                }
+                if (type_kind == 7) {
+                    put_unsigned(reader, instructions, index, bits(value));
+                } else {
+                    put_value(reader, instructions, index, 10, value);
+                }
+                type_operand(reader, metadata, instructions, type_token, index + 1, 12);
+                written = written + 2;
+            }
+            if (present && letter == i64('u')) {
+                unary = reader.operation(token, 2);
+            }
+            if (present && letter == i64('y')) {
+                binary = reader.operation(token, 3);
+            }
+            if (present && letter == i64('p')) {
+                comparison = reader.operation(token, 4);
+            }
+            if (present && letter == i64('q')) {
+                query = reader.operation(token, 5);
+            }
+            while (at < codec.count() && reader.byte_at(codec.first() + at) != i64(',')) {
+                at = at + 1;
+            }
+            at = at + 1;
+        }
+        if (reader.kind(operand) != 6 || written != prefix) {
+            return reader.fail();
+        }
+        compiler_ir_instructions::RawInstructionRow row = compiler_ir_instructions::RawInstructionRow(1, form, begin,
+            prefix);
+        row.set_raw_operations(unary, binary, comparison, query);
+        const i64 id = reader.count(12);
+        const compiler_ir_instructions::CodeRow code = compiler_ir_instructions::CodeRow(id + 1, -1, 0u64, 0);
+        if (reader.good() && fill && (!instructions.ingress_instruction(id, row) || !instructions.ingress_code(id,
+            code))) {
+            reader.fail();
+        }
+        return reader.advance(12, 1) && reader.set_operands(begin + prefix + nested);
+    }
+    auto emit_bodies(Reader& reader, compiler_ir_metadata::MetadataStore& metadata,
+        compiler_ir_instructions::InstructionStore& instructions, bool fill) -> bool {
+        i64 function = 0;
+        while (function < reader.function_count() && reader.good()) {
+            const i64 begin = reader.count(12);
+            i64 line = reader.function_at(function) + 9;
+            while (line < reader.function_end(function) && reader.good()) {
+                const i64 code = reader.line_at(line);
+                const Token end_token = reader.token_at(reader.line_end_token(code));
+                reader.at_line(end_token.extra());
+                emit_instruction(reader, metadata, instructions, code, fill);
+                line = line + 1;
+            }
+            const i64 size = reader.count(12) - begin;
+            const compiler_ir_instructions::BodyRow body = compiler_ir_instructions::BodyRow(begin, size, size, 0);
+            if (reader.good() && fill && !instructions.ingress_body(reader.count(15), body)) {
+                reader.fail();
+            }
+            reader.advance(15, 1);
+            function = function + 1;
+        }
+        return reader.good();
+    }
+    // Measures (fill false) or fills both pending stores, in the order the
+    // projection would: classes, descriptors, views, enums, callables with
+    // their frames, the callable name index, then every body.
+    auto emit(Reader& reader, compiler_ir_metadata::MetadataStore& metadata,
+        compiler_ir_instructions::InstructionStore& instructions, bool fill) -> bool {
+        return reader.reset(fill) && emit_classes(reader, metadata, fill) && emit_tables(reader, metadata, fill)
+            && emit_callables(reader, metadata, fill) && emit_bodies(reader, metadata, instructions, fill);
+    }
+    // The metadata name at a sorted position: 0 classes, 1 enums, 2 the callable name index.
+    auto sorted_name(const compiler_ir_metadata::MetadataStore& metadata, i64 category,
+        i64 position) -> compiler_ir_metadata::ByteRange {
+        if (category == 0) {
+            const compiler_ir_metadata::ClassRow row = metadata.class_at(position);
+            return row.name();
+        }
+        if (category == 1) {
+            const compiler_ir_metadata::EnumRow row = metadata.enum_at(position);
+            return row.name();
+        }
+        const compiler_ir_metadata::IndexRow id = metadata.index_at(metadata.input_index_count()
+            - metadata.callable_count() + position);
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(id.value());
+        return row.name();
+    }
+    // Compares the sorted metadata name at position with reader text [first, first + count).
+    auto compare_symbol(const Reader& reader, const compiler_ir_metadata::MetadataStore& metadata, i64 category,
+        i64 position, i64 first, i64 count) -> i64 {
+        const compiler_ir_metadata::ByteRange name = sorted_name(metadata, category, position);
+        i64 at = 0;
+        while (at < name.count() && at < count) {
+            const i64 left = metadata.byte_at(name.begin() + at);
+            const i64 right = reader.byte_at(first + at);
+            if (left < right) {
+                return -1;
+            }
+            if (left > right) {
+                return 1;
+            }
+            at = at + 1;
+        }
+        if (name.count() < count) {
+            return -1;
+        }
+        if (name.count() > count) {
+            return 1;
+        }
+        return 0;
+    }
+    // The first sorted position spelled by reader text [first, first + count), or -1.
+    auto symbol_position(const Reader& reader, const compiler_ir_metadata::MetadataStore& metadata, i64 category,
+        i64 first, i64 count) -> i64 {
+        i64 size = metadata.callable_count();
+        if (category == 0) {
+            size = metadata.class_count();
+        }
+        if (category == 1) {
+            size = metadata.enum_count();
+        }
+        i64 low = 0;
+        i64 high = size;
+        while (low < high) {
+            const i64 middle = low + (high - low) / 2;
+            if (compare_symbol(reader, metadata, category, middle, first, count) < 0) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        if (low < size && compare_symbol(reader, metadata, category, low, first, count) == 0) {
+            return low;
+        }
+        return -1;
+    }
+    // ABI declarations ("function|record|enum SYMBOL SOURCE-NAME [MEMBER...]")
+    // in category and metadata name order, as the source pipeline gathers them.
+    auto declare(Reader& reader, const compiler_ir_metadata::MetadataStore& metadata,
+        compiler_pipeline::Declarations& declarations) -> bool {
+        i64 category = 0;
+        while (category < 3 && reader.good() && declarations.ok()) {
+            i64 at = reader.abi_begin();
+            while (at < reader.token_count() && reader.good()) {
+                const i64 stop = reader.line_end_token(at);
+                const bool selected = (category == 0 && reader.is(at, "record")) || (category == 1 && reader.is(at,
+                    "enum")) || (category == 2 && reader.is(at, "function"));
+                if (selected && reader.nodes(at) < 3) {
+                    return reader.fail();
+                }
+                if (selected) {
+                    const Token symbol = reader.token_at(reader.node(at, 1));
+                    const i64 key = symbol_position(reader, metadata, category, symbol.first(), symbol.count());
+                    if (key < 0 && category != 2) {
+                        return reader.fail();
+                    }
+                    if (key >= 0 && !declarations.push(at, key)) {
+                        return reader.fail();
+                    }
+                }
+                at = stop + 1;
+            }
+            declarations.sort_work();
+            i64 last = -1;
+            i64 item = 0;
+            while (item < declarations.work_count() && reader.good()) {
+                const compiler_pipeline::Declared declared = declarations.work_at(item);
+                const i64 line = declared.symbol();
+                if (declared.key() > last) {
+                    const i64 identity = compiler_pipeline::identity(metadata, category, declared.key());
+                    i64 member = -1;
+                    i64 field = 2;
+                    while (field < reader.nodes(line) && (category != 2 || field == 2)) {
+                        const Token spelled = reader.token_at(reader.node(line, field));
+                        const i64 begin = declarations.text_size();
+                        i64 byte = 0;
+                        while (byte < spelled.count()) {
+                            declarations.byte(u8(reader.byte_at(spelled.first() + byte)));
+                            byte = byte + 1;
+                        }
+                        declarations.row(category, identity, member, begin);
+                        member = member + 1;
+                        field = field + 1;
+                    }
+                    last = declared.key();
+                }
+                item = item + 1;
+            }
+            declarations.clear_work();
+            category = category + 1;
+        }
+        return reader.good() && declarations.ok();
+    }
+    // A reader holding the spellings, ready to load one module.
+    auto start(builtin::ByteRegion region) -> Reader {
+        Reader reader = create(region);
+        compiler_ir_listing::Listing table = compiler_ir_listing::create(region);
+        const bool spelled = table.ok() && compiler_ir_listing::spellings(table) && table.byte(' ') && codec(table)
+            && enumerators(table);
+        if (!spelled || !reader.allocated() || !reader.load_words(table.view())) {
+            reader.fail();
+        }
+        return move(reader);
+    }
+    // Reads one module and its ABI declaration lines.
+    auto read_module(Reader& reader, builtin::span<const u8> source, builtin::span<const u8> abi) -> bool {
+        return reader.load(source) && reader.load_abi(abi) && reader.structure();
+    }
+    // Measures the pending stores; the first source line the reader rejects, or 0.
+    auto check(builtin::ByteRegion region, Reader reader) -> compiler_ir_metadata::IndexRow {
+        i64 line = reader.failed_line();
+        if (reader.good()) {
+            compiler_ir_metadata::MetadataStore empty_metadata = compiler_ir_metadata::create(region);
+            empty_metadata.initialize(compiler_pipeline::zero_counts(), 0, 0, 0);
+            compiler_ir_instructions::InstructionStore empty_instructions = compiler_ir_instructions::create(region, 0,
+                0, 0, 0);
+            line = 0;
+            if (!emit(reader, empty_metadata, empty_instructions, false)) {
+                line = reader.failed_line();
+            }
+        }
+        const compiler_ir_metadata::IndexRow result = compiler_ir_metadata::IndexRow(line);
+        return result;
+    }
+    // One read module through the compiler's own pipeline stages. A module the
+    // reader rejects stops at Stage::projection; check() names its line.
+    auto run(builtin::ByteRegion region, Reader input, u64 options) -> compiler_pipeline::Result {
+        Reader reader = move(input);
+        compiler_pipeline::Result result = compiler_pipeline::create(region);
+        compiler_pipeline::Declarations declarations = compiler_pipeline::Declarations(region);
+        if (!result.allocated() || !declarations.ok() || !reader.allocated()) {
+            result.stop(compiler_pipeline::Stage::allocation);
+            return move(result);
+        }
+        if (!reader.good()) {
+            result.stop(compiler_pipeline::Stage::projection);
+            return move(result);
+        }
+        compiler_ir_metadata::MetadataStore empty_metadata = compiler_ir_metadata::create(region);
+        empty_metadata.initialize(compiler_pipeline::zero_counts(), 0, 0, 0);
+        compiler_ir_instructions::InstructionStore empty_instructions = compiler_ir_instructions::create(region, 0, 0,
+            0, 0);
+        const bool measured = emit(reader, empty_metadata, empty_instructions, false);
+        compiler_ir_metadata::release(region, move(empty_metadata));
+        compiler_ir_instructions::release(region, move(empty_instructions));
+        if (!measured) {
+            result.stop(compiler_pipeline::Stage::projection);
+            return move(result);
+        }
+        compiler_ir_metadata::MetadataStore metadata = compiler_ir_metadata::create(region);
+        const bool initialized = metadata.initialize(reader.input_counts(), reader.count(10), reader.count(11),
+            reader.instruction_begin());
+        if (!initialized && metadata.status() != compiler_ir_metadata::MetadataStatus::allocation) {
+            result.stop(compiler_pipeline::Stage::metadata_transport);
+            return move(result);
+        }
+        if (!metadata.allocated()) {
+            result.stop(compiler_pipeline::Stage::metadata_allocation);
+            return move(result);
+        }
+        compiler_ir_instructions::InstructionStore instructions = compiler_ir_instructions::create(region,
+            reader.count(12), reader.count(13), reader.count(14), reader.count(15));
+        if (!instructions.allocated()) {
+            result.stop(compiler_pipeline::Stage::instruction_allocation);
+            return move(result);
+        }
+        if (!emit(reader, metadata, instructions, true)) {
+            result.stop(compiler_pipeline::Stage::projection);
+            return move(result);
+        }
+        if (!compiler_pipeline::admit_metadata(result, metadata)) {
+            return move(result);
+        }
+        if (compiler_pipeline::selected(options, compiler_pipeline::abi_option()) && !declare(reader, metadata,
+            declarations)) {
+            result.stop(compiler_pipeline::Stage::declarations);
+            return move(result);
+        }
+        release(region, move(reader));
+        compiler_pipeline::Result finished = compiler_pipeline::stages(region, move(result), move(metadata),
+            move(instructions), move(declarations), options);
+        return move(finished);
+    }
+}

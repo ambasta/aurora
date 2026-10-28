@@ -27,7 +27,9 @@ constexpr std::int64_t artifactLimit = 64 * 1024 * 1024;
         internal("x86 object emission does not support this instruction or data form");
     internal("invalid hosted x86 emission transport");
 }
-[[noreturn]] void reject(const wire::Report &report) {
+} // namespace
+
+[[noreturn]] void rejectPipeline(const wire::Report &report) {
     const auto &failure = report.failureValue;
     switch (report.stageValue) {
     case Stage::allocation:
@@ -79,7 +81,7 @@ constexpr std::int64_t artifactLimit = 64 * 1024 * 1024;
         internal("invalid hosted compiler pipeline result");
     }
 }
-std::uint64_t options(const EmissionRequest &request) {
+std::uint64_t pipelineOptions(const EmissionRequest &request) {
     std::uint64_t result = 0;
     if (request.emit)
         result |= 1;
@@ -93,50 +95,10 @@ std::uint64_t options(const EmissionRequest &request) {
         result |= 16;
     if (request.abiFacts)
         result |= 32;
+    if (request.listing)
+        result |= 64;
     return result;
 }
-class Result {
-    hosted_abi::PipelineRelease release_{};
-
-public:
-    Result(std::uint64_t region,
-           const hosted_abi::compiler_resolver::Session &session,
-           std::int64_t root,
-           std::int64_t diagnostic,
-           std::uint64_t options) {
-        release_.region = region;
-        hosted_abi::PipelineRun run{};
-        run.region = region;
-        run.session = session;
-        run.root = root;
-        run.diagnostic = diagnostic;
-        run.options = options;
-        aurora_hosted_pipeline_run(&run, data());
-    }
-    ~Result() {
-        aurora_hosted_pipeline_release(&release_);
-    }
-    Result(const Result &) = delete;
-    Result &operator=(const Result &) = delete;
-    void *data() {
-        return release_.result.storage.data();
-    }
-    std::string artifact(x86::Artifact kind, std::int64_t size) {
-        if (size < 0 || (kind != x86::Artifact::stack && size > artifactLimit))
-            internal("invalid hosted x86 emission transport");
-        std::string result(static_cast<std::size_t>(size), '\0');
-        for (std::int64_t offset = 0; offset < size;) {
-            x86::EmitChunk chunk{};
-            aurora_hosted_pipeline_chunk(data(), static_cast<std::int64_t>(kind), offset, &chunk);
-            if (chunk.byteCount <= 0 || chunk.byteCount > 512 || chunk.byteCount > size - offset)
-                internal("invalid hosted x86 emission transport");
-            std::copy_n(chunk.payload.begin(), static_cast<std::size_t>(chunk.byteCount), result.begin() + offset);
-            offset += chunk.byteCount;
-        }
-        return result;
-    }
-};
-} // namespace
 
 Diagnostic copyReport(const std::function<hosted_abi::compiler_resolver::Report(std::int64_t)> &read,
                       const ReportSource &source) {
@@ -194,17 +156,41 @@ Diagnostic copyReport(const std::function<hosted_abi::compiler_resolver::Report(
     return result;
 }
 
-PipelineOutput runHostedPipeline(std::uint64_t region,
-                                 const hosted_abi::compiler_resolver::Session &session,
-                                 std::int64_t root,
-                                 std::int64_t diagnostic,
-                                 const EmissionRequest &request,
-                                 const ReportSource &sources) {
-    Result result(region, session, root, diagnostic, options(request));
+PipelineResult::PipelineResult(std::uint64_t region) {
+    release_.region = region;
+}
+PipelineResult::~PipelineResult() {
+    aurora_hosted_pipeline_release(&release_);
+}
+void *PipelineResult::data() {
+    return release_.result.storage.data();
+}
+wire::Report PipelineResult::report() {
     wire::Report report{};
-    aurora_hosted_pipeline_report(result.data(), &report);
+    aurora_hosted_pipeline_report(data(), &report);
+    return report;
+}
+namespace {
+std::string artifact(PipelineResult &result, x86::Artifact kind, std::int64_t size) {
+    if (size < 0 || (kind != x86::Artifact::stack && size > artifactLimit))
+        internal("invalid hosted x86 emission transport");
+    std::string text(static_cast<std::size_t>(size), '\0');
+    for (std::int64_t offset = 0; offset < size;) {
+        x86::EmitChunk chunk{};
+        aurora_hosted_pipeline_chunk(result.data(), static_cast<std::int64_t>(kind), offset, &chunk);
+        if (chunk.byteCount <= 0 || chunk.byteCount > 512 || chunk.byteCount > size - offset)
+            internal("invalid hosted x86 emission transport");
+        std::copy_n(chunk.payload.begin(), static_cast<std::size_t>(chunk.byteCount), text.begin() + offset);
+        offset += chunk.byteCount;
+    }
+    return text;
+}
+} // namespace
+PipelineOutput PipelineResult::output(const wire::Report &report,
+                                      const EmissionRequest &request,
+                                      const ReportSource &sources) {
     if (report.stageValue != Stage::complete)
-        reject(report);
+        rejectPipeline(report);
     const auto &sizes = report.sizesValue;
     PipelineOutput output;
     if (sizes.lintCount < 0 || static_cast<std::uint64_t>(sizes.lintCount) > output.lints.max_size())
@@ -213,17 +199,34 @@ PipelineOutput runHostedPipeline(std::uint64_t region,
     for (std::int64_t at = 0; at < sizes.lintCount; ++at)
         output.lints.push_back(copyReport(
             [&](std::int64_t offset) {
-                hosted_abi::compiler_resolver::Report report{};
-                aurora_hosted_pipeline_lint(result.data(), at, offset, &report);
-                return report;
+                hosted_abi::compiler_resolver::Report part{};
+                aurora_hosted_pipeline_lint(data(), at, offset, &part);
+                return part;
             },
             sources));
-    if (request.emit)
-        output.code = result.artifact(x86::Artifact::assembly, sizes.codeBytes);
+    if (request.emit || request.listing)
+        output.code = artifact(*this, x86::Artifact::assembly, sizes.codeBytes);
     if (request.emit && request.stackFacts)
-        output.stackFacts = result.artifact(x86::Artifact::stack, sizes.stackBytes);
+        output.stackFacts = artifact(*this, x86::Artifact::stack, sizes.stackBytes);
     if (request.emit && request.abiFacts)
-        output.abiFacts = result.artifact(x86::Artifact::abi, sizes.abiBytes);
+        output.abiFacts = artifact(*this, x86::Artifact::abi, sizes.abiBytes);
     return output;
+}
+
+PipelineOutput runHostedPipeline(std::uint64_t region,
+                                 const hosted_abi::compiler_resolver::Session &session,
+                                 std::int64_t root,
+                                 std::int64_t diagnostic,
+                                 const EmissionRequest &request,
+                                 const ReportSource &sources) {
+    PipelineResult result(region);
+    hosted_abi::PipelineRun run{};
+    run.region = region;
+    run.session = session;
+    run.root = root;
+    run.diagnostic = diagnostic;
+    run.options = pipelineOptions(request);
+    aurora_hosted_pipeline_run(&run, result.data());
+    return result.output(result.report(), request, sources);
 }
 } // namespace aurora

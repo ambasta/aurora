@@ -955,7 +955,7 @@ def stage_modules(module_root, modules):
         destination = module_root.joinpath(*parts[:-1])
         destination.mkdir(parents=True, exist_ok=True)
         content = source.read_bytes()
-        if b"// @generated-forwarders" in content:
+        if b"// @generated-forwarders" in content or b"// @generated-test-forwarders" in content:
             content = render(content.decode()).encode()
         (destination / (parts[-1] + ".au")).write_bytes(content)
 
@@ -1043,9 +1043,16 @@ def emit(
 
 
 def main():
-    # COMPILER [--output-mode text|object] --output OUTPUT INPUT...: .au inputs are the
-    # compiler modules, and an optional .hpp is the header stage-2 output must reproduce.
+    # COMPILER [--output-mode text|object] [--test-entries] --output OUTPUT INPUT...: .au
+    # inputs are the compiler modules, and an optional .hpp is the header stage-2 output
+    # must reproduce. --test-entries also bridges the textual IR test rows.
+    global ENTRIES
     arguments = sys.argv[1:]
+    if "--test-entries" in arguments:
+        arguments.remove("--test-entries")
+        ENTRIES = _bridge.TEST_ENTRIES
+        PASS_ENTRIES.clear()
+        PASS_ENTRIES.update(signatures(ENTRIES))
     output_mode = "text"
     if len(arguments) > 2 and arguments[1] == "--output-mode":
         output_mode = arguments[2]

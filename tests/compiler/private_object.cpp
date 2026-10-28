@@ -1,11 +1,9 @@
 // One driver: real emitter input, closed wrapper recipes, malformed data, and
 // semantic comparison against GNU ld -r. ELF decoding here is test observation,
 // not a second composer or a production admission path.
-#include "../tools/air_cases.hpp"
+#include "diagnostics.hpp"
 #include "hosted_private_object.hpp"
 #include "hosted_frontend_abi.hpp"
-#include "ir_verify.hpp"
-#include "x86.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdlib>
@@ -493,11 +491,9 @@ int main(int argc, char **argv) {
             writeFile(argv[8], wrapper);
         } else {
             require(argc == 5,
-                    "expected IR CASES WRAPPER OUTPUT-DIRECTORY, --compare SOURCE ACTUAL GNU or "
+                    "expected SOURCE-OBJECT CASES WRAPPER OUTPUT-DIRECTORY, --compare SOURCE ACTUAL GNU or "
                     "--wrapper RECIPE RECIPE-CASES ELF-CASES GNU SOURCE SELECTED OUTPUT");
-            const auto module = validate(test::air::loadCase(argv[1], "native object values"));
-            const auto source =
-                X86Emitter{}.emit(module, SymbolBinding::Local, ReflectionEmission::Referenced, CodeEmission::Object);
+            const auto source = readFile(argv[1]);
             const auto wrapper = readFile(argv[3]);
             const std::string selected = "object_literal\nobject_loop\nobject_six_arguments\n";
             const auto composed = composePrivateObject(source, wrapper, selected);

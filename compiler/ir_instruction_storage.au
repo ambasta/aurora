@@ -504,6 +504,14 @@ export namespace compiler_ir_instructions {
             queryOperation = value;
             return true;
         }
+        // Textual IR keeps hostile operation values for source admission to reject.
+        auto set_raw_operations(i64 unary, i64 binary, i64 comparison, i64 query) -> bool {
+            unaryOperation = unary;
+            binaryOperation = binary;
+            comparisonOperation = comparison;
+            queryOperation = query;
+            return true;
+        }
     };
     class RawOperandRow {
         i64 operandRole;

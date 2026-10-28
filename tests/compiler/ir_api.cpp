@@ -2,6 +2,7 @@
 // and the emitter object. Plain accept/reject/emit cases are textual IR data in
 // tests/compiler/ir; the modules here are loaded from those case files.
 #include "../tools/air_cases.hpp"
+#include "ir_text.hpp"
 #include "hosted_ir_instructions.hpp"
 #include "hosted_ir_metadata_writer.hpp"
 #include "hosted_resolver.hpp"
@@ -33,7 +34,10 @@ void diagnosticMismatch(const std::string &name, const std::string &expected, co
                 "; actual: " + error.what());
 }
 Module load(const std::string &file, const std::string &name) {
-    return aurora::test::air::loadCase(root + "/" + file, name);
+    const auto cases = aurora::test::air::parse(root + "/" + file);
+    std::vector<std::string> lines;
+    aurora::test::air::findCase(cases, name, lines);
+    return aurora::ir::text::read(aurora::test::air::join(lines));
 }
 Module baseline() {
     return load("ir-tests/core.air", "typed load/store");
