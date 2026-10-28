@@ -136,6 +136,9 @@ export namespace compiler_parser {
             if (service == 5) {
                 return 32;
             }
+            if (service == 6) {
+                return 64;
+            }
             return 0;
         }
     };
@@ -515,9 +518,14 @@ namespace compiler_parser {
         const builtin::span<const u8> words3 = borrow_bytes(names3);
         const array<u8, 38> names4 = "ServeSession;ServeRequest;ServeStatus;";
         const builtin::span<const u8> words4 = borrow_bytes(names4);
+        const array<u8, 51> names5 = "HostFiles;HostExit;HostStatus;HostStream;HostChunk;";
+        const builtin::span<const u8> words5 = borrow_bytes(names5);
+        const array<u8, 52> names6 = "HostFileResult;HostDirectoryResult;HostOutputResult;";
+        const builtin::span<const u8> words6 = borrow_bytes(names6);
         return word_list_matches(source, token, words0) || word_list_matches(source, token, words1)
             || word_list_matches(source, token, words2) || word_list_matches(source, token, words3)
-            || word_list_matches(source, token, words4);
+            || word_list_matches(source, token, words4) || word_list_matches(source, token, words5)
+            || word_list_matches(source, token, words6);
     }
     enum class TypeWord {
         invalid,
@@ -906,7 +914,11 @@ namespace compiler_parser {
                                             const array<u8,
                                                 55> samples = "ConsoleSample;IommuEventSample;CallResult;ServeRequest;";
                                             const builtin::span<const u8> samples_words = borrow_bytes(samples);
-                                            if (word_list_matches(source, token, samples_words)) {
+                                            const array<u8,
+                                                62> host_samples = "HostChunk;HostFileResult;HostDirectoryResult;HostOutputResult;";
+                                            const builtin::span<const u8> host_words = borrow_bytes(host_samples);
+                                            if (word_list_matches(source, token, samples_words) || word_list_matches(
+                                                source, token, host_words)) {
                                                 kind = TypeKind::builtin_class;
                                             }
                                             atomic = true;
@@ -3106,6 +3118,16 @@ namespace compiler_parser {
         if (word_matches(source, token, serve_word, 0, 12)) {
             return AdmissionType(AdmissionKind::service, configuration.service_mask(5), token);
         }
+        const array<u8, 9> host_name = "HostFiles";
+        const builtin::span<const u8> host_word = borrow_bytes(host_name);
+        if (word_matches(source, token, host_word, 0, 9)) {
+            return AdmissionType(AdmissionKind::service, configuration.service_mask(6), token);
+        }
+        const array<u8, 31> host_enums = "HostExit;HostStatus;HostStream;";
+        const builtin::span<const u8> host_enum_words = borrow_bytes(host_enums);
+        if (word_list_matches(source, token, host_enum_words)) {
+            return AdmissionType(AdmissionKind::copied, 0, token);
+        }
         const array<u8, 70> enums = "ConsolePutResult;ConsoleCompletion;DisplayPutResult;DisplayCompletion;";
         const array<u8,
             92> event_enums =
@@ -3228,8 +3250,8 @@ namespace compiler_parser {
             if (borrowed) {
                 const u64 group = u64(first_service) | u64(type.service());
                 const bool continuation = type.kind() == AdmissionKind::service && index == 1 && first_borrowed
-                    && first_service != 0 && first_service != type.service() && (u64(configuration.groups()) & (1u64
-                    << i64(group))) != 0u64;
+                    && first_service != 0 && first_service != type.service() && group < 64u64 && (u64(
+                    configuration.groups()) & (1u64 << i64(group))) != 0u64;
                 const bool owning_continuation = index > 0 && owning_prefix && type.kind()
                     == AdmissionKind::class_value;
                 const bool borrowed_values = index == 0 && syntax.kind() == TypeKind::owned_values
@@ -3340,9 +3362,10 @@ namespace compiler_parser {
     }
     // Admission policy may restrict the closed group set. Unlike the lowering
     // seed catalogue, a subset is intentional (for example disabling a pair).
-    // Only the appended singleton Serve bit is new; mixed/high bits stay closed.
+    // The appended singleton Serve and HostFiles bits are new; mixed/high bits
+    // stay closed. HostFiles (mask 64) is admitted through bit 0.
     auto admission_service_groups(i64 groups) -> bool {
-        return groups >= 0 && (u64(groups) & 4295033150u64) == u64(groups);
+        return groups >= 0 && (u64(groups) & 4295033151u64) == u64(groups);
     }
     auto admission_module(AstArena& arena, builtin::span<const u8> source, i64 root,
         AdmissionConfig configuration) -> AdmissionResult {
@@ -3355,9 +3378,10 @@ namespace compiler_parser {
         }
         u64 masks = 0u64;
         i64 service = 0;
-        while (service < 6) {
+        while (service < 7) {
             const i64 mask = configuration.service_mask(service);
-            if ((mask != 1 && mask != 2 && mask != 4 && mask != 8 && mask != 16 && mask != 32) || (masks & u64(mask))
+            if ((mask != 1 && mask != 2 && mask != 4 && mask != 8 && mask != 16 && mask != 32 && mask != 64) || (masks
+                & u64(mask))
                 != 0u64) {
                 return admission_result(AdmissionStatus::invalid);
             }

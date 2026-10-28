@@ -854,6 +854,10 @@ export namespace compiler_resolver {
             say(session, "builtin::ServeSession");
             return true;
         }
+        if (kind == ResolvedTypeKind::host_files) {
+            say(session, "builtin::HostFiles");
+            return true;
+        }
         return false;
     }
     // A class or enum symbol's qualified name with any template arguments, or

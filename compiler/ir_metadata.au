@@ -958,6 +958,82 @@ export namespace compiler_ir_metadata {
         }
         return true;
     }
+    // A HostFiles result: a HostStatus leaf, then u64 words; HostChunk then
+    // carries its 504-byte array.
+    auto sealed_host_result(MetadataStore& store, i64 class_index, i64 words, bool chunk) -> bool {
+        const ClassRow row = store.class_at(class_index);
+        const IndexRange leaves = row.leaves();
+        const ClassResultRow result = store.result_at(class_index);
+        const IndexRange fields = result.fields();
+        i64 bytes = 0;
+        i64 field_count = words;
+        if (chunk) {
+            bytes = 504;
+            field_count = words + 1;
+        }
+        if (leaves.count() != words + bytes || fields.count() != field_count) {
+            return fail(store, MetadataError::host_layout);
+        }
+        i64 at = 0;
+        while (at < leaves.count()) {
+            const RawTypeRow type = store.type_at(leaves.begin() + at);
+            bool valid = plain_type(type, 10);
+            if (at == 0) {
+                valid = type.kind() == 9 && canonical_tail(type) && named(store, type.name(), "__au_host_status");
+            } else {
+                if (at < words) {
+                    valid = plain_type(type, 7);
+                }
+            }
+            if (!valid) {
+                return fail(store, MetadataError::host_layout);
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < fields.count()) {
+            const FieldRow field = store.field_at(fields.begin() + at);
+            if (at < words) {
+                const RawTypeRow field_type = store.type_at(field.type());
+                const RawTypeRow leaf = store.type_at(leaves.begin() + at);
+                if (field.array_flag() != 0 || field.first_leaf() != at || field.length() != 1 || !same_type(store,
+                    field_type, leaf)) {
+                    return fail(store, MetadataError::host_fields);
+                }
+            } else {
+                if (field.array_flag() == 0 || field.first_leaf() != words || field.length() != bytes) {
+                    return fail(store, MetadataError::host_fields);
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto sealed_host_results(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
+        i64 at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, masks.class_layout())) {
+                bool valid = true;
+                if (named(store, row.name(), "__au_host_directory_result") || named(store, row.name(),
+                    "__au_host_output_result")) {
+                    valid = sealed_host_result(store, at, 2, false);
+                }
+                if (named(store, row.name(), "__au_host_file_result")) {
+                    valid = sealed_host_result(store, at, 5, false);
+                }
+                if (named(store, row.name(), "__au_host_chunk")) {
+                    valid = sealed_host_result(store, at, 2, true);
+                }
+                if (!valid) {
+                    return false;
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
     auto sealed_enum(MetadataStore& store, builtin::span<const u8> name, i64 cases, bool event) -> bool {
         i64 at = 0;
         while (at < store.enum_count()) {
@@ -1020,7 +1096,9 @@ export namespace compiler_ir_metadata {
             true) && sealed_enum(store, "__au_event_intake_completion", 7, true) && sealed_enum(store,
             "__au_console_put_result", 2, false) && sealed_enum(store, "__au_console_completion", 2, false)
             && sealed_enum(store, "__au_display_put_result", 2, false) && sealed_enum(store, "__au_display_completion",
-            2, false) && sealed_enum(store, "__au_port_write_result", 1, false);
+            2, false) && sealed_enum(store, "__au_port_write_result", 1, false) && sealed_enum(store, "__au_host_exit", 3,
+            false) && sealed_enum(store, "__au_host_status", 10, false) && sealed_enum(store, "__au_host_stream", 2,
+            false) && sealed_host_results(store);
     }
 
     // Children are complete before this computation starts. Offsets come only
@@ -1401,7 +1479,7 @@ export namespace compiler_ir_metadata {
     }
     auto service_type(RawTypeRow type) -> bool {
         return type.kind() == 14 || type.kind() == 15 || type.kind() == 16 || type.kind() == 18 || type.kind() == 19
-            || type.kind() == 20;
+            || type.kind() == 20 || type.kind() == 22;
     }
     auto service_kind(RawTypeRow type) -> i64 {
         if (type.kind() == 14) {
@@ -1421,6 +1499,9 @@ export namespace compiler_ir_metadata {
         }
         if (type.kind() == 20) {
             return 5;
+        }
+        if (type.kind() == 22) {
+            return 6;
         }
         return -1;
     }
@@ -1487,6 +1568,9 @@ export namespace compiler_ir_metadata {
         if (type.kind() == 20) {
             return masks.service_serve();
         }
+        if (type.kind() == 22) {
+            return masks.service_host();
+        }
         return 0u64;
     }
     auto console_region_signature(const MetadataStore& store, CallableRow row) -> bool {
@@ -1524,7 +1608,8 @@ export namespace compiler_ir_metadata {
         // pair or triple forwarding authority.
         if (at > 2 || (kinds != masks.service_console() && kinds != masks.service_display() && kinds
             != masks.service_iommu() && kinds != masks.service_call() && kinds != masks.service_port() && kinds
-            != masks.service_serve() && kinds != (masks.service_console() | masks.service_display()) && kinds
+            != masks.service_serve() && kinds != masks.service_host() && kinds != (masks.service_console()
+            | masks.service_display()) && kinds
             != (masks.service_console() | masks.service_iommu()))) {
             return fail(store, MetadataError::service_group);
         }

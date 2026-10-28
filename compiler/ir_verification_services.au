@@ -25,6 +25,87 @@ export namespace compiler_ir_verification {
         }
         return TypeKey(-1, -1);
     }
+    // An independent copy of the HostFiles primitive signatures (operations 9..20):
+    // argument and result kinds in MetadataTypeKind ordinals (I64 0, U64 7, U8 10).
+    auto host_argument_count(i64 operation) -> i64 {
+        if (operation == 20) {
+            return 0;
+        }
+        if (operation == 13 || operation == 16) {
+            return 5;
+        }
+        if (operation == 10 || operation == 12 || operation == 14 || operation == 19) {
+            return 2;
+        }
+        if (operation == 15 || operation == 17) {
+            return 3;
+        }
+        return 1;
+    }
+    auto host_argument_kind(i64 operation, i64 index) -> i64 {
+        if (operation == 12 && index == 1) {
+            return 10;
+        }
+        if (operation > 12 && index == 0) {
+            return 0;
+        }
+        return 7;
+    }
+    auto host_result_kind(i64 operation) -> i64 {
+        if (operation == 9 || operation == 10) {
+            return 7;
+        }
+        if (operation == 11 || operation == 12) {
+            return 10;
+        }
+        return 0;
+    }
+    // Operands of two or more arguments are all pushed; a single argument is the
+    // current value. The chunk read fills a pristine HostChunk like a sample.
+    auto transfer_host(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id, i64 operation) -> bool {
+        const i64 count = host_argument_count(operation);
+        if (count == 1) {
+            if (!transfer_current_kind(w, host_argument_kind(operation, 0))) {
+                return false;
+            }
+        } else {
+            i64 arg = count - 1;
+            while (arg >= 0) {
+                if (!transfer_pop_kind(w, host_argument_kind(operation, arg),
+                    second_error(VerificationErrorSecond::service_scalar_argument_mismatch))) {
+                    return false;
+                }
+                arg = arg - 1;
+            }
+        }
+        if (operation != 14) {
+            return transfer_set_kind(w, host_result_kind(operation));
+        }
+        const i64 base = transfer_value(s, id, 2);
+        if (!transfer_has(w, FactKind::object, base)) {
+            return w.fail(second_error(VerificationErrorSecond::service_observation_requires_pristine_sample));
+        }
+        const i64 constructed = compiler_ir_initialization::object_was_constructed(w, m, base);
+        if (constructed < 0 || !w.good()) {
+            return false;
+        }
+        if (constructed == 1) {
+            return w.fail(second_error(VerificationErrorSecond::service_observation_requires_pristine_sample));
+        }
+        const i64 pristine = compiler_ir_initialization::object_pristine(w, m, base);
+        if (pristine < 0 || !w.good()) {
+            return false;
+        }
+        if (pristine == 0) {
+            return w.fail(second_error(
+                VerificationErrorSecond::service_observation_cannot_overwrite_initialized_sample_storage));
+        }
+        if (!compiler_ir_initialization::mark_object(w, m, base)) {
+            return false;
+        }
+        return w.clear_current();
+    }
     auto transfer_services(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
         const compiler_ir_instructions::RawInstructionRow op = s.instruction_at(id);
@@ -53,6 +134,9 @@ export namespace compiler_ir_verification {
                     VerificationErrorSecond::service_operation_requires_active_unsuspended_capability_provenance));
             }
             const i64 operation = transfer_value(s, id, 1);
+            if (operation > 8 && operation < 21) {
+                return transfer_host(w, m, s, id, operation);
+            }
             if (operation == 2) {
                 i64 arg = 4;
                 while (arg >= 0) {

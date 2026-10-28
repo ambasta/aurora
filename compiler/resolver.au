@@ -142,7 +142,8 @@ export namespace compiler_resolver {
     auto service_kind(ResolvedTypeKind kind) -> bool {
         return kind == ResolvedTypeKind::console_session || kind == ResolvedTypeKind::display_session || kind
             == ResolvedTypeKind::event_session || kind == ResolvedTypeKind::call_session || kind
-            == ResolvedTypeKind::port_range || kind == ResolvedTypeKind::serve_session;
+            == ResolvedTypeKind::port_range || kind == ResolvedTypeKind::serve_session || kind
+            == ResolvedTypeKind::host_files;
     }
     auto resource_kind(ResolvedTypeKind kind) -> bool {
         return kind == ResolvedTypeKind::byte_region || kind == ResolvedTypeKind::owned_bytes || kind
@@ -216,6 +217,9 @@ export namespace compiler_resolver {
         }
         if (kind == ResolvedTypeKind::value_span) {
             return 22;
+        }
+        if (kind == ResolvedTypeKind::host_files) {
+            return 23;
         }
         return 0;
     }
@@ -1655,6 +1659,10 @@ export namespace compiler_resolver {
                     i64 value = member;
                     if (compiler_catalog::type_kind(type) == ResolvedTypeKind::class_value) {
                         value = catalog_type(session, compiler_catalog::field_type(type, member));
+                        const i64 length = compiler_catalog::field_array_length(type, member);
+                        if (length > 0) {
+                            value = concrete_type(session, ResolvedTypeKind::array_value, -1, value, length);
+                        }
                     }
                     append_seed_member(session, descriptor, name, value);
                     member = member + 1;
@@ -1726,6 +1734,7 @@ export namespace compiler_resolver {
         bool call = false;
         bool port = false;
         bool serve = false;
+        bool host = false;
         i64 at = 0;
         while (at < session.syntax_count() && session.good()) {
             const SyntaxRow row = session.syntax(at);
@@ -1743,6 +1752,7 @@ export namespace compiler_resolver {
             call = call || family == 1;
             port = port || family == 2;
             serve = serve || family == 3;
+            host = host || family == 4;
             at = at + 1;
         }
         seed_family(session, 0);
@@ -1754,6 +1764,9 @@ export namespace compiler_resolver {
         }
         if (serve) {
             seed_family(session, 3);
+        }
+        if (host) {
+            seed_family(session, 4);
         }
         return session.good();
     }
@@ -3669,7 +3682,8 @@ export namespace compiler_resolver {
         const i64 status = state(session);
         const i64 call_rank = type_rank(ResolvedTypeKind::call_session);
         if (session.index(34, call_rank, -1, -1, 0) >= 0 || session.index(34, type_rank(ResolvedTypeKind::port_range),
-            -1, -1, 0) >= 0 || session.index(34, type_rank(ResolvedTypeKind::serve_session), -1, -1, 0) >= 0) {
+            -1, -1, 0) >= 0 || session.index(34, type_rank(ResolvedTypeKind::serve_session), -1, -1, 0) >= 0
+            || session.index(34, type_rank(ResolvedTypeKind::host_files), -1, -1, 0) >= 0) {
             set_mw(session, status, 3, 1);
         }
         if (session.good()) {

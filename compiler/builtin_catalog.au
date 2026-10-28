@@ -20,7 +20,8 @@ export namespace compiler_catalog {
         IommuEvent,
         Call,
         Port,
-        Serve
+        Serve,
+        HostFiles
     };
     enum class ServiceOperation {
         Next,
@@ -31,7 +32,19 @@ export namespace compiler_catalog {
         Call,
         PortRead8,
         PortWrite8,
-        ServeExchange
+        ServeExchange,
+        HostLoad,
+        HostStore,
+        HostLoad8,
+        HostStore8,
+        HostOpen,
+        HostChunk,
+        HostWrite,
+        HostRename,
+        HostUnlink,
+        HostClose,
+        HostStat,
+        HostIdentity
     };
     // Catalog extents for the host's loose resolution quota.
     class Summary {
@@ -123,11 +136,12 @@ export namespace compiler_catalog {
         return 1;
     }
 
-    // Built-in types in seeding order. Types 6..11 are the capability types in
-    // ServiceKind order. Family 0 is always seeded; families 1 (Call), 2 (Port)
-    // and 3 (Serve) only when admitted syntax names one of their types.
+    // Built-in types in seeding order. Types 6..11 and 26 are the capability
+    // types in ServiceKind order. Family 0 is always seeded; families 1 (Call),
+    // 2 (Port), 3 (Serve) and 4 (HostFiles) only when admitted syntax names one
+    // of their types.
     auto type_count() -> i64 {
-        return 26;
+        return 34;
     }
     auto type_kind(i64 type) -> compiler_resolver::ResolvedTypeKind {
         if (type == 0) {
@@ -166,10 +180,13 @@ export namespace compiler_catalog {
         if (type == 11) {
             return compiler_resolver::ResolvedTypeKind::serve_session;
         }
-        if (type == 12 || type == 17 || type == 21 || type == 24) {
+        if (type == 26) {
+            return compiler_resolver::ResolvedTypeKind::host_files;
+        }
+        if (type == 12 || type == 17 || type == 21 || type == 24 || (type > 29 && type < 34)) {
             return compiler_resolver::ResolvedTypeKind::class_value;
         }
-        if (type > 12 && type < 26) {
+        if (type > 12 && type < 30) {
             return compiler_resolver::ResolvedTypeKind::enum_value;
         }
         return compiler_resolver::ResolvedTypeKind::invalid;
@@ -183,6 +200,9 @@ export namespace compiler_catalog {
         }
         if (type == 11 || type == 24 || type == 25) {
             return 3;
+        }
+        if (type > 25 && type < 34) {
+            return 4;
         }
         return 0;
     }
@@ -208,6 +228,15 @@ export namespace compiler_catalog {
         if (type == 23) {
             return 1;
         }
+        if (type == 27 || type == 33) {
+            return 3;
+        }
+        if (type == 28) {
+            return 10;
+        }
+        if (type == 31) {
+            return 5;
+        }
         if (nominal(type)) {
             return 2;
         }
@@ -221,6 +250,9 @@ export namespace compiler_catalog {
             }
             return 3;
         }
+        if (type == 33 && field == 2) {
+            return 2;
+        }
         if (field > 0) {
             return 1;
         }
@@ -230,7 +262,19 @@ export namespace compiler_catalog {
         if (type == 21) {
             return 22;
         }
+        if (type > 29) {
+            return 28;
+        }
         return 25;
+    }
+    // Element count of an array-typed class field, or 0 for a scalar field.
+    // HostChunk carries 504 bytes: with its two leading qwords that is the
+    // whole 520-byte copied-class bound and 506 of the 513 permitted leaves.
+    auto field_array_length(i64 type, i64 field) -> i64 {
+        if (type == 33 && field == 2) {
+            return 504;
+        }
+        return 0;
     }
     // Words: full spelling, then for nominal types the native spelling and the
     // field or case names in declaration order. See use_word for begin/end.
@@ -247,6 +291,9 @@ export namespace compiler_catalog {
             return use_word(session,
                 "builtin::IommuEventSession;builtin::CallSession;builtin::Com1UartGrant;builtin::ServeSession", type
                 - 8, begin, end);
+        }
+        if (type > 25) {
+            return host_type_word(session, type, part, begin, end);
         }
         if (type == 12) {
             return use_word(session, "builtin::ConsoleSample;__au_console_sample;byte_present;byte;damaged", part,
@@ -305,6 +352,37 @@ export namespace compiler_catalog {
         }
         return use_word(session, "builtin::ServeStatus;__au_serve_status;request;cancelled", part, begin, end);
     }
+    auto host_type_word(compiler_resolver::Session& session, i64 type, i64 part, i64 begin, i64 end) -> i64 {
+        if (type == 26) {
+            return use_word(session, "builtin::HostFiles", part, begin, end);
+        }
+        if (type == 27) {
+            return use_word(session, "builtin::HostExit;__au_host_exit;success;failure;usage", part, begin, end);
+        }
+        if (type == 28 && part < 6) {
+            return use_word(session, "builtin::HostStatus;__au_host_status;success;invalid_handle;not_found;denied",
+                part, begin, end);
+        }
+        if (type == 28) {
+            return use_word(session, "escape;not_regular;exhausted;too_large;invalid_path;failed", part - 6, begin,
+                end);
+        }
+        if (type == 29) {
+            return use_word(session, "builtin::HostStream;__au_host_stream;stdout;stderr", part, begin, end);
+        }
+        if (type == 30) {
+            return use_word(session, "builtin::HostDirectoryResult;__au_host_directory_result;status;id", part, begin,
+                end);
+        }
+        if (type == 31) {
+            return use_word(session, "builtin::HostFileResult;__au_host_file_result;status;id;size;device;inode", part,
+                begin, end);
+        }
+        if (type == 32) {
+            return use_word(session, "builtin::HostOutputResult;__au_host_output_result;status;id", part, begin, end);
+        }
+        return use_word(session, "builtin::HostChunk;__au_host_chunk;status;count;bytes", part, begin, end);
+    }
 
     // Scalar descriptors: concrete kind, public reflection identity and size.
     auto scalar_count() -> i64 {
@@ -352,7 +430,7 @@ export namespace compiler_catalog {
 
     // Sealed service operations, indexed by ServiceOperation.
     auto operation_count() -> i64 {
-        return 9;
+        return 21;
     }
     auto operation_kind(i64 operation) -> i64 {
         if (operation < 2) {
@@ -370,13 +448,23 @@ export namespace compiler_catalog {
         if (operation < 8) {
             return 4;
         }
-        return 5;
+        if (operation == 8) {
+            return 5;
+        }
+        return 6;
+    }
+    // Catalog type of a capability kind.
+    auto kind_type(i64 kind) -> i64 {
+        if (kind == 6) {
+            return 26;
+        }
+        return 6 + kind;
     }
     auto kind_receiver(i64 kind) -> compiler_resolver::ResolvedTypeKind {
-        return type_kind(6 + kind);
+        return type_kind(kind_type(kind));
     }
     auto kind_family(i64 kind) -> i64 {
-        return type_family(6 + kind);
+        return type_family(kind_type(kind));
     }
     // Catalog type of the operation's result.
     auto operation_result(i64 operation) -> i64 {
@@ -404,32 +492,87 @@ export namespace compiler_catalog {
         if (operation == 7) {
             return 23;
         }
-        return 24;
+        if (operation == 8) {
+            return 24;
+        }
+        if (operation == 9 || operation == 10) {
+            return 1;
+        }
+        if (operation == 11 || operation == 12) {
+            return 2;
+        }
+        if (operation == 14) {
+            return 33;
+        }
+        return 0;
     }
     auto parameter_count(i64 operation) -> i64 {
-        if (operation == 0 || operation == 3 || operation == 4) {
+        if (operation == 0 || operation == 3 || operation == 4 || operation == 20) {
             return 0;
         }
-        if (operation == 2) {
+        if (operation == 2 || operation == 13 || operation == 16) {
             return 5;
         }
-        if (operation == 7) {
+        if (operation == 7 || operation == 10 || operation == 12 || operation == 14 || operation == 19) {
             return 2;
+        }
+        if (operation == 15 || operation == 17) {
+            return 3;
         }
         return 1;
     }
     auto parameter_kind(i64 operation, i64 index) -> compiler_resolver::ResolvedTypeKind {
-        if (operation == 1 || (operation == 2 && index > 1) || (operation == 7 && index == 1)) {
+        if (operation == 1 || (operation == 2 && index > 1) || (operation == 7 && index == 1) || (operation == 12
+            && index == 1)) {
             return compiler_resolver::ResolvedTypeKind::u8_value;
+        }
+        if (operation > 12 && operation < 20 && index == 0) {
+            return compiler_resolver::ResolvedTypeKind::i64_value;
         }
         return compiler_resolver::ResolvedTypeKind::u64_value;
     }
     auto append_spelling(compiler_resolver::Session& session, i64 operation) -> i64 {
+        if (operation > 14) {
+            return use_word(session, "system_write;system_rename;system_unlink;system_close;system_stat;system_identity",
+                operation - 15, -1, 0);
+        }
+        if (operation > 8) {
+            return use_word(session, "load;store;load8;store8;system_open;system_chunk", operation - 9, -1, 0);
+        }
         return use_word(session, "next;put;pixel;poll;acknowledge;call;read8;write8;exchange", operation, -1, 0);
+    }
+
+    // HostFiles operations 9..20 are the Linux binding's private primitives,
+    // admitted only inside the designated runtime module aurora.host. Their
+    // byte offsets address the session block that the hosted entry reserves.
+    // The eight public HostFiles operations are implemented by exported
+    // functions of namespace host in module aurora.host; a call on the
+    // capability forwards it to that function as its first argument.
+    auto host_operation_count() -> i64 {
+        return 8;
+    }
+    auto host_operation(compiler_resolver::Session& session, i64 operation, i64 begin, i64 end) -> i64 {
+        return use_word(session, "open_directory;open_beneath;read;create_output;write;commit;discard;print",
+            operation, begin, end);
+    }
+    // The runtime function implementing each public operation, host::files_NAME
+    // (`read` and `write` themselves are reserved function names).
+    auto host_runtime_name(compiler_resolver::Session& session, i64 operation, i64 begin, i64 end) -> i64 {
+        if (operation > 5) {
+            return use_word(session, "files_discard;files_print", operation - 6, begin, end);
+        }
+        return use_word(session,
+            "files_open_directory;files_open_beneath;files_read;files_create_output;files_write;files_commit",
+            operation, begin, end);
     }
 
     // Group bit 1 << m admits the capability-kind set m (bit k for kind k) in
     // one signature: every singleton plus Console+Display and Console+IommuEvent.
+    // HostFiles is kind 6, whose set 64 has no bit in the word; bit 0 (the empty
+    // set, never a group) admits that singleton instead.
+    auto host_service_group() -> i64 {
+        return 1;
+    }
     auto base_service_groups() -> i64 {
         return 62;
     }
@@ -442,8 +585,11 @@ export namespace compiler_catalog {
     auto serve_service_group() -> i64 {
         return 4294967296;
     }
-    auto service_groups(bool call, bool port, bool serve) -> i64 {
+    auto service_groups(bool call, bool port, bool serve, bool host) -> i64 {
         i64 groups = base_service_groups();
+        if (host) {
+            groups = groups + host_service_group();
+        }
         if (call) {
             groups = groups + call_service_group();
         }
@@ -475,7 +621,7 @@ export namespace compiler_catalog {
         }
         texts = texts + operation_count();
         Summary result = Summary(type_count(), texts, texts * maximum_word(), members, operation_count(), parameters);
-        result.set_policy(scalar_count(), service_groups(true, true, true));
+        result.set_policy(scalar_count(), service_groups(true, true, true, true));
         return result;
     }
 }

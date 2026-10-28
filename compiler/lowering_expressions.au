@@ -162,7 +162,8 @@ export namespace compiler_lowering {
             emit_CopyObject(session, staged_a0_103, staged_a1_104);
             return finish_expression(session, type, destination);
         }
-        if (is_constructor_expression(session, node) || is_method_expression(session, node)) {
+        if (is_constructor_expression(session, node) || is_method_expression(session, node) || is_host_operation(
+            session, node)) {
             return begin_call(session, frame_id);
         }
         if (syntax.expression_kind() == compiler_parser::NodeKind::call) {
@@ -649,7 +650,7 @@ export namespace compiler_lowering {
             emit_literal(session, literal);
             return finish_expression(session, literal.type(), -1);
         }
-        if (is_method_expression(session, node)) {
+        if (is_method_expression(session, node) || is_host_operation(session, node)) {
             return begin_call(session, frame_id);
         }
         if (is_constructor_expression(session, node)) {

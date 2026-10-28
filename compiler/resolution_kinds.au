@@ -26,7 +26,8 @@ export namespace compiler_resolver {
         call_session,
         port_range,
         serve_session,
-        value_span
+        value_span,
+        host_files
     };
     enum class DeclarationKind {
         invalid,
@@ -57,7 +58,8 @@ export namespace compiler_resolver {
         constructor_call,
         implicit_method_call,
         enum_case,
-        capacity_constant
+        capacity_constant,
+        host_operation
     };
     enum class SemanticError {
         none,

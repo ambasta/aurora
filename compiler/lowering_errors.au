@@ -262,7 +262,10 @@ export namespace compiler_lowering {
         borrow_values_requires_span_binding_or_argument,
         borrow_values_requires_named_storage_or_private_field,
         typed_span_requires_copied_element,
-        typed_span_access_requires_copied_destination
+        typed_span_access_requires_copied_destination,
+        hosted_entry_signature,
+        host_operation_requires_runtime_module,
+        host_runtime_operation_outside_runtime
     };
 
     // Four eight-byte words in this order. Failure never publishes a module

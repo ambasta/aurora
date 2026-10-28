@@ -283,7 +283,11 @@ export namespace compiler_lowering {
         if (composed && depth > 4) {
             return fail(session, LoweringError::composed_class_depth, source);
         }
-        if (needs_constructor && !has_constructor(session, nominal)) {
+        // HostChunk, the one sealed class with an array, is only produced whole
+        // by its service primitive and then copied.
+        const compiler_resolver::MetaRow owner = session.meta(nominal);
+        const bool sealed = owner.native_mode() == compiler_resolver::NativeMode::sealed_builtin;
+        if (needs_constructor && !has_constructor(session, nominal) && !sealed) {
             return fail(session, LoweringError::aggregate_field_requires_constructor, source);
         }
         const i64 leaf_begin = session.operand_count();
@@ -385,7 +389,11 @@ export namespace compiler_lowering {
                 if (element_kind == compiler_resolver::ResolvedTypeKind::u8_value) {
                     maximum = configured_limit(session, OperandRole::MaximumByteArrayLength);
                 }
-                if (field_public(session, nominal, at) || repetitions < 1 || repetitions > maximum
+                // Only the sealed HostChunk exposes a public array: copied data,
+                // never authority, read by copying the field.
+                const compiler_resolver::MetaRow owner = session.meta(nominal);
+                const bool sealed = owner.native_mode() == compiler_resolver::NativeMode::sealed_builtin;
+                if ((field_public(session, nominal, at) && !sealed) || repetitions < 1 || repetitions > maximum
                     || (!compiler_resolver::scalar_kind(element_kind) && element_kind
                     != compiler_resolver::ResolvedTypeKind::class_value)) {
                     return fail(session, LoweringError::class_array_field_storage, token);
@@ -1023,6 +1031,49 @@ export namespace compiler_lowering {
         }
         return -1;
     }
+    // The designated hosted runtime module aurora.host, whose functions alone
+    // may use the HostFiles system primitives.
+    auto host_runtime_unit(compiler_resolver::Session& session, i64 unit) -> bool {
+        if (unit < 0 || unit >= session.module_count()) {
+            return false;
+        }
+        const compiler_resolver::MetaRow row = session.meta(unit);
+        const compiler_resolver::SyntaxRow definition = session.syntax(row.word(10));
+        const compiler_resolver::SyntaxRow header = session.syntax(definition.word(7));
+        const i64 name = compiler_resolver::source_name_range(session, header.word(0), header.word(6));
+        if (name < 0 || !compiler_resolver::leaf_is(session, name, "host")) {
+            return false;
+        }
+        const i64 parent = compiler_resolver::prefix_parent(session, name);
+        return compiler_resolver::plain_is(session, parent, "aurora");
+    }
+    // A root-module `main` naming HostFiles or HostExit is the hosted entry and
+    // must have exactly its signature; nothing else receives HostFiles from the
+    // host.
+    auto hosted_entry_admitted(compiler_resolver::Session& session, i64 symbol) -> bool {
+        const i64 unit = tm(session, symbol, 1);
+        const i64 name = tm(session, symbol, 3);
+        if (unit < 0 || compiler_resolver::mw(session, unit, 13) != 0 || !compiler_resolver::plain_is(session, name,
+            "main")) {
+            return true;
+        }
+        const i64 count = signature_count(session, symbol);
+        const i64 result = signature_result(session, symbol);
+        const i64 exit = compiler_resolver::catalog_type(session, 27);
+        bool hosted = exit >= 0 && result == exit;
+        i64 at = 0;
+        while (at < count && session.good()) {
+            hosted = hosted || parameter_kind(session, symbol, at) == compiler_resolver::ResolvedTypeKind::host_files;
+            at = at + 1;
+        }
+        if (!hosted) {
+            return true;
+        }
+        return count == 2 && result == exit && parameter_kind(session, symbol, 0)
+            == compiler_resolver::ResolvedTypeKind::host_files && parameter_borrowed(session, symbol, 0)
+            && !parameter_const(session, symbol, 0) && parameter_kind(session, symbol, 1)
+            == compiler_resolver::ResolvedTypeKind::byte_span && !parameter_borrowed(session, symbol, 1);
+    }
     auto service_result(compiler_resolver::Session& session, i64 result) -> bool {
         if (compiler_resolver::scalar_value_kind(tk(session, result))) {
             return true;
@@ -1136,6 +1187,9 @@ export namespace compiler_lowering {
                 }
                 at = at + 1;
             }
+        }
+        if (!hosted_entry_admitted(session, symbol)) {
+            return fail(session, LoweringError::hosted_entry_signature, source);
         }
         if (borrowed > 0 && !service) {
             const i64 first = parameter_type(session, symbol, 0);

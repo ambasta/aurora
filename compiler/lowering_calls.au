@@ -14,6 +14,7 @@ import aurora.compiler.resolution_names;
 import aurora.compiler.resolution_kinds;
 import aurora.compiler.syntax_arena;
 import aurora.compiler.lowering_frames;
+import aurora.compiler.builtin_catalog;
 
 // Span, array and call lowering; spans of call results make these one module.
 export namespace compiler_lowering {
@@ -501,6 +502,36 @@ export namespace compiler_lowering {
                 return finish_expression(session, type, destination);
             }
         }
+        if (syntax.expression_kind() == compiler_parser::NodeKind::member && !is_class_array(session, type)) {
+            // A whole scalar-array field of a copied class local, such as the
+            // public HostChunk bytes, copied element by element.
+            const i64 target = syntax.word(1);
+            const compiler_resolver::SyntaxRow target_row = session.syntax(target);
+            if (target_row.expression_kind() == compiler_parser::NodeKind::name) {
+                const i64 original = named_source(session, target);
+                const LocalRow local = session.local(original);
+                if (local.borrowed_object()) {
+                    return fail(session, LoweringError::borrowed_object_field_access, reference);
+                }
+                const i64 field = checked_field(session, local.concrete_type_id(), reference, false);
+                const i64 nominal = compiler_resolver::mw(session, local.concrete_type_id(), 1);
+                const i64 actual = field_type(session, nominal, field);
+                if (!match_type(session, actual, type, reference)) {
+                    return false;
+                }
+                const i64 base = local.offset() - field_displacement(session, local.concrete_type_id(), field);
+                const i64 destination = expression_destination(session, frame, type, -1);
+                i64 at = 0;
+                while (at < length && session.good()) {
+                    const i64 displacement = at * scalar_width(session, element);
+                    emit_Load(session, base - displacement, element);
+                    const i64 staged_a0_host = local_offset(session, destination) - displacement;
+                    emit_Store(session, staged_a0_host, element);
+                    at = at + 1;
+                }
+                return finish_expression(session, type, destination);
+            }
+        }
         if (syntax.expression_kind() != compiler_parser::NodeKind::array_literal) {
             return fail(session, LoweringError::array_initializer_requires_literal_or_copy, reference);
         }
@@ -542,8 +573,10 @@ export namespace compiler_lowering {
     }
     auto call_argument_node(compiler_resolver::Session& session, ContinuationRow frame, i64 index) -> i64 {
         const compiler_resolver::SyntaxRow syntax = session.syntax(frame.syntax_node());
+        const compiler_resolver::ResolvedRow resolved = session.resolved(frame.syntax_node());
         i64 actual = index;
-        if (syntax.expression_kind() == compiler_parser::NodeKind::method_call) {
+        if (syntax.expression_kind() == compiler_parser::NodeKind::method_call && resolved.operation()
+            != compiler_resolver::ResolvedOperation::host_operation) {
             actual = actual + 1;
         }
         return expression_argument(session, frame.syntax_node(), actual);
@@ -562,6 +595,79 @@ export namespace compiler_lowering {
             at = at + 1;
         }
         return -1;
+    }
+    // The exported host::files_NAME function of the designated runtime module
+    // implementing public HostFiles operation OPERATION, or -1.
+    auto host_runtime_function(compiler_resolver::Session& session, i64 operation) -> i64 {
+        i64 unit = 0;
+        while (unit < session.module_count() && session.good()) {
+            if (host_runtime_unit(session, unit)) {
+                i64 symbol = compiler_resolver::first_symbol(session, unit,
+                    compiler_resolver::DeclarationKind::function);
+                while (symbol >= 0 && session.good()) {
+                    const i64 name = compiler_resolver::mw(session, symbol, 3);
+                    const i64 parent = compiler_resolver::prefix_parent(session, name);
+                    const i64 atom = compiler_resolver::name_atom(session, name);
+                    const i64 leaf = compiler_resolver::atom_source(session, atom);
+                    const compiler_resolver::MetaRow spelling = session.meta(leaf);
+                    if (compiler_resolver::plain_is(session, parent, "host") && compiler_resolver::exported(session,
+                        symbol) && compiler_catalog::host_runtime_name(session, operation, spelling.word(1),
+                        spelling.word(2)) == 1) {
+                        return symbol;
+                    }
+                    symbol = compiler_resolver::mw(session, symbol, 14);
+                }
+            }
+            unit = unit + 1;
+        }
+        return -1;
+    }
+    // A public HostFiles operation `files.NAME(arguments)` calls the runtime's
+    // host::NAME(files, arguments): the same syntax node becomes an ordinary
+    // service-helper call with the capability as its first argument.
+    auto redirect_host_operation(compiler_resolver::Session& session, i64 frame_id) -> bool {
+        const ContinuationRow frame = session.continuation(frame_id);
+        const i64 node = frame.syntax_node();
+        const compiler_resolver::SyntaxRow syntax = session.syntax(node);
+        if (syntax.expression_kind() != compiler_parser::NodeKind::method_call || compiler_resolver::sw(session, node,
+            2) < 1) {
+            return session.good();
+        }
+        const i64 target = expression_argument(session, node, 0);
+        const compiler_resolver::SyntaxRow target_row = session.syntax(target);
+        if (target_row.expression_kind() != compiler_parser::NodeKind::name) {
+            return session.good();
+        }
+        const i64 staged_name_host = source_ref(session, target);
+        const i64 local = lookup_local(session, staged_name_host);
+        if (local < 0) {
+            return session.good();
+        }
+        const i64 staged_type_host = local_type(session, local);
+        if (value_kind(session, staged_type_host) != compiler_resolver::ResolvedTypeKind::host_files) {
+            return session.good();
+        }
+        const i64 reference = source_ref(session, node);
+        const compiler_resolver::MetaRow spelling = session.meta(reference);
+        i64 selected = -1;
+        i64 operation = 0;
+        while (operation < compiler_catalog::host_operation_count() && session.good()) {
+            if (compiler_catalog::host_operation(session, operation, spelling.word(1), spelling.word(2)) == 1) {
+                selected = operation;
+            }
+            operation = operation + 1;
+        }
+        if (selected < 0) {
+            return session.good();
+        }
+        const i64 callee = host_runtime_function(session, selected);
+        if (callee < 0) {
+            return fail(session, LoweringError::host_operation_requires_runtime_module, reference);
+        }
+        compiler_resolver::ResolvedRow binding = session.resolved(node);
+        binding.set_operation(compiler_resolver::ResolvedOperation::host_operation);
+        binding.set_word(1, callee);
+        return session.set_resolved(node, binding);
     }
     auto resolve_call_receiver(compiler_resolver::Session& session, i64 frame_id) -> bool {
         ContinuationRow frame = session.continuation(frame_id);
@@ -705,6 +811,13 @@ export namespace compiler_lowering {
             target = service_operation_contract(session, type, reference);
             if (target < 0) {
                 return fail(session, LoweringError::unknown_service_operation, reference);
+            }
+            if (record_signed(session, target, OperandRole::ServiceKindId) == 6) {
+                const i64 caller = body_function(session);
+                const i64 caller_unit = compiler_resolver::mw(session, caller, 1);
+                if (!host_runtime_unit(session, caller_unit)) {
+                    return fail(session, LoweringError::host_runtime_operation_outside_runtime, reference);
+                }
             }
             const OperandRow parameters = record_slice(session, target, OperandRole::ParameterTypes);
             count = parameters.count();
@@ -990,6 +1103,9 @@ export namespace compiler_lowering {
         return session.good();
     }
     auto begin_call(compiler_resolver::Session& session, i64 frame_id) -> bool {
+        if (!redirect_host_operation(session, frame_id)) {
+            return false;
+        }
         ContinuationRow frame = session.continuation(frame_id);
         const i64 node = frame.syntax_node();
         const i64 reference = source_ref(session, node);
@@ -1058,7 +1174,8 @@ export namespace compiler_lowering {
         ContinuationRow checked_frame = session.continuation(frame_id);
         i64 actual = compiler_resolver::sw(session, node, 2);
         const compiler_resolver::SyntaxRow syntax = session.syntax(node);
-        if (syntax.expression_kind() == compiler_parser::NodeKind::method_call) {
+        if (syntax.expression_kind() == compiler_parser::NodeKind::method_call && resolved.operation()
+            != compiler_resolver::ResolvedOperation::host_operation) {
             actual = actual - 1;
         }
         if (actual != checked_frame.argument_count()) {
@@ -1362,7 +1479,8 @@ export namespace compiler_lowering {
                 const compiler_resolver::ResolvedTypeKind receiver = value_kind(session, frame.cleanup_cursor());
                 const i64 reference = source_ref(session, frame.syntax_node());
                 if (compiler_resolver::service_kind(receiver)) {
-                    if (session.source_equal(reference, "pixel") || session.source_equal(reference, "write8")) {
+                    if (session.source_equal(reference, "pixel") || session.source_equal(reference, "write8") || (receiver
+                        == compiler_resolver::ResolvedTypeKind::host_files && frame.argument_count() > 1)) {
                         emit_Push(session);
                     }
                 } else {
