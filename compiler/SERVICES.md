@@ -250,7 +250,8 @@ numbers, `generation * 64 + slot + 1`, checked against the session's own tables:
 advances on reuse. An id that does not name a live handle of the right kind
 (stale, foreign, mistyped or made up) yields `invalid_handle`; a full table
 yields `exhausted`. There is no close operation, so a process opens at most 16
-directories and files in total. Ids are deterministic data: guessing a live id
+directories and files in total; this lifetime bound is intentional until the
+compiler adopts HostFiles, which brings close. Ids are deterministic data: guessing a live id
 grants only what the session already holds. Uncommitted outputs are discarded
 and every descriptor closed after `main` returns, but not when the process dies
 by a signal or trap, which leaves its `.aurora-output-*` temporaries behind;
@@ -259,7 +260,12 @@ destination names in that namespace are rejected. Committed files have mode
 regular file (nonblocking, so a FIFO cannot hang it).
 
 The operations are implemented in Aurora by a binding module, imported as
-`aurora.host` and selected by module root. `files.NAME(...)` calls the exported
+`aurora.host`. Every `aurora.*` module name is reserved to the compiler except
+its own sources (`aurora.compiler.*`, `aurora.tests.*`, which every bootstrap
+stage reads through ordinary module roots): a reserved import resolves only
+from the compiler's runtime root (`runtime/linux`, fixed when aurorac is
+configured), never from a `--module-root` or an overlay, and is rejected if a
+module root also holds it; a root module declaring a reserved name is rejected. `files.NAME(...)` calls the exported
 `host::files_NAME(files, ...)` of that module (`read` and `write` are reserved
 function names) as an ordinary service-helper call. The Linux binding,
 `runtime/linux/aurora/host.au`, uses twelve private HostFiles primitives that
@@ -275,10 +281,11 @@ HostChunk), `system_write`, `system_rename` (renameat), `system_unlink`
 checking every offset and length against the session block (failure traps);
 paths are NUL-terminated in the block, and only scalar results return. The
 typed-IR verifier admits the primitives only in functions whose native name
-belongs to module `aurora.host`. The binding is selected by module name from
-the build's module roots, so it is trusted code: a substitute binding cannot
-leave the session block or the fixed open modes, but holds the user's file
-authority as `main` does. A binding
+belongs to module `aurora.host`. Every primitive is an operation on a held
+HostFiles loan, which only `main` receives, so even the binding reaches the
+system only on behalf of a program that was handed the capability; a library
+importing `aurora.host` cannot name the primitives or the binding's private
+helpers. The binding is trusted code of the compiler. A binding
 over Aurora kernel services (Call/Serve or the file namespace service) would be
 another `aurora.host` with its own primitives and the same eight functions.
 

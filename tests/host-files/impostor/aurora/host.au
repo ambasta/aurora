@@ -1,0 +1,10 @@
+export module aurora.host;
+
+// An impostor binding in a user module root; the compiler never loads it.
+export namespace host {
+    auto files_print(builtin::HostFiles& files, builtin::HostStream stream, builtin::span<const u8> bytes)
+        -> builtin::HostStatus {
+        const i64 descriptor = files.system_open(-100, 0u64, 9u64, 4u64);
+        return builtin::HostStatus::success;
+    }
+}

@@ -82,9 +82,14 @@ frontend_library = static_library(
 frontend_headers = declare_dependency(sources: frontend_assembly[3],
                                      include_directories: include_directories('.'))
 hosted_frontend = declare_dependency(link_with: frontend_library, dependencies: frontend_headers)
-aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_frontend, native: true, install: false)
+# The compiler's own runtime root: reserved aurora.* imports such as the
+# HostFiles binding aurora.host resolve only here, never from a --module-root.
+hosted_runtime_root = meson.current_source_dir() / 'runtime/linux'
+runtime_root_define = '-DAURORA_RUNTIME_ROOT="@0@"'.format(hosted_runtime_root)
+aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_frontend, cpp_args: runtime_root_define,
+                     native: true, install: false)
 aurora_fmt = executable('aurora-fmt', 'compiler/format_main.cpp', dependencies: hosted_frontend,
-                        native: true, install: false)
+                        cpp_args: runtime_root_define, native: true, install: false)
 
 # C0 emits text frontend A; C1 emits direct-object B, which current C2 links.
 # Reuse only current host C++ objects. The old checkpoint needs no object support.
@@ -131,16 +136,16 @@ endforeach
 
 # Hosted Aurora programs: a root main(builtin::HostFiles&, builtin::span<const u8>)
 # -> builtin::HostExit gets a compiler-emitted _start, and the Linux binding
-# runtime/linux/aurora/host.au makes its system calls inline, so one aurorac
-# object links statically with ld alone: no C or C++ runtime, startup or libc.
-hosted_runtime_root = meson.current_source_dir() / 'runtime/linux'
+# aurora.host (runtime/linux, aurorac's runtime root) makes its system calls
+# inline, so one aurorac object links statically with ld alone: no C or C++
+# runtime, startup or libc.
 hosted_runtime_sources = files('runtime/linux/aurora/host.au')
 hosted_linker = find_program('ld', native: true)
 hosted_programs = {}
 foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
                         'host-files-probe': 'tests/host-files/probe.au'}
   hosted_object = custom_target(name + '-object', input: source, output: name + '.o',
-      command: [aurorac, '--emit-object', '--module-root', hosted_runtime_root, '@INPUT@', '-o', '@OUTPUT@'],
+      command: [aurorac, '--emit-object', '@INPUT@', '-o', '@OUTPUT@'],
       depend_files: hosted_runtime_sources)
   hosted_programs += {name: custom_target(name, input: hosted_object, output: name,
       command: [hosted_linker, '-static', '-e', '_start', '-o', '@OUTPUT@', '@INPUT@'])}

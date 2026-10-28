@@ -91,10 +91,22 @@ test('host-files', python,
             'cat=' + hosted_programs['host-files-cat'].full_path(),
             'probe=' + hosted_programs['host-files-probe'].full_path()],
      depends: hosted_programs.values(), suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
+# The 64 MiB per-output limit costs real writes; limits run in the release suite.
+test('host-files-limits', python,
+     args: ['-B', files('host_files.py'), files('host-files/limits.golden'),
+            'probe=' + hosted_programs['host-files-probe'].full_path()],
+     depends: hosted_programs.values(), suite: ['full', 'release', 'compiler'], timeout: 120)
 test('host-files-rejections', python,
      args: ['-B', golden_runner, files('host-files/rejections.golden'), '--reject', '--', aurorac, '--check',
-            '--module-root', hosted_runtime_root],
-     depends: [aurorac], suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
+            '--module-root', 'tests/host-files/library'],
+     depends: [aurorac], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+     timeout: 120)
+# A user module root that supplies its own aurora.host cannot replace the runtime.
+test('host-files-impostor', python,
+     args: ['-B', golden_runner, files('host-files/impostor.golden'), '--reject', '--', aurorac, '--check',
+            '--module-root', 'tests/host-files/impostor'],
+     depends: [aurorac], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+     timeout: 120)
 
 # One scratchpad host and one linked driver; modes and transcripts are runtime data.
 scratchpad_host = static_library('scratchpad-host',

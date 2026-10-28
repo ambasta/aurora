@@ -1,0 +1,9 @@
+export module reach.helper;
+import aurora.host;
+
+// The runtime's session helpers are module-private.
+export namespace reach {
+    auto buffer() -> u64 {
+        return host_session::stat_buffer();
+    }
+}

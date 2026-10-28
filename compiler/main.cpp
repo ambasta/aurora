@@ -128,7 +128,8 @@ int main(int argc, char **argv) {
         request.format = emitObject ? aurora::CodeEmission::Object : aurora::CodeEmission::Assembly;
         request.stackFacts = stackFactsSpecified;
         request.abiFacts = abiFactsSpecified;
-        auto checked = aurora::checkSource(inputPath, roots, {}, aurora::AnalysisMode::Check, request);
+        auto checked =
+            aurora::checkSource(inputPath, roots, {}, aurora::AnalysisMode::Check, request, AURORA_RUNTIME_ROOT);
         if (checkOnly) {
             if (jsonDiagnostics)
                 aurora::writeDiagnosticsJson(std::cout, {});

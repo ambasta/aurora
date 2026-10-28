@@ -600,6 +600,32 @@ export namespace compiler_resolver {
         }
         return 1;
     }
+    // Module names under `aurora` belong to the compiler: aurora.host and every
+    // other aurora.* name load only from the compiler's runtime root, except the
+    // compiler's own sources (aurora.compiler.*, aurora.tests.*), which every
+    // bootstrap stage reads through ordinary module roots.
+    auto reserved_module(Session& session, i64 name) -> bool {
+        if (name < 0) {
+            return false;
+        }
+        i64 first = name;
+        i64 second = -1;
+        while (prefix_parent(session, first) >= 0 && session.good()) {
+            second = first;
+            first = prefix_parent(session, first);
+        }
+        const i64 first_atom = name_atom(session, first);
+        const i64 first_source = atom_source(session, first_atom);
+        if (!session.source_equal(first_source, "aurora")) {
+            return false;
+        }
+        if (second < 0) {
+            return true;
+        }
+        const i64 second_atom = name_atom(session, second);
+        const i64 second_source = atom_source(session, second_atom);
+        return !session.source_equal(second_source, "compiler") && !session.source_equal(second_source, "tests");
+    }
     // The newest module answers the request index 8 recorded for it, if any:
     // its header must spell the requested name (9) in an export module
     // interface (10). Otherwise, or when nothing was requested, 0.
@@ -731,14 +757,20 @@ export namespace compiler_resolver {
                         if (session.module_count() >= 64) {
                             return WorkRow(5, -1, -1, -1, -1, -1);
                         }
+                        // A reserved name is requested from the runtime root only.
+                        const bool reserved = reserved_module(session, name);
                         i64 status = 6;
-                        if (roots > 0) {
+                        i64 runtime = -1;
+                        if (roots > 0 || reserved) {
                             status = path_status(session, name_first.word(1), name_last.word(2));
+                        }
+                        if (reserved) {
+                            runtime = 1;
                         }
                         if (status == 1 && session.index_insert(8, session.module_count(), 0, 0, 0, node) < 0) {
                             return WorkRow(-1, -1, -1, -1, -1, -1);
                         }
-                        return WorkRow(status, module_id, name_begin, name_end, -1, -1);
+                        return WorkRow(status, module_id, name_begin, name_end, runtime, -1);
                     }
                     if (session.index(5, module_id, node, 0, 0) < 0) {
                         bind_import(session, module_id, node, target);
@@ -754,8 +786,9 @@ export namespace compiler_resolver {
     }
     // Status: complete, request source, duplicate, cycle, depth, file limit,
     // no module roots, invalid or excessive name, invalid path component,
-    // header mismatch, not an interface; then the module and the
-    // module-relative bytes of the import it names, and the mismatched module.
+    // header mismatch, not an interface, reserved root module name; then the
+    // module and the module-relative bytes of the import it names, and the
+    // mismatched module, or 1 when a requested name is reserved to the runtime root.
     // Copied coordinates are diagnostic/transport observations, not authority.
     auto graph_step(Session& session, i64 root, i64 roots) -> WorkRow {
         if (!session.good() || session.work_count() != 0 || root < 0 || root >= session.module_count()) {
@@ -765,6 +798,18 @@ export namespace compiler_resolver {
         const WorkRow response = check_response(session);
         if (!session.good()) {
             return WorkRow(-1, -1, -1, -1, -1, -1);
+        }
+        const MetaRow unit = session.meta(root);
+        const SyntaxRow definition = session.syntax(unit.word(10));
+        const SyntaxRow header = session.syntax(definition.word(7));
+        const i64 root_name = source_name_range(session, header.word(0), header.word(6));
+        if (unit.kind() != MetaTag::module_unit || definition.declaration_kind()
+            != compiler_parser::SyntaxKind::module_definition) {
+            session.fail_storage(StorageStatus::invalid);
+            return WorkRow(-1, -1, -1, -1, -1, -1);
+        }
+        if (reserved_module(session, root_name)) {
+            return WorkRow(11, root, -1, -1, -1, -1);
         }
         if (response.word(0) != 0) {
             return response;

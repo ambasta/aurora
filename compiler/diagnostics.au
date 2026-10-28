@@ -1711,7 +1711,7 @@ export namespace compiler_resolver {
         const i64 requester = step.word(1);
         i64 name = -1;
         i64 count = 0;
-        if (status != 3 && status != 4 && status != 5) {
+        if (status != 3 && status != 4 && status != 5 && status != 11) {
             const MetaRow unit = session.meta(requester);
             name = unit.word(0) + step.word(2);
             count = step.word(3) - step.word(2);
@@ -1751,7 +1751,12 @@ export namespace compiler_resolver {
             say(session, "imported module requires an export module interface: ");
             say_spelled(session, name, count);
         }
-        if (status > 10) {
+        if (status == 11) {
+            say(session, "reserved compiler module name: ");
+            say_module(session, requester);
+            say(session, " (aurora.* modules load only from the compiler's runtime root)");
+        }
+        if (status > 11) {
             session.fail_storage(StorageStatus::invalid);
         }
         latch(session, report_row(0, 0), begin, 4001);

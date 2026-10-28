@@ -16,11 +16,13 @@ public:
     std::size_t id = 0;
 };
 
-// An import Aurora requests: its normalized name and the relative module file
-// path it maps to.
+// An import Aurora requests: its normalized name, the relative module file
+// path it maps to, and whether the name is reserved to the compiler's runtime
+// root (aurora.* outside the compiler's own sources).
 class HostedImport {
 public:
     std::string name, path;
+    bool reserved = false;
 };
 
 // The diagnostic Aurora renders for the first rejection of a source admission;
