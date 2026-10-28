@@ -2,7 +2,7 @@
 // (--update rewrites it). Every case reads the lexer's event rows through its
 // bridge entry; raw ABI records below deliberately do not use production layouts.
 #include "lexemes.hpp"
-#include "hosted_lexer_abi.hpp"
+#include "hosted_resolver.hpp"
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -105,14 +105,17 @@ Outcome scan(const std::string &text) {
     }
     require(last.begin < last.end, "empty lexical error range");
     const auto source = std::make_shared<const aurora::SourceText>("case.au", text);
-    const aurora::SourceSpan span{
-        source, expected[static_cast<std::size_t>(last.begin)], expected[static_cast<std::size_t>(last.end)]};
-    try {
-        aurora::hosted_lexer::rejectLexical(last.event, span);
-    } catch (const aurora::Error &error) {
-        out.error = error.diagnostic;
-    }
-    require(out.error.has_value(), "lexer stopped without end of input or a rejection");
+    const auto &begin = expected[static_cast<std::size_t>(last.begin)];
+    const auto &end = expected[static_cast<std::size_t>(last.end)];
+    aurora::hosted_abi::compiler_resolver::SourceResult rejected{};
+    rejected.lexical = last.event;
+    rejected.begin = last.begin;
+    rejected.begin_line = begin.line;
+    rejected.begin_column = begin.column;
+    rejected.end = rejected.text_end = last.end;
+    rejected.end_line = end.line;
+    rejected.end_column = end.column;
+    out.error = aurora::sourceDiagnostic(source, rejected);
     return out;
 }
 
@@ -461,7 +464,7 @@ void expectRaw(
 }
 
 void eventAbiCases() {
-    using Kind = aurora::hosted_lexer::Event;
+    using Kind = aurora::lexemes::Event;
     // Observe the real Aurora result through the independent raw record/ABI
     // envelope, not through a source-text enum-order check.
     const std::array<std::pair<std::string, Kind>, 8> cases{{

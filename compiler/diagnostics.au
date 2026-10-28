@@ -1,0 +1,1541 @@
+export module aurora.compiler.diagnostics;
+import aurora.compiler.lexer;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.parser;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_ingest;
+import aurora.compiler.resolution_linkage;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_storage;
+import std.decimal_digits;
+
+// Aurora renders every source, resolver, lowering and lint diagnostic: its
+// family, message bytes and module-relative span. A source rejection is
+// rendered from the copied SourceResult and the source bytes. A resolver or
+// lowering rejection is rendered into the Session's byte pool just before the
+// Session latches it, with a final report row naming the message and span;
+// lint warnings are rendered the same way into the pipeline Result. The host
+// copies a Report out 384 message bytes at a time and only prints it.
+export namespace compiler_resolver {
+    // One diagnostic's code number (AU1001 is 1001), severity and span (source
+    // -1 when unlocated), and its message bytes from offset on: writing skips
+    // the first offset bytes and keeps at most 384. Size -1 marks an invalid
+    // selector or rejection.
+    class Report {
+        builtin::array<u8, 384> payload;
+        i64 byteCount;
+        i64 skipped;
+        i64 offset;
+        i64 family;
+        bool warning;
+        i64 source;
+        i64 begin;
+        i64 begin_line;
+        i64 begin_column;
+        i64 end;
+        i64 end_line;
+        i64 end_column;
+    public:
+        Report(i64 from) : payload{}, byteCount(0), skipped(0), offset(from), family(9001), warning(false), source(-1),
+            begin(0), begin_line(0), begin_column(0), end(0), end_line(0), end_column(0) {
+        }
+        auto size() const -> i64 {
+            return byteCount;
+        }
+        auto invalidate() -> bool {
+            byteCount = -1;
+            return false;
+        }
+        auto put(u8 value) -> bool {
+            if (byteCount < 0 || offset < 0) {
+                return invalidate();
+            }
+            if (skipped < offset) {
+                skipped = skipped + 1;
+                return true;
+            }
+            if (byteCount < 384) {
+                payload[byteCount] = value;
+                byteCount = byteCount + 1;
+            }
+            return true;
+        }
+        auto text(builtin::span<const u8> value) -> bool {
+            i64 at = 0;
+            while (at < value.size() && byteCount >= 0 && byteCount < 384) {
+                put(value.at(at));
+                at = at + 1;
+            }
+            return byteCount >= 0;
+        }
+        auto decimal(i64 value) -> bool {
+            if (value < 0) {
+                return invalidate();
+            }
+            i64 place = std_decimal::width_u64(u64(value));
+            while (place > 0) {
+                place = place - 1;
+                put(std_decimal::digit_at_u64(u64(value), place));
+            }
+            return byteCount >= 0;
+        }
+        // The trivia-free spelling of source[first, last), as modules are named.
+        auto spelled(builtin::span<const u8> source, i64 first, i64 last) -> bool {
+            if (first < 0 || last < first || last > source.size()) {
+                return invalidate();
+            }
+            i64 at = first;
+            i64 line = 1;
+            i64 start = 0;
+            while (at < last && byteCount >= 0) {
+                const compiler_lexer::Cursor cursor = compiler_lexer::Cursor(at, line, start);
+                const compiler_lexer::Lexeme lexeme = compiler_lexer::next_lexeme(source, cursor);
+                const compiler_lexer::Event kind = lexeme.kind();
+                const i64 next = lexeme.next_offset();
+                if (next <= at || next > last || (kind != compiler_lexer::Event::token && kind
+                    != compiler_lexer::Event::whitespace && kind != compiler_lexer::Event::line_comment)) {
+                    return invalidate();
+                }
+                if (kind == compiler_lexer::Event::token) {
+                    text(source.subspan(at, next - at));
+                }
+                at = next;
+                line = lexeme.next_line();
+                start = lexeme.next_line_start();
+            }
+            return byteCount >= 0;
+        }
+        auto classify(i64 code, bool is_warning) -> bool {
+            family = code;
+            warning = is_warning;
+            return true;
+        }
+        // Takes the span of a report row.
+        auto locate(MetaRow row) -> bool {
+            source = row.word(2);
+            begin = row.word(3);
+            begin_line = row.word(4);
+            begin_column = row.word(5);
+            end = row.word(6);
+            end_line = row.word(7);
+            end_column = row.word(8);
+            return true;
+        }
+    };
+
+    // A stored report row: message bytes [word 0, word 1) of its owner, then
+    // source (-1 when unlocated), begin, line, column, end, line, column.
+    auto report_row(i64 text_begin, i64 text_end) -> MetaRow {
+        MetaRow row = MetaRow(MetaTag::report);
+        row.set_word(0, text_begin);
+        row.set_word(1, text_end);
+        row.set_word(2, -1);
+        return row;
+    }
+    // The row located from the first through the last of two module token
+    // references, offsets relative to the module whose bytes begin at base.
+    auto located(MetaRow row, MetaRow first, MetaRow last, i64 base) -> MetaRow {
+        MetaRow result = row;
+        result.set_word(2, first.word(0));
+        result.set_word(3, first.word(1) - base);
+        result.set_word(4, first.word(3));
+        result.set_word(5, first.word(4));
+        result.set_word(6, last.word(2) - base);
+        result.set_word(7, last.word(7));
+        result.set_word(8, last.word(8));
+        return result;
+    }
+    // The chunk at offset of a stored report whose message bytes are in text.
+    auto stored_report(MetaRow row, builtin::span<const u8> text, i64 code, bool warning, i64 offset) -> Report {
+        Report result = Report(offset);
+        if (row.kind() != MetaTag::report || row.word(0) < 0 || row.word(1) < row.word(0) || row.word(1) > text.size()
+            || offset < 0) {
+            result.invalidate();
+            return result;
+        }
+        result.classify(code, warning);
+        result.locate(row);
+        if (offset < row.word(1) - row.word(0)) {
+            result.text(text.subspan(row.word(0), row.word(1) - row.word(0)));
+        }
+        return result;
+    }
+    // The latched resolver or lowering rejection of a Session.
+    auto report(const Session& session, i64 offset) -> Report {
+        const MetaRow row = session.view_meta(session.meta_count() - 1);
+        i64 code = 4001;
+        if (session.lowering_error() != compiler_lowering::LoweringError::none) {
+            code = 3001;
+        }
+        if (session.storage_status() != StorageStatus::none || (session.error_code() == SemanticError::none && code
+            != 3001)) {
+            Report invalid = Report(offset);
+            invalid.invalidate();
+            return invalid;
+        }
+        const Report result = stored_report(row, session.source_view(0, session.source_size()), code, false, offset);
+        return result;
+    }
+
+    // Source rejections: the cited token of a grammar or declaration status.
+    auto cited(builtin::span<const u8> source, SourceResult result, Report report) -> Report {
+        Report value = report;
+        const i64 first = result.coordinate(0);
+        const i64 last = result.coordinate(6);
+        if (first < 0 || last < first || last > source.size()) {
+            value.invalidate();
+            return value;
+        }
+        value.text(" (found '");
+        if (last == first) {
+            value.text("<eof>");
+        } else {
+            value.text(source.subspan(first, last - first));
+        }
+        value.text("')");
+        return value;
+    }
+    auto grammar_text(Report report, compiler_parser::ParseStatus status, compiler_parser::Stop stop) -> Report {
+        Report value = report;
+        if (status == compiler_parser::ParseStatus::expected_expression) {
+            value.text("expected expression");
+        }
+        if (status == compiler_parser::ParseStatus::expected_close) {
+            value.text("expected ')'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_index_close) {
+            value.text("expected ']'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_brace_close) {
+            value.text("expected '}'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_dot) {
+            value.text("expected '.'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_equal) {
+            value.text("expected '='");
+        }
+        if (status == compiler_parser::ParseStatus::expected_brace_open) {
+            value.text("expected '{'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_identifier) {
+            value.text("expected identifier");
+        }
+        if (status == compiler_parser::ParseStatus::reserved_identifier) {
+            value.text("reserved identifier");
+        }
+        if (status == compiler_parser::ParseStatus::reserved_builtin) {
+            value.text("reserved builtin storage name");
+        }
+        if (status == compiler_parser::ParseStatus::reserved_prefix) {
+            value.text("reserved compiler identifier prefix: __au_");
+        }
+        if (status == compiler_parser::ParseStatus::depth_limit) {
+            value.text("expression AST depth exceeds 128");
+        }
+        if (status == compiler_parser::ParseStatus::expected_angle_open) {
+            value.text("expected '<'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_angle_close) {
+            value.text("expected '>'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_scope) {
+            value.text("expected '::'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_comma) {
+            value.text("expected ','");
+        }
+        if (status == compiler_parser::ParseStatus::expected_const) {
+            value.text("expected 'const'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_u8) {
+            value.text("expected 'u8'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_i64) {
+            value.text("expected 'i64'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_array) {
+            value.text("expected 'array'");
+        }
+        if (status == compiler_parser::ParseStatus::reserved_type) {
+            value.text("unsupported or reserved type spelling");
+        }
+        if (status == compiler_parser::ParseStatus::expected_type) {
+            value.text("expected type name");
+        }
+        if (status == compiler_parser::ParseStatus::template_context) {
+            value.text("template-id references inside template definitions are not supported");
+        }
+        if (status == compiler_parser::ParseStatus::template_arity) {
+            value.text("template arguments are limited to one or two types or capacity literals");
+        }
+        if (status == compiler_parser::ParseStatus::template_argument) {
+            value.text("template arguments require scalar, named class or enum types, or capacities from 1 to 64");
+        }
+        if (status == compiler_parser::ParseStatus::capacity_argument) {
+            value.text("capacity template arguments must be decimal literals from 1 to 64");
+        }
+        if (status == compiler_parser::ParseStatus::nested_dependent) {
+            value.text("nested dependent template arguments are not supported");
+        }
+        if (status == compiler_parser::ParseStatus::owned_element) {
+            value.text("owned values require a named concrete copied class");
+        }
+        if (status == compiler_parser::ParseStatus::span_element) {
+            value.text("typed spans require a named concrete copied class");
+        }
+        if (status == compiler_parser::ParseStatus::array_element) {
+            value.text("array elements require i64, u64, u8, bool or a concrete copied class");
+        }
+        if (status == compiler_parser::ParseStatus::array_length) {
+            value.text("array length requires a decimal integer literal between 1 and 4096");
+        }
+        if (status == compiler_parser::ParseStatus::class_array_length) {
+            value.text("class-element array capacity must be between 1 and 64");
+        }
+        if (status == compiler_parser::ParseStatus::expected_open) {
+            value.text("expected '('");
+        }
+        if (status == compiler_parser::ParseStatus::expected_semicolon) {
+            value.text("expected ';'");
+        }
+        if (status == compiler_parser::ParseStatus::unterminated_block) {
+            value.text("unterminated block");
+        }
+        if (status == compiler_parser::ParseStatus::assignment_target) {
+            value.text("assignment requires a local or local field");
+        }
+        if (status == compiler_parser::ParseStatus::expected_auto) {
+            value.text("expected 'auto'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_arrow) {
+            value.text("expected '->'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_module) {
+            value.text("expected 'module'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_enum) {
+            value.text("expected 'enum'");
+        }
+        if (status == compiler_parser::ParseStatus::expected_class) {
+            value.text("expected 'class'");
+        }
+        if (status == compiler_parser::ParseStatus::module_name_limit) {
+            value.text("module name exceeds 4096 bytes");
+        }
+        if (status == compiler_parser::ParseStatus::module_enum_limit) {
+            value.text("module exceeds 64 enum definitions");
+        }
+        if (status == compiler_parser::ParseStatus::empty_enum) {
+            value.text("enum class requires at least one named case");
+        }
+        if (status == compiler_parser::ParseStatus::enum_case_limit) {
+            value.text("enum class exceeds 256 named cases");
+        }
+        if (status == compiler_parser::ParseStatus::duplicate_enum_case) {
+            value.text("duplicate enum case: ");
+        }
+        if (status == compiler_parser::ParseStatus::explicit_enum_value) {
+            value.text("enum cases cannot have explicit values");
+        }
+        if (status == compiler_parser::ParseStatus::expected_colon) {
+            value.text("expected ':'");
+        }
+        if (status == compiler_parser::ParseStatus::namespace_nesting_limit) {
+            value.text("namespace nesting exceeds 32 components");
+        }
+        if (status == compiler_parser::ParseStatus::export_interface_required) {
+            value.text("export declarations require an export module interface");
+        }
+        if (status == compiler_parser::ParseStatus::module_reexport) {
+            value.text("module reexports are not supported");
+        }
+        if (status == compiler_parser::ParseStatus::imports_after_declarations) {
+            value.text("imports must precede declarations");
+        }
+        if (status == compiler_parser::ParseStatus::template_parameter_limit) {
+            value.text("templates require one or two Scalar or Value parameters");
+        }
+        if (status == compiler_parser::ParseStatus::template_parameter_kind) {
+            value.text("template parameters require Scalar, Value or bounded i64 capacity");
+        }
+        if (status == compiler_parser::ParseStatus::template_parameter_name) {
+            value.text("duplicate or reserved template parameter");
+        }
+        if (status == compiler_parser::ParseStatus::template_capacity_order) {
+            value.text("template capacity requires a preceding Scalar parameter");
+        }
+        if (status == compiler_parser::ParseStatus::template_declaration_kind) {
+            value.text("only class or namespace-level function templates are supported");
+        }
+        if (status == compiler_parser::ParseStatus::function_template_capacity) {
+            value.text("function templates require only Scalar or Value type parameters");
+        }
+        if (status == compiler_parser::ParseStatus::class_template_shadow) {
+            value.text("class name cannot shadow a template parameter");
+        }
+        if (status == compiler_parser::ParseStatus::expected_end) {
+            if (stop == compiler_parser::Stop::close_parenthesis) {
+                value.text("expected ')'");
+            } else {
+                value.text("expected ';'");
+            }
+        }
+        return value;
+    }
+    // A grammar rejection at its cited token. A whole-source parse never stops
+    // at an expected end; only a grammar entry with another stop can.
+    auto grammar_report(builtin::span<const u8> source, SourceResult result, compiler_parser::Stop stop,
+        Report report) -> Report {
+        Report value = report;
+        const compiler_parser::ParseStatus status = result.grammar_status();
+        if (status == compiler_parser::ParseStatus::allocation_failure) {
+            value.classify(9001, false);
+            value.text("hosted parser allocation failed");
+            return value;
+        }
+        value.classify(2002, false);
+        if (status == compiler_parser::ParseStatus::block_nesting_limit) {
+            value.text("block nesting exceeds 128");
+            return value;
+        }
+        if (status == compiler_parser::ParseStatus::nesting_limit) {
+            value.text("expression parser nesting exceeds 128");
+            return value;
+        }
+        if (status == compiler_parser::ParseStatus::type_nesting_limit) {
+            value.text("type nesting exceeds 64");
+            return value;
+        }
+        if (status == compiler_parser::ParseStatus::template_nesting_limit) {
+            value.text("template-id nesting exceeds 4");
+            return value;
+        }
+        if (status == compiler_parser::ParseStatus::call_template_nesting_limit) {
+            value.text("template-id nesting exceeds 5");
+            return value;
+        }
+        value.classify(2001, false);
+        if (status == compiler_parser::ParseStatus::success || status == compiler_parser::ParseStatus::unsupported
+            || status == compiler_parser::ParseStatus::invalid || (status == compiler_parser::ParseStatus::expected_end
+            && stop == compiler_parser::Stop::module_definition)) {
+            value.invalidate();
+            return value;
+        }
+        Report texted = grammar_text(value, status, stop);
+        if (status == compiler_parser::ParseStatus::duplicate_enum_case) {
+            const i64 first = result.coordinate(7);
+            const i64 last = result.coordinate(8);
+            if (first < 0 || last < first || last > source.size()) {
+                texted.invalidate();
+                return texted;
+            }
+            texted.text(source.subspan(first, last - first));
+        }
+        const Report found = cited(source, result, texted);
+        return found;
+    }
+    auto admission_text(Report report, compiler_parser::AdmissionStatus status, i64 detail) -> Report {
+        Report value = report;
+        if (status == compiler_parser::AdmissionStatus::function_shadow) {
+            value.text("function name cannot shadow a template parameter");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::typed_constructor) {
+            value.text("constructor cannot have a return type");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::borrowed_parameter) {
+            value.text("borrowed parameters require a supported leading ownership reference signature on an ");
+            value.text("ordinary function");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::const_parameter) {
+            value.text("const parameter spelling requires a supported owning-class reference");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::function_parameter) {
+            value.text("only scalar function parameters or scalar-field class values are supported");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::method_parameter) {
+            value.text("only scalar or enum method parameters are supported");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::function_result) {
+            value.text("only scalar function results or scalar-field class values are supported");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::method_result) {
+            value.text("only scalar, enum, class or readonly span method results are supported");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::public_array) {
+            value.text("array fields must be private");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::array_capacity && (detail == 64 || detail == 512)) {
+            value.text("class array field capacity must be between 1 and ");
+            value.decimal(detail);
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::public_owner) {
+            value.text("owned byte fields must be private");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::templated_owner) {
+            value.text("owning class templates are unsupported");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::missing_function) {
+            value.text("module must contain a function");
+            return value;
+        }
+        value.invalidate();
+        return value;
+    }
+    // A declaration rejection over its span, citing its first token.
+    auto declaration_report(builtin::span<const u8> source, SourceResult result, Report report) -> Report {
+        Report value = report;
+        const compiler_parser::AdmissionStatus status = result.declaration_status();
+        if (status == compiler_parser::AdmissionStatus::allocation_failure) {
+            value.classify(9001, false);
+            value.text("hosted declaration admission allocation failed");
+            return value;
+        }
+        if (status == compiler_parser::AdmissionStatus::unsupported_field) {
+            const compiler_parser::TypeKind kind = result.field_kind();
+            value.classify(2003, false);
+            value.text("unsupported class field type '");
+            if (kind == compiler_parser::TypeKind::byte_span) {
+                value.text("builtin::span<const u8>");
+            } else {
+                if (kind == compiler_parser::TypeKind::value_span) {
+                    value.text("builtin::span<const ");
+                    value.spelled(source, result.coordinate(7), result.coordinate(8));
+                    value.text(">");
+                } else {
+                    if (kind == compiler_parser::TypeKind::own_type) {
+                        value.text("own<i64>");
+                    } else {
+                        if (kind == compiler_parser::TypeKind::ref_type) {
+                            value.text("ref<i64>");
+                        } else {
+                            if (kind == compiler_parser::TypeKind::mutref_type) {
+                                value.text("mutref<i64>");
+                            } else {
+                                if (kind != compiler_parser::TypeKind::builtin_type) {
+                                    value.invalidate();
+                                    return value;
+                                }
+                                value.spelled(source, result.coordinate(7), result.coordinate(8));
+                            }
+                        }
+                    }
+                }
+            }
+            value.text("': class fields require scalar, class, private fixed-array or private owned-byte storage");
+            return value;
+        }
+        value.classify(2001, false);
+        const Report texted = admission_text(value, status, result.coordinate(9));
+        const Report found = cited(source, result, texted);
+        return found;
+    }
+    // The diagnostic of the first rejection a source admission reports, with
+    // the stop of the grammar entry that produced it; invalid when admitted.
+    auto source_report(builtin::span<const u8> source, SourceResult result, compiler_parser::Stop stop,
+        i64 offset) -> Report {
+        Report report = Report(offset);
+        MetaRow row = report_row(0, 0);
+        i64 slot = 0;
+        while (slot < 6) {
+            row.set_word(3 + slot, result.coordinate(slot));
+            slot = slot + 1;
+        }
+        row.set_word(2, 0);
+        report.locate(row);
+        const compiler_lexer::Event event = result.lexical_event();
+        if (event == compiler_lexer::Event::unsupported_character) {
+            report.classify(1001, false);
+            report.text("unsupported character");
+            return report;
+        }
+        if (event == compiler_lexer::Event::invalid_byte) {
+            report.classify(1002, false);
+            report.text("invalid byte literal");
+            return report;
+        }
+        if (event == compiler_lexer::Event::invalid_string) {
+            report.classify(1003, false);
+            report.text("invalid byte-string literal");
+            return report;
+        }
+        if (event != compiler_lexer::Event::token) {
+            report.invalidate();
+            return report;
+        }
+        if (result.grammar_status() != compiler_parser::ParseStatus::success) {
+            const Report grammar = grammar_report(source, result, stop, report);
+            return grammar;
+        }
+        if (result.declaration_status() != compiler_parser::AdmissionStatus::success) {
+            const Report declaration = declaration_report(source, result, report);
+            return declaration;
+        }
+        report.invalidate();
+        return report;
+    }
+
+    // Session rendering appends to the byte pool and stops once the Session
+    // latches a failure.
+    auto say(Session& session, builtin::span<const u8> text) -> i64 {
+        return session.append_linkage_text(text);
+    }
+    auto say_decimal(Session& session, i64 value) -> i64 {
+        return linkage_decimal(session, value);
+    }
+    // The bytes of a source reference, real or synthetic.
+    auto say_reference(Session& session, i64 reference) -> i64 {
+        const MetaRow token = session.meta(reference);
+        if (token.kind() != MetaTag::source_reference || token.word(1) < 0 || token.word(2) < token.word(1)
+            || token.word(2) > session.source_size()) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        if (token.word(2) == token.word(1)) {
+            return 0;
+        }
+        return session.append_linkage_range(token.word(1), token.word(2));
+    }
+    // A qualified name, outermost component first, joined by "::".
+    auto say_prefix(Session& session, i64 prefix) -> i64 {
+        const i64 base = session.work_count();
+        i64 part = prefix;
+        while (part != -1 && session.good()) {
+            const MetaRow row = session.meta(part);
+            if (row.kind() != MetaTag::prefix || row.word(0) < -1 || row.word(0) >= part) {
+                session.fail_storage(StorageStatus::invalid);
+            } else {
+                session.append_work(WorkRow(row.word(1), 0, 0, 0, 0, 0));
+                part = row.word(0);
+            }
+        }
+        i64 at = session.work_count();
+        while (at > base && session.good()) {
+            at = at - 1;
+            const WorkRow item = session.work(at);
+            const MetaRow atom = session.meta(item.word(0));
+            if (atom.kind() != MetaTag::atom) {
+                session.fail_storage(StorageStatus::invalid);
+            } else {
+                say_reference(session, atom.word(2));
+                if (at > base) {
+                    say(session, "::");
+                }
+            }
+        }
+        if (session.good()) {
+            session.truncate_work(base);
+        }
+        return 0;
+    }
+    // The trivia-free spelling of a module's header name.
+    auto say_module(Session& session, i64 module_id) -> i64 {
+        if (module_id < 0 || module_id >= session.module_count()) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        const MetaRow unit = session.meta(module_id);
+        if (unit.kind() != MetaTag::module_unit) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        const SyntaxRow root = session.syntax(unit.word(10));
+        const SyntaxRow preamble = session.syntax(root.word(7));
+        if (preamble.declaration_kind() != compiler_parser::SyntaxKind::preamble) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        const MetaRow first = session.meta(preamble.word(0));
+        i64 last_reference = preamble.word(6);
+        if (last_reference < 0) {
+            last_reference = preamble.word(0);
+        }
+        const MetaRow last = session.meta(last_reference);
+        const i64 begin = first.word(1);
+        const i64 count = last.word(2) - begin;
+        if (first.kind() != MetaTag::source_reference || last.kind() != MetaTag::source_reference || begin < 0 || count
+            < 0 || count > session.source_size() - begin) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        i64 at = 0;
+        i64 line = 1;
+        i64 start = 0;
+        while (at < count && session.good()) {
+            const compiler_lexer::Lexeme lexeme = session.scan_range(begin, count, compiler_lexer::Cursor(at, line,
+                start));
+            const compiler_lexer::Event kind = lexeme.kind();
+            const i64 next = lexeme.next_offset();
+            if (next <= at || next > count || (kind != compiler_lexer::Event::token && kind
+                != compiler_lexer::Event::whitespace && kind != compiler_lexer::Event::line_comment)) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            if (kind == compiler_lexer::Event::token) {
+                session.append_linkage_range(begin + at, begin + next);
+            }
+            at = next;
+            line = lexeme.next_line();
+            start = lexeme.next_line_start();
+        }
+        return 0;
+    }
+    // A symbol's published linkage spelling.
+    auto say_native(Session& session, i64 symbol) -> i64 {
+        const MetaRow value = session.meta(symbol);
+        const NativeMode mode = value.native_mode();
+        if (value.kind() != MetaTag::symbol || mode == NativeMode::invalid || (mode != NativeMode::sealed_builtin
+            && (value.word(1) < 0 || value.word(1) >= session.module_count()))) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        const MetaRow name = session.meta(value.word(0));
+        if (name.kind() != MetaTag::source_reference || name.word(0) != -1 || name.word(9) != symbol || name.word(2)
+            <= name.word(1)) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        return say_reference(session, value.word(0));
+    }
+    // The decimal value a capacity literal spells, or -1 after latching failure.
+    auto capacity_literal(Session& session, i64 reference) -> i64 {
+        const MetaRow token = session.meta(reference);
+        if (token.kind() != MetaTag::source_reference || token.word(1) < 0 || token.word(2) <= token.word(1)
+            || token.word(2) > session.source_size()) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        i64 value = 0;
+        i64 at = token.word(1);
+        while (at < token.word(2) && session.good()) {
+            const u8 byte = session.source_byte(at);
+            if (!compiler_lexer::digit(byte) || value > (9223372036854775807 - (i64(byte) - 48)) / 10) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            value = value * 10 + i64(byte) - 48;
+            at = at + 1;
+        }
+        return value;
+    }
+
+    // Type spellings expand through pending scratch rows (op, value, mode,
+    // depth): op 0 emits ">", ", " or "," (value 0, 1, 2), op 1 a decimal,
+    // op 2 a resolved type, op 3 a type syntax node and op 4 the template
+    // arguments of an instance. Resolved type modes: 0 its name; 1 its name as
+    // an array element; 2 and 3 the display or native spelling of its
+    // innermost nominal, empty for scalars; 4 and 5 the display or native
+    // spelling of a template argument. Nesting deeper than 128 fails closed.
+    auto pending(Session& session, i64 op, i64 value, i64 mode, i64 depth) -> i64 {
+        if (depth > 128) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        return session.append_work(WorkRow(op, value, mode, depth, 0, 0));
+    }
+    auto scalar_name(Session& session, ResolvedTypeKind kind) -> bool {
+        if (kind == ResolvedTypeKind::i64_value) {
+            say(session, "i64");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::u64_value) {
+            say(session, "u64");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::u8_value) {
+            say(session, "u8");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::bool_value) {
+            say(session, "bool");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::owner) {
+            say(session, "own<i64>");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::reference) {
+            say(session, "ref<i64>");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::mutable_reference) {
+            say(session, "mutref<i64>");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::byte_span) {
+            say(session, "builtin::span<const u8>");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::byte_region) {
+            say(session, "builtin::ByteRegion");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::owned_bytes) {
+            say(session, "builtin::OwnedBytes");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::console_session) {
+            say(session, "builtin::ConsoleSession");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::display_session) {
+            say(session, "builtin::DisplaySession");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::event_session) {
+            say(session, "builtin::IommuEventSession");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::call_session) {
+            say(session, "builtin::CallSession");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::port_range) {
+            say(session, "builtin::Com1UartGrant");
+            return true;
+        }
+        if (kind == ResolvedTypeKind::serve_session) {
+            say(session, "builtin::ServeSession");
+            return true;
+        }
+        return false;
+    }
+    // A class or enum symbol's qualified name with any template arguments, or
+    // its native spelling when it has no qualified name.
+    auto say_display(Session& session, i64 symbol, i64 depth) -> i64 {
+        const MetaRow value = session.meta(symbol);
+        if (value.native_mode() == NativeMode::sealed_builtin) {
+            const MetaRow descriptor = session.meta(value.word(8));
+            if (descriptor.kind() != MetaTag::context) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            if (descriptor.word(1) == -1) {
+                return say_native(session, symbol);
+            }
+            return say_prefix(session, descriptor.word(1));
+        }
+        if (value.word(3) == -1 && value.word(9) < 0) {
+            return say_native(session, symbol);
+        }
+        say_prefix(session, value.word(3));
+        if (value.word(9) >= 0) {
+            return pending(session, 4, value.word(9), 4, depth + 1);
+        }
+        return 0;
+    }
+    auto say_nominal(Session& session, MetaRow type, i64 mode, i64 depth) -> i64 {
+        if (type.word(1) < 0) {
+            if (type.word(1) == -1 || type.word(1) == -9223372036854775807 - 1) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            return say_prefix(session, -type.word(1) - 2);
+        }
+        DeclarationKind expected = DeclarationKind::class_value;
+        if (type.type_kind() == ResolvedTypeKind::enum_value) {
+            expected = DeclarationKind::enumeration;
+        }
+        const MetaRow symbol = session.meta(type.word(1));
+        if (symbol.kind() != MetaTag::symbol || symbol.declaration_kind() != expected) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        if (mode == 3 || mode == 5) {
+            return say_native(session, type.word(1));
+        }
+        return say_display(session, type.word(1), depth);
+    }
+    // Composite types; mode 1 and the argument modes spell their kind alone.
+    auto say_composite(Session& session, MetaRow type, i64 mode, i64 depth) -> i64 {
+        const ResolvedTypeKind kind = type.type_kind();
+        if (mode == 2 || mode == 3) {
+            return pending(session, 2, type.word(2), mode, depth + 1);
+        }
+        if (kind == ResolvedTypeKind::array_value) {
+            if (mode != 0) {
+                return say(session, "array<i64, 0>");
+            }
+            if (type.word(3) < 0 || type.word(3) > 2147483647) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            say(session, "array<");
+            pending(session, 0, 0, 0, depth + 1);
+            pending(session, 1, type.word(3), 0, depth + 1);
+            pending(session, 0, 1, 0, depth + 1);
+            return pending(session, 2, type.word(2), 1, depth + 1);
+        }
+        if (kind == ResolvedTypeKind::owned_values) {
+            say(session, "builtin::OwnedValues<");
+        } else {
+            say(session, "builtin::span<const ");
+        }
+        if (mode == 4 || mode == 5) {
+            return say(session, ">");
+        }
+        pending(session, 0, 0, 0, depth + 1);
+        return pending(session, 2, type.word(2), 2, depth + 1);
+    }
+    auto say_resolved(Session& session, i64 index, i64 mode, i64 depth) -> i64 {
+        const MetaRow type = session.meta(index);
+        const ResolvedTypeKind kind = type.type_kind();
+        if (type.kind() != MetaTag::concrete_type) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        if (kind == ResolvedTypeKind::class_value || kind == ResolvedTypeKind::enum_value) {
+            return say_nominal(session, type, mode, depth);
+        }
+        if (kind == ResolvedTypeKind::array_value || kind == ResolvedTypeKind::owned_values || kind
+            == ResolvedTypeKind::value_span) {
+            return say_composite(session, type, mode, depth);
+        }
+        if (mode == 2 || mode == 3) {
+            if (kind == ResolvedTypeKind::invalid || kind == ResolvedTypeKind::parameter) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            return 0;
+        }
+        if (!scalar_name(session, kind)) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        return 0;
+    }
+    auto say_arguments(Session& session, i64 instance, i64 mode, i64 depth) -> i64 {
+        const MetaRow value = session.meta(instance);
+        if (value.kind() != MetaTag::instance || value.word(1) < 1 || value.word(1) > 2) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        say(session, "<");
+        pending(session, 0, 0, 0, depth);
+        i64 at = value.word(1);
+        while (at > 0 && session.good()) {
+            at = at - 1;
+            const i64 argument = value.word(2 + at);
+            if (argument < 0) {
+                if (argument < -65 || argument > -2) {
+                    return session.fail_storage(StorageStatus::invalid);
+                }
+                pending(session, 1, -argument - 1, 0, depth);
+            } else {
+                pending(session, 2, argument, mode, depth);
+            }
+            if (at > 0) {
+                pending(session, 0, 2, 0, depth);
+            }
+        }
+        return 0;
+    }
+    auto say_syntax_node(Session& session, i64 node, i64 depth) -> i64 {
+        const SyntaxRow value = session.syntax(node);
+        const compiler_parser::TypeKind kind = value.type_kind();
+        if (value.kind() != SyntaxTag::type || depth >= 128) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        if (kind == compiler_parser::TypeKind::i64_type) {
+            return say(session, "i64");
+        }
+        if (kind == compiler_parser::TypeKind::u64_type) {
+            return say(session, "u64");
+        }
+        if (kind == compiler_parser::TypeKind::u8_type) {
+            return say(session, "u8");
+        }
+        if (kind == compiler_parser::TypeKind::bool_type) {
+            return say(session, "bool");
+        }
+        if (kind == compiler_parser::TypeKind::own_type) {
+            return say(session, "own<i64>");
+        }
+        if (kind == compiler_parser::TypeKind::ref_type) {
+            return say(session, "ref<i64>");
+        }
+        if (kind == compiler_parser::TypeKind::mutref_type) {
+            return say(session, "mutref<i64>");
+        }
+        if (kind == compiler_parser::TypeKind::byte_span) {
+            return say(session, "builtin::span<const u8>");
+        }
+        if (kind == compiler_parser::TypeKind::parameter || kind == compiler_parser::TypeKind::length_parameter) {
+            const ResolvedRow decoration = session.resolved(node);
+            return say_prefix(session, decoration.word(0));
+        }
+        if (kind == compiler_parser::TypeKind::capacity) {
+            const i64 capacity = capacity_literal(session, value.word(0));
+            return say_decimal(session, capacity);
+        }
+        if (kind == compiler_parser::TypeKind::builtin_type || kind == compiler_parser::TypeKind::builtin_class) {
+            say(session, "builtin::");
+            return say_reference(session, value.word(1));
+        }
+        const i64 first = value.word(3);
+        const i64 second = value.word(4);
+        if (kind == compiler_parser::TypeKind::named) {
+            const ResolvedRow decoration = session.resolved(node);
+            say_prefix(session, decoration.word(0));
+            if (first < 0) {
+                return 0;
+            }
+            if (first >= node || second >= node) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            say(session, "<");
+            pending(session, 0, 0, 0, depth + 1);
+            if (second >= 0) {
+                pending(session, 3, second, 0, depth + 1);
+                pending(session, 0, 1, 0, depth + 1);
+            }
+            return pending(session, 3, first, 0, depth + 1);
+        }
+        if (first < 0 || first >= node) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        if (kind == compiler_parser::TypeKind::array_type) {
+            if (second < 0 || second >= node) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            say(session, "array<");
+            pending(session, 0, 0, 0, depth + 1);
+            pending(session, 3, second, 0, depth + 1);
+            pending(session, 0, 1, 0, depth + 1);
+            return pending(session, 3, first, 0, depth + 1);
+        }
+        if (kind == compiler_parser::TypeKind::owned_values) {
+            say(session, "builtin::OwnedValues<");
+        } else {
+            if (kind != compiler_parser::TypeKind::value_span) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            say(session, "builtin::span<const ");
+        }
+        pending(session, 0, 0, 0, depth + 1);
+        return pending(session, 3, first, 0, depth + 1);
+    }
+    // Expands pending rows above base until none remain.
+    auto say_pending(Session& session, i64 base) -> i64 {
+        while (session.work_count() > base && session.good()) {
+            const i64 top = session.work_count() - 1;
+            const WorkRow item = session.work(top);
+            session.truncate_work(top);
+            const i64 op = item.word(0);
+            if (op == 0) {
+                if (item.word(1) == 0) {
+                    say(session, ">");
+                }
+                if (item.word(1) == 1) {
+                    say(session, ", ");
+                }
+                if (item.word(1) == 2) {
+                    say(session, ",");
+                }
+            }
+            if (op == 1) {
+                say_decimal(session, item.word(1));
+            }
+            if (op == 2) {
+                say_resolved(session, item.word(1), item.word(2), item.word(3));
+            }
+            if (op == 3) {
+                say_syntax_node(session, item.word(1), item.word(3));
+            }
+            if (op == 4) {
+                say_arguments(session, item.word(1), item.word(2), item.word(3));
+            }
+        }
+        return 0;
+    }
+    auto say_type(Session& session, i64 type, i64 mode) -> i64 {
+        const i64 base = session.work_count();
+        pending(session, 2, type, mode, 0);
+        return say_pending(session, base);
+    }
+    auto say_syntax(Session& session, i64 node) -> i64 {
+        const i64 base = session.work_count();
+        pending(session, 3, node, 0, 0);
+        return say_pending(session, base);
+    }
+    // An unexpanded template-id: the template's name and the arguments its
+    // request spells, class and enum arguments by native spelling.
+    auto say_specialization(Session& session, i64 prototype, i64 request) -> i64 {
+        const MetaRow identity = session.meta(prototype);
+        const SyntaxRow value = session.syntax(request);
+        i64 root = request;
+        if (value.kind() == SyntaxTag::expression) {
+            root = value.word(6);
+        }
+        const SyntaxRow type = session.syntax(root);
+        if (identity.kind() != MetaTag::symbol || type.kind() != SyntaxTag::type) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        say_prefix(session, identity.word(3));
+        say(session, "<");
+        const i64 base = session.work_count();
+        pending(session, 0, 0, 0, 0);
+        i64 slot = 5;
+        bool later = false;
+        while (slot > 3 && session.good()) {
+            slot = slot - 1;
+            const i64 child = type.word(slot);
+            if (child != -1) {
+                if (later) {
+                    pending(session, 0, 2, 0, 0);
+                }
+                const SyntaxRow argument = session.syntax(child);
+                if (argument.kind() != SyntaxTag::type) {
+                    return session.fail_storage(StorageStatus::invalid);
+                }
+                if (argument.type_kind() == compiler_parser::TypeKind::capacity) {
+                    const i64 capacity = capacity_literal(session, argument.word(0));
+                    if (capacity < 1 || capacity > 64) {
+                        return session.fail_storage(StorageStatus::invalid);
+                    }
+                    pending(session, 1, capacity, 0, 0);
+                } else {
+                    const ResolvedRow decoration = session.resolved(child);
+                    pending(session, 2, decoration.word(2), 5, 0);
+                }
+                later = true;
+            }
+        }
+        return say_pending(session, base);
+    }
+
+    // The row of a rendered message located at one token reference, or from
+    // the first through the last of two. Synthetic tokens are unlocated.
+    auto locate_tokens(Session& session, MetaRow row, i64 first_reference, i64 last_reference) -> MetaRow {
+        const MetaRow first = session.meta(first_reference);
+        const MetaRow last = session.meta(last_reference);
+        if (first.kind() != MetaTag::source_reference || last.kind() != MetaTag::source_reference || first.word(0)
+            != last.word(0) || first.word(0) >= session.module_count()) {
+            session.fail_storage(StorageStatus::invalid);
+            return row;
+        }
+        if (first.word(0) < 0) {
+            return row;
+        }
+        const MetaRow unit = session.meta(first.word(0));
+        return located(row, first, last, unit.word(0));
+    }
+    auto semantic_text(Session& session, SemanticError code, i64 node, i64 first, i64 second) -> i64 {
+        if (code == SemanticError::reserved_prefix) {
+            return say(session, "reserved compiler identifier prefix: __au_");
+        }
+        if (code == SemanticError::reserved_builtin) {
+            return say(session, "reserved builtin namespace or identifier: builtin");
+        }
+        if (code == SemanticError::reserved_class) {
+            return say(session, "duplicate or reserved class name");
+        }
+        if (code == SemanticError::enum_count) {
+            return say(session, "module graph exceeds 64 enum definitions");
+        }
+        if (code == SemanticError::enum_cases) {
+            return say(session, "enum class requires between 1 and 256 named cases");
+        }
+        if (code == SemanticError::template_count) {
+            return say(session, "module graph exceeds 64 class templates and function templates combined");
+        }
+        if (code == SemanticError::answer_overload) {
+            return say(session, "bootstrap answer entrypoint cannot be overloaded");
+        }
+        if (code == SemanticError::owned_named) {
+            return say(session, "owned values require a named concrete copied class");
+        }
+        if (code == SemanticError::span_named) {
+            return say(session, "typed spans require a named concrete copied class");
+        }
+        if (code == SemanticError::unsubstituted_array) {
+            return say(session, "unsubstituted array element or capacity parameter");
+        }
+        if (code == SemanticError::template_function_call) {
+            return say(session, "function template calls inside template bodies are unsupported");
+        }
+        if (code == SemanticError::template_static_body) {
+            return say(session, "template body requires a statically named class template");
+        }
+        if (code == SemanticError::instance_count) {
+            say(session, "module graph exceeds 256 class template instantiations and function instances ");
+            return say(session, "combined");
+        }
+        if (code == SemanticError::template_depth) {
+            return say(session, "template-id nesting exceeds 4");
+        }
+        if (code == SemanticError::template_nominal_depth) {
+            return say(session, "template-id nesting exceeds 4 after substitution");
+        }
+        if (code == SemanticError::class_array_capacity) {
+            return say(session, "class-element array capacity must be between 1 and 64");
+        }
+        if (code == SemanticError::array_explicit) {
+            return say(session, "builtin array requires explicit element and length arguments");
+        }
+        if (code == SemanticError::method_parameter) {
+            return say(session, "only scalar, enum or class method parameters are supported");
+        }
+        if (code == SemanticError::constructor_parameter) {
+            return say(session, "only scalar, enum or class constructor parameters are supported");
+        }
+        if (code == SemanticError::function_signature_template) {
+            return say(session, "function template signature requires a class template");
+        }
+        if (code == SemanticError::function_signature_concrete) {
+            return say(session, "function template signature requires a concrete fixed type");
+        }
+        if (code == SemanticError::overload_parameters) {
+            return say(session, "ordinary overload parameters require scalar, enum, class or readonly byte span types");
+        }
+        if (code == SemanticError::array_constructor) {
+            return say(session, "builtin array does not provide a class constructor");
+        }
+        if (code == SemanticError::template_expression) {
+            return say(session, "template arguments require a class construction");
+        }
+        if (code == SemanticError::function_template_arguments) {
+            return say(session, "function template arguments require a call");
+        }
+        if (code == SemanticError::initializer_method) {
+            return say(session, "constructor initializer cannot access receiver methods");
+        }
+        if (code == SemanticError::missing_function) {
+            return say(session, "module graph must contain a function");
+        }
+        if (code == SemanticError::class_parameters) {
+            return say(session, "class templates require one or two Scalar or Value parameters, or Scalar and i64");
+        }
+        if (code == SemanticError::capacity_order) {
+            return say(session, "capacity templates require Scalar followed by i64");
+        }
+        if (code == SemanticError::unresolved_nested_argument) {
+            return say(session, "unresolved nested class template argument");
+        }
+        if (code == SemanticError::class_scalar_argument) {
+            return say(session, "class template Scalar argument requires i64, u64, u8 or bool");
+        }
+        if (code == SemanticError::class_value_argument) {
+            return say(session, "class template Value argument requires scalar, named class or enum values");
+        }
+        if (code == SemanticError::class_capacity) {
+            return say(session, "class template capacity requires an i64 value between 1 and 64");
+        }
+        if (code == SemanticError::class_body_template) {
+            return say(session, "class template bodies cannot name template specializations");
+        }
+        if (code == SemanticError::invalid_substituted_array) {
+            return say(session, "invalid array type after template substitution");
+        }
+        if (code == SemanticError::dependent_array) {
+            return say(session, "dependent array metadata requires an array type");
+        }
+        if (code == SemanticError::function_nested_dependent) {
+            return say(session, "nested dependent template arguments are not supported");
+        }
+        if (code == SemanticError::function_array_scalar) {
+            return say(session, "function template array element requires a scalar type");
+        }
+        if (code == SemanticError::function_capacity) {
+            return say(session, "function templates do not have capacity parameters");
+        }
+        if (code == SemanticError::function_constraint) {
+            return say(session, "function template argument violates Scalar or Value constraint");
+        }
+        if (code == SemanticError::function_parameters) {
+            return say(session, "function templates require one or two namespace-level type parameters");
+        }
+        if (code == SemanticError::function_boundaries) {
+            return say(session, "function template boundaries require copied Scalar or Value types");
+        }
+        if (code == SemanticError::function_parameter_names) {
+            return say(session, "function templates require distinct Scalar or Value parameters");
+        }
+        if (code == SemanticError::duplicate_member) {
+            say(session, "duplicate or reserved class member: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::namespace_collision) {
+            say(session, "namespace and declaration name collide: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::duplicate_enum_case) {
+            say(session, "duplicate enum case: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::overload_count) {
+            say(session, "ordinary overload set exceeds 32 declarations: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::borrowed_overload) {
+            say(session, "borrowed-object functions cannot be overloaded: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::wrong_kind) {
+            say(session, "declaration has the wrong kind: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::private_function) {
+            say(session, "private function is not imported: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::private_type) {
+            say(session, "private type is not imported: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::unknown_argument) {
+            say(session, "unknown named class or enum template argument: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::argument_concrete) {
+            say(session, "template argument requires a named concrete class or enum: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::unsubstituted_parameter) {
+            say(session, "unsubstituted class template parameter: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::template_static_type) {
+            say(session, "function template requires a statically named class template: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::unknown_function_template) {
+            say(session, "unknown function template: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::function_arity) {
+            say(session, "wrong number of function template arguments for ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::unknown_template) {
+            say(session, "unsupported type or unknown class template; expected a declared template: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::class_arity) {
+            say(session, "wrong number of class template arguments for ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::concrete_type) {
+            say(session, "declaration is not a concrete type: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::field_callable) {
+            say(session, "class field is not callable: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::class_arguments) {
+            say(session, "class template requires explicit type arguments: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::function_arguments) {
+            say(session, "function template requires explicit type arguments: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::enum_named) {
+            say(session, "enum values require a named case: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::unknown_builtin_case) {
+            say(session, "unknown sealed service enum case: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::unknown_enum_case) {
+            say(session, "unknown enum case: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::duplicate_class_parameter) {
+            say(session, "duplicate class template parameter: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::shadow_capacity) {
+            say(session, "declaration cannot shadow capacity parameter: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::unknown_class_parameter) {
+            say(session, "unknown class template parameter: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::array_scalar_parameter) {
+            say(session, "class template array element parameter requires a scalar type: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::unknown_capacity) {
+            say(session, "unknown array capacity parameter: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::dependent_conversion) {
+            say(session, "dependent scalar conversions are not supported: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::capacity_callable) {
+            say(session, "capacity parameter is not callable: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::capacity_move) {
+            say(session, "cannot move a capacity parameter: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::capacity_assign) {
+            say(session, "cannot assign to a capacity parameter: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::unknown_function_parameter) {
+            say(session, "unknown function template parameter: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::dependent_qualified) {
+            say(session, "dependent qualified names are not supported: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::dependent_construction) {
+            say(session, "dependent construction or conversion is not supported: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::shadow_function_local) {
+            say(session, "local cannot shadow a function template parameter: ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::array_elements) {
+            say(session, "array elements require scalar or concrete copied class types: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::unknown_array_element) {
+            say(session, "unknown nominal array element type: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::resolved_import) {
+            say(session, "resolved class type requires a direct visible import: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::type_import) {
+            say(session, "class type requires a direct visible import: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::unknown_class_declaration) {
+            say(session, "unknown nominal type in class declaration: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::class_signature_import) {
+            say(session, "class signature type requires a direct visible import: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::export_class_private) {
+            say(session, "exported class public signature exposes private type: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::argument_import) {
+            say(session, "template argument type requires a direct visible import: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::function_signature_import) {
+            say(session, "function signature type requires a direct visible import: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::export_function_private) {
+            say(session, "exported function signature exposes private type: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::function_template_signature_import) {
+            say(session, "function template signature type requires a direct visible import: ");
+            return say_syntax(session, node);
+        }
+        if (code == SemanticError::export_function_template_private) {
+            say(session, "exported function template signature exposes private type: ");
+            return say_syntax(session, node);
+        }
+        if (code == SemanticError::unknown_signature) {
+            say(session, "unknown class type in function signature: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::construction_import) {
+            say(session, "class construction type requires a direct visible import: ");
+            return say_type(session, first, 0);
+        }
+        if (code == SemanticError::function_fixed_unknown) {
+            say(session, "unknown fixed type in function template signature: ");
+            return say_syntax(session, node);
+        }
+        if (code == SemanticError::export_template_private) {
+            say(session, "exported function template signature exposes private template: ");
+            return say_syntax(session, node);
+        }
+        if (code == SemanticError::reserved_function) {
+            say(session, "duplicate or reserved function name");
+            if (first >= 0) {
+                say(session, ": ");
+                return say_prefix(session, first);
+            }
+            return 0;
+        }
+        if (code == SemanticError::duplicate_class || code == SemanticError::duplicate_function || code
+            == SemanticError::duplicate_overload) {
+            if (code == SemanticError::duplicate_class) {
+                say(session, "duplicate or reserved class name");
+            } else {
+                say(session, "duplicate or reserved function name");
+            }
+            say(session, " in module ");
+            say_module(session, first);
+            say(session, ": ");
+            return say_prefix(session, second);
+        }
+        if (code == SemanticError::ambiguous_visible) {
+            say(session, "ambiguous visible declaration");
+            if (node == -1) {
+                say(session, " in ");
+                say_module(session, second);
+            }
+            say(session, ": ");
+            return say_prefix(session, first);
+        }
+        if (code == SemanticError::unknown_resolved_type) {
+            say(session, "unknown resolved class identity: ");
+            return say_type(session, first, 3);
+        }
+        if (code == SemanticError::shadow_function_parameter) {
+            const SyntaxRow parameter = session.syntax(node);
+            if (parameter.kind() != SyntaxTag::declaration) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            say(session, "function parameter cannot shadow a template parameter: ");
+            return say_reference(session, parameter.word(6));
+        }
+        if (code == SemanticError::unknown_function) {
+            say(session, "unknown function '");
+            say_prefix(session, first);
+            say(session, "' in defining module ");
+            return say_module(session, second);
+        }
+        if (code == SemanticError::unexpanded_function) {
+            say(session, "unexpanded function template specialization: ");
+            return say_specialization(session, first, node);
+        }
+        if (code == SemanticError::unexpanded_class) {
+            say(session, "unexpanded class template specialization: ");
+            return say_specialization(session, first, node);
+        }
+        return session.fail_storage(StorageStatus::invalid);
+    }
+    // Renders a resolver rejection just before the Session latches it: the
+    // message, then the report row naming it. Only an unknown function call
+    // is located, over its whole expression.
+    auto report_semantic(Session& session, SemanticError code, i64 node, i64 first, i64 second) -> i64 {
+        if (!session.good() || code == SemanticError::none) {
+            return -1;
+        }
+        const i64 begin = session.source_size();
+        semantic_text(session, code, node, first, second);
+        const MetaRow row = report_row(begin, session.source_size());
+        if (code != SemanticError::unknown_function) {
+            if (!session.good()) {
+                return -1;
+            }
+            return session.append_meta(row);
+        }
+        const SyntaxRow expression = session.syntax(node);
+        if (expression.kind() != SyntaxTag::expression) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        const MetaRow call = locate_tokens(session, row, expression.word(0), expression.word(4));
+        if (!session.good()) {
+            return -1;
+        }
+        return session.append_meta(call);
+    }
+}

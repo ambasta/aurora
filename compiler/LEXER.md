@@ -23,9 +23,8 @@ semantic rejection. The [integer contract](SCALARS.md#source-contract) defines
 ranges. Classification is ASCII; numeric range validation is semantic.
 
 The resolver and the formatter lex each whole source in Aurora before parsing
-it, so a lexical error anywhere precedes a grammar error. The host renders the
-returned event and coordinates with `hosted_lexer::rejectLexical`; it has no
-lexer or token vector of its own. The Aurora `Event` declaration is the sole
+it, so a lexical error anywhere precedes a grammar error. Aurora renders the
+rejection (`diagnostics.au`); the host has no lexer or token vector of its own. The Aurora `Event` declaration is the sole
 event list, and the generated header carries its values.
 
 The private `lexer_next` bridge entry serves only the test drivers. `hosted-lexer`

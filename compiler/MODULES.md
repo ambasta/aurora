@@ -108,5 +108,5 @@ at the next step checks that the requested module's header spells the name in
 an `export module` interface, recording each request in one Session index entry.
 The host only opens that path under each root (rejecting a missing or ambiguous
 module), captures at most one byte past the file limit or supplies an
-authorized overlay, and renders the rejections. Explicit-order in-memory
+authorized overlay, and reports those loading rejections. Explicit-order in-memory
 resolution remains supported independently of filesystem traversal.

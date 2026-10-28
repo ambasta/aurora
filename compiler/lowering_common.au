@@ -8,6 +8,7 @@ import aurora.compiler.resolution_kinds;
 import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.lowering_storage;
+import aurora.compiler.lowering_messages;
 
 export namespace compiler_lowering {
     auto scalar(OperandRole role, i64 value) -> OperandRow {
@@ -112,7 +113,9 @@ export namespace compiler_lowering {
                 origin = OperandRole::DiagnosticSyntheticRef;
             }
         }
-        session.reject_lowering(reason, scalar(origin, source), first, second);
+        const OperandRow located = scalar(origin, source);
+        report_lowering(session, reason, located, first, second);
+        session.reject_lowering(reason, located, first, second);
         return false;
     }
     auto fail(compiler_resolver::Session& session, LoweringError reason, i64 source) -> bool {
@@ -125,7 +128,9 @@ export namespace compiler_lowering {
     }
     auto fail_synthetic(compiler_resolver::Session& session, LoweringError reason, i64 source, OperandRow first,
         OperandRow second) -> bool {
-        session.reject_lowering(reason, scalar(OperandRole::DiagnosticSyntheticRef, source), first, second);
+        const OperandRow synthetic = scalar(OperandRole::DiagnosticSyntheticRef, source);
+        report_lowering(session, reason, synthetic, first, second);
+        session.reject_lowering(reason, synthetic, first, second);
         return false;
     }
     auto error(compiler_resolver::Session& session, LoweringError reason, i64 source) -> i64 {
