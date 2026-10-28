@@ -44,12 +44,41 @@ std::vector<int> denseOffsets(std::size_t count) {
     return offsets;
 }
 // Fixture metadata is textual IR (tests/compiler/ir/README.md), read and
-// admitted by the Aurora reader and metadata admission.
+// admitted by the Aurora reader and metadata admission. Arithmetic runs of
+// frame declarations are repeat blocks and runs of equal list items ITEM*N.
+std::string frameLines(const std::string &keyword, const std::vector<int> &offsets, const std::string &rest = "") {
+    std::string out;
+    for (std::size_t at = 0; at < offsets.size();) {
+        auto end = at + 1;
+        const auto step = at + 1 < offsets.size() ? offsets[at + 1] - offsets[at] : 0;
+        while (end < offsets.size() && offsets[end] - offsets[end - 1] == step)
+            ++end;
+        if (end - at < 3) {
+            out += "  " + keyword + ' ' + std::to_string(offsets[at]) + rest + '\n';
+            ++at;
+            continue;
+        }
+        out += "repeat " + std::to_string(end - at) + "\n  " + keyword + " {" + std::to_string(offsets[at]) + ',' +
+               std::to_string(step) + '}' + rest + "\nendrepeat\n";
+        at = end;
+    }
+    return out;
+}
+std::string listItems(const std::vector<std::string> &items) {
+    std::string out;
+    for (std::size_t at = 0; at < items.size();) {
+        auto end = at + 1;
+        while (end < items.size() && items[end] == items[at])
+            ++end;
+        out += items[at] + (end - at > 1 ? '*' + std::to_string(end - at) : std::string()) + ' ';
+        at = end;
+    }
+    return out;
+}
 std::unique_ptr<Metadata> declarations(const std::vector<int> &offsets) {
-    std::string module = "function facts\n  result i64\n  frame " + std::to_string(offsets.empty() ? 0 : 65536) + "\n";
-    for (int offset : offsets)
-        module += "  slot " + std::to_string(offset) + " u8\n";
-    return Metadata::read(module + "end\n", offsets.size());
+    const std::string module =
+        "function facts\n  result i64\n  frame " + std::to_string(offsets.empty() ? 0 : 65536) + "\n";
+    return Metadata::read(module + frameLines("slot", offsets, " u8") + "end\n", offsets.size());
 }
 struct Reference {
     std::set<int> must, may;
@@ -294,27 +323,31 @@ std::unique_ptr<Metadata> objectDeclarations(const std::vector<int> &scalars = o
     std::string module = "layout Box [u8 u8]\nlayout Empty []\nlayout Nested [u8 u8]\nlayout NestedEmpty []\n"
                          "layout Octet [u8*8]\nfields Nested [((class Box) 0 2 false)]\n"
                          "fields NestedEmpty [((class Empty) 0 0 false)]\n";
-    std::string function = "function object_facts\n  result i64\n  frame 65536\n";
-    for (int offset : scalars)
-        function += "  slot " + std::to_string(offset) + " u8\n";
-    for (const auto &object : objects) {
-        const auto name = object.incomplete == ObjectCompletion::physical
-                              ? (object.leaves.size() == 8 ? "Octet" : "Box")
-                          : object.incomplete == ObjectCompletion::missing_empty ? "Empty"
-                          : object.leaves.empty()                                ? "NestedEmpty"
-                                                                                 : "Nested";
-        function += "  object " + std::to_string(object.base) + ' ' + name + " false\n";
+    std::string function = "function object_facts\n  result i64\n  frame 65536\n" + frameLines("slot", scalars, " u8");
+    for (std::size_t at = 0; at < objects.size();) {
+        const auto name = [](const ObjectFacts &object) {
+            return object.incomplete == ObjectCompletion::physical ? (object.leaves.size() == 8 ? "Octet" : "Box")
+                   : object.incomplete == ObjectCompletion::missing_empty ? "Empty"
+                   : object.leaves.empty()                                ? "NestedEmpty"
+                                                                          : "Nested";
+        };
+        std::vector<int> bases;
+        auto end = at;
+        while (end < objects.size() && std::string(name(objects[end])) == name(objects[at]))
+            bases.push_back(objects[end++].base);
+        function += frameLines("object", bases, std::string(" ") + name(objects[at]) + " false");
+        at = end;
     }
     if (entry != ReceiverEntry::none) {
         // The receiver's leaves are its fields' scalars and their classes' leaves.
-        std::string leaves, logical;
+        std::vector<std::string> leaves, logical;
         for (const auto &field : fields) {
             const auto count = field.isClass() ? childLeaves.at(field.type) * field.elementCount : field.length;
             for (int leaf = 0; leaf < count; ++leaf)
-                leaves += field.type == "bytes" ? "bytes " : "u8 ";
-            logical += field.text() + ' ';
+                leaves.push_back(field.type == "bytes" ? "bytes" : "u8");
+            logical.push_back(field.text());
         }
-        module += "layout Receiver [" + leaves + "]\nfields Receiver [" + logical + "]\n";
+        module += "layout Receiver [" + listItems(leaves) + "]\nfields Receiver [" + listItems(logical) + "]\n";
         if (entry == ReceiverEntry::borrowed || entry == ReceiverEntry::mutable_borrowed ||
             entry == ReceiverEntry::borrowed_pair) {
             function += "  params [(class Receiver)";

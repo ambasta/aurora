@@ -1066,10 +1066,11 @@ export namespace compiler_air {
             }
             return -1;
         }
-        // Spells each repeated list item (ITEM*N) as N copies, outermost
-        // first. An item with {a,s} templates spells a + s * i in copy i, so a
-        // template belongs to the outermost repetition around it. Appends the
-        // expanded line; returns 1 when a copy repeats again, 0 when done.
+        // Spells each repeated list item with {a,s} templates (ITEM*N) as N
+        // copies, outermost first: copy i spells a + s * i, so a template
+        // belongs to the outermost repetition around it. Other repeated items
+        // stay for the tokenizer to copy. Appends the expanded line; returns 1
+        // when a spelled copy repeats again, 0 when done.
         auto expand_items(i64 begin, i64 end) -> i64 {
             clear_stack();
             i64 again = 0;
@@ -1111,27 +1112,30 @@ export namespace compiler_air {
                             return -1;
                         }
                         bool braces = false;
+                        bool nested = false;
                         i64 scan = at;
                         while (scan < item_end) {
                             if (text.at(scan) == '{') {
                                 braces = true;
                             }
                             if (text.at(scan) == '*') {
-                                again = 1;
+                                nested = true;
                             }
                             scan = scan + 1;
                         }
+                        if (braces && nested) {
+                            again = 1;
+                        }
                         i64 copy_index = 0;
-                        while (copy_index < count && good()) {
+                        while (braces && copy_index < count && good()) {
                             if (copy_index > 0) {
                                 put(' ');
                             }
-                            if (braces) {
-                                expand_template(at, item_end, copy_index);
-                            } else {
-                                copy(at, item_end);
-                            }
+                            expand_template(at, item_end, copy_index);
                             copy_index = copy_index + 1;
+                        }
+                        if (!braces) {
+                            copy(at, last);
                         }
                         at = last;
                         plain = false;
@@ -1237,16 +1241,34 @@ export namespace compiler_air {
             return set_token(opened, closed) && add_token(close);
         }
         // A word or string node, a key when '=' follows; the position after it.
-        auto word_token(i64 begin, i64 end) -> i64 {
+        // In a repeat block a node spelling {a,s} is marked (extra -1).
+        auto word_token(i64 begin, i64 end, bool templated) -> i64 {
             i64 at = begin;
+            bool braces = false;
             if (text.at(at) == '"') {
                 at = string_token(at, end);
+                const Token decoded = token_at(tokenSize - 1);
+                i64 scan = 0;
+                while (templated && scan < decoded.count()) {
+                    if (text.at(decoded.first() + scan) == '{') {
+                        braces = true;
+                    }
+                    scan = scan + 1;
+                }
             } else {
                 while (at < end && !delimiter(i64(text.at(at)))) {
+                    if (text.at(at) == '{') {
+                        braces = true;
+                    }
                     at = at + 1;
                 }
                 const Token word = Token(0, begin, at - begin, 0);
                 add_token(word);
+            }
+            if (templated && braces) {
+                const Token spelled = token_at(tokenSize - 1);
+                const Token marked = Token(spelled.kind(), spelled.first(), spelled.count(), -1);
+                set_token(tokenSize - 1, marked);
             }
             const i64 after = skip_space(at, end);
             if (good() && after < end && text.at(after) == '=') {
@@ -1261,9 +1283,49 @@ export namespace compiler_air {
             }
             return at;
         }
-        // The tokens of one module line, then its end-of-line token.
-        auto tokenize(i64 begin, i64 end, i64 line) -> bool {
+        // A copy of a token, its bracket links moved by shift.
+        auto copied(Token value, i64 shift) const -> Token {
+            if (value.kind() == 2 || value.kind() == 3 || value.kind() == 4) {
+                const Token moved = Token(value.kind(), value.first(), value.count(), value.extra() + shift);
+                return moved;
+            }
+            return value;
+        }
+        // Appends count - 1 more copies of tokens [first, tokenSize).
+        auto repeat_tokens(i64 first, i64 count) -> bool {
+            const i64 size = tokenSize - first;
+            i64 copy_index = 1;
+            while (copy_index < count && good()) {
+                i64 at = 0;
+                while (at < size && good()) {
+                    add_token(copied(token_at(first + at), copy_index * size));
+                    at = at + 1;
+                }
+                copy_index = copy_index + 1;
+            }
+            return good();
+        }
+        // ITEM*N at position at, after the item starting at token item in a
+        // list: N copies of its tokens. Returns the position after N.
+        auto repeat_item(i64 at, i64 end, i64 item) -> i64 {
+            i64 last = at + 1;
+            while (last < end && digit(i64(text.at(last)))) {
+                last = last + 1;
+            }
+            const i64 count = template_number(at + 1, last);
+            if (last == at + 1 || count < 1 || count > 1048576 || item < 0 || stackSize < 2 || kind(top()) != 2) {
+                fail();
+                return end;
+            }
+            repeat_tokens(item, count);
+            return last;
+        }
+        // The tokens of one module line, then its end-of-line token. The bracket
+        // stack holds pairs: the enclosing node's first token, then the bracket.
+        auto tokenize(i64 begin, i64 end, i64 line, bool templated) -> bool {
             clear_stack();
+            i64 item = -1;
+            bool keyed = false;
             i64 at = skip_space(begin, end);
             while (at < end && good()) {
                 const u8 value = text.at(at);
@@ -1271,17 +1333,32 @@ export namespace compiler_air {
                     at = end;
                 } else {
                     if (value == '[' || value == '(') {
+                        if (!keyed) {
+                            item = tokenSize;
+                        }
+                        keyed = false;
+                        push(item);
                         open_bracket(at, value);
+                        item = -1;
                         at = at + 1;
                     } else {
                         if (value == ']' || value == ')') {
                             close_bracket(at, value);
+                            item = pop();
                             at = at + 1;
                         } else {
-                            if (value == '=' || value == '*') {
-                                return fail();
+                            if (value == '*') {
+                                at = repeat_item(at, end, item);
+                            } else {
+                                if (value == '=') {
+                                    return fail();
+                                }
+                                if (!keyed) {
+                                    item = tokenSize;
+                                }
+                                at = word_token(at, end, templated);
+                                keyed = kind(tokenSize - 1) == 5;
                             }
-                            at = word_token(at, end);
                         }
                     }
                     at = skip_space(at, end);
@@ -1292,6 +1369,16 @@ export namespace compiler_air {
             }
             const Token stop = Token(6, 0, 0, line);
             return add_token(stop);
+        }
+        auto has_brace(i64 begin, i64 end) const -> bool {
+            i64 at = begin;
+            while (at < end) {
+                if (text.at(at) == '{') {
+                    return true;
+                }
+                at = at + 1;
+            }
+            return false;
         }
         auto has_star(i64 begin, i64 end) const -> bool {
             i64 at = begin;
@@ -1307,14 +1394,14 @@ export namespace compiler_air {
             at_line(line);
             i64 first = begin;
             i64 last = end;
-            bool repeating = has_star(begin, end);
+            bool repeating = has_star(begin, end) && has_brace(begin, end);
             while (repeating && good()) {
                 const i64 expanded = textSize;
                 repeating = expand_items(first, last) == 1;
                 first = expanded;
                 last = textSize;
             }
-            return tokenize(first, last, line);
+            return tokenize(first, last, line, false);
         }
         // Copies the spellings and splits them into words.
         auto load_words(builtin::span<const u8> spellings) -> bool {
@@ -1336,23 +1423,48 @@ export namespace compiler_air {
             }
             return -1;
         }
-        // Spells the block lines [begin, close) once per repetition.
+        // A block token for one repetition: a marked {a,s} spelling becomes
+        // its own word or string spelling a + s * repetition.
+        auto spelled(Token value, i64 shift, i64 repetition) -> Token {
+            if ((value.kind() == 0 || value.kind() == 1) && value.extra() == -1) {
+                const i64 first = textSize;
+                expand_template(value.first(), value.first() + value.count(), repetition);
+                const Token result = Token(value.kind(), first, textSize - first, 0);
+                return result;
+            }
+            return copied(value, shift);
+        }
+        // Tokenizes the block lines [begin, close) once, then appends a copy
+        // per further repetition and finally spells repetition zero in place.
         auto repeat_block(i64 begin, i64 close, i64 end, i64 line, i64 count) -> bool {
-            i64 repetition = 0;
+            const i64 first = tokenSize;
+            i64 at = begin;
+            i64 at_number = line;
+            while (at < close && good()) {
+                const i64 stop = line_end(at, end);
+                at_line(at_number);
+                tokenize(at, stop, at_number, true);
+                at = stop + 1;
+                at_number = at_number + 1;
+            }
+            const i64 size = tokenSize - first;
+            if (count == 0) {
+                tokenSize = first;
+                return good();
+            }
+            i64 repetition = 1;
             while (repetition < count && good()) {
-                i64 at = begin;
-                i64 at_number = line;
-                while (at < close && good()) {
-                    const i64 stop = line_end(at, end);
-                    at_line(at_number);
-                    const i64 expanded = textSize;
-                    if (expand_template(at, stop, repetition)) {
-                        process(expanded, textSize, at_number);
-                    }
-                    at = stop + 1;
-                    at_number = at_number + 1;
+                i64 index = 0;
+                while (index < size && good()) {
+                    add_token(spelled(token_at(first + index), repetition * size, repetition));
+                    index = index + 1;
                 }
                 repetition = repetition + 1;
+            }
+            i64 index = 0;
+            while (index < size && good()) {
+                set_token(first + index, spelled(token_at(first + index), 0, 0));
+                index = index + 1;
             }
             return good();
         }
@@ -1386,7 +1498,7 @@ export namespace compiler_air {
                 }
                 if (keyword_is(at, stop, "repeat")) {
                     const i64 mark = tokenSize;
-                    if (!tokenize(at, stop, line) || nodes(mark) != 2) {
+                    if (!tokenize(at, stop, line, false) || nodes(mark) != 2) {
                         return fail();
                     }
                     const i64 count = integer(mark + 1);
@@ -1418,7 +1530,7 @@ export namespace compiler_air {
             i64 at = begin;
             while (at < end && good()) {
                 const i64 stop = line_end(at, end);
-                tokenize(at, stop, 0);
+                tokenize(at, stop, 0, false);
                 at = stop + 1;
             }
             return good();
@@ -1832,10 +1944,10 @@ export namespace compiler_air {
                 if (count < 1 || count > 16) {
                     fail();
                 }
-                type_kind_value = type_kind(item(token, 0));
+                type_kind_value = type_kind(token + 1);
                 i64 at = 1;
+                i64 field = next(token + 1);
                 while (at < count && good()) {
-                    const i64 field = item(token, at);
                     if (kind(field) != 5) {
                         const Token spelled = token_at(field);
                         if (at != 1 || !name(field)) {
@@ -1861,6 +1973,7 @@ export namespace compiler_air {
                             arguments = value;
                         }
                     }
+                    field = next(field);
                     at = at + 1;
                 }
             }
@@ -2128,15 +2241,17 @@ export namespace compiler_air {
                 return reader.fail();
             }
             const i64 type = leaves + reader.count(3);
-            const i64 field_type = reader.item(field, 0);
+            const i64 field_type = field + 1;
+            const i64 first = reader.next(field_type);
+            const i64 length = reader.next(first);
+            const i64 flag = reader.next(length);
             emit_type(reader, metadata, field_type, -1, type, fill);
             i64 elements = 1;
             if (values == 5) {
-                elements = reader.integer(reader.item(field, 4));
+                elements = reader.integer(reader.next(flag));
             }
-            const compiler_ir_metadata::FieldRow row = compiler_ir_metadata::FieldRow(type,
-                reader.integer(reader.item(field, 1)), reader.integer(reader.item(field, 2)),
-                reader.boolean(reader.item(field, 3)), elements);
+            const compiler_ir_metadata::FieldRow row = compiler_ir_metadata::FieldRow(type, reader.integer(first),
+                reader.integer(length), reader.boolean(flag), elements);
             if (reader.good() && fill && !metadata.ingress_field(reader.count(3), row)) {
                 reader.fail();
             }
