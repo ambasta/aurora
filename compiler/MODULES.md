@@ -66,13 +66,13 @@ rejected. Imports are opened beneath those retained descriptors with
 `RESOLVE_NO_MAGICLINKS`), the input and the runtime root with the same no-symlink
 policy at any path. Kernels without `openat2` fail closed with no weaker fallback.
 
-All symlinks are rejected, including links whose current targets appear to be inside a root. The loader reads from the successfully opened descriptor without a canonical-check/path-reopen gap. Replacing the root pathname after opening it does not redirect the retained directory authority. Sources must be regular files; nonblocking open avoids hanging on a FIFO before the regular-file check. Each file is closed once read. A session holds at most 16 open directories and files: the roots, the file being read and, once a reserved import needs it, the runtime root, so 16 roots leave no handle for the input.
+All symlinks are rejected, including links whose current targets appear to be inside a root. The loader reads from the successfully opened descriptor without a canonical-check/path-reopen gap. Replacing the root pathname after opening it does not redirect the retained directory authority. Sources must be regular files; nonblocking open avoids hanging on a FIFO before the regular-file check. Each file is closed once read. A session holds at most 32 open directories and files, enough for the 16 roots, the file being read and, once a reserved import needs it, the runtime root.
 
 The optional language server keeps the former C++ loader (`frontend.hpp`, `host_sources.hpp`) for its in-memory [source overlays](SOURCE-OVERLAYS.md), with the same policy.
 
 Current limits:
 
-- 16 explicit roots (in aurorac at most 15 leave a HostFiles handle for the input, and 14 for a reserved import's runtime root as well)
+- 16 explicit roots
 - 64 files per graph, including the root
 - 16 import edges in a dependency path
 - 1 MiB per source file and 4 MiB total captured input

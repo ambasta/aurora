@@ -1368,6 +1368,36 @@ auto root_word(const Ranges& words, builtin::span<const u8> arguments, i64 ordin
     return missing;
 }
 
+// What a destination is just before its output commits: its identity (0 and
+// 0 when absent), so a source swapped in after the output was created is
+// still refused.
+auto destination_now(builtin::HostFiles& files, builtin::span<const u8> path) -> builtin::HostFileResult {
+    const builtin::HostFileResult found = files.open_file(path);
+    if (found.status == builtin::HostStatus::success) {
+        files.close(found.id);
+    }
+    return found;
+}
+// Whether that destination may still be replaced: absent, or a regular file
+// that is none of the sources read.
+auto destination_unchanged(Diagnostics& diagnostics, const Identities& identities, builtin::HostStatus status,
+    u64 device, u64 inode) -> bool {
+    if (status == builtin::HostStatus::not_found) {
+        return true;
+    }
+    if (status == builtin::HostStatus::escape || status == builtin::HostStatus::not_regular) {
+        return !output_failure(diagnostics, builtin::HostStatus::not_regular, false);
+    }
+    if (status != builtin::HostStatus::success) {
+        failure(diagnostics, unclassified(), "cannot inspect artifact entry: ");
+        return !status_text(diagnostics, status, false);
+    }
+    if (identities.contains(device, inode)) {
+        return !failure(diagnostics, unclassified(), "artifact destination aliases a root or imported source file");
+    }
+    return true;
+}
+
 // The open module roots in command-line order, with their identities, and
 // the runtime root once a reserved import needs it.
 class Roots {
@@ -1962,17 +1992,26 @@ auto compile(builtin::HostFiles& files, builtin::ByteRegion region, builtin::spa
             ok = false;
         }
     }
-    // ABI facts, then stack facts, then the code.
+    // ABI facts, then stack facts, then the code; each destination is checked
+    // again just before its commit, as the source-alias check at creation was.
     kind = 0;
     while (ok && kind < 3) {
         u64 id = abi_output.id;
+        i64 path = abi_output.path;
         if (kind == 1) {
             id = stack_output.id;
+            path = stack_output.path;
         }
         if (kind == 2) {
             id = code_output.id;
+            path = code_output.path;
         }
         if (id != 0u64) {
+            const Range where = words.at(path);
+            const builtin::HostFileResult now = destination_now(files, arguments.subspan(where.begin, where.count));
+            ok = destination_unchanged(diagnostics, identities, now.status, now.device, now.inode);
+        }
+        if (ok && id != 0u64) {
             const builtin::HostStatus committed = files.commit(id);
             if (committed != builtin::HostStatus::success) {
                 output_failure(diagnostics, committed, false);
@@ -2320,11 +2359,20 @@ auto objects(builtin::HostFiles& files, builtin::ByteRegion region,
         } else {
             written = files.write(output, wrapper.bytes());
         }
-        if (written == builtin::HostStatus::success) {
-            written = files.commit(output);
-        }
         if (written != builtin::HostStatus::success) {
             output_failure(diagnostics, written, false);
+            ok = false;
+        }
+    }
+    if (ok) {
+        const Range named = words.at(destination);
+        const builtin::HostFileResult now = destination_now(files, arguments.subspan(named.begin, named.count));
+        ok = destination_unchanged(diagnostics, identities, now.status, now.device, now.inode);
+    }
+    if (ok) {
+        const builtin::HostStatus committed = files.commit(output);
+        if (committed != builtin::HostStatus::success) {
+            output_failure(diagnostics, committed, false);
             ok = false;
         }
     }

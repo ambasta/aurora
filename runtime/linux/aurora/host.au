@@ -19,15 +19,15 @@ namespace host_session {
         return 0u64;
     }
     auto handle_slots() -> u64 {
-        return 16u64;
+        return 32u64;
     }
     auto output_table() -> u64 {
-        return 512u64;
+        return 1024u64;
     }
     auto output_slots() -> u64 {
         return 4u64;
     }
-    // Output slot ids follow the handle slots: slot numbers 32..35.
+    // Output slot ids follow the 32 handle slots: slot numbers 32..35.
     auto output_base() -> u64 {
         return 32u64;
     }
@@ -35,22 +35,22 @@ namespace host_session {
         return 320u64;
     }
     auto counters() -> u64 {
-        return 1792u64;
+        return 2304u64;
     }
     auto path_buffer() -> u64 {
-        return 2048u64;
+        return 2560u64;
     }
     auto name_buffer() -> u64 {
-        return 6152u64;
+        return 6664u64;
     }
     auto data_buffer() -> u64 {
-        return 10256u64;
+        return 10768u64;
     }
     auto data_bytes() -> u64 {
         return 4096u64;
     }
     auto stat_buffer() -> u64 {
-        return 14352u64;
+        return 14864u64;
     }
     auto path_limit() -> i64 {
         return 4095;
@@ -166,7 +166,7 @@ namespace host_session {
     auto make_id(u64 generation, u64 slot) -> u64 {
         return generation * 64u64 + slot + 1u64;
     }
-    // The handle slot for an id of the given state (1 directory, 2 file), or 16.
+    // The handle slot for an id of the given state (1 directory, 2 file), or 32.
     auto handle_slot(builtin::HostFiles& files, u64 id, u64 state) -> u64 {
         if (id == 0u64) {
             return handle_slots();

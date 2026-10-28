@@ -250,7 +250,7 @@ whole 520-byte copied-class bound (506 of 513 leaves). It is the one sealed clas
 with a public array; a program copies it to a local (`const array<u8, 504> bytes
 = chunk.bytes;`), and only the read primitive produces a chunk. Ids are plain
 numbers, `generation * 64 + slot + 1`, checked against the session's own tables:
-16 open directories and files and 4 outputs, each slot with a generation that
+32 open directories and files (slots 0..31) and 4 outputs (slots 32..35), each slot with a generation that
 advances on reuse. An id that does not name a live handle of the right kind
 (stale, foreign, mistyped or made up) yields `invalid_handle`; a full table
 yields `exhausted`. `close` frees a directory or file slot (files opened
