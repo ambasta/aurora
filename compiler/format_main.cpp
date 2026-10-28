@@ -78,7 +78,8 @@ int main(int argc, char **argv) {
             throw argumentError(
                 "--check and --lint are separate modes; --module-root requires --lint; JSON requires a check mode");
         if (lint) {
-            const auto checked = aurora::checkSource(input, roots, {}, aurora::AnalysisMode::Lint, {}, AURORA_RUNTIME_ROOT);
+            const auto checked =
+                aurora::checkSource(input, roots, {}, aurora::AnalysisMode::Lint, {}, AURORA_RUNTIME_ROOT);
             if (json)
                 aurora::writeDiagnosticsJson(std::cerr, checked.lintDiagnostics);
             else
