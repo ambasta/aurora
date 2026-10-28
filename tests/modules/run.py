@@ -44,6 +44,7 @@ def check(
     trap=False,
     existing_output=None,
     check_only=False,
+    hosted=False,
 ):
     global COUNT
     with tempfile.TemporaryDirectory(prefix="aurora-modules-") as directory:
@@ -68,6 +69,8 @@ def check(
         if existing_output is not None:
             assembly.write_text(existing_output)
         command = [COMPILER, input_path] + (["--check"] if check_only else ["-o", assembly])
+        if hosted:
+            command.append("--emit-object")
         if roots:
             for root in search:
                 command.extend(["--module-root", root])
@@ -81,6 +84,10 @@ def check(
             require(error.encode() in compiled.stderr, name + ": " + repr(compiled.stderr))
         elif check_only:
             require(not assembly.exists(), name + ": check created output")
+        elif hosted:
+            # A hosted program links alone and must exit with HostExit::success.
+            run(["ld", "-static", "-e", "_start", "-o", base / "program", assembly])
+            run([base / "program"])
         else:
             bridge = base / "entry.s"
             bridge.write_text(""".text
@@ -565,16 +572,63 @@ check(
     error="graph exceeds 4194304",
 )
 check(
-    "exactly 64 graph files accepted",
-    app("return 42;", "".join(f"import item{i};" for i in range(63))),
-    {f"item{i}": f"export module item{i};" for i in range(63)},
+    "exactly 256 graph files accepted",
+    app("return 42;", "".join(f"import item{i};" for i in range(255))),
+    {f"item{i}": f"export module item{i};" for i in range(255)},
     check_only=True,
 )
 check(
     "graph file cap",
-    app("return 42;", "".join(f"import item{i};" for i in range(64))),
-    {f"item{i}": f"export module item{i};" for i in range(64)},
-    error="graph exceeds 64",
+    app("return 42;", "".join(f"import item{i};" for i in range(256))),
+    {f"item{i}": f"export module item{i};" for i in range(256)},
+    error="graph exceeds 256",
+)
+# Module scopes follow completion order: item0..item62 take scopes 1..63,
+# secret 64, item63..item252 65..254 and wrapper, which imports secret, 255.
+# Reflection sees a module's own classes and its direct imports' exported ones,
+# never another module's private ones, on both sides of the old 64-scope bound.
+wide_modules = {
+    **{f"item{i}": f"export module item{i};" for i in range(253)},
+    "secret": secret,
+    "wrapper": (
+        "export module wrapper; import secret; class Own { public: i64 a; i64 b; i64 c; };"
+        " export auto own_id()->i64{return type_id(Own);}"
+        " export auto own_size()->i64{return reflect_size(type_id(Own));}"
+        " export auto public_size()->i64{return reflect_size(type_id(api::Public));}"
+        " export auto hidden_size()->i64{return reflect_size(api::hidden_id());}"
+    ),
+}
+wide_imports = (
+    "".join(f"import item{i};" for i in range(63))
+    + "import secret;"
+    + "".join(f"import item{i};" for i in range(63, 253))
+    + "import wrapper;"
+)
+wide_checks = (
+    "if (reflect_size(type_id(api::Public)) != 8) { return 1; }"
+    " if (reflect_size(api::hidden_id()) != 0) { return 2; } if (api::reveal_size() != 16) { return 3; }"
+    " if (public_size() != 8) { return 4; } if (hidden_size() != 0) { return 5; }"
+    " if (own_size() != 24) { return 6; } if (reflect_size(own_id()) != 0) { return 7; }"
+    " if (api::inspect(type_id(RootOnly)) != 0) { return 8; } return reflect_size(type_id(RootOnly)) + 18;"
+)
+check(
+    "visibility across 256 module scopes",
+    "module app; " + wide_imports + " class RootOnly { public: i64 a; i64 b; i64 c; };"
+    " auto test() -> i64 { " + wide_checks + " }",
+    wide_modules,
+)
+# aurora.host takes item0's place and scope, so secret's reflection helpers
+# are still scope 64's, beside _start among the object's symbol identities.
+check(
+    "hosted program across 256 module scopes",
+    "module app; import aurora.host; "
+    + wide_imports.replace("import item0;", "")
+    + " class RootOnly { public: i64 a; };"
+    + " auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {"
+    + " if (reflect_size(type_id(RootOnly)) + api::reveal_size() + own_size() != 48) {"
+    + " return builtin::HostExit::failure; } return builtin::HostExit::success; }",
+    {name: text for name, text in wide_modules.items() if name != "item0"},
+    hosted=True,
 )
 enum_modules = {
     f"enums{m}": f"export module enums{m}; export namespace n{m} {{"

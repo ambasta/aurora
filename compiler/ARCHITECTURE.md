@@ -50,7 +50,7 @@ result and the lent bytes. Module loading advances through
 source-owned graph steps in the existing resolver Session. Transient scratch frames
 track active ancestry and are cleared before ingestion. Completed module
 order/scopes and import bindings persist; resumption replays unfinished ancestry,
-bounded by 64 files and depth 16. Duplicate
+bounded by 256 files and depth 16. Duplicate
 checks happen at each edge, and depth precedes active/completed checks. Aurora also
 validates each requested name, maps it to its relative path, charges every source
 against the 1 MiB file and 4 MiB graph limits and, at the next step, checks that the

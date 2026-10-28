@@ -96,7 +96,7 @@ end
 descriptor 1 8 0
 descriptor 100 16 1
 descriptor 2147483647 24 2
-views [(0 [1 100 2147483647]) (1 [100]) (2 []) (63 [2147483647])]
+views [(0 [1 100 2147483647]) (1 [100]) (2 []) (64 [100]) (255 [2147483647])]
 function retain_scoped_reflection
   result i64
     Call reflect_scoped_size
@@ -105,6 +105,8 @@ function retain_scoped_reflection
     Call reflect_empty
     Call reflect_last_size
     Call reflect_last_fields
+    Call reflect_boundary_size
+    Call reflect_boundary_invisible
     Return
 end
 function reflect_root_size
@@ -158,16 +160,30 @@ function reflect_empty
 end
 function reflect_last_size
   result i64
-  scope 63
+  scope 255
     Constant 2147483647
-    MetadataQuery Size 63
+    MetadataQuery Size 255
     Return
 end
 function reflect_last_fields
   result i64
-  scope 63
+  scope 255
     Constant 2147483647
-    MetadataQuery PublicFieldCount 63
+    MetadataQuery PublicFieldCount 255
+    Return
+end
+function reflect_boundary_size
+  result i64
+  scope 64
+    Constant 100
+    MetadataQuery Size 64
+    Return
+end
+function reflect_boundary_invisible
+  result i64
+  scope 64
+    Constant 2147483647
+    MetadataQuery Size 64
     Return
 end
 

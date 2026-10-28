@@ -25,7 +25,7 @@ export namespace compiler_resolver {
     // Output link words: symbol,next. Category list words: first,last,count.
     // The typed enum fields are the sole host-visible kind authority.
     // Conservative producer ledger used by the granting host's checked quota:
-    // S = original syntax rows; X = expanded rows <= 257*S; M <= 64 modules;
+    // S = original syntax rows; X = expanded rows <= 257*S; M <= 256 modules;
     // I <= 256 instances; K = seeded descriptors; F = seeded members;
     // T <= 2*X + K + 18 concrete types; D = maximum source/seed name byte depth.
     // Semantic metadata C charges each producing family separately:
@@ -42,7 +42,7 @@ export namespace compiler_resolver {
     // + X raw receiver-member keys (domain 58) + S enum cases + S overload groups
     // + I instances + 2*K seed/native keys + X public tails + X signature tails
     // + X tuple keys + S overload uniqueness + M*S visible names
-    // + 32*M*S visible prefixes + (X+K) visibility keys + 1 output key.
+    // + 32*M*S visible prefixes + (X+K)*(M+1) visibility keys + 1 output key.
     // Scratch W <= 3*X + T + 2*D + 128: outer ordered traversal, temporary clone
     // map plus clone traversal, enqueue-once type visibility, and prefix scratch.
     // Source names/ranges and lexical scopes are shared by clones: unique name
@@ -55,7 +55,7 @@ export namespace compiler_resolver {
     // Module normalization charges <=4096 components/module separately; spelling
     // scratch adds <=2*X+4096 rows above the existing saved caller base.
     // All bit operations use u64 with <=32 live bits; checked i64 conversion
-    // when storing the mask is exact. No cached visibility bitset protocol exists.
+    // when storing the mask is exact. Visibility is one key per (nominal, scope).
     class BindContext {
         i64 defining_module;
         i64 lexical_scope;
@@ -3476,8 +3476,6 @@ export namespace compiler_resolver {
         if (view < 0) {
             MetaRow value = MetaRow(MetaTag::visibility);
             value.set_word(0, symbol);
-            value.set_word(1, 0);
-            value.set_word(2, 0);
             view = session.append_meta(value);
             const i64 tail = mw(session, output, 8);
             if (tail < 0) {
@@ -3488,15 +3486,9 @@ export namespace compiler_resolver {
             set_mw(session, output, 8, view);
             session.index_insert(57, symbol, 0, 0, 0, view);
         }
-        i64 word = 1;
-        i64 bit = scope;
-        if (scope >= 32) {
-            word = 2;
-            bit = scope - 32;
-        }
-        const i64 stored = mw(session, view, word);
-        const u64 bits = u64(stored) | (u64(1) << bit);
-        set_mw(session, view, word, i64(bits));
+        // Each module scope that sees the nominal has its own key, scope + 1
+        // (the key with 0 is the view row), so any graph size scales.
+        session.index_insert(57, symbol, scope + 1, 0, 0, view);
         return 0;
     }
     // Pushes the class and enum list heads of owner, once per distinct owner.

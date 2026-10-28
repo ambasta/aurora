@@ -213,7 +213,7 @@ are unchanged. Formatting is synchronous and cancellation cannot interrupt it.
 - 32 open documents; 1 MiB each; 4 MiB total open snapshot bytes
 - 16 KiB URI; 1 KiB string request ID; 4 KiB diagnostic message prefix
 - 128 diagnostics per URI publication, with explicit warning truncation notice
-- Existing frontend bounds: 16 roots, 64 files, 1 MiB/file and 4 MiB/graph
+- Existing frontend bounds: 16 roots, 256 files, 1 MiB/file and 4 MiB/graph
 
 These application bounds are not a production-security or whole-process memory
 proof. The existing compiler resource limitations still apply.

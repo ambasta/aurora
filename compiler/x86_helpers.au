@@ -468,7 +468,7 @@ export namespace compiler_x86 {
         return metadata_text(workspace, o, metadata, name.begin(), name.count());
     }
     auto query_name(EmitWorkspace& workspace, ObjectWorkspace& o, i64 query, i64 scope) -> bool {
-        if (scope < 0 || scope >= 64 || query < 0 || query >= 2) {
+        if (scope < 0 || scope >= 256 || query < 0 || query >= 2) {
             return workspace.fail();
         }
         if (scope == 0) {
@@ -484,8 +484,11 @@ export namespace compiler_x86 {
                 workspace.text("__au_reflect_s");
             }
             if (o.object_mode()) {
+                if (scope >= 100) {
+                    o.object_name_byte(u8(48 + scope / 100));
+                }
                 if (scope >= 10) {
-                    o.object_name_byte(u8(48 + scope / 10));
+                    o.object_name_byte(u8(48 + scope / 10 % 10));
                 }
                 o.object_name_byte(u8(48 + scope % 10));
             } else {

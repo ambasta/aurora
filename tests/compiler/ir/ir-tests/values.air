@@ -496,13 +496,23 @@ end
 @@ -9 +8,0 @@
 -    MetadataQuery Size 1
 
+; CASE: last module view scope accepted
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-OK
+@@ -1 +1 @@
+-views [(0 []) (1 [])]
++views [(0 []) (64 []) (255 [])]
+@@ -9 +8,0 @@
+-    MetadataQuery Size 1
+
 ; CASE: module view scope cap
 ; BASE: query cannot change module view
 ; RUN: verify
 ; EXPECT-ERROR: invalid reflection scope
 @@ -1 +1 @@
 -views [(0 []) (1 [])]
-+views [(0 []) (64 [])]
++views [(0 []) (256 [])]
 @@ -9 +8,0 @@
 -    MetadataQuery Size 1
 

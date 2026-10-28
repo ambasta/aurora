@@ -1586,27 +1586,13 @@ export namespace compiler_lowering {
         const i64 size = scalar_descriptor_size(session, kind);
         return publish_descriptor(session, id, size, 0);
     }
+    // Whether the resolver showed NOMINAL to module SCOPE: its key scope + 1.
     auto visible_nominal(compiler_resolver::Session& session, i64 nominal, i64 scope) -> bool {
-        const i64 view = session.index(57, nominal, 0, 0, 0);
-        if (view < 0) {
-            return false;
-        }
-        if (scope < 0 || scope >= 64) {
+        if (scope < 0 || scope >= 256) {
             session.fail_storage(compiler_resolver::StorageStatus::invalid);
             return false;
         }
-        i64 word = 1;
-        i64 bit = scope;
-        if (scope >= 32) {
-            word = 2;
-            bit = scope - 32;
-        }
-        const i64 stored = tm(session, view, word);
-        if (stored < 0 || stored > 4294967295) {
-            session.fail_storage(compiler_resolver::StorageStatus::invalid);
-            return false;
-        }
-        return (u64(stored) & (u64(1) << bit)) != u64(0);
+        return session.index(57, nominal, scope + 1, 0, 0) >= 0;
     }
     auto descriptor_visible(compiler_resolver::Session& session, i64 id, i64 scope) -> bool {
         if (id < 100) {
@@ -1678,7 +1664,7 @@ export namespace compiler_lowering {
         // Scopes are IDs, never module ingestion indices. Sort by scope and
         // retain explicit empty nominal views and their builtin descriptors.
         i64 scope = 0;
-        while (scope < 64 && session.good()) {
+        while (scope < session.module_count() && session.good()) {
             bool present = false;
             at = 0;
             while (at < session.module_count() && session.good()) {

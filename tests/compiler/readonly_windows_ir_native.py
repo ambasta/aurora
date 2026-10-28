@@ -147,6 +147,8 @@ def main():
             "reflect_empty",
             "reflect_last_size",
             "reflect_last_fields",
+            "reflect_boundary_size",
+            "reflect_boundary_invisible",
         ]
         reflection_symbols(
             directory,
@@ -157,13 +159,14 @@ def main():
                 "__au_reflect_s1_size",
                 "__au_reflect_s1_field_count",
                 "__au_reflect_s2_size",
-                "__au_reflect_s63_size",
-                "__au_reflect_s63_field_count",
+                "__au_reflect_s64_size",
+                "__au_reflect_s255_size",
+                "__au_reflect_s255_field_count",
             ],
             "LOCAL",
         )
         observed, _ = NativeRunner(directory, None, 10).assemble(encoded, reflection_names)
-        check_words(observed, [16, 1, 0, 16, 1, 0, 0, 24, 2], reflection_names)
+        check_words(observed, [16, 1, 0, 16, 1, 0, 0, 24, 2, 16, 0], reflection_names)
     with tempfile.TemporaryDirectory(prefix="aurora-class-object-") as temporary:
         directory = Path(temporary)
         source = directory / "class_values.au"

@@ -711,7 +711,8 @@ export namespace compiler_x86 {
         }
         if (o.object_mode()) {
             o.begin_function_labels(4);
-            o.begin_object_symbol(4, 128, false);
+            // _start follows the 512 reflection query identities.
+            o.begin_object_symbol(4, 512, false);
             o.object_name_text("_start");
             o.end_object_symbol_name();
             emit_object_status(w, o);
