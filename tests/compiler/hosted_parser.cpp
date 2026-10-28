@@ -2663,7 +2663,8 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(id)}}, Reason::service_loan_identity});
         services.push_back({{{release(id)}}, Reason::service_release});
     }
-    for (const auto kind : {std::int64_t{-1}, std::int64_t{6}, INT64_MAX}) {
+    // Kinds 0..6 (HostFiles is 6) and operations 0..20 are the closed tables.
+    for (const auto kind : {std::int64_t{-1}, std::int64_t{7}, INT64_MAX}) {
         services.push_back({{{acquire(1, 16, kind)}}, Reason::service_loan_root});
         services.push_back({{{release(1, kind)}}, Reason::service_release});
         services.push_back({{{operation(1, kind)}}, Reason::service_operation_kind});
@@ -2675,7 +2676,8 @@ void rawInstructionAdmission() {
     services.push_back({{{acquire(1, 16, 5)}}, Reason::service_loan_root});
     services.push_back({{{operation(1, 5)}}, Reason::service_operation_kind});
     services.push_back({{{operation(8, 0)}}, Reason::service_operation_kind});
-    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{9}, INT64_MAX})
+    services.push_back({{{operation(9, 0)}}, Reason::service_operation_kind});
+    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{21}, INT64_MAX})
         services.push_back({{{operation(op, 0)}}, Reason::service_operation});
     for (const auto &[op, kind, offset, reason] :
          std::vector<std::tuple<std::int64_t, std::int64_t, std::int64_t, Reason>>{
@@ -3017,7 +3019,9 @@ void rawAdmission() {
         ++cases;
     }
     // Raw parser policies may narrow the closed group set, but may not
-    // authorize a new mixed Serve group or an unknown high-bit identity.
+    // authorize a new mixed Serve group or an unknown high-bit identity. Bit 0
+    // (the empty set) admits the singleton HostFiles kind, whose set bit 64
+    // does not fit the word.
     for (const auto groups : std::vector<std::int64_t>{0,
                                                        54,
                                                        62,
@@ -3036,7 +3040,7 @@ void rawAdmission() {
         const auto parsed = arena.parse(source, Stop::module_definition);
         require(parsed[0] == wire(Status::success), "raw group fixture failed grammar");
         const auto result = arena.admit(source, parsed[1], {64, 512, groups, 1, 2, 4});
-        const bool allowed = groups >= 0 && (groups & 4295033150LL) == groups;
+        const bool allowed = groups >= 0 && (groups & 4295033151LL) == groups;
         require(result[0] == wire(allowed ? AdmissionStatus::success : AdmissionStatus::invalid),
                 "parser group policy lost closed full-width admission");
         arena.finish();

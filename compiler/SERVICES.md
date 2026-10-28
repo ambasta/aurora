@@ -15,10 +15,10 @@ auto receive(builtin::ConsoleSession& session) -> builtin::ConsoleSample {
 
 ## Source and lifetime
 
-`ConsoleSession`, `DisplaySession`, `IommuEventSession`, `CallSession`, `Com1UartGrant` and `ServeSession` are distinct
-compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
-reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port or Serve alone, Console+Display
-in either order, and Event+Console in either order. Call, Port and Serve cannot mix with any other kind. Event+Display, duplicate kinds
+`ConsoleSession`, `DisplaySession`, `IommuEventSession`, `CallSession`, `Com1UartGrant`, `ServeSession` and
+`HostFiles` ([below](#hosted-files)) are distinct compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
+reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port, Serve or HostFiles alone, Console+Display
+in either order, and Event+Console in either order. Call, Port, Serve and HostFiles cannot mix with any other kind. Event+Display, duplicate kinds
 and all triples are rejected. There is no
 by-value or const variant. It cannot be constructed, copied, moved, assigned, stored in a
 local/field/array, returned, reflected or converted. A reference is a parameter
@@ -213,6 +213,71 @@ The copied `builtin::EventIntakeCompletion` cases are `drained` (0),
 carries completion, reclamation, publication or restart authority. Ordinary
 methods consume copied observations; no mixed object/service borrowing is added.
 
+## Hosted files
+
+`builtin::HostFiles` is a sealed service kind for hosted programs. The entry is
+exactly `auto main(builtin::HostFiles& files, builtin::span<const u8> arguments)
+-> builtin::HostExit` in the root module; any root `main` naming HostFiles or
+HostExit with another signature is rejected. `arguments` is the command line as
+one readonly block of NUL-terminated arguments (data, not authority).
+`builtin::HostExit` is `success`, `failure`, `usage`, the exit status 0, 1, 2.
+The ordinary service rules apply: one leading exclusive `&` formal, no
+construction, copy, move, assignment, storage, return, reflection or conversion,
+child-loan forwarding to helpers, and a singleton group (no Console, Display,
+Event, Call, Port or Serve beside it). Its group bit is bit 0, the empty kind set,
+because the singleton set 64 has no bit in the 64-bit group word.
+
+Operations copy data only; `builtin::HostStatus` is `success`, `invalid_handle`,
+`not_found`, `denied`, `escape`, `not_regular`, `exhausted`, `too_large`,
+`invalid_path`, `failed`:
+
+| Operation | Result |
+|---|---|
+| `open_directory(span path)` | `HostDirectoryResult {status, id}`; any no-symlink path |
+| `open_beneath(u64 directory, span relative)` | `HostFileResult {status, id, size, device, inode}`; regular files beneath the directory, no symlinks, `..` or absolute path |
+| `read(u64 file, u64 offset)` | `HostChunk {status, count, bytes}`; `count == 0` at end of file |
+| `create_output(span path)` | `HostOutputResult {status, id}`; an exclusive temporary beside the destination |
+| `write(u64 output, span bytes)` | `HostStatus`; at most 64 MiB per output |
+| `commit(u64 output)`, `discard(u64 output)` | `HostStatus`; atomic rename into place, or removal |
+| `print(HostStream stream, span bytes)` | `HostStatus`; `stdout` or `stderr` |
+
+`HostChunk.bytes` is `array<u8, 504>`: with the two leading words that is the
+whole 520-byte copied-class bound (506 of 513 leaves). It is the one sealed class
+with a public array; a program copies it to a local (`const array<u8, 504> bytes
+= chunk.bytes;`), and only the read primitive produces a chunk. Ids are plain
+numbers, `generation * 64 + slot + 1`, checked against the session's own tables:
+16 open directories and files and 4 outputs, each slot with a generation that
+advances on reuse. A stale, forged, foreign or wrong-kind id yields
+`invalid_handle`; a full table yields `exhausted`. Uncommitted outputs are
+discarded and every descriptor closed after `main` returns.
+
+The operations are implemented in Aurora by a binding module, imported as
+`aurora.host` and selected by module root. `files.NAME(...)` calls the exported
+`host::files_NAME(files, ...)` of that module (`read` and `write` are reserved
+function names) as an ordinary service-helper call. The Linux binding,
+`runtime/linux/aurora/host.au`, uses twelve private HostFiles primitives that
+only an imported module named `aurora.host` may name: `load`, `store`, `load8`
+and `store8` over the zeroed 16384-byte session block the grant addresses, and
+the system calls `system_open` (openat2), `system_chunk` (pread64 into a cleared
+HostChunk), `system_write`, `system_rename` (renameat), `system_unlink`
+(unlinkat), `system_close`, `system_stat` (fstat) and `system_identity`
+(getpid). The compiler emits each inline with a `syscall` instruction after
+checking every offset and length against the session block (failure traps);
+paths are NUL-terminated in the block, and only scalar results return. A binding
+over Aurora kernel services (Call/Serve or the file namespace service) would be
+another `aurora.host` with its own primitives and the same eight functions.
+
+For a hosted entry the backend emits a global `_start`: it reads argc/argv from
+the initial stack, requires the argument strings to be contiguous, reserves and
+zeroes the session block, calls `main` with the grant and the arguments span,
+calls `host::finish`, and exits with `exit_group`. One aurorac object therefore
+links with `ld -static -e _start` and no C or C++ startup, libc or runtime (see
+`hosted_programs` in `meson.build`); programs that also use ByteRegion or
+OwnedBytes still need the C++ byte adapter. Stack facts record a
+`__au_linux_system_call` call for every function that makes one, and
+`kernel_stack_check.py` rejects it in every kernel and user image profile.
+The compiler's own sources do not use HostFiles until a checkpoint bump.
+
 ## Typed IR and private native boundary
 
 `BindServiceParameter` is the sole provenance root. Its distinct bindings must
@@ -297,7 +362,10 @@ Source/editor/host-report cases live in `tests/compiler/console_service.py`,
 including copied service inputs/results and `console::write_bytes` success/timeout prefixes.
 Independently constructed hostile IR lives in the textual IR cases under
 `tests/compiler/ir/*-service-ir/`, run by the one `aurora-ir-check` driver; each
-service has its own directory and Meson test. Acceptance
+service has its own directory and Meson test.
+HostFiles runs its example tool and hostile-case driver over
+`tests/host-files/cases.golden` and its source rejections over
+`tests/host-files/rejections.golden`. Acceptance
 requires the applicable gates on final integrated source; host-grant and UART
 tests remain separate from generated-code tests.
 `display_service.py`, `tests/compiler/ir/display-service-ir/` and the handwritten

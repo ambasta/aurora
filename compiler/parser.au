@@ -915,10 +915,11 @@ namespace compiler_parser {
                                                 55> samples = "ConsoleSample;IommuEventSample;CallResult;ServeRequest;";
                                             const builtin::span<const u8> samples_words = borrow_bytes(samples);
                                             const array<u8,
-                                                62> host_samples = "HostChunk;HostFileResult;HostDirectoryResult;HostOutputResult;";
+                                                62> host_samples =
+                                                "HostChunk;HostFileResult;HostDirectoryResult;HostOutputResult;";
                                             const builtin::span<const u8> host_words = borrow_bytes(host_samples);
-                                            if (word_list_matches(source, token, samples_words) || word_list_matches(
-                                                source, token, host_words)) {
+                                            if (word_list_matches(source, token, samples_words)
+                                                || word_list_matches(source, token, host_words)) {
                                                 kind = TypeKind::builtin_class;
                                             }
                                             atomic = true;
@@ -3250,8 +3251,8 @@ namespace compiler_parser {
             if (borrowed) {
                 const u64 group = u64(first_service) | u64(type.service());
                 const bool continuation = type.kind() == AdmissionKind::service && index == 1 && first_borrowed
-                    && first_service != 0 && first_service != type.service() && group < 64u64 && (u64(
-                    configuration.groups()) & (1u64 << i64(group))) != 0u64;
+                    && first_service != 0 && first_service != type.service() && group < 64u64
+                    && (u64(configuration.groups()) & (1u64 << i64(group))) != 0u64;
                 const bool owning_continuation = index > 0 && owning_prefix && type.kind()
                     == AdmissionKind::class_value;
                 const bool borrowed_values = index == 0 && syntax.kind() == TypeKind::owned_values
@@ -3381,8 +3382,7 @@ namespace compiler_parser {
         while (service < 7) {
             const i64 mask = configuration.service_mask(service);
             if ((mask != 1 && mask != 2 && mask != 4 && mask != 8 && mask != 16 && mask != 32 && mask != 64) || (masks
-                & u64(mask))
-                != 0u64) {
+                & u64(mask)) != 0u64) {
                 return admission_result(AdmissionStatus::invalid);
             }
             masks = masks | u64(mask);

@@ -1479,8 +1479,9 @@ export namespace compiler_lowering {
                 const compiler_resolver::ResolvedTypeKind receiver = value_kind(session, frame.cleanup_cursor());
                 const i64 reference = source_ref(session, frame.syntax_node());
                 if (compiler_resolver::service_kind(receiver)) {
-                    if (session.source_equal(reference, "pixel") || session.source_equal(reference, "write8") || (receiver
-                        == compiler_resolver::ResolvedTypeKind::host_files && frame.argument_count() > 1)) {
+                    if (session.source_equal(reference, "pixel") || session.source_equal(reference, "write8")
+                        || (receiver == compiler_resolver::ResolvedTypeKind::host_files && frame.argument_count()
+                        > 1)) {
                         emit_Push(session);
                     }
                 } else {

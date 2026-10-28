@@ -1096,8 +1096,8 @@ export namespace compiler_ir_metadata {
             true) && sealed_enum(store, "__au_event_intake_completion", 7, true) && sealed_enum(store,
             "__au_console_put_result", 2, false) && sealed_enum(store, "__au_console_completion", 2, false)
             && sealed_enum(store, "__au_display_put_result", 2, false) && sealed_enum(store, "__au_display_completion",
-            2, false) && sealed_enum(store, "__au_port_write_result", 1, false) && sealed_enum(store, "__au_host_exit", 3,
-            false) && sealed_enum(store, "__au_host_status", 10, false) && sealed_enum(store, "__au_host_stream", 2,
+            2, false) && sealed_enum(store, "__au_port_write_result", 1, false) && sealed_enum(store, "__au_host_exit",
+            3, false) && sealed_enum(store, "__au_host_status", 10, false) && sealed_enum(store, "__au_host_stream", 2,
             false) && sealed_host_results(store);
     }
 
@@ -1609,8 +1609,7 @@ export namespace compiler_ir_metadata {
         if (at > 2 || (kinds != masks.service_console() && kinds != masks.service_display() && kinds
             != masks.service_iommu() && kinds != masks.service_call() && kinds != masks.service_port() && kinds
             != masks.service_serve() && kinds != masks.service_host() && kinds != (masks.service_console()
-            | masks.service_display()) && kinds
-            != (masks.service_console() | masks.service_iommu()))) {
+            | masks.service_display()) && kinds != (masks.service_console() | masks.service_iommu()))) {
             return fail(store, MetadataError::service_group);
         }
         if (console_region_signature(store, row)) {

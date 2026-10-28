@@ -96,6 +96,9 @@ def compiler_facts(paths):
                 frames[name] = max(local, frames.get(name, 0))
                 for callee, live in fact["calls"].items():
                     need(type(live) is int and 8 <= live <= local, f"{path}: invalid live bytes {name}->{callee}")
+                    # HostFiles' Linux binding enters the host kernel directly; no
+                    # kernel or user image profile admits it.
+                    need(callee != "__au_linux_system_call", f"{path}: {name} makes hosted Linux system calls")
                     calls = edges.setdefault(name, {})
                     calls[callee] = max(live, calls.get(callee) or 0)
             continue

@@ -84,6 +84,18 @@ test('volatile-file-source-native', python,
     depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
 
+# HostFiles: the example tool and the hostile-case driver, each compiled and
+# linked once with no C or C++ runtime; cases and rejections are golden data.
+test('host-files', python,
+     args: ['-B', files('host_files.py'), files('host-files/cases.golden'),
+            'cat=' + hosted_programs['host-files-cat'].full_path(),
+            'probe=' + hosted_programs['host-files-probe'].full_path()],
+     depends: hosted_programs.values(), suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
+test('host-files-rejections', python,
+     args: ['-B', golden_runner, files('host-files/rejections.golden'), '--reject', '--', aurorac, '--check',
+            '--module-root', hosted_runtime_root],
+     depends: [aurorac], suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
+
 # One scratchpad host and one linked driver; modes and transcripts are runtime data.
 scratchpad_host = static_library('scratchpad-host',
     ['compiler/scratchpad_host.cpp', 'compiler/service_group_abi.S'],
@@ -144,6 +156,7 @@ foreach entry : [
     ['display-service-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
     ['port-service-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
     ['serve-service-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
+    ['host-files-service-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
     ['iommu-event-service-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
     ['ir-tests', ['full', 'merge', 'slow', 'compiler']],
     ['stack-probes', ['full', 'merge', 'slow', 'compiler']],

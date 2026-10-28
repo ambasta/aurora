@@ -1031,10 +1031,10 @@ export namespace compiler_lowering {
         }
         return -1;
     }
-    // The designated hosted runtime module aurora.host, whose functions alone
-    // may use the HostFiles system primitives.
+    // The designated hosted runtime module aurora.host, an imported unit (never
+    // the root) whose functions alone may use the HostFiles system primitives.
     auto host_runtime_unit(compiler_resolver::Session& session, i64 unit) -> bool {
-        if (unit < 0 || unit >= session.module_count()) {
+        if (unit < 0 || unit >= session.module_count() || compiler_resolver::mw(session, unit, 13) == 0) {
             return false;
         }
         const compiler_resolver::MetaRow row = session.meta(unit);

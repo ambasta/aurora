@@ -533,8 +533,9 @@ export namespace compiler_catalog {
     }
     auto append_spelling(compiler_resolver::Session& session, i64 operation) -> i64 {
         if (operation > 14) {
-            return use_word(session, "system_write;system_rename;system_unlink;system_close;system_stat;system_identity",
-                operation - 15, -1, 0);
+            return use_word(session,
+                "system_write;system_rename;system_unlink;system_close;system_stat;system_identity", operation - 15, -1,
+                0);
         }
         if (operation > 8) {
             return use_word(session, "load;store;load8;store8;system_open;system_chunk", operation - 9, -1, 0);
@@ -552,8 +553,8 @@ export namespace compiler_catalog {
         return 8;
     }
     auto host_operation(compiler_resolver::Session& session, i64 operation, i64 begin, i64 end) -> i64 {
-        return use_word(session, "open_directory;open_beneath;read;create_output;write;commit;discard;print",
-            operation, begin, end);
+        return use_word(session, "open_directory;open_beneath;read;create_output;write;commit;discard;print", operation,
+            begin, end);
     }
     // The runtime function implementing each public operation, host::files_NAME
     // (`read` and `write` themselves are reserved function names).

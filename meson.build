@@ -129,6 +129,23 @@ foreach tool : ['as', 'ld', 'nm', 'objdump', 'objcopy']
   find_program(tool, native: true)
 endforeach
 
+# Hosted Aurora programs: a root main(builtin::HostFiles&, builtin::span<const u8>)
+# -> builtin::HostExit gets a compiler-emitted _start, and the Linux binding
+# runtime/linux/aurora/host.au makes its system calls inline, so one aurorac
+# object links statically with ld alone: no C or C++ runtime, startup or libc.
+hosted_runtime_root = meson.current_source_dir() / 'runtime/linux'
+hosted_runtime_sources = files('runtime/linux/aurora/host.au')
+hosted_linker = find_program('ld', native: true)
+hosted_programs = {}
+foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
+                        'host-files-probe': 'tests/host-files/probe.au'}
+  hosted_object = custom_target(name + '-object', input: source, output: name + '.o',
+      command: [aurorac, '--emit-object', '--module-root', hosted_runtime_root, '@INPUT@', '-o', '@OUTPUT@'],
+      depend_files: hosted_runtime_sources)
+  hosted_programs += {name: custom_target(name, input: hosted_object, output: name,
+      command: [hosted_linker, '-static', '-e', '_start', '-o', '@OUTPUT@', '@INPUT@'])}
+endforeach
+
 # Preserve the configured compiler command (including wrappers and quoted paths)
 # for the existing Python native observer. This does not build or run a test.
 oracle_cxx = run_command(

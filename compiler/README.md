@@ -313,7 +313,7 @@ policy are unchanged; the emitter rebuilds offsets for the compact output.
 - [Classes and copied values](VALUES.md)
 - [Generics, overloads and fixed storage](GENERICS.md)
 - [Runtime owners, readonly views and object loans](OWNERSHIP.md)
-- [Sealed synchronous Console/Display/Event services](SERVICES.md)
+- [Sealed synchronous services, including hosted files](SERVICES.md)
 - [Modules, visibility and bounded host I/O](MODULES.md)
 - [Frontend/IR/backend architecture](ARCHITECTURE.md)
 - [Diagnostics, formatter and lint](TOOLING.md)
@@ -363,9 +363,9 @@ complete import graph references `builtin::CallSession`, `builtin::CallResult`
 or `builtin::CallStatus`, including unused templates and enum-case expressions.
 Graphs without those references retain the historical builtin catalogue, IDs,
 ABI facts and emitted reflection output. Comments, strings and user type names
-do not activate it. Port and Serve are likewise independently syntax-activated
-optional families; their appended identities do not change Serve-free or Port-free
-catalogues. Registration does not alter per-module visibility.
+do not activate it. Port, Serve and HostFiles are likewise independently
+syntax-activated optional families; their appended identities do not change
+catalogues that do not name them. Registration does not alter per-module visibility.
 
 `--referenced-reflection-only` is an explicit closed-image output mode. It emits
 only helpers directly referenced by runtime metadata queries in retained, validated

@@ -25,14 +25,15 @@ export namespace compiler_x86 {
             const compiler_ir_metadata::CallableRow row = metadata.callable_at(at);
             const compiler_ir_metadata::ByteRange name = row.name();
             const i64 suffix = name.count() - 11;
-            if (row.scope() == 0 && row.value_parameter_count() == 2 && suffix > 0 && compiler_ir_metadata::named(metadata,
-                compiler_ir_metadata::ByteRange(name.begin() + suffix, 11), "_n0__d4main")) {
+            if (row.scope() == 0 && row.value_parameter_count() == 2 && suffix > 0
+                && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + suffix, 11),
+                "_n0__d4main")) {
                 const compiler_ir_metadata::RawTypeRow first = metadata.type_at(row.value_parameter_begin());
                 const compiler_ir_metadata::RawTypeRow second = metadata.type_at(row.value_parameter_begin() + 1);
                 const compiler_ir_metadata::IndexRange types = row.types();
                 const compiler_ir_metadata::RawTypeRow result = metadata.type_at(types.begin());
-                if (first.kind() == 22 && second.kind() == 11 && result.kind() == 9 && compiler_ir_metadata::named(
-                    metadata, result.name(), "__au_host_exit")) {
+                if (first.kind() == 22 && second.kind() == 11 && result.kind() == 9
+                    && compiler_ir_metadata::named(metadata, result.name(), "__au_host_exit")) {
                     return at;
                 }
             }

@@ -407,8 +407,9 @@ export namespace compiler_x86 {
         i64 at = 0;
         while (at < workspace.function_count()) {
             const FunctionFact row = workspace.function_at(at);
-            if ((row.kind() != 0 && row.kind() != 1) || !fact_name_valid(workspace, metadata, row.kind(), row.symbol())
-                || row.local() < 8) {
+            // Kind 2 is the hosted entry `_start`, named in the runtime table.
+            if ((row.kind() != 0 && row.kind() != 1 && row.kind() != 2) || !fact_name_valid(workspace, metadata,
+                row.kind(), row.symbol()) || row.local() < 8) {
                 return workspace.fail();
             }
             if (row.kind() == 0) {
