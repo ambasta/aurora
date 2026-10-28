@@ -44,7 +44,7 @@ instance:
 - after a one-file change, the same command must finish in seconds plus the
   test run;
 - the release suite (`--suite release`) runs for compiler or host-bridge changes
-  and before releases and compiler bumps, not on unrelated merges.
+  and before releases and seed changes, not on unrelated merges.
 
 Every change that touches the build or tests reports that one number next to the
 previous main, measured at full concurrency. Growth needs a stated reason;
@@ -93,14 +93,16 @@ stated safety reason; more checking is not a reason by itself.
    merge suite with GCC 16 in the pinned container on the final source, the guest
    families the change affects, and the normal BIOS and UEFI smokes. Changes to
    compiler/ or the host bridge table also run the release suite. The release
-   suite and every guest family run before releases and compiler bumps.
+   suite and every guest family run before releases and seed changes.
 5. The pinned container (`scripts/container.sh`: Debian GCC 16, pinned QEMU, OVMF
    and test tooling under /opt) is the reference for merge evidence. Native host
    builds are fine for fast development feedback in their own build directory;
    never share a build directory across toolchains.
-6. Bootstrap: one verified checkpoint compiler builds C1, C1 builds C2, and C1/C2
-   convergence is the self-check, like GCC's stage compare. New compiler features
-   are adopted at scheduled bumps. See compiler/README.md.
+6. Bootstrap: GCC builds the seed interpreter, which runs the compiler's sources
+   to produce the first compiler X; X's output must equal the seed's, like GCC's
+   stage compare. A build may instead start from a cached compiler; then C1 builds
+   C2 and C1/C2 must converge. The compiler adopts a language feature only in the
+   change that teaches the seed to run it. See compiler/README.md.
 7. Review changes independently before merge. Commit messages say what changed
    and why, plus the budget number when it moves. Commands, tool versions and
    limits go in the PR description; never in new per-feature report files.
