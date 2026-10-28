@@ -1,12 +1,18 @@
 {
   "schema": 2,
   "checkpoint": {
-    "commit": "ab255328a762b859e76b84144cf6515de71303bf",
-    "tree": "ed168629519d1ad76759fba59c8f47c4fef043aa",
+    "commit": "6ad78f7d6fc0154e56e6387543a0ed0a5ba61221",
+    "tree": "2b68a9a7feba9ab576a25169a19e54482bb9aa6c",
     "artifact": "aurorac-stage2",
-    "built_by": "one hop from checkpoint d4cbabbb692a (scripts/bootstrap.py hop)"
+    "built_by": "one hop from checkpoint ab255328a762 (scripts/bootstrap.py hop)"
   },
   "history": [
+    {
+      "commit": "ab255328a762b859e76b84144cf6515de71303bf",
+      "tree": "ed168629519d1ad76759fba59c8f47c4fef043aa",
+      "artifact": "aurorac-stage2",
+      "built_by": "one hop from checkpoint d4cbabbb692a (scripts/bootstrap.py hop)"
+    },
     {
       "commit": "d4cbabbb692a5553d8b14641e145a2f5ddc6ca93",
       "tree": "ea4bba96465978e978646ef67c541df9073328a3",

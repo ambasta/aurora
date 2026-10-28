@@ -171,8 +171,9 @@ checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2) --com
 ```
 
 [`checkpoint.json`](checkpoint.json) names C0 by source commit and tree. C0 is
-the C2 of main commit `ab255328` (four distinct borrowed roots with per-root
-mutability), built in one hop from the C2 of `d4cbabb`; `history` lists the
+the C2 of main commit `6ad78f7d` (HostFiles with close and open_file, the
+hosted memory runtime and `--runtime-root`), built in one hop from the C2 of
+`ab255328`; `history` lists the
 earlier checkpoints. No compiler binary is committed, downloaded or pinned by
 digest. Any C0 built from that source with the supported tools (GCC 16.2.0 or
 newer, binutils 2.47 or newer) is accepted, and `hosted-lexer-bootstrap` checks
@@ -183,8 +184,8 @@ replacing it regenerates the frontend.
 To build C0 from source with no binary at all (host tools and Git):
 
 ```sh
-python3 scripts/bootstrap.py rebuild --output build/checkpoint-ab255328a762
-C0=$PWD/build/checkpoint-ab255328a762/aurorac
+python3 scripts/bootstrap.py rebuild --output build/checkpoint-6ad78f7d6fc0
+C0=$PWD/build/checkpoint-6ad78f7d6fc0/aurorac
 meson setup build/meson . "-Dbootstrap_compiler=$C0" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false "-Dbootstrap_compiler=$C0"
 meson test -C build/meson-compiler hosted-lexer-bootstrap
@@ -203,8 +204,7 @@ Sources from `checkpoint.json` schema 2 on keep their own script, whose
 checkpoint's runtime root (`runtime/linux`, the `aurora.host` and
 `aurora.memory` modules) as `OUTPUT/runtime/linux`: the compiler bakes its own
 source tree's runtime root in, so a relocated checkpoint compiles hosted
-programs with `--runtime-root OUTPUT/runtime/linux`. That needs a checkpoint
-whose source has HostFiles and `--runtime-root`; the current C0 has neither.
+programs with `--runtime-root OUTPUT/runtime/linux`.
 Keep `OUTPUT/aurorac` outside directories you delete, or rerun `rebuild`.
 
 #### Bumping the checkpoint (one hop)
