@@ -252,16 +252,19 @@ export namespace compiler_pipeline {
             lintCount = lintCount + 1;
             return true;
         }
-        auto lint(i64 index, i64 offset) const -> compiler_resolver::Report {
+        // A rendered warning's report row; an invalid row outside the warnings.
+        auto lint(i64 index) const -> compiler_resolver::MetaRow {
             if (index < 0 || index >= lintCount) {
-                compiler_resolver::Report invalid = compiler_resolver::Report(offset);
-                invalid.invalidate();
+                const compiler_resolver::MetaRow invalid = compiler_resolver::MetaRow(
+                    compiler_resolver::MetaTag::invalid);
                 return invalid;
             }
-            const compiler_resolver::MetaRow row = lints.at(index);
+            const compiler_resolver::MetaRow result = lints.at(index);
+            return result;
+        }
+        auto lint_text() const -> builtin::span<const u8> {
             const builtin::span<const u8> text = borrow_bytes(notes);
-            const compiler_resolver::Report result = compiler_resolver::stored_report(row, text.subspan(0, noteBytes),
-                6001, true, offset);
+            const builtin::span<const u8> result = text.subspan(0, noteBytes);
             return result;
         }
         // Artifacts are appended once each, in assembly, stack, ABI order.
@@ -657,6 +660,12 @@ export namespace compiler_pipeline {
             kind = kind + 1;
         }
         return move(result);
+    }
+    // The chunk at offset of a rendered unread-local warning.
+    auto lint(const Result& result, i64 index, i64 offset) -> compiler_resolver::Report {
+        const compiler_resolver::Report report = compiler_resolver::stored_report(result.lint(index),
+            result.lint_text(), 6001, true, offset);
+        return report;
     }
     auto release(builtin::ByteRegion region, Result result) -> i64 {
         return 0;

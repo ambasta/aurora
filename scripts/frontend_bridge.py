@@ -430,7 +430,7 @@ ROWS = (
     ),
     (
         "pipeline_lint(const compiler_pipeline::Result& result, i64 index, i64 offset) -> compiler_resolver::Report",
-        "copy result.lint(index, offset)",
+        "copy compiler_pipeline::lint(result, index, offset)",
         "",
         "noexcept",
     ),
