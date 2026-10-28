@@ -40,7 +40,8 @@ instance:
 - `make test` in a fresh build directory, which builds everything the merge
   suite needs and runs it, must finish in 120 s or less. The number is the whole
   run; do not split prerequisites, default build and test run into separate
-  figures;
+  figures. It is measured starting from a cached compiler; the from-scratch seed
+  route (GCC, seed, first compiler) is reported beside it, not held to it;
 - after a one-file change, the same command must finish in seconds plus the
   test run;
 - the release suite (`--suite release`) runs for compiler or host-bridge changes
