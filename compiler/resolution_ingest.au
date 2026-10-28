@@ -509,6 +509,49 @@ export namespace compiler_resolver {
         auto lexically_rejected() const -> bool {
             return lexical != compiler_lexer::Event::token;
         }
+        auto lexical_event() const -> compiler_lexer::Event {
+            return lexical;
+        }
+        auto grammar_status() const -> compiler_parser::ParseStatus {
+            return grammar;
+        }
+        auto declaration_status() const -> compiler_parser::AdmissionStatus {
+            return declaration;
+        }
+        auto field_kind() const -> compiler_parser::TypeKind {
+            return field_type;
+        }
+        // Begin, line, column, end, line, column, cited end, name begin and end, detail.
+        auto coordinate(i64 slot) const -> i64 {
+            if (slot == 0) {
+                return begin;
+            }
+            if (slot == 1) {
+                return begin_line;
+            }
+            if (slot == 2) {
+                return begin_column;
+            }
+            if (slot == 3) {
+                return end;
+            }
+            if (slot == 4) {
+                return end_line;
+            }
+            if (slot == 5) {
+                return end_column;
+            }
+            if (slot == 6) {
+                return text_end;
+            }
+            if (slot == 7) {
+                return name_begin;
+            }
+            if (slot == 8) {
+                return name_end;
+            }
+            return detail;
+        }
     };
     // Lexes the whole source, then parses and admits it as a module in the
     // cleared arena, whose last syntax node is then the module root. As in the

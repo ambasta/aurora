@@ -1,6 +1,7 @@
 #include "hosted_pipeline.hpp"
 #include <algorithm>
 #include <limits>
+#include <tuple>
 
 namespace aurora {
 namespace {
@@ -137,11 +138,68 @@ public:
 };
 } // namespace
 
+Diagnostic copyReport(const std::function<hosted_abi::compiler_resolver::Report(std::int64_t)> &read,
+                      const ReportSource &source) {
+    const auto first = read(0);
+    const auto header = [](const auto &report) {
+        return std::tuple{report.family,
+                          report.warning,
+                          report.source,
+                          report.begin,
+                          report.begin_line,
+                          report.begin_column,
+                          report.end,
+                          report.end_line,
+                          report.end_column};
+    };
+    constexpr auto chunk = static_cast<std::int64_t>(std::tuple_size_v<decltype(first.payload)>);
+    Diagnostic result;
+    for (auto report = first;; report = read(static_cast<std::int64_t>(result.message.size()))) {
+        if (report.byteCount < 0 || report.byteCount > chunk || header(report) != header(first) ||
+            result.message.size() > artifactLimit)
+            internal("invalid hosted resolution result");
+        result.message.append(reinterpret_cast<const char *>(report.payload.data()),
+                              static_cast<std::size_t>(report.byteCount));
+        if (report.byteCount < chunk)
+            break;
+    }
+    if (first.warning < 0 || first.warning > 1 || first.source < -1)
+        internal("invalid hosted resolution result");
+    // Aurora names the code by its number; the host keeps the family table.
+    const auto number = std::to_string(first.family);
+    const auto name = "AU" + std::string(number.size() < 4 ? 4 - number.size() : 0, '0') + number;
+    while (diagnosticCode(result.code) != name) {
+        if (result.code == DiagnosticCode::UnreadLocal)
+            internal("invalid hosted resolution result");
+        result.code = static_cast<DiagnosticCode>(static_cast<int>(result.code) + 1);
+    }
+    result.severity = first.warning ? DiagnosticSeverity::Warning : DiagnosticSeverity::Error;
+    if (first.source == -1)
+        return result;
+    if (!source)
+        internal("invalid hosted resolution result");
+    auto text = source(first.source);
+    const auto size = static_cast<std::int64_t>(text->text.size());
+    const auto position = [&](std::int64_t offset, std::int64_t line, std::int64_t column) {
+        if (offset < 0 || offset > size || line < 1 || line > std::numeric_limits<int>::max() || column < 1 ||
+            column - 1 > offset)
+            internal("invalid hosted resolution result");
+        return SourcePosition{static_cast<std::size_t>(offset), static_cast<int>(line), static_cast<int>(column)};
+    };
+    result.span = {std::move(text),
+                   position(first.begin, first.begin_line, first.begin_column),
+                   position(first.end, first.end_line, first.end_column)};
+    if (result.span.end.offset < result.span.begin.offset || result.span.end.line < result.span.begin.line)
+        internal("invalid hosted resolution result");
+    return result;
+}
+
 PipelineOutput runHostedPipeline(std::uint64_t region,
                                  const hosted_abi::compiler_resolver::Session &session,
                                  std::int64_t root,
                                  std::int64_t diagnostic,
-                                 const EmissionRequest &request) {
+                                 const EmissionRequest &request,
+                                 const ReportSource &sources) {
     Result result(region, session, root, diagnostic, options(request));
     wire::Report report{};
     aurora_hosted_pipeline_report(result.data(), &report);
@@ -151,9 +209,15 @@ PipelineOutput runHostedPipeline(std::uint64_t region,
     PipelineOutput output;
     if (sizes.lintCount < 0 || static_cast<std::uint64_t>(sizes.lintCount) > output.lints.max_size())
         internal("invalid hosted lowering result");
-    output.lints.resize(static_cast<std::size_t>(sizes.lintCount));
-    for (std::size_t at = 0; at < output.lints.size(); ++at)
-        aurora_hosted_pipeline_lint(result.data(), static_cast<std::int64_t>(at), &output.lints[at]);
+    output.lints.reserve(static_cast<std::size_t>(sizes.lintCount));
+    for (std::int64_t at = 0; at < sizes.lintCount; ++at)
+        output.lints.push_back(copyReport(
+            [&](std::int64_t offset) {
+                hosted_abi::compiler_resolver::Report report{};
+                aurora_hosted_pipeline_lint(result.data(), at, offset, &report);
+                return report;
+            },
+            sources));
     if (request.emit)
         output.code = result.artifact(x86::Artifact::assembly, sizes.codeBytes);
     if (request.emit && request.stackFacts)

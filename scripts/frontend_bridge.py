@@ -361,22 +361,22 @@ ROWS = (
     ),
     ("resolver_run(compiler_resolver::Session& session) -> i64", "direct compiler_resolver::run(session)", "", ""),
     (
-        "resolver_read_syntax(const compiler_resolver::Session& session, i64 index) -> compiler_resolver::SyntaxRow",
-        "copy compiler_resolver::read_syntax(session, index)",
-        "",
-        "",
-    ),
-    (
         "resolver_read_meta(const compiler_resolver::Session& session, i64 index) -> compiler_resolver::MetaRow",
         "copy compiler_resolver::read_meta(session, index)",
         "",
         "",
     ),
     (
-        "resolver_read_resolved(const compiler_resolver::Session& session, i64 index) -> "
-        "compiler_resolver::ResolvedRow",
-        "copy compiler_resolver::read_resolved(session, index)",
+        "resolver_report(const compiler_resolver::Session& session, i64 offset) -> compiler_resolver::Report",
+        "copy compiler_resolver::report(session, offset)",
         "",
+        "",
+    ),
+    (
+        "resolver_source_report(builtin::span<const u8> source, compiler_resolver::SourceResult result, "
+        "compiler_parser::Stop stop, i64 offset) -> compiler_resolver::Report",
+        "copy compiler_resolver::source_report(source, result, stop, offset)",
+        "ResolverSourceReport:source,result,stop,offset",
         "",
     ),
     (
@@ -429,8 +429,8 @@ ROWS = (
         "noexcept",
     ),
     (
-        "pipeline_lint(const compiler_pipeline::Result& result, i64 index) -> compiler_resolver::MetaRow",
-        "copy result.lint(index)",
+        "pipeline_lint(const compiler_pipeline::Result& result, i64 index, i64 offset) -> compiler_resolver::Report",
+        "copy compiler_pipeline::lint(result, index, offset)",
         "",
         "noexcept",
     ),

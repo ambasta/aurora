@@ -238,83 +238,6 @@ def frontend_abi_entries(facts):
     return entries
 
 
-MESSAGE_ROLES = {"name": "DiagnosticNameId", "type": "DiagnosticTypeId", "integer": "DiagnosticInteger"}
-MESSAGE_ORIGINS = {
-    "": "source_or_synthetic",
-    "unlocated": "unlocated",
-    "synthetic": "synthetic",
-    "integrity": "unlocated",
-}
-
-
-def lowering_messages(source, facts):
-    """Host message table from the `//:` lines above each LoweringError case."""
-    start = source.index("enum class LoweringError {")
-    block = source[start : source.index("};", start)].splitlines()[1:]
-    messages, pending = {}, []
-    for line in (raw.strip() for raw in block):
-        if line.startswith("//:"):
-            pending.append(line[3:].strip())
-        elif not line or line.startswith("//"):
-            if pending:
-                raise ValueError("lowering message text must directly precede its reason")
-        else:
-            name = line.removesuffix(",")
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in messages:
-                raise ValueError("unsupported or repeated lowering reason: " + line)
-            messages[name] = " ".join(pending)
-            pending = []
-    if pending:
-        raise ValueError("lowering message text must directly precede its reason")
-    _, reasons = abi_declaration(facts, "enums", "compiler_lowering::LoweringError")
-    if list(messages) != list(reasons["cases"]) or list(reasons["cases"].values()) != list(range(len(messages))):
-        raise ValueError("lowering messages differ from the compiled LoweringError reasons")
-    rows = []
-    for name, text in messages.items():
-        if name == "none":
-            if text:
-                raise ValueError("the none reason has no message")
-            rows.append(
-                "    {nullptr, MessageOrigin::unlocated, false, "
-                "{OperandRole::NoDiagnosticValue, OperandRole::NoDiagnosticValue}},"
-            )
-            continue
-        flag, _, body = text.partition("] ") if text.startswith("[") else ("", "", text)
-        flag = flag.removeprefix("[")
-        holes = re.findall(r"\{([^}]*)\}", body)
-        if (
-            not body
-            or flag not in MESSAGE_ORIGINS
-            or len(holes) > 2
-            or any(h not in MESSAGE_ROLES for h in holes)
-            or body.count("{") != len(holes)
-            or body.count("}") != len(holes)
-        ):
-            raise ValueError("unsupported lowering message for " + name)
-        if flag == "integrity" and holes:
-            raise ValueError("integrity messages carry no payload values: " + name)
-        roles = [MESSAGE_ROLES[h] for h in holes] + ["NoDiagnosticValue"] * (2 - len(holes))
-        literal = '"' + body.replace("\\", "\\\\").replace('"', '\\"') + '"'
-        rows.append(
-            f"    {{{literal}, MessageOrigin::{MESSAGE_ORIGINS[flag]}, {'true' if flag == 'integrity' else 'false'}, "
-            f"{{OperandRole::{roles[0]}, OperandRole::{roles[1]}}}}},"
-        )
-    return [
-        "namespace aurora::hosted_abi::compiler_lowering {",
-        "enum class MessageOrigin : ::std::uint8_t { source_or_synthetic, synthetic, unlocated };",
-        "struct LoweringMessage {",
-        "    const char *text;",
-        "    MessageOrigin origin;",
-        "    bool integrity;",
-        "    ::std::array<OperandRole, 2> values;",
-        "};",
-        f"inline constexpr ::std::array<LoweringMessage, {len(rows)}> loweringMessages{{{{",
-        *rows,
-        "}};",
-        "}",
-    ]
-
-
 def owner_messages(source, facts, namespace, enumeration, function):
     """Render constant owner diagnostics from their source-owned reasons."""
     start = source.index("enum class " + enumeration + " {")
@@ -561,7 +484,7 @@ def verification_abi(facts):
     return records, run
 
 
-def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_source=None, verification_source=None):
+def frontend_abi_header(facts, metadata_source=None, instruction_source=None, verification_source=None):
     """Render compiler-described classes and enums without a second field schema."""
     frontend_abi_entries(facts)
     # Library modules may declare their own std namespace. Host standard types
@@ -884,8 +807,6 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         "static_assert(sizeof(void *) == 8);",
         "}",
     ]
-    if messages is not None:
-        lines += lowering_messages(messages, facts)
     if metadata_source is not None:
         lines += metadata_messages(metadata_source, facts)
     if instruction_source is not None:
@@ -1040,12 +961,11 @@ def stage_modules(module_root, modules):
 
 
 def write_frontend_header(
-    facts, header, messages, metadata_source, instruction_source, compatible_header=None, *, verification_source=None
+    facts, header, metadata_source, instruction_source, compatible_header=None, *, verification_source=None
 ):
     """Render the admitted facts; reject incompatible shared ABI before writing."""
     content = frontend_abi_header(
         facts,
-        messages.read_text(),
         metadata_source.read_text(),
         instruction_source.read_text(),
         verification_source.read_text() if verification_source is not None else None,
@@ -1061,7 +981,6 @@ def emit(
     source,
     output,
     module_root,
-    messages,
     metadata_source,
     instruction_source,
     compatible_header=None,
@@ -1089,7 +1008,6 @@ def emit(
     write_frontend_header(
         facts,
         header,
-        messages,
         metadata_source,
         instruction_source,
         compatible_header,
@@ -1147,7 +1065,6 @@ def main():
         or len(set(names)) != len(names)
         or not {
             "frontend.au",
-            "lowering_errors.au",
             "ir_metadata_storage.au",
             "ir_instruction_storage.au",
             "ir_verification_errors.au",
@@ -1164,7 +1081,6 @@ def main():
         module_root / "aurora/compiler/frontend.au",
         output,
         module_root,
-        modules[names.index("lowering_errors.au")],
         modules[names.index("ir_metadata_storage.au")],
         modules[names.index("ir_instruction_storage.au")],
         headers[0] if headers else None,

@@ -4,7 +4,6 @@
 // what is not a parse-this-text case: raw ABI envelopes, growth limits,
 // representative allocation failures, ownership and typed-module controls.
 #include "lexemes.hpp"
-#include "hosted_lexer_abi.hpp"
 #include "hosted_parser.hpp"
 #include "hosted_resolver.hpp"
 #include "../../runtime/hosted_bytes.hpp"
@@ -1007,6 +1006,23 @@ void rawStep(Lines &lines, const Case &item, Options &options, const std::vector
     require(allocations.successful == allocations.released, "raw parse leaked an owner");
 }
 
+// The diagnostic Aurora renders for a rejection spanning dump bytes
+// [begin, end) and citing [begin, cited).
+aurora::Diagnostic rendered(aurora::hosted_abi::compiler_resolver::SourceResult result,
+                            std::size_t begin,
+                            std::size_t cited,
+                            std::size_t end,
+                            Stop stop = Stop::module_definition) {
+    result.begin = static_cast<std::int64_t>(begin);
+    result.begin_line = dumpPositions[begin].line;
+    result.begin_column = dumpPositions[begin].column;
+    result.text_end = static_cast<std::int64_t>(cited);
+    result.end = static_cast<std::int64_t>(end);
+    result.end_line = dumpPositions[end].line;
+    result.end_column = dumpPositions[end].column;
+    return aurora::sourceDiagnostic(dumpSource, result, stop);
+}
+
 // A grammar entry from a token cursor: its continuation and records, or the
 // diagnostic the compiler renders for its status at the reported token.
 std::optional<Cursor> parseStep(Lines &lines,
@@ -1041,16 +1057,13 @@ std::optional<Cursor> parseStep(Lines &lines,
     } else {
         const auto &at = tokens[end];
         const auto begin = static_cast<std::size_t>(at.begin + half), close = static_cast<std::size_t>(at.end);
-        const aurora::Token token(at.begin == at.end ? "<eof>" : dumpSource->text.substr(begin, close - begin),
-                                  {dumpSource, dumpPositions[begin], dumpPositions[close]});
-        const auto previous = end > start.ordinal ? dumpSource->text.substr(tokens[end - 1].begin,
-                                                                            tokens[end - 1].end - tokens[end - 1].begin)
-                                                  : std::string();
-        try {
-            aurora::hosted_parser::rejectSyntax(static_cast<Status>(result[0]), stop, token, previous);
-        } catch (const aurora::Error &error) {
-            lines.push_back(mode + " " + diagnostic(error.diagnostic));
+        aurora::hosted_abi::compiler_resolver::SourceResult rejection{};
+        rejection.grammar = static_cast<Status>(result[0]);
+        if (end > start.ordinal) {
+            rejection.name_begin = tokens[end - 1].begin;
+            rejection.name_end = tokens[end - 1].end;
         }
+        lines.push_back(mode + " " + diagnostic(rendered(rejection, begin, close, close, stop)));
     }
     arena.finish();
     require(allocations.successful == allocations.released, "parse leaked an owner");
@@ -1161,15 +1174,10 @@ Lines run(const Case &item) {
             tokens.push_back(lexeme);
     if (tokens.back().event != aurora::lexemes::Event::end_of_input) {
         const auto &bad = tokens.back();
-        try {
-            aurora::hosted_lexer::rejectLexical(bad.event,
-                                                {dumpSource,
-                                                 dumpPositions[static_cast<std::size_t>(bad.begin)],
-                                                 dumpPositions[static_cast<std::size_t>(bad.end)]});
-            require(false, "lexer stopped without a rejection");
-        } catch (const aurora::Error &error) {
-            lines.push_back("lex " + diagnostic(error.diagnostic));
-        }
+        aurora::hosted_abi::compiler_resolver::SourceResult rejection{};
+        rejection.lexical = bad.event;
+        const auto begin = static_cast<std::size_t>(bad.begin), close = static_cast<std::size_t>(bad.end);
+        lines.push_back("lex " + diagnostic(rendered(rejection, begin, close, close)));
         return lines;
     }
     Cursor next;

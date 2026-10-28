@@ -11,6 +11,7 @@ import aurora.compiler.resolution_rows;
 import aurora.compiler.resolution_names;
 import aurora.compiler.resolution_linkage;
 import aurora.compiler.resolution_ingest;
+import aurora.compiler.diagnostics;
 import aurora.compiler.builtin_catalog;
 import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;

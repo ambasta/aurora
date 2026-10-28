@@ -17,14 +17,16 @@ the call graph, publishes and emits code plus any requested stack and ABI facts;
 the host copies out the artifacts or renders the first failure.
 `builtin_catalog.au` is the only copy of the built-in type, scalar descriptor and
 sealed service catalog: the resolver seeds its descriptors and lowering its scalar, service and initial layout prelude from it, and the host
-takes service kinds/operations from the generated header and quota extents from
-`catalog_summary`. On the resolver path Aurora lexes, parses, admits and ingests
+takes service kinds/operations from the generated header and its admission
+service groups from `catalog_summary`. On the resolver path Aurora lexes, parses, admits and ingests
 each source and keeps its module header and imports; the host gets back only the
-header name or a rejection to render. aurora-fmt likewise parses, lays out and
+header name or a rendered rejection. aurora-fmt likewise parses, lays out and
 verifies its output in one Aurora call. Aurora also decides module-loading policy
-(names, relative paths, byte limits, headers and interfaces). Opening files under
-the explicit roots, diagnostic rendering, allocation and artifact transport remain
-C++23, as does the textual-IR fixture path (`ir::validate`, `X86Emitter`), now test
+(names, relative paths, byte limits, headers and interfaces) and renders every
+source, resolver, lowering and lint diagnostic (`diagnostics.au`,
+`lowering_messages.au`): code, message and span, copied out 384 bytes at a time.
+Opening files under the explicit roots, module-loading and pipeline messages,
+diagnostic printing, allocation and artifact transport remain C++23, as does the textual-IR fixture path (`ir::validate`, `X86Emitter`), now test
 tooling outside the compiler's library.
 The Aurora-native x86-64 emitter
 consumes the admitted source stores; the host retains artifact I/O.

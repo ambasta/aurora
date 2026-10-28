@@ -1,0 +1,860 @@
+export module aurora.compiler.lowering_messages;
+import aurora.compiler.lexer;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.diagnostics;
+
+// The message of every lowering rejection. Lowering renders it into the
+// Session just before the Session latches the reason; names, types and
+// integers come from the rejection's two payload values in order.
+export namespace compiler_lowering {
+    // The original spelling of a field, local or binding name.
+    auto say_binding(compiler_resolver::Session& session, i64 identity) -> i64 {
+        const compiler_resolver::MetaRow value = session.meta(identity);
+        if (value.kind() == compiler_resolver::MetaTag::atom) {
+            return compiler_resolver::say_reference(session, value.word(2));
+        }
+        return compiler_resolver::say_reference(session, identity);
+    }
+    // A callable by its selected native spelling, or an unbound name.
+    auto say_function(compiler_resolver::Session& session, i64 identity) -> i64 {
+        const compiler_resolver::MetaRow value = session.meta(identity);
+        if (value.kind() != compiler_resolver::MetaTag::symbol) {
+            return compiler_resolver::say_prefix(session, identity);
+        }
+        const compiler_resolver::DeclarationKind kind = value.declaration_kind();
+        if (kind != compiler_resolver::DeclarationKind::function && kind != compiler_resolver::DeclarationKind::method
+            && kind != compiler_resolver::DeclarationKind::constructor) {
+            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+        }
+        return compiler_resolver::say_native(session, identity);
+    }
+    auto say(compiler_resolver::Session& session, builtin::span<const u8> text) -> i64 {
+        return compiler_resolver::say(session, text);
+    }
+    auto say_prefix(compiler_resolver::Session& session, i64 prefix) -> i64 {
+        return compiler_resolver::say_prefix(session, prefix);
+    }
+    auto say_type(compiler_resolver::Session& session, i64 type, i64 mode) -> i64 {
+        return compiler_resolver::say_type(session, type, mode);
+    }
+    auto say_decimal(compiler_resolver::Session& session, i64 value) -> i64 {
+        return compiler_resolver::say_decimal(session, value);
+    }
+    auto lowering_text(compiler_resolver::Session& session, LoweringError reason, OperandRow first,
+        OperandRow second) -> i64 {
+        if (reason == LoweringError::unknown_class_type) {
+            say(session, "unknown class type '");
+            say_type(session, first.signed_value(), 0);
+            return say(session, "'");
+        }
+        if (reason == LoweringError::owned_values_require_copied_element) {
+            return say(session, "owned values require a bounded pointer-free copied class element");
+        }
+        if (reason == LoweringError::class_array_requires_concrete_copied_elements) {
+            return say(session, "class arrays require 1 to 64 concrete copied class elements");
+        }
+        if (reason == LoweringError::class_array_containment_depth) {
+            return say(session, "class array containment depth exceeds four");
+        }
+        if (reason == LoweringError::class_array_copied_leaf_limit) {
+            return say(session, "class array exceeds copied class leaf limits");
+        }
+        if (reason == LoweringError::class_array_storage_limit) {
+            return say(session, "class array storage exceeds 520 bytes");
+        }
+        if (reason == LoweringError::unknown_enum_type) {
+            say(session, "unknown enum type '");
+            say_type(session, first.signed_value(), 0);
+            return say(session, "'");
+        }
+        if (reason == LoweringError::unknown_nested_class_type) {
+            say(session, "unknown nested class type '");
+            say_prefix(session, first.signed_value());
+            return say(session, "'");
+        }
+        if (reason == LoweringError::recursive_class_containment) {
+            return say(session, "recursive class containment is unsupported");
+        }
+        if (reason == LoweringError::class_containment_depth) {
+            return say(session, "class containment depth exceeds four");
+        }
+        if (reason == LoweringError::duplicate_class_field) {
+            return say(session, "duplicate class field");
+        }
+        if (reason == LoweringError::class_field_limit) {
+            return say(session, "class exceeds 8192 direct fields");
+        }
+        if (reason == LoweringError::nested_owning_class_field) {
+            return say(session, "nested owning class fields are unsupported");
+        }
+        if (reason == LoweringError::owned_byte_field_must_be_private) {
+            return say(session, "owned byte fields must be private");
+        }
+        if (reason == LoweringError::owning_class_template) {
+            return say(session, "owning class templates are unsupported");
+        }
+        if (reason == LoweringError::class_array_field_storage) {
+            say(session, "class array fields require private concrete scalar or copied class storage of ");
+            return say(session, "length 1 to 64, or 1 to 512 for u8");
+        }
+        if (reason == LoweringError::owning_class_array) {
+            return say(session, "arrays of owning classes are unsupported");
+        }
+        if (reason == LoweringError::class_field_requires_concrete_type) {
+            return say(session, "class field must be concrete scalar, enum, class or private array");
+        }
+        if (reason == LoweringError::class_layout_frame_limit) {
+            return say(session, "class layout exceeds 65536 bytes");
+        }
+        if (reason == LoweringError::composed_class_leaf_limit) {
+            say(session, "composed classes are limited to 64 non-byte scalar leaves, 512 u8 leaves and 513 ");
+            return say(session, "total leaves");
+        }
+        if (reason == LoweringError::composed_class_depth) {
+            return say(session, "composed class exceeds depth four");
+        }
+        if (reason == LoweringError::aggregate_field_requires_constructor) {
+            return say(session, "array or class fields require a declared complete constructor");
+        }
+        if (reason == LoweringError::private_class_field) {
+            return say(session, "private class field is inaccessible");
+        }
+        if (reason == LoweringError::unknown_class_field) {
+            say(session, "unknown field '");
+            say_binding(session, first.signed_value());
+            say(session, "' in ");
+            return say_type(session, second.signed_value(), 0);
+        }
+        if (reason == LoweringError::owning_class_copy) {
+            return say(session, "owning class cannot be copied; use move(named_local)");
+        }
+        if (reason == LoweringError::reflection_span_capability) {
+            return say(session, "span capabilities are unavailable to reflection");
+        }
+        if (reason == LoweringError::reflection_resource_capability) {
+            return say(session, "resource capabilities are unavailable to reflection");
+        }
+        if (reason == LoweringError::unknown_local) {
+            say(session, "unknown local '");
+            say_binding(session, first.signed_value());
+            return say(session, "'");
+        }
+        if (reason == LoweringError::initializer_receiver_field_access) {
+            return say(session, "constructor initializer cannot access receiver fields");
+        }
+        if (reason == LoweringError::ownership_operation_requires_local) {
+            return say(session, "ownership operation requires a local name");
+        }
+        if (reason == LoweringError::use_after_move) {
+            say(session, "use after move of '");
+            say_binding(session, first.signed_value());
+            return say(session, "'");
+        }
+        if (reason == LoweringError::owning_object_exclusively_borrowed) {
+            return say(session, "owning object is exclusively borrowed for a call");
+        }
+        if (reason == LoweringError::call_argument_count) {
+            say(session, "wrong argument count for ");
+            return say_prefix(session, first.signed_value());
+        }
+        if (reason == LoweringError::type_mismatch) {
+            say(session, "expected ");
+            say_type(session, first.signed_value(), 0);
+            say(session, ", got ");
+            return say_type(session, second.signed_value(), 0);
+        }
+        if (reason == LoweringError::duplicate_local) {
+            say(session, "duplicate local '");
+            say_binding(session, first.signed_value());
+            return say(session, "'");
+        }
+        if (reason == LoweringError::function_frame_limit) {
+            return say(session, "function local stack frame exceeds 65536 bytes");
+        }
+        if (reason == LoweringError::owning_object_mutation_while_borrowed) {
+            return say(session, "cannot mutate or move an owning object while borrowed");
+        }
+        if (reason == LoweringError::owner_mutation_while_span_live) {
+            return say(session, "cannot mutate or move an owner while a readonly span is live");
+        }
+        if (reason == LoweringError::invalid_byte_string_literal) {
+            return say(session, "invalid byte-string literal");
+        }
+        if (reason == LoweringError::subspan_argument_count) {
+            return say(session, "span subspan expects offset and count");
+        }
+        if (reason == LoweringError::subspan_requires_live_readonly_view) {
+            return say(session, "subspan requires a named live readonly span or a directly derived temporary view");
+        }
+        if (reason == LoweringError::temporary_subspan_requires_owned_origin) {
+            say(session, "temporary subspan chains require an owned-byte origin; array and parameter views ");
+            return say(session, "require a named parent span");
+        }
+        if (reason == LoweringError::borrowed_object_field_access) {
+            return say(session, "borrowed object parameters support public methods, not field access");
+        }
+        if (reason == LoweringError::borrow_bytes_requires_named_storage_or_private_field) {
+            say(session, "borrow_bytes requires a named local byte array, a named owned-byte value or a ");
+            return say(session, "direct private owned-byte field");
+        }
+        if (reason == LoweringError::borrow_bytes_field_storage) {
+            return say(session, "borrow_bytes fields require private owned bytes or an implicit receiver u8 array");
+        }
+        if (reason == LoweringError::borrow_bytes_requires_named_storage) {
+            return say(session, "borrow_bytes requires a named local byte array or owned bytes");
+        }
+        if (reason == LoweringError::invalid_span_initializer) {
+            return say(session, "span initializer requires borrow_bytes, a live span or its subspan");
+        }
+        if (reason == LoweringError::dependent_reborrow_lifetime) {
+            return say(session, "span lifetime ended before a dependent reborrow");
+        }
+        if (reason == LoweringError::owning_transfer_requires_move) {
+            return say(session, "owning transfer requires move(named_local)");
+        }
+        if (reason == LoweringError::move_requires_owner) {
+            return say(session, "move requires an owning value");
+        }
+        if (reason == LoweringError::borrowed_object_ownership_transfer) {
+            return say(session, "borrowed object parameters cannot transfer ownership");
+        }
+        if (reason == LoweringError::move_const_owner) {
+            return say(session, "cannot move a const owner");
+        }
+        if (reason == LoweringError::resource_result_requires_typed_initializer) {
+            return say(session, "resource result requires a typed local initializer");
+        }
+        if (reason == LoweringError::owner_region_mismatch) {
+            return say(session, "owning value belongs to a different region");
+        }
+        if (reason == LoweringError::owned_bytes_initializer) {
+            return say(session, "owned bytes require region.try_allocate, move or an owned-result function call");
+        }
+        if (reason == LoweringError::indexing_requires_local_or_private_receiver_field) {
+            return say(session, "indexing requires an array local or implicit private receiver field");
+        }
+        if (reason == LoweringError::indexing_requires_local_or_receiver_field) {
+            return say(session, "indexing requires an array local or receiver field");
+        }
+        if (reason == LoweringError::private_constructor) {
+            return say(session, "private constructor is inaccessible");
+        }
+        if (reason == LoweringError::private_method) {
+            return say(session, "private method is inaccessible");
+        }
+        if (reason == LoweringError::missing_declared_constructor) {
+            return say(session, "class has no declared constructor");
+        }
+        if (reason == LoweringError::unknown_class_method) {
+            return say(session, "unknown class method");
+        }
+        if (reason == LoweringError::method_signature_import) {
+            return say(session, "method signature type requires a direct visible import");
+        }
+        if (reason == LoweringError::local_shadows_method) {
+            return say(session, "local binding shadows method and is not callable");
+        }
+        if (reason == LoweringError::borrowed_object_field_projection) {
+            return say(session, "borrowed object parameters support public methods, not field projections");
+        }
+        if (reason == LoweringError::method_receiver_requires_class_storage) {
+            return say(session, "method receiver requires a class local or direct owned class field");
+        }
+        if (reason == LoweringError::nested_method_receiver_requires_owned_field) {
+            return say(session, "nested method receiver requires an owned class field or owned byte field");
+        }
+        if (reason == LoweringError::direct_copied_return_requires_complete_method_receiver) {
+            return say(session, "direct copied return requires an ordinary method on a complete receiver");
+        }
+        if (reason == LoweringError::arguments_consumed_method_receiver) {
+            return say(session, "method arguments consumed the receiver or its containing object");
+        }
+        if (reason == LoweringError::service_operation_requires_active_exclusive_parameter) {
+            return say(session, "service operation requires an active named exclusive service parameter");
+        }
+        if (reason == LoweringError::next_requires_console_sample_initializer) {
+            return say(session, "next requires a typed ConsoleSample initializer");
+        }
+        if (reason == LoweringError::poll_requires_event_sample_initializer) {
+            return say(session, "poll requires a typed IommuEventSample initializer");
+        }
+        if (reason == LoweringError::acknowledge_returns_scalar_enum) {
+            return say(session, "acknowledge returns a scalar enum, not a copied report");
+        }
+        if (reason == LoweringError::put_returns_scalar_enum) {
+            return say(session, "put returns a scalar enum, not a copied report");
+        }
+        if (reason == LoweringError::pixel_returns_scalar_enum) {
+            return say(session, "pixel returns a scalar enum, not a copied report");
+        }
+        if (reason == LoweringError::unknown_service_operation) {
+            return say(session, "unknown operation for sealed service kind");
+        }
+        if (reason == LoweringError::typed_owner_operation_requires_named_owner) {
+            return say(session, "typed owner operation requires a named owner");
+        }
+        if (reason == LoweringError::typed_owner_query_returns_scalar) {
+            return say(session, "owner status and size return scalar values");
+        }
+        if (reason == LoweringError::unknown_typed_owner_operation) {
+            return say(session, "unknown typed owner operation");
+        }
+        if (reason == LoweringError::write_const_typed_owner) {
+            return say(session, "cannot write a const typed owner");
+        }
+        if (reason == LoweringError::typed_owner_access_requires_copied_destination) {
+            return say(session, "typed owner access requires a typed copied local or direct copied return");
+        }
+        if (reason == LoweringError::typed_owner_mutation_returns_bool) {
+            return say(session, "typed owner mutation returns bool");
+        }
+        if (reason == LoweringError::byte_operation_requires_named_owner) {
+            return say(session, "byte operation requires a named owner");
+        }
+        if (reason == LoweringError::write_const_byte_owner) {
+            return say(session, "cannot write a const byte owner");
+        }
+        if (reason == LoweringError::unknown_owned_byte_operation) {
+            return say(session, "unknown owned byte operation");
+        }
+        if (reason == LoweringError::region_allocation_requires_owned_bytes_initializer) {
+            return say(session, "region allocation requires an OwnedBytes local initializer");
+        }
+        if (reason == LoweringError::span_operation_requires_named_live_span) {
+            return say(session, "span operation requires a named live span");
+        }
+        if (reason == LoweringError::span_size_argument_count) {
+            return say(session, "span size expects no arguments");
+        }
+        if (reason == LoweringError::span_at_argument_count) {
+            return say(session, "span at expects one index");
+        }
+        if (reason == LoweringError::subspan_requires_span_binding_or_argument) {
+            return say(session, "subspan requires a span binding or span argument");
+        }
+        if (reason == LoweringError::unknown_readonly_span_operation) {
+            return say(session, "span supports only readonly size, at and subspan operations");
+        }
+        if (reason == LoweringError::copied_argument_consumes_owning_result) {
+            return say(session, "copied argument cannot consume an owning result");
+        }
+        if (reason == LoweringError::copied_argument_requires_complete_method_receiver) {
+            return say(session, "copied argument requires an ordinary method on a complete receiver");
+        }
+        if (reason == LoweringError::class_method_result_requires_typed_initializer) {
+            return say(session, "class-returning method requires a typed local initializer");
+        }
+        if (reason == LoweringError::span_method_result_requires_initializer_or_argument) {
+            return say(session, "span-returning method requires a typed local initializer or span argument");
+        }
+        if (reason == LoweringError::span_method_forwards_returned_view) {
+            return say(session, "span-result methods cannot forward another method's returned view");
+        }
+        if (reason == LoweringError::returned_span_requires_named_receiver) {
+            return say(session, "returned span requires a named receiver or the implicit receiver");
+        }
+        if (reason == LoweringError::span_method_requires_verified_field_summary) {
+            return say(session, "span-result method requires a verified receiver-field summary");
+        }
+        if (reason == LoweringError::mutable_method_requires_mutable_receiver) {
+            return say(session, "mutable method requires a mutable receiver");
+        }
+        if (reason == LoweringError::method_argument_count) {
+            return say(session, "wrong argument count for method");
+        }
+        if (reason == LoweringError::service_report_requires_typed_initializer) {
+            return say(session, "copied service report requires a typed local initializer");
+        }
+        if (reason == LoweringError::service_forwarding_requires_named_exclusive_parameter) {
+            return say(session, "service forwarding requires a named exclusive service parameter");
+        }
+        if (reason == LoweringError::service_authority_suspended) {
+            return say(session, "service authority is suspended during synchronous forwarding");
+        }
+        if (reason == LoweringError::copied_argument_requires_ordinary_call) {
+            return say(session, "copied argument requires an ordinary function call");
+        }
+        if (reason == LoweringError::direct_copied_return_requires_ordinary_call) {
+            return say(session, "direct copied return requires an ordinary function call");
+        }
+        if (reason == LoweringError::class_call_result_requires_typed_initializer) {
+            return say(session, "class-returning call requires a typed local initializer");
+        }
+        if (reason == LoweringError::borrowed_argument_requires_complete_owner) {
+            return say(session, "borrowed object argument requires a complete named owning object");
+        }
+        if (reason == LoweringError::mutable_borrowed_argument_requires_mutable_owner) {
+            return say(session, "mutable borrowed parameter requires a mutable owning object");
+        }
+        if (reason == LoweringError::unknown_overload_candidate) {
+            return say(session, "unknown ordinary overload candidate");
+        }
+        if (reason == LoweringError::ambiguous_exact_overload) {
+            return say(session, "ambiguous exact ordinary overload");
+        }
+        if (reason == LoweringError::no_exact_overload) {
+            say(session, "no exact ordinary overload for ");
+            return say_prefix(session, first.signed_value());
+        }
+        if (reason == LoweringError::function_signature_import) {
+            return say(session, "function signature type requires a direct visible import");
+        }
+        if (reason == LoweringError::invalid_byte_literal) {
+            return say(session, "invalid byte literal");
+        }
+        if (reason == LoweringError::invalid_integer_literal_or_suffix) {
+            return say(session, "integer literal out of range or invalid suffix");
+        }
+        if (reason == LoweringError::unknown_enum_case) {
+            return say(session, "unknown enum case");
+        }
+        if (reason == LoweringError::class_array_copy_requires_typed_initializer) {
+            return say(session, "class array element copy requires a typed local initializer");
+        }
+        if (reason == LoweringError::array_literal_requires_typed_initializer) {
+            return say(session, "array literals require a typed local initializer");
+        }
+        if (reason == LoweringError::byte_string_requires_typed_array_initializer) {
+            return say(session, "byte-string literals require a typed local u8 array initializer");
+        }
+        if (reason == LoweringError::field_access_requires_class_local) {
+            return say(session, "field access currently requires a class local");
+        }
+        if (reason == LoweringError::aggregate_field_requires_projection_or_indexing) {
+            return say(session, "aggregate fields require a fresh typed class projection or checked indexing");
+        }
+        if (reason == LoweringError::class_construction_requires_typed_initializer) {
+            return say(session, "class construction requires a typed local initializer");
+        }
+        if (reason == LoweringError::array_value_requires_initializer_or_indexing) {
+            return say(session, "array values are only supported in local initializers and indexing");
+        }
+        if (reason == LoweringError::class_value_requires_initializer_or_field_access) {
+            return say(session, "class values are only supported in local initializers and field accesses");
+        }
+        if (reason == LoweringError::service_capability_not_value) {
+            return say(session, "service capability is not a value");
+        }
+        if (reason == LoweringError::implicit_owned_value_copy) {
+            return say(session, "owned values cannot be implicitly copied; use move, read, or borrow");
+        }
+        if (reason == LoweringError::span_capability_not_scalar) {
+            return say(session, "span capability cannot be used as a scalar value");
+        }
+        if (reason == LoweringError::integer_literal_range) {
+            return say(session, "integer literal out of range");
+        }
+        if (reason == LoweringError::bitwise_operand_type) {
+            return say(session, "expected u64 or u8 bitwise operand");
+        }
+        if (reason == LoweringError::logical_borrow_state_mismatch) {
+            return say(session, "logical paths must preserve the same borrow state");
+        }
+        if (reason == LoweringError::logical_byte_ownership_state_mismatch) {
+            return say(session, "logical paths must preserve exact byte ownership state");
+        }
+        if (reason == LoweringError::shift_operand_type) {
+            return say(session, "expected u64 or u8 shift operand");
+        }
+        if (reason == LoweringError::bitwise_operands_type) {
+            return say(session, "expected u64 or u8 bitwise operands");
+        }
+        if (reason == LoweringError::arithmetic_operands_type) {
+            return say(session, "expected i64, u64 or u8 arithmetic operands");
+        }
+        if (reason == LoweringError::ordered_comparison_operands_type) {
+            return say(session, "expected i64, u64 or u8 ordered comparison operands");
+        }
+        if (reason == LoweringError::invalid_expression) {
+            return say(session, "invalid expression");
+        }
+        if (reason == LoweringError::borrow_bytes_requires_span_binding_or_argument) {
+            return say(session, "borrow_bytes requires a span binding or span argument");
+        }
+        if (reason == LoweringError::integer_conversion_types) {
+            return say(session, "expected distinct i64, u64 or u8 conversion types");
+        }
+        if (reason == LoweringError::len_requires_local_or_receiver_array) {
+            return say(session, "len requires an array local or receiver field");
+        }
+        if (reason == LoweringError::read_requires_ownership_reference) {
+            return say(session, "read requires own, ref, or mutref");
+        }
+        if (reason == LoweringError::owner_exclusively_borrowed) {
+            return say(session, "owner is exclusively borrowed");
+        }
+        if (reason == LoweringError::write_requires_mutable_reference) {
+            return say(session, "write requires a non-const mutable reference binding");
+        }
+        if (reason == LoweringError::ownership_constructor_requires_typed_initializer) {
+            return say(session, "ownership constructors are only supported in typed local initializers");
+        }
+        if (reason == LoweringError::unknown_function) {
+            say(session, "unknown function '");
+            say_function(session, first.signed_value());
+            return say(session, "'");
+        }
+        if (reason == LoweringError::unsupported_static_assert_expression) {
+            return say(session, "static_assert supports literals, reflection, comparisons, !, && and || only");
+        }
+        if (reason == LoweringError::unreachable_statement) {
+            return say(session, "unreachable statement");
+        }
+        if (reason == LoweringError::byte_array_lifetime_while_borrowed) {
+            return say(session, "byte array lifetime ends while borrowed");
+        }
+        if (reason == LoweringError::owning_class_field_reassignment) {
+            return say(session, "owning class field reassignment is unsupported");
+        }
+        if (reason == LoweringError::class_field_assignment_requires_complete_local) {
+            return say(session, "class field assignment requires a complete local name");
+        }
+        if (reason == LoweringError::direct_copied_return_requires_class_result) {
+            return say(session, "direct copied return requires a class-returning function");
+        }
+        if (reason == LoweringError::class_argument_requires_copied_constructor) {
+            return say(session, "class argument requires a copied constructor");
+        }
+        if (reason == LoweringError::class_argument_requires_complete_local) {
+            return say(session, "class argument requires a complete local name");
+        }
+        if (reason == LoweringError::class_projection_requires_copied_array) {
+            return say(session, "class projection requires a copied class array");
+        }
+        if (reason == LoweringError::class_projection_requires_named_receiver) {
+            return say(session, "class projection requires a named local receiver");
+        }
+        if (reason == LoweringError::class_projection_requires_class_field) {
+            return say(session, "class projection requires a class field");
+        }
+        if (reason == LoweringError::owning_field_extraction) {
+            return say(session, "owning field extraction is unsupported");
+        }
+        if (reason == LoweringError::class_initializer_requires_class_result) {
+            return say(session, "class initializer requires a class-returning function");
+        }
+        if (reason == LoweringError::constructor_class_designated_initialization) {
+            return say(session, "constructor-bearing class rejects designated initialization");
+        }
+        if (reason == LoweringError::private_class_construction_requires_constructor) {
+            say(session, "class construction requires public fields; private construction requires a declared ");
+            return say(session, "constructor");
+        }
+        if (reason == LoweringError::class_initializer_requires_fields_or_copy) {
+            return say(session, "class local requires named-field construction or same-type class copy");
+        }
+        if (reason == LoweringError::duplicate_field_initializer) {
+            return say(session, "duplicate field initializer");
+        }
+        if (reason == LoweringError::incomplete_class_field_initialization) {
+            return say(session, "every class field must be initialized exactly once");
+        }
+        if (reason == LoweringError::class_array_initializer_count) {
+            return say(session, "class array initialization requires exactly one complete named value per element");
+        }
+        if (reason == LoweringError::class_array_initializer_requires_complete_locals) {
+            return say(session, "class array initializer elements require complete local names");
+        }
+        if (reason == LoweringError::byte_string_requires_byte_elements) {
+            return say(session, "byte-string initializers require u8 array elements");
+        }
+        if (reason == LoweringError::byte_array_initializer_length) {
+            say(session, "array initializer length does not match its declared type: expected ");
+            say_decimal(session, first.signed_value());
+            say(session, " bytes, got ");
+            say_decimal(session, second.signed_value());
+            return say(session, " decoded bytes");
+        }
+        if (reason == LoweringError::array_initializer_requires_literal_or_copy) {
+            return say(session, "array local requires an array literal or same-type array copy");
+        }
+        if (reason == LoweringError::array_initializer_length) {
+            return say(session, "array initializer length does not match its declared type");
+        }
+        if (reason == LoweringError::returned_span_requires_private_receiver_storage) {
+            return say(session, "returned span must derive directly from one private receiver byte-storage field");
+        }
+        if (reason == LoweringError::returned_span_field_mismatch) {
+            return say(session, "all returned spans must derive from the same receiver byte-storage field");
+        }
+        if (reason == LoweringError::class_return_requires_local_constructor_or_call) {
+            say(session, "class return requires a complete local name, direct copied-class constructor or ");
+            return say(session, "ordinary call");
+        }
+        if (reason == LoweringError::static_assertion_failed) {
+            return say(session, "static assertion failed");
+        }
+        if (reason == LoweringError::local_service_capability) {
+            return say(session, "service capability cannot be stored in a local");
+        }
+        if (reason == LoweringError::region_parameter_position) {
+            return say(session, "region authority is available only as the first function parameter");
+        }
+        if (reason == LoweringError::span_binding_requires_const) {
+            return say(session, "span bindings must be const and cannot be rebound");
+        }
+        if (reason == LoweringError::ownership_binding_requires_constructor) {
+            return say(session, "ownership binding requires explicit constructor");
+        }
+        if (reason == LoweringError::move_const_owner_to_mutable_binding) {
+            return say(session, "cannot move a const owner into a mutable binding");
+        }
+        if (reason == LoweringError::move_borrowed_owner) {
+            return say(session, "cannot move a borrowed owner");
+        }
+        if (reason == LoweringError::mutable_borrow_of_const_owner) {
+            return say(session, "cannot mutably borrow a const owner");
+        }
+        if (reason == LoweringError::conflicting_borrow) {
+            return say(session, "conflicting borrow");
+        }
+        if (reason == LoweringError::ownership_constructor_type) {
+            return say(session, "constructor does not match ownership type");
+        }
+        if (reason == LoweringError::const_method_writes_receiver_array) {
+            return say(session, "const method cannot write receiver arrays");
+        }
+        if (reason == LoweringError::index_assignment_requires_mutable_array) {
+            return say(session, "index assignment requires a mutable array local");
+        }
+        if (reason == LoweringError::byte_array_mutation_while_span_live) {
+            return say(session, "cannot mutate a byte array while a span is live");
+        }
+        if (reason == LoweringError::class_array_replacement_requires_complete_local) {
+            return say(session, "class array replacement requires a complete local name");
+        }
+        if (reason == LoweringError::loop_condition_transfers_outer_owner) {
+            return say(session, "loop conditions cannot transfer an outer byte owner");
+        }
+        if (reason == LoweringError::loop_backedge_moves_outer_owner) {
+            return say(session, "loop backedge cannot move an outer owner; moves require a returning path");
+        }
+        if (reason == LoweringError::loop_backedge_borrow_state_mismatch) {
+            return say(session, "loop backedge must preserve outer borrow state");
+        }
+        if (reason == LoweringError::borrowed_object_field_assignment) {
+            return say(session, "borrowed object parameters support public methods, not field assignment");
+        }
+        if (reason == LoweringError::field_assignment_requires_mutable_class) {
+            return say(session, "field assignment requires a mutable class local");
+        }
+        if (reason == LoweringError::aggregate_or_resource_field_assignment) {
+            return say(session, "whole aggregate or resource field assignment is unsupported");
+        }
+        if (reason == LoweringError::field_assignment_consumed_object) {
+            return say(session, "field assignment value consumed the containing object");
+        }
+        if (reason == LoweringError::const_method_writes_receiver_field) {
+            return say(session, "const method cannot write receiver fields");
+        }
+        if (reason == LoweringError::assignment_requires_mutable_scalar) {
+            return say(session, "assignment requires a mutable scalar local");
+        }
+        if (reason == LoweringError::branch_borrow_state_mismatch) {
+            return say(session, "continuing branches must preserve the same borrow state");
+        }
+        if (reason == LoweringError::branch_byte_ownership_state_mismatch) {
+            return say(session, "continuing branches must preserve exact byte ownership state");
+        }
+        if (reason == LoweringError::nominal_type_id_limit) {
+            return say(session, "too many class types for bootstrap type IDs");
+        }
+        if (reason == LoweringError::enum_declaration_limit) {
+            return say(session, "module graph exceeds 64 enum declarations");
+        }
+        if (reason == LoweringError::enum_name_or_case_count) {
+            return say(session, "enum requires a unique name and 1 to 256 cases");
+        }
+        if (reason == LoweringError::duplicate_enum_case) {
+            return say(session, "duplicate enum case");
+        }
+        if (reason == LoweringError::duplicate_or_reserved_class_name) {
+            return say(session, "duplicate or reserved class name");
+        }
+        if (reason == LoweringError::owning_class_template_argument) {
+            return say(session, "owning classes cannot be template arguments");
+        }
+        if (reason == LoweringError::composed_or_owning_class_storage_limit) {
+            return say(session, "composed or owning class storage exceeds 520 bytes");
+        }
+        if (reason == LoweringError::duplicate_or_reserved_function_name) {
+            return say(session, "duplicate or reserved function name");
+        }
+        if (reason == LoweringError::function_parameter_limit) {
+            return say(session, "at most six parameters supported");
+        }
+        if (reason == LoweringError::service_capability_result) {
+            return say(session, "service capabilities cannot be returned");
+        }
+        if (reason == LoweringError::service_function_leading_parameter_or_result) {
+            say(session, "service functions require one leading exclusive sealed service reference and copied ");
+            return say(session, "result");
+        }
+        if (reason == LoweringError::service_group_requires_distinct_leading_references) {
+            return say(session, "service group requires distinct leading exclusive sealed references");
+        }
+        if (reason == LoweringError::service_function_group_or_result) {
+            return say(session, "service functions require a leading exclusive sealed service group and copied result");
+        }
+        if (reason == LoweringError::service_helper_parameter_type) {
+            say(session, "service helper parameters require scalars, enums, copied values or readonly byte ");
+            return say(session, "spans");
+        }
+        if (reason == LoweringError::service_capability_parameter_position) {
+            return say(session, "service capability must be the leading exclusive parameter");
+        }
+        if (reason == LoweringError::borrowed_function_boundary) {
+            say(session, "borrowed functions require one to four leading concrete owning-class references, or ");
+            say(session, "one mutable OwnedValues reference; builtin and multiple roots require a scalar or ");
+            return say(session, "enum result");
+        }
+        if (reason == LoweringError::borrowed_class_template_parameter) {
+            return say(session, "borrowed parameters cannot name a class template");
+        }
+        if (reason == LoweringError::borrowed_function_later_parameter_type) {
+            say(session, "borrowed-function tails require scalar or enum values; one root also permits copied ");
+            return say(session, "class or readonly span values");
+        }
+        if (reason == LoweringError::const_permission_requires_borrowed_parameter) {
+            return say(session, "const borrowed permission requires a borrowed parameter");
+        }
+        if (reason == LoweringError::resource_function_region_or_result) {
+            say(session, "resource functions and owning constructors require one first region parameter and ");
+            return say(session, "scalar, copied class or owning result");
+        }
+        if (reason == LoweringError::resource_argument_type) {
+            return say(session, "resource arguments require scalar values or moved owners");
+        }
+        if (reason == LoweringError::owning_constructor_result) {
+            return say(session, "owning constructor requires its internal scalar result");
+        }
+        if (reason == LoweringError::span_result_method_boundary) {
+            return say(session, "span results require a const non-template class method");
+        }
+        if (reason == LoweringError::method_result_type) {
+            return say(session, "methods require scalar, enum or copyable class results");
+        }
+        if (reason == LoweringError::method_parameter_type) {
+            return say(session, "methods require scalar, enum or copyable class parameters");
+        }
+        if (reason == LoweringError::function_class_leaf_limit) {
+            say(session, "function-boundary classes are limited to 64 scalar fields excluding u8, 512 u8 ");
+            return say(session, "leaves and 513 total leaves");
+        }
+        if (reason == LoweringError::function_class_storage_limit) {
+            return say(session, "function-boundary class storage exceeds 520 bytes");
+        }
+        if (reason == LoweringError::unknown_constructor_field_initializer) {
+            return say(session, "unknown constructor field initializer");
+        }
+        if (reason == LoweringError::duplicate_constructor_field_initializer) {
+            return say(session, "duplicate constructor field initializer");
+        }
+        if (reason == LoweringError::incomplete_constructor_field_initialization) {
+            return say(session, "constructor must initialize every field exactly once");
+        }
+        if (reason == LoweringError::constructor_byte_field_region_mismatch) {
+            return say(session, "constructor byte field belongs to a different region");
+        }
+        if (reason == LoweringError::class_field_initializer_requires_complete_local) {
+            return say(session, "class field initializer requires a complete named class value");
+        }
+        if (reason == LoweringError::array_field_requires_empty_initialization) {
+            return say(session, "array fields require explicit empty-brace zero initialization");
+        }
+        if (reason == LoweringError::empty_initialization_requires_array_field) {
+            return say(session, "empty-brace constructor initialization is restricted to array fields");
+        }
+        if (reason == LoweringError::missing_return_path) {
+            return say(session, "function must return on every path");
+        }
+        if (reason == LoweringError::span_method_missing_field_return) {
+            return say(session, "span-result method has no verified receiver-field return");
+        }
+        if (reason == LoweringError::unknown_reflection_nominal) {
+            return say(session, "unknown nominal type in reflection view");
+        }
+        if (reason == LoweringError::ir_storage_extent_limit) {
+            return say(session, "IR: storage extent exceeds 65536 bytes");
+        }
+        if (reason == LoweringError::ir_class_storage_depth) {
+            return say(session, "IR: cyclic or excessive class storage depth");
+        }
+        if (reason == LoweringError::ir_missing_class_storage_shape) {
+            return say(session, "IR: missing logical class storage shape");
+        }
+        if (reason == LoweringError::ir_class_storage_alignment) {
+            return say(session, "IR: invalid class storage alignment");
+        }
+        if (reason == LoweringError::ir_logical_field_storage_range) {
+            return say(session, "IR: invalid logical field range for storage");
+        }
+        if (reason == LoweringError::ir_owned_byte_field_descriptor) {
+            return say(session, "IR: owned byte field requires one non-scalar descriptor");
+        }
+        if (reason == LoweringError::ir_nested_owning_class_field) {
+            return say(session, "IR: nested owning class fields are unsupported");
+        }
+        if (reason == LoweringError::ir_nested_field_storage_shape) {
+            return say(session, "IR: invalid nested field storage shape");
+        }
+        if (reason == LoweringError::ir_scalar_field_storage_shape) {
+            return say(session, "IR: invalid scalar field storage shape");
+        }
+        if (reason == LoweringError::ir_class_storage_limit) {
+            return say(session, "IR: class storage exceeds 65536 bytes");
+        }
+        if (reason == LoweringError::ir_class_storage_leaf_coverage) {
+            return say(session, "IR: class storage does not cover logical leaves");
+        }
+        if (reason == LoweringError::multiple_borrowed_span_production) {
+            return say(session, "multiple borrowed roots cannot produce spans");
+        }
+        if (reason == LoweringError::borrowed_arguments_require_distinct_roots) {
+            return say(session, "borrowed arguments require distinct owning roots");
+        }
+        if (reason == LoweringError::borrow_values_requires_span_binding_or_argument) {
+            return say(session, "borrow_values requires a span binding or span argument");
+        }
+        if (reason == LoweringError::borrow_values_requires_named_storage_or_private_field) {
+            say(session, "borrow_values requires a named owned-values local or a direct private owned-values ");
+            return say(session, "field");
+        }
+        if (reason == LoweringError::typed_span_requires_copied_element) {
+            return say(session, "typed spans require a bounded pointer-free copied class element");
+        }
+        if (reason == LoweringError::typed_span_access_requires_copied_destination) {
+            return say(session, "typed span access requires a typed copied local or direct copied return");
+        }
+        return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+    }
+    // Renders a lowering rejection and its report row, located at its source
+    // token unless the payload is synthetic or unlocated.
+    auto report_lowering(compiler_resolver::Session& session, LoweringError reason, OperandRow source, OperandRow first,
+        OperandRow second) -> i64 {
+        if (!session.good() || reason == LoweringError::none) {
+            return -1;
+        }
+        const i64 begin = session.source_size();
+        lowering_text(session, reason, first, second);
+        const compiler_resolver::MetaRow row = compiler_resolver::report_row(begin, session.source_size());
+        if (source.role() != OperandRole::DiagnosticSourceRef) {
+            if (!session.good()) {
+                return -1;
+            }
+            return session.append_meta(row);
+        }
+        const compiler_resolver::MetaRow token = compiler_resolver::locate_tokens(session, row, source.signed_value(),
+            source.signed_value());
+        if (!session.good()) {
+            return -1;
+        }
+        return session.append_meta(token);
+    }
+}

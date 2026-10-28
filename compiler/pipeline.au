@@ -24,13 +24,14 @@ import aurora.compiler.x86_helpers;
 import aurora.compiler.x86_module;
 import aurora.compiler.x86_facts;
 import aurora.compiler.pipeline_declarations;
+import aurora.compiler.diagnostics;
 
 // One compilation after successful lowering: project the lowering records into
 // pending metadata and instruction stores, admit and structure them, verify
 // every function, check the call graph and select retained functions, publish,
 // then emit code and the requested stack and ABI facts. Every store lives in
 // the Session's region. The host gets back one Result: the artifacts, the
-// lint references, or the first failure for it to render.
+// rendered lint warnings, or the first failure for it to render.
 export namespace compiler_pipeline {
     // Option bits of a run request.
     auto emit_option() -> u64 {
@@ -88,7 +89,7 @@ export namespace compiler_pipeline {
             objectValue(object) {
         }
     };
-    // Byte counts of each produced artifact and the number of lint references.
+    // Byte counts of each produced artifact and the number of lint warnings.
     class Sizes {
         i64 codeBytes;
         i64 stackBytes;
@@ -117,6 +118,7 @@ export namespace compiler_pipeline {
     class Result {
         builtin::OwnedBytes artifacts;
         builtin::OwnedValues<compiler_resolver::MetaRow> lints;
+        builtin::OwnedBytes notes;
         Stage stageValue;
         compiler_ir_metadata::MetadataError metadataValue;
         compiler_ir_instructions::InstructionError instructionValue;
@@ -128,6 +130,7 @@ export namespace compiler_pipeline {
         i64 stackBytes;
         i64 abiBytes;
         i64 lintCount;
+        i64 noteBytes;
 
         auto artifact_begin(compiler_x86::Artifact artifact) const -> i64 {
             if (artifact == compiler_x86::Artifact::assembly) {
@@ -150,14 +153,15 @@ export namespace compiler_pipeline {
     public:
         Result(builtin::ByteRegion region,
             compiler_ir_verification::VerificationError none) : artifacts(region.try_allocate(0)),
-            lints(lint_pool(region)), stageValue(Stage::complete),
+            lints(lint_pool(region)), notes(region.try_allocate(0)), stageValue(Stage::complete),
             metadataValue(compiler_ir_metadata::MetadataError::none),
             instructionValue(compiler_ir_instructions::InstructionError::none), verificationValue(none),
             graphValue(compiler_ir_graph::GraphStatus::success), emitterValue(compiler_x86::EmitStatus::pending),
-            objectValue(compiler_x86::EmitStatus::pending), codeBytes(0), stackBytes(0), abiBytes(0), lintCount(0) {
+            objectValue(compiler_x86::EmitStatus::pending), codeBytes(0), stackBytes(0), abiBytes(0), lintCount(0),
+            noteBytes(0) {
         }
         auto allocated() const -> bool {
-            return artifacts.ok() && lints.ok();
+            return artifacts.ok() && lints.ok() && notes.ok();
         }
         auto complete() const -> bool {
             return stageValue == Stage::complete;
@@ -189,7 +193,40 @@ export namespace compiler_pipeline {
             objectValue = object;
             return stop(Stage::emission);
         }
-        auto add_lint(compiler_resolver::MetaRow row) -> bool {
+        auto note(builtin::span<const u8> text) -> bool {
+            if (text.size() > 9223372036854775807 - noteBytes) {
+                return false;
+            }
+            if (noteBytes + text.size() > notes.size()) {
+                i64 capacity = 64;
+                if (notes.size() > 32) {
+                    capacity = notes.size() * 2;
+                }
+                if (capacity < noteBytes + text.size()) {
+                    capacity = noteBytes + text.size();
+                }
+                if (!notes.try_resize(capacity)) {
+                    return false;
+                }
+            }
+            i64 at = 0;
+            while (at < text.size()) {
+                notes.set(noteBytes + at, text.at(at));
+                at = at + 1;
+            }
+            noteBytes = noteBytes + text.size();
+            return true;
+        }
+        // Renders an unread-local warning located by its report row; warnings
+        // stay ordered by begin offset, equal offsets in arrival order.
+        auto add_lint(compiler_resolver::MetaRow row, builtin::span<const u8> name) -> bool {
+            const i64 begin = noteBytes;
+            if (!note("local binding '") || !note(name) || !note("' is never read")) {
+                return stop(Stage::allocation);
+            }
+            compiler_resolver::MetaRow rendered = row;
+            rendered.set_word(0, begin);
+            rendered.set_word(1, noteBytes);
             if (lintCount == lints.size()) {
                 const compiler_resolver::MetaRow fill = compiler_resolver::MetaRow(compiler_resolver::MetaTag::invalid);
                 i64 capacity = 8;
@@ -200,10 +237,22 @@ export namespace compiler_pipeline {
                     return stop(Stage::allocation);
                 }
             }
-            lints.set(lintCount, row);
+            i64 at = lintCount;
+            bool moving = true;
+            while (at > 0 && moving) {
+                const compiler_resolver::MetaRow previous = lints.at(at - 1);
+                if (previous.word(3) > rendered.word(3)) {
+                    lints.set(at, previous);
+                    at = at - 1;
+                } else {
+                    moving = false;
+                }
+            }
+            lints.set(at, rendered);
             lintCount = lintCount + 1;
             return true;
         }
+        // A rendered warning's report row; an invalid row outside the warnings.
         auto lint(i64 index) const -> compiler_resolver::MetaRow {
             if (index < 0 || index >= lintCount) {
                 const compiler_resolver::MetaRow invalid = compiler_resolver::MetaRow(
@@ -211,6 +260,11 @@ export namespace compiler_pipeline {
                 return invalid;
             }
             const compiler_resolver::MetaRow result = lints.at(index);
+            return result;
+        }
+        auto lint_text() const -> builtin::span<const u8> {
+            const builtin::span<const u8> text = borrow_bytes(notes);
+            const builtin::span<const u8> result = text.subspan(0, noteBytes);
             return result;
         }
         // Artifacts are appended once each, in assembly, stack, ABI order.
@@ -426,8 +480,17 @@ export namespace compiler_pipeline {
                 result.stop(Stage::projection);
                 return move(result);
             }
-            const compiler_resolver::MetaRow row = session.view_meta(reference);
-            if (!result.add_lint(row)) {
+            const compiler_resolver::MetaRow token = session.view_meta(reference);
+            const compiler_resolver::MetaRow unit = session.view_meta(token.word(0));
+            if (token.kind() != compiler_resolver::MetaTag::source_reference || token.word(0) < 0 || token.word(0)
+                >= session.module_count() || token.word(1) < unit.word(0) || token.word(2) < token.word(1)
+                || token.word(2) > session.source_size()) {
+                result.stop(Stage::projection);
+                return move(result);
+            }
+            const compiler_resolver::MetaRow row = compiler_resolver::located(compiler_resolver::report_row(0, 0),
+                token, token, unit.word(0));
+            if (!result.add_lint(row, session.source_view(token.word(1), token.word(2) - token.word(1)))) {
                 return move(result);
             }
             lint = lint + 1;
@@ -597,6 +660,12 @@ export namespace compiler_pipeline {
             kind = kind + 1;
         }
         return move(result);
+    }
+    // The chunk at offset of a rendered unread-local warning.
+    auto lint(const Result& result, i64 index, i64 offset) -> compiler_resolver::Report {
+        const compiler_resolver::Report report = compiler_resolver::stored_report(result.lint(index),
+            result.lint_text(), 6001, true, offset);
+        return report;
     }
     auto release(builtin::ByteRegion region, Result result) -> i64 {
         return 0;

@@ -1,4 +1,5 @@
 #pragma once
+#include "hosted_parser_abi.hpp"
 #include "hosted_pipeline.hpp"
 #include "types.hpp"
 #include <cstddef>
@@ -31,8 +32,12 @@ public:
     std::string name, path;
 };
 
-// Renders the first rejection of one Aurora source admission with the former
-// adapter's codes, messages and spans; returns only for an admitted module.
+// The diagnostic Aurora renders for the first rejection of a source admission;
+// `stop` is the stop of the grammar entry that reported a grammar status.
+Diagnostic sourceDiagnostic(const std::shared_ptr<const SourceText> &source,
+                            const hosted_abi::compiler_resolver::SourceResult &result,
+                            hosted_parser::Stop stop = hosted_parser::Stop::module_definition);
+// Throws that diagnostic for a rejected admission; returns for an admitted module.
 void rejectSource(const std::shared_ptr<const SourceText> &source,
                   const hosted_abi::compiler_resolver::SourceResult &result);
 

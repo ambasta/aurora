@@ -142,9 +142,7 @@ checked_resolver_entry append_source
 checked_resolver_entry order_module
 checked_resolver_entry count
 checked_resolver_entry read_source
-checked_resolver_entry read_syntax
 checked_resolver_entry read_meta
-checked_resolver_entry read_resolved
 checked_resolver_entry status
 checked_resolver_entry run
 .section .note.GNU-stack,"",@progbits

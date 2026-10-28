@@ -1804,16 +1804,8 @@ export namespace compiler_resolver {
     auto read_source(const Session& session, i64 index) -> i64 {
         return session.view_source(index);
     }
-    auto read_syntax(const Session& session, i64 index) -> SyntaxRow {
-        const SyntaxRow row = session.view_syntax(index);
-        return row;
-    }
     auto read_meta(const Session& session, i64 index) -> MetaRow {
         const MetaRow row = session.view_meta(index);
-        return row;
-    }
-    auto read_resolved(const Session& session, i64 index) -> ResolvedRow {
-        const ResolvedRow row = session.view_resolved(index);
         return row;
     }
     auto status(const Session& session) -> SessionStatus {

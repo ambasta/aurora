@@ -27,7 +27,8 @@ frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
                         'compiler/lowering_storage.au', 'compiler/resolution_rows.au', 'compiler/resolution_arena.au',
                         'compiler/resolution_names.au', 'compiler/resolution_linkage.au',
-                        'compiler/resolution_ingest.au', 'compiler/builtin_catalog.au', 'compiler/resolver.au',
+                        'compiler/resolution_ingest.au', 'compiler/diagnostics.au', 'compiler/builtin_catalog.au',
+                        'compiler/resolver.au', 'compiler/lowering_messages.au',
                         'compiler/ir_graph.au',
                         'compiler/ir_metadata_storage.au', 'compiler/ir_metadata.au',
                         'compiler/ir_instruction_storage.au', 'compiler/ir_instructions.au',
@@ -70,8 +71,7 @@ frontend_object = custom_target(
 )
 # The resolver-through-pipeline adapters; hosted-parser-invalid links these objects alone.
 frontend_adapter_sources = files('compiler/hosted_parser.cpp', 'compiler/hosted_resolver.cpp',
-                                 'compiler/hosted_pipeline.cpp', 'compiler/hosted_lowering_diagnostics.cpp',
-                                 'runtime/hosted_bytes.cpp')
+                                 'compiler/hosted_pipeline.cpp', 'runtime/hosted_bytes.cpp')
 frontend_host_sources = frontend_adapter_sources + files('compiler/hosted_private_object.cpp')
 frontend_library = static_library(
   'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],

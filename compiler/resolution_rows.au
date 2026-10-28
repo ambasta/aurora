@@ -23,6 +23,7 @@ import aurora.compiler.syntax_arena;
 // atom: source-start/length/reference. prefix: parent/atom/depth.
 // index: domain, four keys, value, left/right/parent/height.
 // import: defining-module, target-module, syntax, exact-name-reference, next.
+// report: message begin/end bytes, module, begin/line/column, end/line/column.
 // Remaining metadata variants belong to resolver.au's semantic ledger.
 export namespace compiler_resolver {
     enum class StorageStatus {
@@ -56,7 +57,8 @@ export namespace compiler_resolver {
         visibility,
         request,
         link,
-        context
+        context,
+        report
     };
     // A copied linkage-only view. Invalid selectors return size -1; offset equal
     // to the name length returns an empty chunk. No source address escapes.

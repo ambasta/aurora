@@ -11,6 +11,7 @@ import aurora.compiler.syntax_arena;
 import aurora.compiler.parser;
 import aurora.compiler.lexer;
 import aurora.compiler.builtin_catalog;
+import aurora.compiler.diagnostics;
 
 export namespace compiler_resolver {
     // Metadata indices are identities, never addresses. These private index
@@ -115,7 +116,9 @@ export namespace compiler_resolver {
         session.set_resolved(row, record);
         return value;
     }
+    // The first rejection renders its diagnostic before the Session latches it.
     auto reject(Session& session, SemanticError code, i64 node, i64 first, i64 second) -> i64 {
+        report_semantic(session, code, node, first, second);
         session.reject(code, node, first, second);
         return -1;
     }
