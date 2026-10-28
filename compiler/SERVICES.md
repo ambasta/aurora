@@ -376,7 +376,9 @@ exhaustion after a successful mapping kills the process; and there are no
 metrics, test allocator or fault injection. Runtime cost is one system call per
 nonempty allocation, resize and drop and a page per nonempty allocation; the
 table makes `_start` reserve 272 KiB of stack, so a stack limit below about
-300 KiB faults before `main`.
+300 KiB faults before `main`. Element and byte accesses check the descriptor
+inline on a fast path (calls are not inlined) and copy whole qwords for
+strides that are a multiple of eight.
 
 Cases: the memory probe over `tests/host-files/memory.golden` and the
 `host-sort` example in `tests/host-files/cases.golden`; rejections (region entry,
