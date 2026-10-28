@@ -243,9 +243,9 @@ can be losslessly archived with exact mapping after review.
 ## Bootstrap stages
 
 Without `-Dbootstrap_compiler`, GCC builds `aurora-seed` (`compiler/seed`), which
-interprets the compiler compiling itself; the object it writes, X, is C0, and
-`seed-bootstrap` requires it to equal C1's object of C2. `-Dbootstrap_compiler`
-names a cached C0 instead, any aurorac that compiles the current sources. C0
-builds C1 (`aurorac`); C1 builds C2 (`aurorac-stage2`); `hosted-lexer-bootstrap`
-requires C1/C2 convergence, like GCC's stage compare. No binary is committed or
+interprets the compiler compiling itself; the object it writes, X, linked is C1
+(`aurorac`), and `seed-bootstrap` requires C1's object of the compiler to equal
+X. `-Dbootstrap_compiler` names a cached C0 instead, any aurorac that compiles
+the current sources. C0 builds C1; C1 builds C2 (`aurorac-stage2`);
+`hosted-lexer-bootstrap` requires C1/C2 convergence, like GCC's stage compare. No binary is committed or
 pinned; see the [source-bootstrap recipe](../compiler/README.md#source-bootstrap).

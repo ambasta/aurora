@@ -597,16 +597,18 @@ hosted_lexer_test = executable(
 )
 test('hosted-lexer', hosted_lexer_test, args: files('compiler/golden/hosted_lexer.golden'),
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 180)
-# Stage compare (GCC's compare-stage): the compiler object C1 emitted and the
-# one C2 emitted are identical.
-test('hosted-lexer-bootstrap', find_program('cmp', native: true),
-     args: [aurorac_stage2_object, aurorac_stage3_object],
-     depends: [aurorac_stage2_object, aurorac_stage3_object], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
-     timeout: 30)
+# Stage compare (GCC's compare-stage). From a cached C0: the compiler object C1
+# emitted and the one C2 emitted are identical.
+if not from_seed
+  test('hosted-lexer-bootstrap', find_program('cmp', native: true),
+       args: [aurorac_stage2_object, aurorac_stage3_object],
+       depends: [aurorac_stage2_object, aurorac_stage3_object], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+       timeout: 30)
+endif
 # The seed's check: the compiler object aurora-seed emits by interpreting the
-# compiler is the one the compiled compiler emits (C1's object of C2). With the
-# stage compare above, the seed's X, C1 and C2 are one fixed point. A cached C0
-# leaves building X to the release suite.
+# compiler (X) is the one the compiled compiler emits. In a seed build C1 is X
+# linked, so this is the build's stage compare; from a cached C0 it joins the
+# compare above in the release suite, which builds X.
 seed_suites = from_seed ? ['full', 'merge', 'dev', 'core', 'compiler', 'release'] : ['full', 'release']
 test('seed-bootstrap', find_program('cmp', native: true), args: [aurorac_seed_object, aurorac_stage2_object],
      depends: [aurorac_seed_object, aurorac_stage2_object], suite: seed_suites, timeout: 30)

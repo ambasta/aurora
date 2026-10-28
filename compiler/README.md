@@ -173,30 +173,31 @@ The build bootstraps from source with GCC alone, like GCC's
 bootstrap-and-compare, with one interpreted stage in front:
 
 ```text
-GCC --builds--> aurora-seed --runs aurorac.au on the compiler's sources--> X (C0)
-C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2) --compiles--> object C
-seed-bootstrap: X and C1's object of C2 (B) identical
-hosted-lexer-bootstrap: B and C identical
+GCC --builds--> aurora-seed --runs aurorac.au on the compiler's sources--> object X
+X, linked, is C1 (aurorac) --compiles--> object B
+seed-bootstrap: X and B identical
 ```
 
 Without `-Dbootstrap_compiler`, Meson takes this route: the [seed](#the-seed)
-interprets the compiler compiling itself, and X, the object it writes, is the
-current compiler. Since C1 and C2 compile the same sources, the two compares
-make X, C1 and C2 one fixed point. No compiler binary is committed, downloaded,
-pinned or replayed from history.
+interprets the compiler compiling itself, and X, the object it writes, linked is
+the current compiler. If the compiled X emits X again, a compiler linked from its
+output would be X itself, and so would every later stage: one compare is the
+whole fixed point, so the route stops there. No compiler binary is committed,
+downloaded, pinned or replayed from history.
 
 `-Dbootstrap_compiler` names a cached C0 instead, the merge loop's fast path:
 any aurorac that compiles the current sources, such as an earlier build's
-`aurorac-seed` or `aurorac` copied out of its build directory. Nothing pins it:
-the stage compare checks C1 and C2 whatever C0 was, and the release suite still
-builds X there and runs `seed-bootstrap`. Every stage compiles the current
+`aurorac` copied out of its build directory. Nothing pins it. C0 compiles C1,
+C1 compiles C2 (`aurorac-stage2`) and C2 compiles object C;
+`hosted-lexer-bootstrap` requires C1's object of the compiler (B) to equal C,
+and the release suite still builds X and runs `seed-bootstrap` against B. Every stage compiles the current
 sources with the current runtime root (`runtime/linux`), so C0 needs only its
 executable; Ninja tracks it, so replacing it rebuilds C1.
 
 ```sh
 meson setup build/seed . -Dkernel_images=false
-meson compile -C build/seed aurorac-seed        # X, from GCC and the sources
-install -D -m 755 build/seed/aurorac-seed build/c0/aurorac
+meson compile -C build/seed aurorac               # X linked, from GCC and the sources
+install -D -m 755 build/seed/aurorac build/c0/aurorac
 C0=$PWD/build/c0/aurorac
 meson setup build/meson . "-Dbootstrap_compiler=$C0" "-Duefi_ld=$UEFI_LD"
 ```

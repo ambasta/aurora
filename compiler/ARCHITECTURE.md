@@ -21,7 +21,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | x86 emission | Aurora, fixed native transport | Byte-identical C1/C2 (`hosted-lexer-bootstrap`); inlines single-field getters; owned-value bounds checks and sizes use multiplies, not divq; no register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
 | Private host bridge | One 38-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts and symbols. A test graph adds 82 rows (readers of internal rows, the textual-IR reader, initialization probes) for test drivers only | Preserve fail-closed conversion; native replacement remains incomplete |
-| Bootstrap route | GCC builds the seed, a C++ interpreter that runs the compiler on its own sources to make X; X builds C1, C1 builds C2, and X, C1 and C2 agree (`seed-bootstrap`, `hosted-lexer-bootstrap`); a cached compiler may stand in for X | The compiler's sources stay within the seed's subset ([recipe](README.md#source-bootstrap)) |
+| Bootstrap route | GCC builds the seed, a C++ interpreter that runs the compiler on its own sources to make the object X; X linked is C1, whose object of the compiler must be X (`seed-bootstrap`); from a cached compiler, C1 and C2 also agree (`hosted-lexer-bootstrap`) | The compiler's sources stay within the seed's subset ([recipe](README.md#source-bootstrap)) |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser
