@@ -1035,6 +1035,17 @@ export namespace compiler_resolver {
         auto module_count() const -> i64 {
             return modules;
         }
+        // A view of published source bytes; empty for an invalid range.
+        auto source_view(i64 begin, i64 count) const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(sources);
+            if (begin < 0 || count < 0 || source_used > all.size() || begin > source_used || count > source_used
+                - begin) {
+                const builtin::span<const u8> empty = all.subspan(0, 0);
+                return empty;
+            }
+            const builtin::span<const u8> result = all.subspan(begin, count);
+            return result;
+        }
         auto view_source(i64 index) const -> i64 {
             if (!sources.ok() || index < 0 || index >= source_used || index >= sources.size()) {
                 return -1;

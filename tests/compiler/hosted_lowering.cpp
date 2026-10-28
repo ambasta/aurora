@@ -1,8 +1,6 @@
 // One raw-ingress driver consumes reviewed shape/corruption cases. Session and
 // destination stores are the actual generated source owners, not fake callbacks.
-#include "hosted_lowering.hpp"
-#include "hosted_lowering_ingress.hpp"
-#include "ir_verify.hpp"
+#include "hosted_pipeline.hpp"
 #include "../../runtime/hosted_bytes.hpp"
 #include <algorithm>
 #include <array>
@@ -369,6 +367,17 @@ public:
     std::uint64_t used() const {
         return region_.metrics().used;
     }
+    // The pipeline consumes the Session and must leave the region empty.
+    aurora::PipelineOutput compile(I64 root) {
+        require(live_, "compiled a released Session");
+        live_ = false;
+        aurora::EmissionRequest request;
+        request.emit = true;
+        auto output = aurora::runHostedPipeline(region_.id(), owner_.session, root, 0, request);
+        require(region_.metrics().used == 0 && region_.metrics().live_allocations == 0,
+                "the pipeline retained Session or store owners");
+        return output;
+    }
     void release() {
         if (live_) {
             aurora_hosted_resolver_release(&owner_);
@@ -463,41 +472,60 @@ struct PendingStores {
         require(aurora_hosted_instructions_allocated(instructionData()) == 1, "pending instruction allocation failed");
     }
 };
+// Measured destination extents, read from the workspace's published count pools.
+void measuredCounts(Workspace &workspace, meta::InputCounts &metadata, instructions::InstructionCounts &code) {
+    const auto count = [&](I64 pool) {
+        return aurora_hosted_projection_count(workspace.data(), pool);
+    };
+    metadata.coreCounts = {count(0), count(1), count(2), count(3), count(4)};
+    metadata.mapCounts = {count(5), count(6), count(7), count(8), count(9)};
+    code = {count(13), count(14), count(15), count(16)};
+}
+// The count pass borrows an empty pending pair for its typed roots.
+I64 measure(RawSession &session, Workspace &workspace, I64 root) {
+    PendingStores empty;
+    empty.allocate({}, 0, 0, 0, {});
+    const std::array<const void *, 4> roots{
+        session.data(), workspace.data(), empty.metadataData(), empty.instructionData()};
+    return aurora_hosted_projection_measure(roots.data(), root, 0);
+}
+// Projects the fixture into `pending`: 2 on success, else the failing measure or fill status.
 I64 fillRaw(const Fixture &fixture,
             PendingStores &pending,
             meta::InputCounts &metadataCounts,
-            instructions::InstructionCounts &counts) {
+            instructions::InstructionCounts &counts,
+            I64 &instructionTypeBegin) {
     RawSession session(fixture);
-    I64 instructionTypeBegin = -1;
+    I64 status = 0;
     {
         bytes::Region region(64 * 1024 * 1024);
         {
             Workspace workspace(region.id(), fixture, aurora_hosted_projection_name_capacity(session.data()));
-            require(aurora::ir::detail::LoweringIngress::measure(session.data(), workspace.data(), fixture.root, 0) ==
-                        1,
-                    "raw shape measure failed");
-            aurora_hosted_projection_metadata_counts(workspace.data(), &metadataCounts);
-            aurora_hosted_projection_instruction_counts(workspace.data(), &counts);
-            instructionTypeBegin = aurora_hosted_projection_count(workspace.data(), 12);
-            pending.allocate(metadataCounts,
-                             aurora_hosted_projection_count(workspace.data(), 10),
-                             aurora_hosted_projection_count(workspace.data(), 11),
-                             instructionTypeBegin,
-                             counts);
-            const std::array<const void *, 4> roots{
-                session.data(), workspace.data(), pending.metadataData(), pending.instructionData()};
-            require(aurora_hosted_projection_fill(roots.data()) == 2, "raw shape fill failed");
+            status = measure(session, workspace, fixture.root);
+            if (status == 1) {
+                measuredCounts(workspace, metadataCounts, counts);
+                instructionTypeBegin = aurora_hosted_projection_count(workspace.data(), 12);
+                pending.allocate(metadataCounts,
+                                 aurora_hosted_projection_count(workspace.data(), 10),
+                                 aurora_hosted_projection_count(workspace.data(), 11),
+                                 instructionTypeBegin,
+                                 counts);
+                const std::array<const void *, 4> roots{
+                    session.data(), workspace.data(), pending.metadataData(), pending.instructionData()};
+                status = aurora_hosted_projection_fill(roots.data());
+            }
         }
         require(region.metrics().used == 0, "shape workspace retained allocations");
     }
     session.release();
-    return instructionTypeBegin;
+    return status;
 }
 void observeShape(const Fixture &fixture) {
     PendingStores pending;
     meta::InputCounts metadataCounts{};
     instructions::InstructionCounts counts{};
-    const auto instructionTypeBegin = fillRaw(fixture, pending, metadataCounts, counts);
+    I64 instructionTypeBegin = -1;
+    require(fillRaw(fixture, pending, metadataCounts, counts, instructionTypeBegin) == 2, "raw shape fill failed");
     // Observe only the surviving durable owners. Expected active fields come
     // from the reviewed case roles and constants; no semantic oracle is rebuilt.
     require(counts.instructionCount == static_cast<I64>(fixture.code.size()) && counts.bodyCount == 1,
@@ -583,19 +611,21 @@ void observeShape(const Fixture &fixture) {
                 nextType == metadataCounts.coreCounts.types,
             "durable payload suffix has gaps or extra rows");
 }
+// Raw projection alone, or (validate) the whole pipeline over the fixture Session.
 void project(const Fixture &fixture, bool validate = false) {
-    RawSession session(fixture);
-    auto output = aurora::projectHostedLowering(session.data(), session.used(), fixture.root, 0);
-    // No borrowed source or workspace survives into independent admission.
-    session.release();
     if (validate) {
-        auto checked = aurora::ir::validate(std::move(output.instructions));
-        require(checked.metadata().findCallable("answer") == 0,
-                "durable callable name changed after source destruction");
-        const auto code = checked.get().functions.at(0).code;
-        require(code.size() == 2 && std::get<aurora::ir::Constant>(code.at(0)).value == 42,
-                "durable code changed after source destruction");
+        RawSession session(fixture);
+        const auto output = session.compile(fixture.root);
+        require(output.code.find("\nanswer:\n") != std::string::npos && output.code.find("$42") != std::string::npos,
+                "durable callable name or code changed after source destruction");
+        return;
     }
+    PendingStores pending;
+    meta::InputCounts counts{};
+    instructions::InstructionCounts code{};
+    I64 instructionTypeBegin = -1;
+    if (fillRaw(fixture, pending, counts, code, instructionTypeBegin) != 2)
+        throw aurora::Error(aurora::DiagnosticCode::Internal, "invalid hosted lowering result");
 }
 const Shape &find(const std::vector<Shape> &shapes, const std::string &name) {
     const auto found = std::find_if(shapes.begin(), shapes.end(), [&](const auto &shape) {
@@ -836,7 +866,8 @@ void observeVariant(const Fixture &fixture, const std::string &variant) {
     PendingStores pending;
     meta::InputCounts counts{};
     instructions::InstructionCounts code{};
-    fillRaw(fixture, pending, counts, code);
+    I64 instructionTypeBegin = -1;
+    require(fillRaw(fixture, pending, counts, code, instructionTypeBegin) == 2, "raw variant fill failed");
     if (variant == "ordering") {
         const std::array<std::string, 3> functions{"zeta", "answer", "alpha"};
         for (I64 at = 0; at < 3; ++at) {
@@ -926,11 +957,9 @@ void observeVariant(const Fixture &fixture, const std::string &variant) {
 }
 void independentUnused(const Fixture &fixture) {
     RawSession session(fixture);
-    auto output = aurora::projectHostedLowering(session.data(), session.used(), fixture.root, 0);
-    session.release();
     bool rejected = false;
     try {
-        (void)aurora::ir::validate(std::move(output.instructions));
+        (void)session.compile(fixture.root);
     } catch (const aurora::Error &) {
         rejected = true;
     }
@@ -940,12 +969,10 @@ void capacityMismatch(const Fixture &fixture) {
     RawSession session(fixture);
     bytes::Region region(64 * 1024 * 1024);
     Workspace workspace(region.id(), fixture, aurora_hosted_projection_name_capacity(session.data()));
-    require(aurora::ir::detail::LoweringIngress::measure(session.data(), workspace.data(), fixture.root, 0) == 1,
-            "capacity fixture measure failed");
+    require(measure(session, workspace, fixture.root) == 1, "capacity fixture measure failed");
     meta::InputCounts counts{};
     instructions::InstructionCounts code{};
-    aurora_hosted_projection_metadata_counts(workspace.data(), &counts);
-    aurora_hosted_projection_instruction_counts(workspace.data(), &code);
+    measuredCounts(workspace, counts, code);
     ++counts.coreCounts.types;
     PendingStores pending;
     pending.allocate(counts,
@@ -958,67 +985,6 @@ void capacityMismatch(const Fixture &fixture) {
     require(aurora_hosted_projection_fill(roots.data()) == 3, "mismatched destination capacity was accepted");
     const auto type = readRow<meta::RawTypeRow>(pending.metadataData(), abi::metadataStore_typesOffset, 0);
     require(type.typeKind == -1, "capacity rejection wrote a partial destination");
-}
-void factoryAllocations(const Fixture &fixture) {
-    RawSession session(fixture);
-    const auto names = aurora_hosted_projection_name_capacity(session.data());
-    meta::InputCounts metadataCounts{};
-    instructions::InstructionCounts instructionCounts{};
-    I64 callables = 0, slots = 0, instructionBegin = 0;
-    std::size_t measureAttempts = 0;
-    {
-        bytes::Region region(64 * 1024 * 1024);
-        Workspace workspace(region.id(), fixture, names);
-        Allocations allocations;
-        require(aurora::ir::detail::LoweringIngress::measure(
-                    session.data(), workspace.data(), fixture.root, 0, allocations.allocator()) == 1,
-                "injected empty-pair measure failed");
-        measureAttempts = allocations.attempts;
-        require(allocations.successes == allocations.releases, "empty measure pair leaked allocations");
-        aurora_hosted_projection_metadata_counts(workspace.data(), &metadataCounts);
-        aurora_hosted_projection_instruction_counts(workspace.data(), &instructionCounts);
-        callables = aurora_hosted_projection_count(workspace.data(), 10);
-        slots = aurora_hosted_projection_count(workspace.data(), 11);
-        instructionBegin = aurora_hosted_projection_count(workspace.data(), 12);
-    }
-    for (std::size_t at = 0; at < measureAttempts; ++at) {
-        bytes::Region region(64 * 1024 * 1024);
-        Workspace workspace(region.id(), fixture, names);
-        Allocations allocations;
-        allocations.failAt = at;
-        bool rejected = false;
-        try {
-            (void)aurora::ir::detail::LoweringIngress::measure(
-                session.data(), workspace.data(), fixture.root, 0, allocations.allocator());
-        } catch (const aurora::Error &) {
-            rejected = true;
-        }
-        require(rejected && allocations.successes == allocations.releases,
-                "empty pending-pair allocation failure escaped cleanup");
-    }
-    std::size_t exactAttempts = 0;
-    {
-        Allocations allocations;
-        {
-            aurora::ir::detail::LoweringIngress pending(
-                metadataCounts, callables, slots, instructionBegin, instructionCounts, allocations.allocator());
-            exactAttempts = allocations.attempts;
-        }
-        require(allocations.successes == allocations.releases, "unfilled exact pair leaked allocations");
-    }
-    for (std::size_t at = 0; at < exactAttempts; ++at) {
-        Allocations allocations;
-        allocations.failAt = at;
-        bool rejected = false;
-        try {
-            aurora::ir::detail::LoweringIngress pending(
-                metadataCounts, callables, slots, instructionBegin, instructionCounts, allocations.allocator());
-        } catch (const aurora::Error &) {
-            rejected = true;
-        }
-        require(rejected && allocations.successes == allocations.releases,
-                "exact pending-pair allocation failure escaped cleanup");
-    }
 }
 void workspaceLifecycle(const Fixture &fixture) {
     RawSession session(fixture);
@@ -1033,12 +999,8 @@ void workspaceLifecycle(const Fixture &fixture) {
         bytes::Region region(64 * 1024 * 1024, allocations.allocator());
         {
             Workspace workspace(region.id(), fixture, names);
-            require(aurora::ir::detail::LoweringIngress::measure(session.data(), workspace.data(), fixture.root, 0) ==
-                        1,
-                    "workspace measure failed");
-            require(aurora::ir::detail::LoweringIngress::measure(session.data(), workspace.data(), fixture.root, 0) ==
-                        3,
-                    "reused measured workspace was accepted");
+            require(measure(session, workspace, fixture.root) == 1, "workspace measure failed");
+            require(measure(session, workspace, fixture.root) == 3, "reused measured workspace was accepted");
             attempts = allocations.attempts;
         }
         require(region.metrics().used == 0 && region.metrics().live_allocations == 0 &&
@@ -1051,12 +1013,9 @@ void workspaceLifecycle(const Fixture &fixture) {
         bytes::Region region(64 * 1024 * 1024, allocations.allocator());
         {
             Workspace workspace(region.id(), fixture, names);
-            const auto status =
-                aurora::ir::detail::LoweringIngress::measure(session.data(), workspace.data(), fixture.root, 0);
-            require(status == 4, "failed projection allocation did not remain allocation status");
-            require(aurora::ir::detail::LoweringIngress::measure(session.data(), workspace.data(), fixture.root, 0) ==
-                        4,
-                    "failed workspace retry changed terminal status");
+            require(measure(session, workspace, fixture.root) == 4,
+                    "failed projection allocation did not remain allocation status");
+            require(measure(session, workspace, fixture.root) == 4, "failed workspace retry changed terminal status");
         }
         require(region.metrics().used == 0 && region.metrics().live_allocations == 0 &&
                     allocations.successes == allocations.releases,
@@ -1129,7 +1088,6 @@ int main(int argc, char **argv) {
         Fixture fixture;
         fixture.finish();
         workspaceLifecycle(fixture);
-        factoryAllocations(fixture);
         capacityMismatch(fixture);
         std::cout << "hosted lowering: " << completed << " data cases, lifetime/reuse/allocation cleanup passed\n";
     } catch (const std::exception &error) {

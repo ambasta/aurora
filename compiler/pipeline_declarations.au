@@ -1,0 +1,570 @@
+export module aurora.compiler.pipeline_declarations;
+import aurora.compiler.lexer;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.x86_object_storage;
+import aurora.compiler.x86_storage;
+
+// Source spellings of the root module's records, enums and functions for ABI
+// facts. Each declaration is found in the admitted metadata by its linkage name;
+// rows are kept in the category and metadata-name order the facts require: one
+// header per declaration, then one row per record field or enum case. Function
+// rows cover every declared callable; the facts only print retained ones.
+// Physical extents remain the authority of the validated metadata.
+export namespace compiler_pipeline {
+    // A gathered declaration: its symbol, sorted metadata position and gathering order.
+    class Declared {
+        i64 symbolValue;
+        i64 keyValue;
+        i64 ordinalValue;
+    public:
+        Declared(i64 symbol, i64 key, i64 ordinal) : symbolValue(symbol), keyValue(key), ordinalValue(ordinal) {
+        }
+        auto symbol() const -> i64 {
+            return symbolValue;
+        }
+        auto key() const -> i64 {
+            return keyValue;
+        }
+        auto before(Declared other) const -> bool {
+            return keyValue < other.key() || (keyValue == other.key() && ordinalValue < other.ordinal());
+        }
+        auto ordinal() const -> i64 {
+            return ordinalValue;
+        }
+    };
+    auto declared_pool(builtin::ByteRegion region) -> builtin::OwnedValues<Declared> {
+        const Declared fill = Declared(-1, -1, -1);
+        builtin::OwnedValues<Declared> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    auto name_pool(builtin::ByteRegion region) -> builtin::OwnedValues<compiler_x86::AbiNameRow> {
+        const compiler_x86::AbiNameRow fill = compiler_x86::AbiNameRow(-1, -1, -1, 0, 0);
+        builtin::OwnedValues<compiler_x86::AbiNameRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    class Declarations {
+        builtin::OwnedBytes text;
+        builtin::OwnedValues<compiler_x86::AbiNameRow> rows;
+        builtin::OwnedValues<Declared> work;
+        i64 textSize;
+        i64 rowSize;
+        i64 workSize;
+        bool valid;
+
+        auto capacity(i64 current, i64 required) -> i64 {
+            i64 result = 16;
+            if (current > 8) {
+                result = current;
+                if (current <= 4611686018427387903) {
+                    result = current * 2;
+                }
+            }
+            if (result < required) {
+                result = required;
+            }
+            return result;
+        }
+    public:
+        Declarations(builtin::ByteRegion region) : text(region.try_allocate(0)), rows(name_pool(region)),
+            work(declared_pool(region)), textSize(0), rowSize(0), workSize(0), valid(true) {
+        }
+        auto ok() const -> bool {
+            return valid && text.ok() && rows.ok() && work.ok();
+        }
+        auto fail() -> bool {
+            valid = false;
+            return false;
+        }
+        auto byte(u8 value) -> bool {
+            if (!ok() || textSize == 9223372036854775807) {
+                return fail();
+            }
+            if (textSize == text.size() && !text.try_resize(capacity(textSize, textSize + 1))) {
+                return fail();
+            }
+            text.set(textSize, value);
+            textSize = textSize + 1;
+            return true;
+        }
+        auto text_size() const -> i64 {
+            return textSize;
+        }
+        // The row's spelling is the text appended since begin.
+        auto row(i64 category, i64 identity, i64 member, i64 begin) -> bool {
+            if (!ok() || begin < 0 || begin > textSize || rowSize == 9223372036854775807) {
+                return fail();
+            }
+            if (rowSize == rows.size()) {
+                const compiler_x86::AbiNameRow fill = compiler_x86::AbiNameRow(-1, -1, -1, 0, 0);
+                if (!rows.try_resize(capacity(rowSize, rowSize + 1), fill)) {
+                    return fail();
+                }
+            }
+            const compiler_x86::AbiNameRow value = compiler_x86::AbiNameRow(category, identity, member, begin, textSize
+                - begin);
+            rows.set(rowSize, value);
+            rowSize = rowSize + 1;
+            return true;
+        }
+        auto row_count() const -> i64 {
+            return rowSize;
+        }
+        auto row_at(i64 index) const -> compiler_x86::AbiNameRow {
+            const compiler_x86::AbiNameRow result = rows.at(index);
+            return result;
+        }
+        auto spelling(i64 index) const -> builtin::span<const u8> {
+            const compiler_x86::AbiNameRow value = rows.at(index);
+            const builtin::span<const u8> all = borrow_bytes(text);
+            const builtin::span<const u8> result = all.subspan(value.begin(), value.count());
+            return result;
+        }
+        auto push(i64 symbol, i64 key) -> bool {
+            if (!ok() || workSize == 9223372036854775807) {
+                return fail();
+            }
+            if (workSize == work.size()) {
+                const Declared fill = Declared(-1, -1, -1);
+                if (!work.try_resize(capacity(workSize, workSize + 1), fill)) {
+                    return fail();
+                }
+            }
+            const Declared value = Declared(symbol, key, workSize);
+            work.set(workSize, value);
+            workSize = workSize + 1;
+            return true;
+        }
+        auto set_key(i64 index, i64 key) -> bool {
+            if (!ok() || index < 0 || index >= workSize) {
+                return fail();
+            }
+            const Declared old = work.at(index);
+            const Declared value = Declared(old.symbol(), key, old.ordinal());
+            work.set(index, value);
+            return true;
+        }
+        auto work_count() const -> i64 {
+            return workSize;
+        }
+        auto work_at(i64 index) const -> Declared {
+            const Declared result = work.at(index);
+            return result;
+        }
+        auto clear_work() -> bool {
+            workSize = 0;
+            return ok();
+        }
+        auto exchange(i64 left, i64 right) -> bool {
+            const Declared first = work.at(left);
+            const Declared second = work.at(right);
+            work.set(left, second);
+            work.set(right, first);
+            return true;
+        }
+        auto sift(i64 root, i64 count) -> bool {
+            i64 parent = root;
+            bool sifting = true;
+            while (sifting) {
+                const i64 left = parent * 2 + 1;
+                sifting = left < count;
+                if (sifting) {
+                    i64 child = left;
+                    const Declared first = work.at(left);
+                    if (left + 1 < count) {
+                        const Declared second = work.at(left + 1);
+                        if (first.before(second)) {
+                            child = left + 1;
+                        }
+                    }
+                    const Declared top = work.at(parent);
+                    const Declared larger = work.at(child);
+                    sifting = top.before(larger);
+                    if (sifting) {
+                        exchange(parent, child);
+                        parent = child;
+                    }
+                }
+            }
+            return true;
+        }
+        // Orders the gathered declarations by metadata position, then gathering order.
+        auto sort_work() -> bool {
+            i64 at = workSize / 2;
+            while (at > 0) {
+                at = at - 1;
+                sift(at, workSize);
+            }
+            i64 end = workSize;
+            while (end > 1) {
+                end = end - 1;
+                exchange(0, end);
+                sift(0, end);
+            }
+            return ok();
+        }
+    };
+
+    // The unique output context lists the ABI-visible functions (1), records (2)
+    // and enums (3) as link chains; -2 rejects.
+    auto declaration_chain(const compiler_resolver::Session& session, i64 field) -> i64 {
+        i64 found = -1;
+        i64 at = 0;
+        while (at < session.meta_count()) {
+            const compiler_resolver::MetaRow row = session.view_meta(at);
+            if (row.kind() == compiler_resolver::MetaTag::context && row.word(0) == 1) {
+                if (found != -1) {
+                    return -2;
+                }
+                found = at;
+            }
+            at = at + 1;
+        }
+        if (found == -1 || field < 1 || field > 3) {
+            return -2;
+        }
+        const compiler_resolver::MetaRow output = session.view_meta(found);
+        return output.word(field);
+    }
+    // The linkage spelling a symbol's metadata row is named by, or (-1, 0).
+    auto native_name(const compiler_resolver::Session& session, i64 symbol) -> compiler_ir_metadata::ByteRange {
+        const compiler_ir_metadata::ByteRange invalid = compiler_ir_metadata::ByteRange(-1, 0);
+        const compiler_resolver::MetaRow value = session.view_meta(symbol);
+        if (value.kind() != compiler_resolver::MetaTag::symbol || value.native_mode()
+            == compiler_resolver::NativeMode::invalid || (value.native_mode()
+            != compiler_resolver::NativeMode::sealed_builtin && (value.word(1) < 0 || value.word(1)
+            >= session.module_count()))) {
+            return invalid;
+        }
+        const compiler_resolver::MetaRow name = session.view_meta(value.word(0));
+        if (name.kind() != compiler_resolver::MetaTag::source_reference || name.word(0) != -1 || name.word(9) != symbol
+            || name.word(1) < 0 || name.word(2) <= name.word(1) || name.word(2) > session.source_size()) {
+            return invalid;
+        }
+        const compiler_ir_metadata::ByteRange result = compiler_ir_metadata::ByteRange(name.word(1), name.word(2)
+            - name.word(1));
+        return result;
+    }
+    // Metadata identity at a sorted position: 0 classes, 1 enums, 2 the callable name index.
+    auto identity(const compiler_ir_metadata::MetadataStore& metadata, i64 category, i64 key) -> i64 {
+        if (category != 2) {
+            return key;
+        }
+        const compiler_ir_metadata::IndexRow id = metadata.index_at(metadata.input_index_count()
+            - metadata.callable_count() + key);
+        return id.value();
+    }
+    auto append_source(const compiler_resolver::Session& session, Declarations& out, i64 begin, i64 end) -> bool {
+        if (begin < 0 || end < begin || end > session.source_size()) {
+            return out.fail();
+        }
+        i64 at = begin;
+        while (at < end) {
+            const i64 value = session.view_source(at);
+            if (value < 0 || value > 255 || !out.byte(u8(value))) {
+                return out.fail();
+            }
+            at = at + 1;
+        }
+        return out.ok();
+    }
+    auto append_token(const compiler_resolver::Session& session, Declarations& out, i64 reference) -> bool {
+        const compiler_resolver::MetaRow value = session.view_meta(reference);
+        if (value.kind() != compiler_resolver::MetaTag::source_reference || (value.word(0) != -1 && (value.word(0) < 0
+            || value.word(0) >= session.module_count()))) {
+            return out.fail();
+        }
+        return append_source(session, out, value.word(1), value.word(2));
+    }
+    // The namespace path outermost first, joined by "::"; reports whether it is nonempty.
+    auto append_prefix(const compiler_resolver::Session& session, Declarations& out, i64 prefix) -> bool {
+        i64 depth = 0;
+        i64 at = prefix;
+        while (at != -1) {
+            const compiler_resolver::MetaRow part = session.view_meta(at);
+            if (part.kind() != compiler_resolver::MetaTag::prefix || part.word(0) < -1 || part.word(0) >= at) {
+                return out.fail();
+            }
+            depth = depth + 1;
+            at = part.word(0);
+        }
+        const i64 begin = out.text_size();
+        while (depth > 0) {
+            depth = depth - 1;
+            at = prefix;
+            i64 step = 0;
+            while (step < depth) {
+                const compiler_resolver::MetaRow part = session.view_meta(at);
+                at = part.word(0);
+                step = step + 1;
+            }
+            const compiler_resolver::MetaRow part = session.view_meta(at);
+            const compiler_resolver::MetaRow atom = session.view_meta(part.word(1));
+            if (atom.kind() != compiler_resolver::MetaTag::atom) {
+                return out.fail();
+            }
+            if (out.text_size() > begin && (!out.byte(58u8) || !out.byte(58u8))) {
+                return false;
+            }
+            if (!append_token(session, out, atom.word(2))) {
+                return false;
+            }
+        }
+        return out.ok() && out.text_size() > begin;
+    }
+    auto append_source_name(const compiler_resolver::Session& session, Declarations& out, i64 symbol) -> bool {
+        const compiler_resolver::MetaRow value = session.view_meta(symbol);
+        if (value.native_mode() == compiler_resolver::NativeMode::sealed_builtin) {
+            const compiler_ir_metadata::ByteRange name = native_name(session, symbol);
+            if (name.begin() < 0) {
+                return out.fail();
+            }
+            return append_source(session, out, name.begin(), name.begin() + name.count());
+        }
+        const compiler_resolver::SyntaxRow declaration = session.view_syntax(value.word(5));
+        if (declaration.kind() != compiler_resolver::SyntaxTag::declaration) {
+            return out.fail();
+        }
+        const bool scoped = append_prefix(session, out, value.word(2));
+        if (!out.ok() || (scoped && (!out.byte(58u8) || !out.byte(58u8)))) {
+            return out.fail();
+        }
+        return append_token(session, out, declaration.word(0));
+    }
+    // Children of a declaration list are linked last-first; ordinal 0 is the first child.
+    auto list_size(const compiler_resolver::Session& session, i64 last, i64 parent) -> i64 {
+        i64 count = 0;
+        i64 current = last;
+        i64 bound = parent;
+        while (current != -1) {
+            const compiler_resolver::SyntaxRow row = session.view_syntax(current);
+            if (current < 0 || current >= bound || row.kind() != compiler_resolver::SyntaxTag::declaration) {
+                return -1;
+            }
+            count = count + 1;
+            bound = current;
+            current = row.word(2);
+        }
+        return count;
+    }
+    auto list_child(const compiler_resolver::Session& session, i64 last, i64 size, i64 ordinal) -> i64 {
+        i64 current = last;
+        i64 step = size - 1;
+        while (step > ordinal) {
+            const compiler_resolver::SyntaxRow row = session.view_syntax(current);
+            current = row.word(2);
+            step = step - 1;
+        }
+        return current;
+    }
+    // Descriptor children of a sealed builtin record or enum, linked through context word 3.
+    auto builtin_members(const compiler_resolver::Session& session, Declarations& out, i64 category, i64 id,
+        i64 descriptor) -> bool {
+        const compiler_resolver::MetaRow value = session.view_meta(descriptor);
+        if (value.kind() != compiler_resolver::MetaTag::context) {
+            return out.fail();
+        }
+        i64 member = 0;
+        i64 current = value.word(4);
+        while (current != -1) {
+            const compiler_resolver::MetaRow child = session.view_meta(current);
+            if (child.kind() != compiler_resolver::MetaTag::context || member >= session.meta_count()) {
+                return out.fail();
+            }
+            const i64 begin = out.text_size();
+            if (!append_token(session, out, child.word(1)) || !out.row(category, id, member, begin)) {
+                return false;
+            }
+            member = member + 1;
+            current = child.word(3);
+        }
+        return out.ok();
+    }
+    // Fields of a source record, or cases of a source enum, in declaration order.
+    auto source_members(const compiler_resolver::Session& session, Declarations& out, i64 category, i64 id,
+        i64 root) -> bool {
+        const compiler_resolver::SyntaxRow value = session.view_syntax(root);
+        if (value.kind() != compiler_resolver::SyntaxTag::declaration || (category == 0 && value.declaration_kind()
+            != compiler_parser::SyntaxKind::class_definition) || (category == 1 && value.declaration_kind()
+            != compiler_parser::SyntaxKind::enum_definition)) {
+            return out.fail();
+        }
+        const i64 size = list_size(session, value.word(7), root);
+        if (size < 0) {
+            return out.fail();
+        }
+        i64 member = 0;
+        i64 ordinal = 0;
+        while (ordinal < size) {
+            const i64 child = list_child(session, value.word(7), size, ordinal);
+            const compiler_resolver::SyntaxRow item = session.view_syntax(child);
+            if (category == 1) {
+                if (item.declaration_kind() != compiler_parser::SyntaxKind::enum_case) {
+                    return out.fail();
+                }
+                const i64 begin = out.text_size();
+                if (!append_token(session, out, item.word(0)) || !out.row(1, id, member, begin)) {
+                    return false;
+                }
+                member = member + 1;
+            } else {
+                const compiler_resolver::SyntaxRow declaration = session.view_syntax(item.word(7));
+                if (item.declaration_kind() != compiler_parser::SyntaxKind::declaration || item.word(7) < 0
+                    || item.word(7) >= child || declaration.kind() != compiler_resolver::SyntaxTag::declaration) {
+                    return out.fail();
+                }
+                if (declaration.declaration_kind() == compiler_parser::SyntaxKind::field) {
+                    const i64 begin = out.text_size();
+                    if (!append_token(session, out, declaration.word(6)) || !out.row(0, id, member, begin)) {
+                        return false;
+                    }
+                    member = member + 1;
+                }
+            }
+            ordinal = ordinal + 1;
+        }
+        return out.ok();
+    }
+    // Every declared callable in declaration order: listed functions, then each
+    // source record's methods; the caller finds each metadata key.
+    auto gather_callable(const compiler_resolver::Session& session, Declarations& out, i64 symbol) -> bool {
+        const compiler_resolver::MetaRow value = session.view_meta(symbol);
+        const compiler_ir_metadata::ByteRange name = native_name(session, symbol);
+        if (value.kind() != compiler_resolver::MetaTag::symbol || (value.declaration_kind()
+            != compiler_resolver::DeclarationKind::function && value.declaration_kind()
+            != compiler_resolver::DeclarationKind::method && value.declaration_kind()
+            != compiler_resolver::DeclarationKind::constructor) || name.begin() < 0) {
+            return out.fail();
+        }
+        return out.push(symbol, -1);
+    }
+    auto gather_methods(const compiler_resolver::Session& session, Declarations& out, i64 symbol) -> bool {
+        const compiler_resolver::MetaRow identity = session.view_meta(symbol);
+        if (identity.kind() != compiler_resolver::MetaTag::symbol) {
+            return out.fail();
+        }
+        if (identity.native_mode() == compiler_resolver::NativeMode::sealed_builtin) {
+            return out.ok();
+        }
+        const i64 root = identity.word(5);
+        const compiler_resolver::SyntaxRow value = session.view_syntax(root);
+        if (value.kind() != compiler_resolver::SyntaxTag::declaration || value.declaration_kind()
+            != compiler_parser::SyntaxKind::class_definition) {
+            return out.fail();
+        }
+        const i64 size = list_size(session, value.word(7), root);
+        if (size < 0) {
+            return out.fail();
+        }
+        i64 ordinal = 0;
+        while (ordinal < size) {
+            const i64 child = list_child(session, value.word(7), size, ordinal);
+            const compiler_resolver::SyntaxRow item = session.view_syntax(child);
+            const compiler_resolver::SyntaxRow declaration = session.view_syntax(item.word(7));
+            if (item.declaration_kind() != compiler_parser::SyntaxKind::declaration || item.word(7) < 0 || item.word(7)
+                >= child || declaration.kind() != compiler_resolver::SyntaxTag::declaration) {
+                return out.fail();
+            }
+            if (declaration.declaration_kind() != compiler_parser::SyntaxKind::field) {
+                const compiler_resolver::ResolvedRow decoration = session.view_resolved(item.word(7));
+                if (item.word(7) >= session.syntax_count() || !gather_callable(session, out, decoration.word(1))) {
+                    return out.fail();
+                }
+            }
+            ordinal = ordinal + 1;
+        }
+        return out.ok();
+    }
+    // Gathers one category's declared symbols (0 records, 1 enums, 2 functions).
+    auto gather(const compiler_resolver::Session& session, Declarations& out, i64 category) -> bool {
+        i64 field = 2;
+        if (category == 1) {
+            field = 3;
+        }
+        if (category == 2) {
+            field = 1;
+        }
+        i64 current = declaration_chain(session, field);
+        i64 steps = 0;
+        while (current != -1) {
+            const compiler_resolver::MetaRow link = session.view_meta(current);
+            if (current == -2 || link.kind() != compiler_resolver::MetaTag::link || steps >= session.meta_count()) {
+                return out.fail();
+            }
+            const i64 symbol = link.word(0);
+            if (category == 2) {
+                if (!gather_callable(session, out, symbol)) {
+                    return false;
+                }
+            } else {
+                const compiler_resolver::MetaRow value = session.view_meta(symbol);
+                const compiler_ir_metadata::ByteRange name = native_name(session, symbol);
+                if (value.kind() != compiler_resolver::MetaTag::symbol || name.begin() < 0 || (category == 0
+                    && value.declaration_kind() != compiler_resolver::DeclarationKind::class_value) || (category == 1
+                    && value.declaration_kind() != compiler_resolver::DeclarationKind::enumeration)) {
+                    return out.fail();
+                }
+                if (!out.push(symbol, -1)) {
+                    return false;
+                }
+            }
+            steps = steps + 1;
+            current = link.word(1);
+        }
+        if (category == 2) {
+            current = declaration_chain(session, 2);
+            steps = 0;
+            while (current != -1) {
+                const compiler_resolver::MetaRow link = session.view_meta(current);
+                if (current == -2 || link.kind() != compiler_resolver::MetaTag::link || steps >= session.meta_count()
+                    || !gather_methods(session, out, link.word(0))) {
+                    return out.fail();
+                }
+                steps = steps + 1;
+                current = link.word(1);
+            }
+        }
+        return out.ok();
+    }
+    // Emit one category's gathered declarations in ascending metadata position,
+    // the first declaration of a position supplying its spelling.
+    auto emit_category(const compiler_resolver::Session& session, const compiler_ir_metadata::MetadataStore& metadata,
+        Declarations& out, i64 category) -> bool {
+        if (!out.sort_work()) {
+            return false;
+        }
+        i64 last = -1;
+        i64 at = 0;
+        while (at < out.work_count()) {
+            const Declared item = out.work_at(at);
+            if (item.key() > last) {
+                const compiler_resolver::MetaRow value = session.view_meta(item.symbol());
+                const i64 id = identity(metadata, category, item.key());
+                const i64 begin = out.text_size();
+                if (!append_source_name(session, out, item.symbol()) || !out.row(category, id, -1, begin)) {
+                    return false;
+                }
+                if (category != 2) {
+                    if (value.native_mode() == compiler_resolver::NativeMode::sealed_builtin) {
+                        if (!builtin_members(session, out, category, id, value.word(8))) {
+                            return false;
+                        }
+                    } else {
+                        if (!source_members(session, out, category, id, value.word(5))) {
+                            return false;
+                        }
+                    }
+                }
+                last = item.key();
+            }
+            at = at + 1;
+        }
+        return out.clear_work();
+    }
+}

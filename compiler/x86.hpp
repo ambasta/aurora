@@ -1,26 +1,26 @@
 #pragma once
+#include "hosted_pipeline.hpp"
 #include "ir.hpp"
+#include <map>
 #include <memory>
 #include <string>
 
 namespace aurora {
-// These choices affect symbol visibility and retained reflection helpers only.
-enum class SymbolBinding {
-    Default,
-    Local
+// Source declarations are observations only. Physical extents remain authority
+// of the independently validated module and backend.
+class AbiDeclaration {
+public:
+    std::string sourceName;
+    std::vector<std::string> members;
 };
-enum class ReflectionEmission {
-    All,
-    Referenced
+class AbiDeclarations {
+public:
+    std::map<std::string, AbiDeclaration> records, enums, functions;
 };
-enum class CodeEmission {
-    Assembly,
-    Object
-};
-class AbiDeclarations;
-// Aurora owns validated-IR-to-x86 assembly and object policy. This host object only lends
-// the two already-published owners, transports retained IDs/optional names,
-// copies sealed output chunks. Optional JSON requires the same live module.
+// Textual-IR fixtures only: compilations emit through runHostedPipeline. This
+// host object lends a fixture's two already-published owners to the Aurora
+// emitter, transports retained IDs/optional names and copies sealed output
+// chunks. Optional JSON requires the same live module.
 class X86Emitter final {
     class State;
     std::unique_ptr<State> state_;

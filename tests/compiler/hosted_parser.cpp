@@ -7,7 +7,6 @@
 #include "hosted_lexer_abi.hpp"
 #include "hosted_parser.hpp"
 #include "hosted_resolver.hpp"
-#include "x86.hpp"
 #include "../../runtime/hosted_bytes.hpp"
 #include <algorithm>
 #include <array>
@@ -1261,55 +1260,41 @@ public:
 };
 
 // Unresolved syntax comparisons stay above. The production boundary below is
-// independently checked typed IR, optional ABI observations and source-backed
+// the pipeline's verified output: emitted code, ABI facts and source-backed
 // diagnostics; no fixture reconstructs a resolved Program.
-template <class Module>
-const aurora::ir::FunctionBody &
-typedFunction(const Module &module, const aurora::ir::Metadata &metadata, const std::string &name) {
-    const auto found = std::find_if(module.functions.begin(), module.functions.end(), [&](const auto &function) {
-        return metadata.callable(function.callableId).name() == name;
-    });
-    require(found != module.functions.end(), "typed function was omitted: " + name);
-    return *found;
+aurora::EmissionRequest emittedFacts() {
+    aurora::EmissionRequest request;
+    request.emit = true;
+    request.abiFacts = true;
+    return request;
 }
-template <class Instruction> std::vector<Instruction> typedInstructions(const aurora::ir::FunctionBody &function) {
-    std::vector<Instruction> result;
-    for (const auto &instruction : function.code)
-        if (const auto *value = std::get_if<Instruction>(&instruction))
-            result.push_back(*value);
-    return result;
+bool contains(const std::string &text, const std::string &part) {
+    return text.find(part) != std::string::npos;
+}
+// Every part occurs, each after the previous one.
+bool ordered(const std::string &text, const std::vector<std::string> &parts) {
+    std::size_t at = 0;
+    for (const auto &part : parts) {
+        at = text.find(part, at);
+        if (at == std::string::npos)
+            return false;
+        at += part.size();
+    }
+    return true;
+}
+std::string label(const std::string &symbol) {
+    return "\n" + symbol + ":\n";
+}
+std::string call(const std::string &symbol) {
+    return "call " + symbol + "\n";
+}
+std::string declared(const std::string &symbol, const std::string &source) {
+    return "\"" + symbol + "\":{\"source_name\":\"" + source + "\"";
 }
 std::string spanText(const aurora::SourceSpan &span) {
     require(span.source && span.begin.offset <= span.end.offset && span.end.offset <= span.source->text.size(),
             "diagnostic source span escaped its immutable source");
     return span.source->text.substr(span.begin.offset, span.end.offset - span.begin.offset);
-}
-bool nominalViews(const aurora::ir::Metadata &metadata, const std::map<int, std::set<int>> &expected) {
-    if (metadata.scopeCount() != expected.size())
-        return false;
-    auto scope = expected.begin();
-    for (std::size_t index = 0; index < metadata.scopeCount(); ++index, ++scope) {
-        if (metadata.scopeAt(index) != scope->first)
-            return false;
-        auto descriptor = scope->second.begin();
-        for (const auto id : metadata.visibleDescriptors(scope->first))
-            if (id >= 100 && id < 1000000) {
-                if (descriptor == scope->second.end() || *descriptor != id)
-                    return false;
-                ++descriptor;
-            }
-        if (descriptor != scope->second.end())
-            return false;
-    }
-    return true;
-}
-void constantReturn(const aurora::ir::FunctionBody &function, aurora::ir::CallableView callable, std::int64_t value) {
-    require(callable.result() == aurora::Type::I64 && callable.parameters().empty() && function.code.size() == 2 &&
-                std::holds_alternative<aurora::ir::Constant>(function.code[0]) &&
-                std::get<aurora::ir::Constant>(function.code[0]).value == value &&
-                std::get<aurora::ir::Constant>(function.code[0]).type == aurora::Type::I64 &&
-                std::holds_alternative<aurora::ir::Return>(function.code[1]),
-            "concrete value/reflection return differs");
 }
 void resolvedModules() {
     context = "typed module instances, nominal authority, layout and source ownership";
@@ -1346,118 +1331,70 @@ void resolvedModules() {
         const auto main = resolution.add(root), imported = resolution.add(dependency);
         require(main.id != imported.id && main.moduleName == "root" && imported.moduleName == "dep",
                 "copied module header identity differs");
-        return resolution.resolve({imported.id, main.id}, main.id, aurora::AnalysisMode::Lint, true);
+        return resolution.resolve({imported.id, main.id}, main.id, aurora::AnalysisMode::Lint, emittedFacts());
     }();
-    const auto &module = resolved.module.get();
-    const auto &metadata = resolved.module.metadata();
-    const auto &abi = resolved.abiDeclarations;
+    const auto &code = resolved.code;
+    const auto &abi = resolved.abiFacts;
     const std::string hidden = "__au_c_m1_4root_n0__d6Hidden", state = "__au_e_m1_4root_n0__d5State";
     const std::string leaf = "__au_c_m1_3dep_n1_3lib_d4Leaf", flag = "__au_e_m1_3dep_n1_3lib_d4Flag";
     const std::array<std::string, 2> buffers{"__au_c_m1_3dep_n1_3lib_d6Buffer_t2_u8_v3",
                                              "__au_c_m1_3dep_n1_3lib_d6Buffer_t2_u8_v4"};
     const std::array<std::string, 2> measures{"__au_g_m1_3dep_n1_3lib_d7measure_t1_c28__au_c_m1_4root_n0__d6Hidden",
                                               "__au_g_m1_3dep_n1_3lib_d7measure_t1_e27__au_e_m1_4root_n0__d5State"};
-    // Validated IR prunes unused imported implementations; source ABI metadata
-    // retains every resolved declaration of this fixture.
+    // Validated IR prunes unused imported implementations and keeps retained
+    // declaration order in code and ABI facts alike.
     const std::array<std::string, 5> retained{measures[0],
                                               measures[1],
                                               "answer",
                                               "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v3",
                                               "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v4"};
-    require(module.functions.size() == retained.size() && metadata.classCount() == 4 && metadata.enumCount() == 2 &&
-                abi.records.size() == 4 && abi.enums.size() == 2 && abi.functions.size() == 9,
-            "typed output duplicated concrete instances or lost declarations");
-    for (std::size_t index = 0; index < retained.size(); ++index)
-        require(metadata.callable(module.functions[index].callableId).name() == retained[index],
-                "retained concrete function order differs");
-    for (std::size_t index = 0; index < metadata.classCount(); ++index)
-        require(!metadata.isCarrier(metadata.classAt(index)), "typed output added an array carrier");
-    require(abi.records.at(leaf).sourceName == "lib::Leaf" && abi.records.at(hidden).sourceName == "Hidden" &&
-                abi.records.at(leaf).members == std::vector<std::string>{"value"} &&
-                abi.records.at(hidden).members == std::vector<std::string>{"value"} &&
-                abi.enums.at(flag).members == std::vector<std::string>{"cold", "hot"} &&
-                abi.enums.at(state).members == std::vector<std::string>{"zero", "one"} &&
-                metadata.enumCases(metadata.findEnum(flag).value()) == 2 &&
-                metadata.enumCases(metadata.findEnum(state).value()) == 2,
-            "source ABI field/case order or concrete enum identity differs");
-    for (std::size_t index = 0; index < measures.size(); ++index) {
-        const auto &function = module.functions.at(index);
-        const auto callable = metadata.callable(function.callableId);
-        require(callable.name() == measures[index] && callable.moduleScope() == 1 && !callable.receiver() &&
-                    abi.functions.at(callable.name()).sourceName == "lib::measure",
-                "function instance order, exact nominal identity or defining module differs");
-        constantReturn(function, callable, 8);
+    const std::array<std::string, 5> sources{"lib::measure", "lib::measure", "answer", "lib::Buffer", "lib::Buffer"};
+    std::vector<std::string> labels, functions;
+    for (std::size_t index = 0; index < retained.size(); ++index) {
+        labels.push_back(label(retained[index]));
+        functions.push_back(declared(retained[index], sources[index]));
     }
+    require(ordered(code, labels) && ordered(abi, functions), "retained concrete function order differs");
+    require(ordered(abi,
+                    {"\"records\":{",
+                     declared(leaf, "lib::Leaf") +
+                         ",\"size\":8,\"alignment\":8,\"reserved\":8,\"fields\":[{\"name\":\"value\",",
+                     declared(buffers[0], "lib::Buffer"),
+                     declared(buffers[1], "lib::Buffer"),
+                     declared(hidden, "Hidden") +
+                         ",\"size\":8,\"alignment\":8,\"reserved\":8,\"fields\":[{\"name\":\"value\",",
+                     "},\"enums\":{",
+                     declared(flag, "lib::Flag") + ",\"cases\":{\"cold\":0,\"hot\":1}}",
+                     declared(state, "State") + ",\"cases\":{\"zero\":0,\"one\":1}}",
+                     "},\"functions\":{"}),
+            "source ABI declarations, field/case order or concrete enum identity differs");
     for (std::size_t index = 0; index < buffers.size(); ++index) {
-        const auto capacity = static_cast<int>(index + 3);
-        const auto id = metadata.findClass(buffers[index]).value();
-        const auto fields = metadata.fields(id);
-        const auto leaves = metadata.leaves(id);
-        const auto storage = metadata.storage(id);
-        require(abi.records.at(buffers[index]).sourceName == "lib::Buffer" &&
-                    abi.records.at(buffers[index]).members == std::vector<std::string>{"data"} &&
-                    leaves.size() == static_cast<std::size_t>(capacity) &&
-                    std::all_of(leaves.begin(),
-                                leaves.end(),
-                                [](const auto &type) {
-                                    return type == aurora::Type::U8;
-                                }) &&
-                    fields.size() == 1 && fields[0].elementType == aurora::Type::U8 && fields[0].firstLeaf == 0 &&
-                    fields[0].length == capacity && fields[0].array && fields[0].elementCount == 1 &&
-                    storage.sizeBytes == capacity && storage.alignment == 1 && storage.reservedBytes == 8 &&
-                    storage.fieldOffsets.size() == 1 && storage.fieldOffsets.at(0) == 0,
+        const auto capacity = std::to_string(index + 3);
+        require(contains(abi,
+                         declared(buffers[index], "lib::Buffer") + ",\"size\":" + capacity +
+                             ",\"alignment\":1,\"reserved\":8,\"fields\":[{\"name\":\"data\",\"offset\":0,\"bytes\":" +
+                             capacity + ",\"array_length\":" + capacity + ",\"kind\":\"u8\""),
                 "concrete array instance lost its packed byte layout or ordered field metadata");
-        const std::array<std::string, 3> names{
-            "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v" + std::to_string(capacity),
-            "__au_m_m1_3dep_n2_3lib6Buffer_d4size_t2_u8_v" + std::to_string(capacity),
-            "__au_m_m1_3dep_n2_3lib6Buffer_d8own_size_t2_u8_v" + std::to_string(capacity)};
-        const std::array<std::string, 3> sourceNames{"lib::Buffer", "lib::size", "lib::own_size"};
-        for (std::size_t method = 0; method < names.size(); ++method) {
-            require(abi.functions.at(names[method]).sourceName == sourceNames[method] &&
-                        abi.functions.at(names[method]).members.empty(),
-                    "method/constructor ABI identity differs");
-            if (method)
-                require(std::none_of(module.functions.begin(),
-                                     module.functions.end(),
-                                     [&](const auto &function) {
-                                         return metadata.callable(function.callableId).name() == names[method];
-                                     }),
-                        "unused imported getter escaped validated-IR pruning");
-        }
-        const auto &constructor = typedFunction(module, metadata, names[0]);
-        const auto callable = metadata.callable(constructor.callableId);
-        require(callable.moduleScope() == 1 && callable.receiver() &&
-                    callable.receiver()->className == buffers[index] && callable.receiver()->constructor &&
-                    callable.receiver()->mutableValue && callable.receiver()->publicAccess &&
-                    callable.parameters().empty() && callable.result() == aurora::Type::I64 &&
-                    constructor.code.size() == 3 &&
-                    std::holds_alternative<aurora::ir::ReceiverArrayZero>(constructor.code[0]) &&
-                    std::get<aurora::ir::ReceiverArrayZero>(constructor.code[0]).fieldIndex == 0 &&
-                    std::holds_alternative<aurora::ir::Constant>(constructor.code[1]) &&
-                    std::get<aurora::ir::Constant>(constructor.code[1]).value == 0 &&
-                    std::holds_alternative<aurora::ir::Return>(constructor.code[2]),
-                "concrete constructor lost its empty-array initialization");
+        const std::array<std::string, 3> names{"__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v" + capacity,
+                                               "__au_m_m1_3dep_n2_3lib6Buffer_d4size_t2_u8_v" + capacity,
+                                               "__au_m_m1_3dep_n2_3lib6Buffer_d8own_size_t2_u8_v" + capacity};
+        for (std::size_t method = 1; method < names.size(); ++method)
+            require(!contains(code, label(names[method])) && !contains(abi, "\"" + names[method] + "\""),
+                    "unused imported getter escaped validated-IR pruning");
+        require(contains(abi,
+                         declared(names[0], "lib::Buffer") + ",\"receiver\":\"" + buffers[index] +
+                             "\",\"receiver_mutable\":true,"),
+                "concrete constructor lost its receiver identity");
     }
-    const auto &answer = module.functions.at(2);
-    const auto answerCallable = metadata.callable(answer.callableId);
-    require(answerCallable.name() == "answer" && answerCallable.moduleScope() == 0 && !answerCallable.receiver(),
-            "root callable identity or dependency order differs");
-    const auto constructors = typedInstructions<aurora::ir::MethodCallObservation>(answer);
-    require(constructors.size() == 3 && constructors[0].callee == constructors[2].callee &&
-                constructors[0].callee == "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v3" &&
-                constructors[1].callee == "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v4" &&
-                constructors[0].receiverOffset != constructors[2].receiverOffset,
-            "repeated constructions lost interned targets or independent object storage");
-    const auto calls = typedInstructions<aurora::ir::Call>(answer);
-    require(calls.size() == 3 && calls[0].callee == measures[0] && calls[1].callee == measures[1] &&
-                calls[2].callee == measures[0],
+    require(ordered(code,
+                    {label("answer"),
+                     call(retained[3]),
+                     call(retained[4]),
+                     call(retained[3]),
+                     call(measures[0]),
+                     call(measures[1]),
+                     call(measures[0])}),
             "typed calls lost repeated concrete-instance identity or source order");
-    const auto enumValues = typedInstructions<aurora::ir::EnumConstant>(answer);
-    require(enumValues.size() == 1 && enumValues[0].type.isEnum() && enumValues[0].type.className == state &&
-                enumValues[0].caseIndex == 1,
-            "typed enum expression lost its nominal identity or declaration ordinal");
-    require(nominalViews(metadata, {{0, {100, 101, 102, 103, 104, 105}}, {1, {100, 101, 102, 104}}}),
-            "template argument authority leaked into runtime reflection views");
     require(resolved.lintDiagnostics.size() == 1 &&
                 resolved.lintDiagnostics[0].code == aurora::DiagnosticCode::UnreadLocal &&
                 resolved.lintDiagnostics[0].message == "local binding 'state' is never read" &&
@@ -1472,7 +1409,7 @@ void resolvedModules() {
 }
 
 void resolvedVisibility() {
-    context = "typed overload selection and direct-import reflection views";
+    context = "typed overload selection and direct-import ABI identity";
     const auto resolved = [] {
         aurora::HostedResolution resolution;
         const auto root = resolution.add(std::make_shared<const aurora::SourceText>(
@@ -1485,37 +1422,26 @@ void resolvedVisibility() {
                                                        "auto choose(bool value)->i64{return 2;}"));
         const auto types = resolution.add(std::make_shared<const aurora::SourceText>(
             "types.au", "export module types;export class Leaf{public:i64 value;};class Hidden{public:i64 value;};"));
-        return resolution.resolve({types.id, functions.id, root.id}, root.id, aurora::AnalysisMode::Check, true);
+        return resolution.resolve(
+            {types.id, functions.id, root.id}, root.id, aurora::AnalysisMode::Check, emittedFacts());
     }();
-    const auto &module = resolved.module.get();
-    const auto &metadata = resolved.module.metadata();
+    const auto &code = resolved.code;
+    const auto &abi = resolved.abiFacts;
     const std::array<std::string, 3> overloads{"__au_o_m1_9functions_n0__d6choose_p1_295___au_c_m1_5types_n0__d4Leaf",
                                                "__au_o_m1_9functions_n0__d6choose_p1_20_",
                                                "__au_o_m1_9functions_n0__d6choose_p1_21_"};
-    require(module.functions.size() == 2, "selected overload/root count differs");
-    const auto selected = metadata.callable(module.functions[0].callableId);
-    const auto answer = metadata.callable(module.functions[1].callableId);
-    require(selected.name() == overloads[1] && selected.moduleScope() == 2 && selected.parameters().size() == 1 &&
-                selected.parameters().front() == aurora::Type::I64 && answer.name() == "answer" &&
-                answer.moduleScope() == 0 && resolved.abiDeclarations.functions.size() == 4 &&
-                resolved.abiDeclarations.functions.at("answer").sourceName == "answer",
-            "selected overload/root order or pre-pruning ABI inventory differs");
-    for (std::size_t index = 0; index < overloads.size(); ++index) {
-        require(resolved.abiDeclarations.functions.at(overloads[index]).sourceName == "choose",
-                "overload parameter-tuple ABI identity differs");
+    require(ordered(code, {label(overloads[1]), label("answer")}) &&
+                ordered(abi,
+                        {declared(overloads[1], "choose") + ",\"receiver\":null",
+                         "\"parameters\":[{\"offset\":0,\"bytes\":8,\"kind\":\"i64\"}]",
+                         declared("answer", "answer")}),
+            "selected overload/root order or ABI identity differs");
+    for (std::size_t index = 0; index < overloads.size(); ++index)
         if (index != 1)
-            require(std::none_of(module.functions.begin(),
-                                 module.functions.end(),
-                                 [&](const auto &function) {
-                                     return metadata.callable(function.callableId).name() == overloads[index];
-                                 }),
+            require(!contains(code, label(overloads[index])) && !contains(abi, "\"" + overloads[index] + "\""),
                     "unselected imported overload escaped validated-IR pruning");
-    }
-    const auto calls = typedInstructions<aurora::ir::Call>(module.functions.back());
-    require(calls.size() == 1 && calls[0].callee == overloads[1],
+    require(ordered(code, {label("answer"), call(overloads[1])}),
             "typed overload selection chose a hidden or signature-inaccessible candidate");
-    require(nominalViews(metadata, {{0, {}}, {1, {100, 101}}, {2, {100}}}),
-            "reflection views lost an empty scope or granted private/transitive nominal types");
     ++cases;
 
     context = "private overload is not callable through a direct import";
@@ -1539,7 +1465,7 @@ void resolvedVisibility() {
             "private overload rejection lost its exact typed decision or caller span");
     ++cases;
 
-    context = "empty module views and returned lint source lifetime";
+    context = "check-only compilation and returned lint source lifetime";
     std::weak_ptr<const aurora::SourceText> retained;
     const auto empty = [&] {
         aurora::HostedResolution resolution;
@@ -1551,13 +1477,12 @@ void resolvedVisibility() {
             resolution.add(std::make_shared<const aurora::SourceText>("empty.au", "export module empty;"));
         return resolution.resolve({imported.id, root.id}, root.id, aurora::AnalysisMode::Lint);
     }();
-    require(nominalViews(empty.module.metadata(), {{0, {}}, {1, {}}}) && empty.abiDeclarations.records.empty() &&
-                empty.abiDeclarations.enums.empty() && empty.abiDeclarations.functions.empty() &&
+    require(empty.code.empty() && empty.stackFacts.empty() && empty.abiFacts.empty() &&
                 empty.lintDiagnostics.size() == 1 && !retained.expired() &&
                 empty.lintDiagnostics[0].span.source == retained.lock() &&
                 spanText(empty.lintDiagnostics[0].span) == "unused" &&
                 empty.lintDiagnostics[0].span.source->path == "empty-view-root.au",
-            "typed cleanup omitted empty views, ignored optional ABI collection or invalidated lint sources");
+            "check-only compilation produced artifacts or invalidated lint sources");
     ++cases;
 
     context = "instantiated template diagnostic retains its definition source";
@@ -1602,20 +1527,23 @@ void resolvedLinkageNames() {
             "auto choose(C value)->i64{return 0;}auto choose(E value)->i64{return 0;}"
             "auto choose(builtin::span<const u8> value)->i64{return 0;}"
             "auto order(i64 a,bool b)->i64{return a;}auto order(bool a,i64 b)->bool{return a;}"
-            "}auto answer()->i64{return ns::measure<ns::Box<ns::Pair<ns::C,ns::E>>>();}"));
-        return resolution.resolve({root.id}, root.id, aurora::AnalysisMode::Check, true);
+            "}auto answer()->i64{const ns::C c=ns::C{.value=0};"
+            "if(ns::order(true,0)){return ns::order(0,true);}"
+            "return ns::measure<ns::Box<ns::Pair<ns::C,ns::E>>>()+ns::choose(0)+ns::choose(true)+ns::choose(0u64)"
+            "+ns::choose(0u8)+ns::choose(c)+ns::choose(ns::E::one)+ns::choose(\"x\");}"));
+        return resolution.resolve({root.id}, root.id, aurora::AnalysisMode::Check, emittedFacts());
     }();
-    const auto &abi = resolved.abiDeclarations;
+    const auto &abi = resolved.abiFacts;
     const std::string base = "_m2_5alpha4beta_n1_2ns_d";
     const std::string className = "__au_c" + base + "1C", enumName = "__au_e" + base + "1E";
     for (const auto &component :
          std::vector<std::string>{"0_", "1_", "7_", "10_", "5_" + className, "9_" + enumName, "11_"}) {
         const auto name = "__au_o" + base + "6choose_p1_" + std::to_string(component.size()) + component;
-        require(abi.functions.contains(name),
+        require(contains(abi, declared(name, "ns::choose")),
                 "overload serialized a resolved-kind ordinal or changed nominal spelling");
     }
-    require(abi.functions.contains("__au_o" + base + "5order_p2_20_21_") &&
-                abi.functions.contains("__au_o" + base + "5order_p2_21_20_"),
+    require(contains(abi, declared("__au_o" + base + "5order_p2_20_21_", "ns::order")) &&
+                contains(abi, declared("__au_o" + base + "5order_p2_21_20_", "ns::order")),
             "overload reordered parameters or serialized its return type");
     const auto nominal = [](const std::string &name) {
         return "_c" + std::to_string(name.size()) + name;
@@ -1624,8 +1552,8 @@ void resolvedLinkageNames() {
     const auto pair = "__au_c" + base + "4Pair_t2" + nominal(className) + enumeration;
     const auto box = "__au_c" + base + "3Box_t1" + nominal(pair);
     const auto measure = "__au_g" + base + "7measure_t1" + nominal(box);
-    require(abi.records.contains(pair) && abi.records.contains(box) && abi.functions.contains(measure) &&
-                abi.functions.contains("answer"),
+    require(contains(abi, declared(pair, "ns::Pair")) && contains(abi, declared(box, "ns::Box")) &&
+                contains(abi, declared(measure, "ns::measure")) && contains(abi, declared("answer", "answer")),
             "nested instance inherited prototype cache or changed root spelling");
     ++cases;
 }
@@ -3873,11 +3801,10 @@ void callCatalogueIsolation() {
         aurora::HostedResolution resolution;
         const auto source = std::make_shared<const aurora::SourceText>("catalogue.au", "module catalogue;" + body);
         const auto header = resolution.add(source);
-        const auto resolved = resolution.resolve({header.id}, header.id, aurora::AnalysisMode::Check, true);
-        aurora::X86Emitter emitter;
-        return std::array<std::string, 3>{emitter.emit(resolved.module),
-                                          emitter.stackFactsJson(resolved.module),
-                                          emitter.abiFactsJson(resolved.module, resolved.abiDeclarations)};
+        auto request = emittedFacts();
+        request.stackFacts = true;
+        const auto resolved = resolution.resolve({header.id}, header.id, aurora::AnalysisMode::Check, request);
+        return std::array<std::string, 3>{resolved.code, resolved.stackFacts, resolved.abiFacts};
     };
     const std::string ordinary = "auto f()->i64{return 7;}";
     const auto before = compile(ordinary);

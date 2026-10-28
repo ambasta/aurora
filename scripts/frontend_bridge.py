@@ -410,6 +410,38 @@ ROWS = (
         "noexcept",
     ),
     (
+        "pipeline_run(builtin::ByteRegion region, compiler_resolver::Session session, i64 root, i64 diagnostic, "
+        "u64 options) -> compiler_pipeline::Result",
+        "move compiler_pipeline::run(region, move(session), root, diagnostic, options)",
+        "PipelineRun:region,session,root,diagnostic,options",
+        "noexcept",
+    ),
+    (
+        "pipeline_release(builtin::ByteRegion region, compiler_pipeline::Result result) -> i64",
+        "direct compiler_pipeline::release(region, move(result))",
+        "PipelineRelease:region,result",
+        "noexcept,discard",
+    ),
+    (
+        "pipeline_report(const compiler_pipeline::Result& result) -> compiler_pipeline::Report",
+        "copy result.report()",
+        "",
+        "noexcept",
+    ),
+    (
+        "pipeline_lint(const compiler_pipeline::Result& result, i64 index) -> compiler_resolver::MetaRow",
+        "copy result.lint(index)",
+        "",
+        "noexcept",
+    ),
+    (
+        "pipeline_chunk(const compiler_pipeline::Result& result, compiler_x86::Artifact artifact, i64 offset) -> "
+        "compiler_x86::EmitChunk",
+        "copy result.chunk(artifact, offset)",
+        "",
+        "noexcept",
+    ),
+    (
         "projection_name_capacity(const compiler_resolver::Session& session) -> i64",
         "direct compiler_lowering_projection::name_capacity(session)",
         "",
@@ -448,28 +480,8 @@ ROWS = (
         "noexcept",
     ),
     (
-        "projection_metadata_counts(const compiler_lowering_projection::ProjectionWorkspace& workspace) -> "
-        "compiler_ir_metadata::InputCounts",
-        "copy compiler_lowering_projection::metadata_counts(workspace)",
-        "",
-        "noexcept",
-    ),
-    (
-        "projection_instruction_counts(const compiler_lowering_projection::ProjectionWorkspace& workspace) -> "
-        "compiler_ir_instructions::InstructionCounts",
-        "copy compiler_lowering_projection::instruction_counts(workspace)",
-        "",
-        "noexcept",
-    ),
-    (
         "projection_count(const compiler_lowering_projection::ProjectionWorkspace& workspace, i64 pool) -> i64",
         "direct workspace.count(pool)",
-        "",
-        "noexcept",
-    ),
-    (
-        "projection_lint(const compiler_lowering_projection::ProjectionWorkspace& workspace, i64 index) -> i64",
-        "direct compiler_lowering_projection::lint(workspace, index)",
         "",
         "noexcept",
     ),

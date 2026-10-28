@@ -596,7 +596,7 @@ public:
     Type type;
 };
 // One operation inventory: hostile fixtures own their variable payloads,
-// while production observations borrow only immutable owner ranges. All other
+// while validated observations borrow only immutable owner ranges. All other
 // operation records, including copied Type and name observations, are shared.
 template <class Offsets, class Services, class Literals, class Roots>
 using BasicInstruction = std::variant<BindServiceParameter,
@@ -750,7 +750,7 @@ public:
     }
     bool operator==(const InstructionRange &) const = default;
 };
-// Production bodies borrow durable source rows. No native executable payload
+// Validated bodies borrow durable source rows. No native executable payload
 // container survives ingress; code positions are separate from immutable IDs.
 class FunctionBody {
 public:
@@ -758,7 +758,7 @@ public:
     InstructionRange code;
 };
 // Hostile fixture construction deliberately keeps the owning raw spelling.
-// It is consumed into the same pending bundle as production lowering.
+// Import consumes it into the pending store pair that projection also fills.
 class Function {
 public:
     std::vector<Instruction> code;
@@ -827,8 +827,8 @@ public:
     int reservedBytes = 0;
     bool operator==(const ClassStorage &) const = default;
 };
-// Raw metadata remains a hostile construction route. Production lowering owns
-// one pending metadata/instruction bundle and never fills these maps.
+// Raw metadata is the textual-IR fixtures' hostile construction route.
+// Compilations project lowering into the Aurora stores and never fill these maps.
 class Module {
 public:
     std::vector<Function> functions;

@@ -36,7 +36,6 @@ class Instructions final {
     friend class InstructionRange;
     friend class InstructionIngress;
     friend class detail::InstructionWriter;
-    friend class detail::LoweringIngress;
     template <class> friend class InstructionPayloadRange;
     friend ValidatedModule validate(InstructionIngress pending, verification::Metrics *metrics);
 

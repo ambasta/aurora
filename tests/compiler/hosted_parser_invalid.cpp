@@ -187,6 +187,7 @@ std::shared_ptr<const aurora::SourceText> resolutionFixture() {
     return source;
 }
 void resolutionControls() {
+    const aurora::EmissionRequest abiFacts{.emit = true, .abiFacts = true};
     auto source = resolutionFixture();
     // This host-only fixture publishes a deliberately forged failure report.
     // It never claims that stubbed native lowering produced a valid module.
@@ -196,7 +197,7 @@ void resolutionControls() {
         const auto module = resolution.add(source);
         require(module.id == 0 && module.moduleName == "forged", "session ingestion lost the copied module header");
         try {
-            static_cast<void>(resolution.resolve({module.id}, module.id, aurora::AnalysisMode::Check, true));
+            static_cast<void>(resolution.resolve({module.id}, module.id, aurora::AnalysisMode::Check, abiFacts));
         } catch (const aurora::Error &error) {
             diagnostic = error.diagnostic;
         }
@@ -219,7 +220,7 @@ void resolutionControls() {
             aurora::HostedResolution resolution;
             const auto module = resolution.add(source);
             mutate();
-            static_cast<void>(resolution.resolve({module.id}, module.id, aurora::AnalysisMode::Check, true));
+            static_cast<void>(resolution.resolve({module.id}, module.id, aurora::AnalysisMode::Check, abiFacts));
         } catch (const aurora::Error &error) {
             rejected = !injected && error.diagnostic.code == DiagnosticCode::Internal;
         } catch (const std::runtime_error &error) {
@@ -272,37 +273,6 @@ void resolutionControls() {
     reject("mismatched decoration count", [] {
         --reportedDecorations;
     });
-    reject("ABI declaration has wrong syntax domain", [] {
-        resolutionSyntax[5].tag = Resolution::SyntaxTag::expression;
-    });
-    reject("unknown native identity mode", [] {
-        resolutionMetadata[5].native_tag = static_cast<Resolution::NativeMode>(99);
-    });
-    reject("missing immutable linkage cache", [] {
-        resolutionMetadata[5].value0 = -1;
-    });
-    reject("linkage cache has another owner", [] {
-        resolutionMetadata[8].value9 = 4;
-    });
-    reject("linkage cache escapes source bytes", [] {
-        resolutionMetadata[8].value2 = sourceBytes + 1;
-    });
-    for (const std::int64_t size : {-1, 0, 2, 513})
-        reject("invalid copied linkage chunk extent", [=] {
-            linkageChunkSize = size;
-        });
-    reject("symbol defining module outside graph", [] {
-        resolutionMetadata[5].value1 = 1;
-    });
-    reject("output list cycle", [] {
-        resolutionMetadata[6].value1 = 6;
-    });
-    reject("wrong output list tag", [] {
-        resolutionMetadata[6].tag = Resolution::MetaTag::signature;
-    });
-    reject("output symbol outside metadata", [] {
-        resolutionMetadata[6].value0 = 9;
-    });
     reject("reversed sparse source span", [] {
         resolutionMetadata[1].value2 = resolutionMetadata[1].value1 - 1;
     });
@@ -332,15 +302,13 @@ void resolutionControls() {
         typeReport();
         resolutionMetadata[4].concrete_tag = static_cast<Resolution::ResolvedTypeKind>(99);
     });
-    // The projection no longer reads every syntax/decoration row to build an
-    // AST. Exceptions are injected only on source views it still consumes.
-    for (const int read : {1, 2})
-        reject(
-            "resolved copied-row read exception",
-            [=] {
-                projectionThrow = read;
-            },
-            true);
+    // Rendering the failure reads only metadata rows; exceptions are injected there.
+    reject(
+        "resolved copied-row read exception",
+        [] {
+            projectionThrow = 2;
+        },
+        true);
 
     reject("unknown lowering status", [] {
         loweringResult.result_status = static_cast<Lowering::LoweringStatus>(99);
@@ -433,118 +401,32 @@ void resolutionControls() {
 }
 
 } // namespace
-// No forged report in this fixture may reach successful module verification.
-// A distinct exception prevents the rejection controls from accepting this path.
-void aurora::ir::verifyHostedGraph(std::vector<FunctionBody> &, const Metadata &) {
-    throw std::runtime_error("forged projection unexpectedly reached graph verification");
-}
-// Link the real native capsule without the generated metadata verifier. Every
-// owner entry rejects: parser conversion failures must precede construction,
-// and this fixture must never manufacture accepted durable metadata.
-[[noreturn]] static void unexpectedMetadataEntry() noexcept {
-    std::fputs("forged projection unexpectedly reached metadata verification\n", stderr);
+// No forged report in this fixture may reach the compilation pipeline: every
+// rejection here precedes it, and it never manufactures accepted durable IR.
+[[noreturn]] static void unexpectedPipelineEntry() noexcept {
+    std::fputs("forged projection unexpectedly reached the compilation pipeline\n", stderr);
     std::abort();
 }
-// This report-only fixture rejects before the successful source projection.
-// Its real traversal, pending allocation and cleanup are covered by the shared
-// projection driver, never by substituting another successful implementation.
-extern "C" std::int64_t aurora_hosted_projection_name_capacity(const void *) noexcept {
-    unexpectedMetadataEntry();
+extern "C" void aurora_hosted_pipeline_run(const void *, void *) noexcept {
+    unexpectedPipelineEntry();
 }
-extern "C" void aurora_hosted_projection_create(const void *, void *) noexcept {
-    unexpectedMetadataEntry();
+extern "C" void aurora_hosted_pipeline_release(void *) noexcept {
+    unexpectedPipelineEntry();
 }
-extern "C" void aurora_hosted_projection_release(void *) noexcept {
-    unexpectedMetadataEntry();
+extern "C" void aurora_hosted_pipeline_report(const void *, void *) noexcept {
+    unexpectedPipelineEntry();
 }
-extern "C" std::int64_t aurora_hosted_projection_measure(const void *, std::int64_t, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
+extern "C" void aurora_hosted_pipeline_lint(const void *, std::int64_t, void *) noexcept {
+    unexpectedPipelineEntry();
 }
-extern "C" std::int64_t aurora_hosted_projection_fill(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" void aurora_hosted_projection_metadata_counts(const void *, void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" void aurora_hosted_projection_instruction_counts(const void *, void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_projection_count(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_projection_lint(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
+extern "C" void aurora_hosted_pipeline_chunk(const void *, std::int64_t, std::int64_t, void *) noexcept {
+    unexpectedPipelineEntry();
 }
 extern "C" void aurora_hosted_catalog_summary(void *output) noexcept {
     // Quota and admission inputs only; this fixture seeds no catalog.
     aurora::hosted_abi::compiler_catalog::Summary summary{};
     summary.serviceGroups = 4295033150;
     std::memcpy(output, &summary, sizeof(summary));
-}
-extern "C" void aurora_hosted_metadata_flag_masks(void *output) noexcept {
-    // Projection failures precede construction. This fixture grants no flag
-    // authority and still aborts if any forged projection reaches an owner.
-    const aurora::hosted_abi::compiler_ir_metadata::FlagMasks inert{};
-    std::memcpy(output, &inert, sizeof(inert));
-}
-extern "C" void aurora_hosted_metadata_create(const void *, void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_metadata_initialize(void *, const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" void aurora_hosted_metadata_release(void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_metadata_allocated(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_metadata_run(void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_metadata_error(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_metadata_object_leaf_root(const void *, std::int64_t, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t
-aurora_hosted_metadata_byte_array_element_root(const void *, std::int64_t, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" void aurora_hosted_instructions_create(const void *, void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" void aurora_hosted_instructions_release(void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_instructions_allocated(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_instructions_admit(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_instructions_structure(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_instructions_publish(void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_instructions_error(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-// No malformed parser report may reach the mandatory source verifier lifecycle.
-extern "C" void aurora_hosted_verification_create(const void *, void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_verification_run(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" void aurora_hosted_verification_report(const void *, void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" void aurora_hosted_verification_release(void *) noexcept {
-    unexpectedMetadataEntry();
 }
 extern "C" void aurora_hosted_parser_create(const void *input, void *output) {
     const auto &value = *static_cast<const aurora::hosted_abi::ParserCreate *>(input);

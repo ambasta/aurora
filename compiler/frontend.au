@@ -35,6 +35,8 @@ import aurora.compiler.x86_storage;
 import aurora.compiler.x86_object_storage;
 import aurora.compiler.x86_module;
 import aurora.compiler.x86_facts;
+import aurora.compiler.pipeline_declarations;
+import aurora.compiler.pipeline;
 
 // Private bridge forwarders are generated from scripts/frontend_bridge.py.
 // This import scaffold is not a standalone compiler frontend.

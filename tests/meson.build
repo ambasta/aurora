@@ -131,9 +131,13 @@ test(
 
 # Textual IR cases (.air) run through one driver; each top-level directory of
 # tests/compiler/ir is one test. See tests/compiler/ir/README.md.
-# The textual IR printer/reader is test tooling: it stays out of the compiler's
-# own library so aurorac (and every image built by it) never waits for it.
-ir_text = static_library('ir-text', '../compiler/ir_text.cpp',
+# The textual IR model is test tooling: its printer/reader, the fixture
+# metadata/instruction owners, validate and the fixture emitter driver. Compilations
+# run the Aurora pipeline instead, so aurorac (and every image built by it) never
+# waits for it.
+ir_text = static_library('ir-text', files('../compiler/ir_text.cpp', '../compiler/hosted_ir_metadata.cpp',
+                                          '../compiler/hosted_ir_instructions.cpp', '../compiler/ir_verify.cpp',
+                                          '../compiler/hosted_graph.cpp', '../compiler/hosted_x86.cpp'),
     dependencies: hosted_frontend, native: true, override_options: fixture_options, install: false)
 aurora_ir_check = executable('aurora-ir-check', 'tools/aurora_ir_check.cpp',
     dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),

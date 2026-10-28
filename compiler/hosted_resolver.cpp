@@ -3,7 +3,8 @@
 #include "hosted_resolver.hpp"
 #include "hosted_parser.hpp"
 #include "hosted_lowering_diagnostics.hpp"
-#include "ir_verify.hpp"
+#include "hosted_pipeline.hpp"
+#include "ir.hpp"
 #include "hosted_lexer_abi.hpp"
 #include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
@@ -12,7 +13,7 @@
 #include <limits>
 #include <iterator>
 #include <optional>
-#include <set>
+#include <map>
 #include <utility>
 #include <type_traits>
 
@@ -63,25 +64,12 @@ struct ModuleSource {
     std::string moduleName;
     std::int64_t sourceBegin = 0;
 };
-Token retainedSourceToken(const void *session,
-                          const std::vector<ModuleSource> &sources,
-                          std::int64_t sourceBytes,
-                          const wire::MetaRow &value) {
+// A token of a module source, with its span in the retained snapshot.
+Token moduleToken(const std::vector<ModuleSource> &sources, std::int64_t sourceBytes, const wire::MetaRow &value) {
     if (value.tag != MetaTag::source_reference)
         invalidResolution();
     if (value.value1 < 0 || value.value2 < value.value1 || value.value2 > sourceBytes)
         invalidResolution();
-    if (value.value0 == -1) {
-        std::string text;
-        text.reserve(sizeValue(value.value2 - value.value1));
-        for (auto at = value.value1; at < value.value2; ++at) {
-            const auto byte = aurora_hosted_resolver_read_source(session, at);
-            if (byte < 0 || byte > 255)
-                invalidResolution();
-            text.push_back(static_cast<char>(byte));
-        }
-        return Token(std::move(text), 0);
-    }
     if (value.value0 < 0 || sizeValue(value.value0) >= sources.size())
         invalidResolution();
     const auto &unit = sources[sizeValue(value.value0)];
@@ -96,6 +84,25 @@ Token retainedSourceToken(const void *session,
     if (span.begin.line < 1 || span.begin.column < 1 || span.end.line < span.begin.line || span.end.column < 1)
         invalidResolution();
     return Token(unit.source->text.substr(begin, end - begin), std::move(span));
+}
+// Synthetic spellings (module -1) live only in the Session's source pool.
+Token retainedSourceToken(const void *session,
+                          const std::vector<ModuleSource> &sources,
+                          std::int64_t sourceBytes,
+                          const wire::MetaRow &value) {
+    if (value.tag != MetaTag::source_reference || value.value0 != -1)
+        return moduleToken(sources, sourceBytes, value);
+    if (value.value1 < 0 || value.value2 < value.value1 || value.value2 > sourceBytes)
+        invalidResolution();
+    std::string text;
+    text.reserve(sizeValue(value.value2 - value.value1));
+    for (auto at = value.value1; at < value.value2; ++at) {
+        const auto byte = aurora_hosted_resolver_read_source(session, at);
+        if (byte < 0 || byte > 255)
+            invalidResolution();
+        text.push_back(static_cast<char>(byte));
+    }
+    return Token(std::move(text), 0);
 }
 class Projection {
     const void *session;
@@ -148,31 +155,6 @@ class Projection {
         if (index < 0 || sizeValue(index) >= sources.size())
             invalidResolution();
         return sources[sizeValue(index)];
-    }
-    std::vector<std::int64_t> list(std::int64_t last, std::int64_t parent, SyntaxTag tag) const {
-        std::vector<std::int64_t> result;
-        for (auto current = last; current != -1;) {
-            if (current < 0 || current >= parent)
-                invalidResolution();
-            const auto &value = node(current, tag);
-            result.push_back(current);
-            parent = current;
-            current = tag == SyntaxTag::edge ? value.value1 : value.value2;
-        }
-        std::reverse(result.begin(), result.end());
-        return result;
-    }
-    std::vector<std::int64_t> links(std::int64_t head, MetaTag tag, std::size_t next) const {
-        std::vector<std::int64_t> result;
-        std::set<std::int64_t> seen;
-        for (auto current = head; current != -1;) {
-            const auto &value = meta(current, tag);
-            if (!seen.insert(current).second)
-                invalidResolution();
-            result.push_back(current);
-            current = words(value).at(next);
-        }
-        return result;
     }
     Token sourceToken(std::int64_t reference) const {
         return retainedSourceToken(session, sources, sourceBytes, meta(reference, MetaTag::source_reference));
@@ -480,21 +462,6 @@ public:
         activeType.resize(metadata.size());
     }
     [[noreturn]] void diagnostic(const wire::SessionStatus &status);
-    std::vector<std::int64_t> declarations(std::size_t field) const {
-        const wire::MetaRow *output = nullptr;
-        for (const auto &value : metadata)
-            if (value.tag == MetaTag::context && value.value0 == 1) {
-                if (output)
-                    invalidResolution();
-                output = &value;
-            }
-        if (!output || field < 1 || field > 3)
-            invalidResolution();
-        std::vector<std::int64_t> result;
-        for (const auto link : links(words(*output)[field], MetaTag::link, 1))
-            result.push_back(meta(link, MetaTag::link).value0);
-        return result;
-    }
     std::string callableName(std::int64_t symbol) {
         const auto &identity = meta(symbol, MetaTag::symbol);
         if (identity.declaration_tag != DeclarationKind::function &&
@@ -502,74 +469,6 @@ public:
             identity.declaration_tag != DeclarationKind::constructor)
             invalidResolution();
         return native(symbol);
-    }
-    std::string nominalName(std::int64_t symbol, DeclarationKind kind) {
-        if (meta(symbol, MetaTag::symbol).declaration_tag != kind)
-            invalidResolution();
-        return native(symbol);
-    }
-    AbiDeclarations abiDeclarations() {
-        AbiDeclarations result;
-        const auto sourceName = [&](std::int64_t symbol) {
-            const auto &identity = meta(symbol, MetaTag::symbol);
-            if (identity.native_tag == NativeMode::sealed_builtin)
-                return native(symbol);
-            const auto scope = prefix(identity.value2);
-            const auto name = sourceToken(node(identity.value5, SyntaxTag::declaration).value0).text;
-            return scope.empty() ? name : scope + "::" + name;
-        };
-        const auto function = [&](std::int64_t symbol) {
-            result.functions.emplace(callableName(symbol), AbiDeclaration{sourceName(symbol), {}});
-        };
-        for (const auto symbol : declarations(1))
-            function(symbol);
-        for (const auto symbol : declarations(2)) {
-            const auto &identity = meta(symbol, MetaTag::symbol);
-            AbiDeclaration record{sourceName(symbol), {}};
-            if (identity.native_tag == NativeMode::sealed_builtin) {
-                const auto &descriptor = meta(identity.value8, MetaTag::context);
-                for (const auto child : links(descriptor.value4, MetaTag::context, 3))
-                    record.members.push_back(sourceToken(meta(child, MetaTag::context).value1).text);
-            } else {
-                const auto root = identity.value5;
-                const auto value = node(root, SyntaxTag::declaration);
-                if (value.declaration_tag != SyntaxKind::class_definition)
-                    invalidResolution();
-                for (const auto wrapper : list(value.value7, root, SyntaxTag::declaration)) {
-                    const auto member = node(wrapper, SyntaxTag::declaration);
-                    if (member.declaration_tag != SyntaxKind::declaration || member.value7 >= wrapper)
-                        invalidResolution();
-                    const auto declaration = node(member.value7, SyntaxTag::declaration);
-                    if (declaration.declaration_tag == SyntaxKind::field)
-                        record.members.push_back(sourceToken(declaration.value6).text);
-                    else
-                        function(decoration(member.value7).value1);
-                }
-            }
-            result.records.emplace(nominalName(symbol, DeclarationKind::class_value), std::move(record));
-        }
-        for (const auto symbol : declarations(3)) {
-            const auto &identity = meta(symbol, MetaTag::symbol);
-            AbiDeclaration enumeration{sourceName(symbol), {}};
-            if (identity.native_tag == NativeMode::sealed_builtin) {
-                const auto &descriptor = meta(identity.value8, MetaTag::context);
-                for (const auto child : links(descriptor.value4, MetaTag::context, 3))
-                    enumeration.members.push_back(sourceToken(meta(child, MetaTag::context).value1).text);
-            } else {
-                const auto root = identity.value5;
-                const auto value = node(root, SyntaxTag::declaration);
-                if (value.declaration_tag != SyntaxKind::enum_definition)
-                    invalidResolution();
-                for (const auto child : list(value.value7, root, SyntaxTag::declaration)) {
-                    const auto item = node(child, SyntaxTag::declaration);
-                    if (item.declaration_tag != SyntaxKind::enum_case)
-                        invalidResolution();
-                    enumeration.members.push_back(sourceToken(item.value0).text);
-                }
-            }
-            result.enums.emplace(nominalName(symbol, DeclarationKind::enumeration), std::move(enumeration));
-        }
-        return result;
     }
     HostedLoweringDiagnosticServices diagnosticServices() {
         return {[&](auto reference) {
@@ -1227,6 +1126,16 @@ public:
     std::uint64_t usedBytes() const {
         return region.metrics().used;
     }
+    std::uint64_t regionId() const {
+        return region.id();
+    }
+    // The pipeline takes the Session; its storage copy left here is dead.
+    const hosted_abi::compiler_resolver::Session &consume() {
+        if (!sessionLive || arenaLive)
+            invalidResolution();
+        sessionLive = false;
+        return session.session;
+    }
 };
 hosted_abi::BuiltinSpan span(const std::string &text) {
     hosted_abi::BuiltinSpan result;
@@ -1380,12 +1289,7 @@ class HostedResolution::Impl {
         }
         lowerStorage();
     }
-    HostedResolvedSource lower(AnalysisMode mode, bool collectAbi) {
-        AbiDeclarations declarations;
-        if (collectAbi) {
-            Projection resolved(owner.data(), sources, owner.usedBytes());
-            declarations = resolved.abiDeclarations();
-        }
+    HostedResolvedSource lower(AnalysisMode mode, const EmissionRequest &request) {
         configureLowering(mode);
         lowering::LoweringResult result;
         // Borrowed Session stays armed through execution, private projection
@@ -1429,34 +1333,29 @@ class HostedResolution::Impl {
                 rows, values, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
             throw Error(renderHostedLoweringDiagnostic(result, input, projection.diagnosticServices()));
         }
-        auto output = projectHostedLowering(owner.data(), owner.usedBytes(), result.root_row, result.diagnostic_row);
-        std::vector<Diagnostic> diagnostics;
-        diagnostics.reserve(output.lintReferences.size());
         const auto sourceBytes = aurora_hosted_resolver_count(owner.data(), 0);
-        const auto metadataCount = aurora_hosted_resolver_count(owner.data(), 2);
-        if (sourceBytes < 0 || static_cast<std::uint64_t>(sourceBytes) > owner.usedBytes() || metadataCount < 0 ||
-            static_cast<std::uint64_t>(metadataCount) > owner.usedBytes() / sizeof(wire::MetaRow))
+        if (sourceBytes < 0 || static_cast<std::uint64_t>(sourceBytes) > owner.usedBytes())
             invalidResolution();
-        for (const auto reference : output.lintReferences) {
-            if (reference < 0 || reference >= metadataCount)
-                invalidResolution();
-            wire::MetaRow row{};
-            aurora_hosted_resolver_read_meta(owner.data(), reference, &row);
-            auto identifier = retainedSourceToken(owner.data(), sources, sourceBytes, row);
-            diagnostics.push_back({DiagnosticCode::UnreadLocal,
-                                   "local binding '" + identifier.text + "' is never read",
-                                   std::move(identifier.span),
-                                   DiagnosticSeverity::Warning});
+        // The rest of the compilation is one Aurora call that consumes the Session.
+        auto output =
+            runHostedPipeline(owner.regionId(), owner.consume(), result.root_row, result.diagnostic_row, request);
+        HostedResolvedSource resolved;
+        resolved.lintDiagnostics.reserve(output.lints.size());
+        for (const auto &row : output.lints) {
+            auto identifier = moduleToken(sources, sourceBytes, row);
+            resolved.lintDiagnostics.push_back({DiagnosticCode::UnreadLocal,
+                                                "local binding '" + identifier.text + "' is never read",
+                                                std::move(identifier.span),
+                                                DiagnosticSeverity::Warning});
         }
-        std::sort(diagnostics.begin(), diagnostics.end(), [](const auto &left, const auto &right) {
-            return left.span.begin.offset < right.span.begin.offset;
-        });
-        // The result owns one pending metadata/instruction bundle.
-        // Destroy all transport views and free Session before source admission
-        // of every signature, the single publication, and native body checks.
-        owner.release();
-        auto verified = ir::validate(std::move(output.instructions));
-        return {std::move(verified), std::move(diagnostics), std::move(declarations)};
+        std::sort(
+            resolved.lintDiagnostics.begin(), resolved.lintDiagnostics.end(), [](const auto &left, const auto &right) {
+                return left.span.begin.offset < right.span.begin.offset;
+            });
+        resolved.code = std::move(output.code);
+        resolved.stackFacts = std::move(output.stackFacts);
+        resolved.abiFacts = std::move(output.abiFacts);
+        return resolved;
     }
 
 public:
@@ -1555,15 +1454,15 @@ public:
     HostedResolvedSource resolve(const std::vector<std::size_t> &order,
                                  std::size_t root,
                                  AnalysisMode mode,
-                                 bool collectAbi,
+                                 const EmissionRequest &request,
                                  bool sourceOrdered = false) {
         if (finished || failed || root >= sources.size() ||
             (sourceOrdered ? (!graphComplete || graphRoot != root) : (graphRoot || order.size() != sources.size())))
             invalidResolution();
         finished = true;
         // The direct API may outlive this call. Release its sole armed native
-        // owner on earlier failures; successful projection releases it before
-        // independent validation. Releasing an inactive owner is harmless.
+        // owner on earlier failures; after lowering the pipeline consumes it.
+        // Releasing an inactive owner is harmless.
         struct Release {
             SessionOwner &owner;
             ~Release() {
@@ -1605,7 +1504,7 @@ public:
         if (result != 0 || final.node != -1 || final.first != -1 || final.second != -1)
             invalidResolution();
         try {
-            return lower(mode, collectAbi);
+            return lower(mode, request);
         } catch (const Error &error) {
             throw error.withDefaultCode(DiagnosticCode::Semantic);
         }
@@ -1620,13 +1519,13 @@ HostedModule HostedResolution::add(std::shared_ptr<const SourceText> source) {
 std::optional<HostedImport> HostedResolution::nextImport(std::size_t root, std::size_t moduleRoots) {
     return implementation->nextImport(root, moduleRoots);
 }
-HostedResolvedSource HostedResolution::resolve(std::size_t root, AnalysisMode mode, bool collectAbiDeclarations) {
-    return implementation->resolve({}, root, mode, collectAbiDeclarations, true);
+HostedResolvedSource HostedResolution::resolve(std::size_t root, AnalysisMode mode, const EmissionRequest &request) {
+    return implementation->resolve({}, root, mode, request, true);
 }
 HostedResolvedSource HostedResolution::resolve(const std::vector<std::size_t> &order,
                                                std::size_t root,
                                                AnalysisMode mode,
-                                               bool collectAbiDeclarations) {
-    return implementation->resolve(order, root, mode, collectAbiDeclarations);
+                                               const EmissionRequest &request) {
+    return implementation->resolve(order, root, mode, request);
 }
 } // namespace aurora

@@ -1,8 +1,19 @@
 #pragma once
-#include "hosted_lowering.hpp"
+#include "types.hpp"
+#include "hosted_frontend_abi.hpp"
+#include <cstdint>
 #include <functional>
+#include <span>
 
 namespace aurora {
+// The fixed rejection report a failed lowering publishes.
+struct HostedLoweringInput {
+    std::span<const hosted_abi::compiler_lowering::OutputRow> rows;
+    std::span<const hosted_abi::compiler_lowering::OperandRow> operands;
+    std::int64_t sourceByteCount = 0;
+    std::int64_t moduleRoot = -1;
+    std::int64_t diagnosticRow = -1;
+};
 // Mechanical, bounded views of identities already selected by Aurora. Each
 // callback checks its Session ID and exact domain before indexing or rendering;
 // none performs lookup, chooses another name, or rechecks source semantics.
