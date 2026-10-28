@@ -35,10 +35,13 @@ end
 
 Instructions are the `compiler_lowering::InstructionForm` names; operands follow
 the reader's per-form codec (`codec` in `tests/tools/air.au`), and omitted
-trailing operands keep their defaults (zero, or -1 for optional field indices). Types are kind words (`i64`, `u8`, `span`,
-`bytes`, `console`, ...) or `(kind name key=value...)` with keys `display`,
-`resolved`, `elem`, `len`, `eparam`, `lparam`, `targs`. Names that are not plain
-words are quoted with C escapes. Out-of-range enumerators print as integers.
+trailing operands keep their defaults (zero, or -1 for optional field indices).
+Types are kind words (`i64`, `u8`, `span`, `bytes`, `console`, ...) or
+`(kind name key=value...)` with keys `display`, `resolved`, `elem`, `len`,
+`eparam`, `lparam`, `targs`; only the kind, name, element kind, length and the
+parameter/argument extents reach metadata. Names that are not plain words are
+quoted with C escapes. Every enumerator may also be spelled as an integer, so
+out-of-range values reach admission.
 
 Repetition is input sugar: a list item `x*N` repeats an item, and `{a,s}` inside
 it spells `a + s*i` for repetition `i`; lines between `repeat N` and `endrepeat`
