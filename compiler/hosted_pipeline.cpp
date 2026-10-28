@@ -186,9 +186,8 @@ std::string artifact(PipelineResult &result, x86::Artifact kind, std::int64_t si
     return text;
 }
 } // namespace
-PipelineOutput PipelineResult::output(const wire::Report &report,
-                                      const EmissionRequest &request,
-                                      const ReportSource &sources) {
+PipelineOutput
+PipelineResult::output(const wire::Report &report, const EmissionRequest &request, const ReportSource &sources) {
     if (report.stageValue != Stage::complete)
         rejectPipeline(report);
     const auto &sizes = report.sizesValue;
