@@ -1,0 +1,66 @@
+module seed_traps;
+import aurora.host;
+import aurora.memory;
+
+// Checked failures stop the seed (status 4), as they trap compiled code. The
+// argument selects one.
+
+auto named(builtin::span<const u8> arguments, builtin::span<const u8> name) -> bool {
+    i64 start = 0;
+    while (start < arguments.size() && arguments.at(start) != 0u8) {
+        start = start + 1;
+    }
+    start = start + 1;
+    if (arguments.size() - start - 1 != name.size()) {
+        return false;
+    }
+    i64 at = 0;
+    while (at < name.size()) {
+        if (arguments.at(start + at) != name.at(at)) {
+            return false;
+        }
+        at = at + 1;
+    }
+    return true;
+}
+
+auto main(builtin::HostFiles& files, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const i64 big = 9223372036854775807;
+    if (named(arguments, "add")) {
+        const i64 sum = big + 1;
+        return builtin::HostExit::failure;
+    }
+    if (named(arguments, "unsigned")) {
+        const u64 below = 1u64 - 2u64;
+        return builtin::HostExit::failure;
+    }
+    if (named(arguments, "divide")) {
+        const i64 zero = big - big;
+        const i64 quotient = big / zero;
+        return builtin::HostExit::failure;
+    }
+    if (named(arguments, "shift")) {
+        const u64 shifted = 3u64 << 63;
+        return builtin::HostExit::failure;
+    }
+    if (named(arguments, "convert")) {
+        const u8 narrow = u8(big);
+        return builtin::HostExit::failure;
+    }
+    if (named(arguments, "index")) {
+        array<u8, 2> pair = "ab";
+        const u8 third = pair[2];
+        return builtin::HostExit::failure;
+    }
+    if (named(arguments, "owner")) {
+        builtin::OwnedBytes bytes = region.try_allocate(2);
+        const u8 third = bytes.at(2);
+        return builtin::HostExit::failure;
+    }
+    if (named(arguments, "window")) {
+        const builtin::span<const u8> window = arguments.subspan(1, arguments.size());
+        return builtin::HostExit::failure;
+    }
+    return builtin::HostExit::usage;
+}

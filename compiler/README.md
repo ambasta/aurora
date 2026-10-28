@@ -137,10 +137,11 @@ commit messages for each step).
 
 ## Build and check
 
-For a fresh checkout, use a local copy of the checkpoint compiler, or rebuild it
-from source with `scripts/bootstrap.py rebuild`, and configure Meson with
-its path using the [setup commands](#source-bootstrap) below. The ordinary
-shortcuts reuse the configured graph:
+A fresh checkout builds from source with GCC: `meson setup build/seed .`
+without `-Dbootstrap_compiler` builds the [seed](#the-seed) and the first
+compiler from it. The merge loop configures a cached compiler instead, using the
+[setup commands](#source-bootstrap) below. The ordinary shortcuts reuse the
+configured graph:
 
 ```sh
 make -C compiler
@@ -171,15 +172,24 @@ the bump PR, so each one can be rebuilt from the one before it.
 
 ### Source bootstrap
 
-The build has one predecessor stage and a self-check, like GCC's
-bootstrap-and-compare:
+The build bootstraps from source with GCC alone, like GCC's
+bootstrap-and-compare, with one interpreted stage in front:
 
 ```text
-checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2) --compiles--> object C
-                            hosted-lexer-bootstrap: C1's object of C2 (B) and C2's object C identical
+GCC --builds--> aurora-seed --runs aurorac.au on the compiler's sources--> X (C0)
+C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2) --compiles--> object C
+seed-bootstrap: X and C1's object of C2 (B) identical
+hosted-lexer-bootstrap: B and C identical
 ```
 
-[`checkpoint.json`](checkpoint.json) names C0 by source commit and tree. C0 is
+Without `-Dbootstrap_compiler`, Meson takes this route: the [seed](#the-seed)
+interprets the compiler compiling itself, and X, the object it writes, is the
+current compiler. Since C1 and C2 compile the same sources, the two compares
+make X, C1 and C2 one fixed point. `-Dbootstrap_compiler` names a cached C0
+instead, the merge loop's fast path; the release suite still builds X there
+and runs `seed-bootstrap`.
+
+[`checkpoint.json`](checkpoint.json) names a cached C0 by source commit and tree. C0 is
 the C2 of main commit `a62c3c45` (the Aurora-hosted driver, inline hosted
 memory accesses and the 256-file module graph), built in one hop from the C2 of
 `6ad78f7d`; `history` lists the
@@ -217,6 +227,39 @@ checkpoint's runtime root (`runtime/linux`, the `aurora.host` and
 source tree's runtime root in, so a relocated checkpoint compiles hosted
 programs with `--runtime-root OUTPUT/runtime/linux`.
 Keep `OUTPUT/aurorac` outside directories you delete, or rerun `rebuild`.
+
+#### The seed
+
+`compiler/seed` is a small C++ interpreter, not a second compiler: a lexer,
+a parser and a tree walker for the subset of Aurora the compiler is written in.
+That is modules, imports and namespaces; enums; classes with fields,
+constructors and methods; functions with value and reference parameters;
+locals, `if`, `while`, `return` and assignment; i64, u64, u8 and bool with the
+checked arithmetic, conversions and shifts of [SCALARS.md](SCALARS.md); fixed
+arrays and string literals; readonly spans and windows; `OwnedBytes`,
+`OwnedValues`, `ByteRegion`, `HostFiles` and `move`. Each function is lowered on
+its first call to nodes with resolved types and frame offsets, which then run.
+The seed checks only what it needs to run (names, types, layouts): it does not
+repeat the compiler's admission, which X performs when it compiles the same
+sources. Anything else, such as templates, reflection or scalar owners, stops it
+with status 3 and a message; a checked failure (overflow, a bad index or window)
+stops it with status 4, where compiled code traps.
+
+`HostFiles` is the runtime root's `aurora.host`, interpreted, over native
+primitives: the zeroed 16384-byte session block and the same Linux system calls
+the compiler emits for them. Owners are native and have the observable behaviour
+of `aurora.memory`: a 4 GiB payload quota, at most 16383 live allocations,
+zeroed or filled storage, prefix-preserving resize and inert failures; ids,
+mappings and that runtime's own state are not modelled. Values have a packed
+layout of the seed's own, which the subset cannot observe (it has no
+reflection). The compiler's sources may use a construct only once the seed
+runs it.
+
+`tests/seed/cases.golden` runs the seed on a semantics program (whose output
+the compiled program also prints), traps and rejections; `seed-bootstrap` is its
+real test. The seed is built at -O1, runs on the build machine only and is
+never installed. On this compiler it takes about 80 s on one core, against 9 s
+for the checkpoint compiler and 19 s for C1 doing the same work.
 
 #### Bumping the checkpoint (one hop)
 

@@ -915,9 +915,13 @@ def main():
     # COMPILER --output OUTPUT INPUT...: the bridged test graph of the compiler
     # modules, whose scaffold is frontend.au.
     # COMPILER --program RUNTIME --output OUTPUT ROOT INPUT...: the hosted
-    # program ROOT over the compiler modules, as one object.
+    # program ROOT over the compiler modules, as one object. With --seed after
+    # COMPILER, COMPILER is aurora-seed and runs ROOT itself as the compiler.
     arguments = sys.argv[1:]
     runtime = None
+    seed = len(arguments) > 1 and arguments[1] == "--seed"
+    if seed:
+        del arguments[1]
     if len(arguments) > 2 and arguments[1] == "--program":
         runtime = arguments[2]
         del arguments[1:3]
@@ -936,12 +940,17 @@ def main():
     module_root = output.parent / (output.stem + "-modules")
     stage_modules(module_root, inputs)
     if root is None:
+        if seed:
+            raise ValueError("--seed builds only a hosted program")
         emit(compiler, module_root / "aurora/compiler/frontend.au", output, module_root)
         return
     # A closed image: only _start is global and only queried reflection is kept.
     command = ["--emit-object", "--local-symbols", "--referenced-reflection-only", "--runtime-root", runtime]
     command += ["--module-root", str(module_root.resolve())]
-    subprocess.run([str(compiler.resolve()), *command, str(root.resolve()), "-o", str(output.resolve())], check=True)
+    program = [str(compiler.resolve())]
+    if seed:
+        program += ["--module-root", str(module_root.resolve()), "--runtime-root", runtime, str(root.resolve())]
+    subprocess.run([*program, *command, str(root.resolve()), "-o", str(output.resolve())], check=True)
 
 
 if __name__ == "__main__":

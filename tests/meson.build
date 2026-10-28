@@ -603,6 +603,18 @@ test('hosted-lexer-bootstrap', find_program('cmp', native: true),
      args: [aurorac_stage2_object, aurorac_stage3_object],
      depends: [aurorac_stage2_object, aurorac_stage3_object], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
      timeout: 30)
+# The seed's check: the compiler object aurora-seed emits by interpreting the
+# compiler is the one the compiled compiler emits (C1's object of C2). With the
+# stage compare above, the seed's X, C1 and C2 are one fixed point. A cached C0
+# leaves building X to the release suite.
+seed_suites = from_seed ? ['full', 'merge', 'dev', 'core', 'compiler', 'release'] : ['full', 'release']
+test('seed-bootstrap', find_program('cmp', native: true), args: [aurorac_seed_object, aurorac_stage2_object],
+     depends: [aurorac_seed_object, aurorac_stage2_object], suite: seed_suites, timeout: 30)
+# The seed's own cases, with reviewed results: semantics, traps and fail-closed
+# rejections of constructs outside its subset.
+test('seed-cases', python, args: ['-B', golden_runner, files('seed/cases.golden'), '--modes', '--', aurora_seed],
+     depends: [aurora_seed], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+     timeout: 60)
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: air_frontend_dep,
                             native: true, override_options: fixture_options, install: false)

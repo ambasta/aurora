@@ -9,20 +9,6 @@ project(
 native_cpp = meson.get_compiler('cpp', native: true)
 python = find_program('python3', native: true)
 fs = import('fs')
-# compiler/checkpoint.json names the checkpoint (C0) by source commit; any C0
-# built from it compiles C1, C1 compiles C2, and hosted-lexer-bootstrap requires
-# C1 and C2 to agree (GCC's stage compare). Ninja tracks the C0 executable.
-bootstrap_driver = files('scripts/bootstrap.py')
-bootstrap_pin = files('compiler/checkpoint.json')
-bootstrap_select = run_command(python, '-B', bootstrap_driver, 'select',
-                               '--compiler', get_option('bootstrap_compiler'), check: false)
-if bootstrap_select.returncode() != 0
-  error(bootstrap_select.stderr().strip())
-endif
-fs.read(bootstrap_pin)
-bootstrap_compiler_path = bootstrap_select.stdout().strip()
-bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
-bootstrap_depend_files = files(bootstrap_compiler_path) + bootstrap_driver + bootstrap_pin
 frontend_modules = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
                         'compiler/lowering_storage.au', 'compiler/resolution_rows.au', 'compiler/resolution_arena.au',
@@ -71,6 +57,41 @@ compiler_driver = configure_file(input: 'compiler/aurorac.au', output: 'aurorac.
                                  configuration: {'AURORA_RUNTIME_ROOT': hosted_runtime_root})
 compiler_stage = [python, '-B', files('scripts/bootstrap_frontend.py')]
 compiler_link = [hosted_linker, '-static', '-e', '_start', '-o', '@OUTPUT@', '@INPUT@']
+
+# The first compiler (C0). From source, GCC builds aurora-seed, an interpreter
+# of the Aurora subset the compiler is written in (compiler/seed); it runs
+# aurorac.au on the compiler's sources to emit X, the object of the current
+# compiler. -Dbootstrap_compiler names a cached C0 instead, as the merge loop
+# does: an earlier compiler built from the checkpoint compiler/checkpoint.json
+# names. Either way C0 compiles C1, C1 compiles C2, and hosted-lexer-bootstrap
+# requires C1 and C2 to agree (GCC's stage compare); seed-bootstrap requires
+# X to equal C1's object of the compiler. Ninja tracks the C0 executable.
+aurora_seed = executable('aurora-seed', 'compiler/seed/seed.cpp', 'compiler/seed/syntax.cpp', native: true,
+                         install: false, build_by_default: false, override_options: ['optimization=1'])
+aurorac_seed_object = custom_target(
+  'aurorac-seed-object', input: [compiler_driver] + frontend_modules, output: 'aurorac-seed.o',
+  command: compiler_stage + [aurora_seed, '--seed', '--program', hosted_runtime_root, '--output', '@OUTPUT@',
+                             '@INPUT@'],
+  depend_files: hosted_runtime_sources, build_by_default: false,
+)
+from_seed = get_option('bootstrap_compiler') == ''
+if from_seed
+  bootstrap_compiler = custom_target('aurorac-seed', input: aurorac_seed_object, output: 'aurorac-seed',
+                                     command: compiler_link, build_by_default: false)
+  bootstrap_depend_files = []
+else
+  bootstrap_driver = files('scripts/bootstrap.py')
+  bootstrap_pin = files('compiler/checkpoint.json')
+  bootstrap_select = run_command(python, '-B', bootstrap_driver, 'select',
+                                 '--compiler', get_option('bootstrap_compiler'), check: false)
+  if bootstrap_select.returncode() != 0
+    error(bootstrap_select.stderr().strip())
+  endif
+  fs.read(bootstrap_pin)
+  bootstrap_compiler_path = bootstrap_select.stdout().strip()
+  bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
+  bootstrap_depend_files = files(bootstrap_compiler_path) + bootstrap_driver + bootstrap_pin
+endif
 aurorac_object = custom_target(
   'aurorac-object', input: [compiler_driver] + frontend_modules, output: 'aurorac.o',
   command: compiler_stage + [bootstrap_compiler, '--program', hosted_runtime_root, '--output', '@OUTPUT@', '@INPUT@'],

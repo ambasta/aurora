@@ -1,0 +1,16 @@
+--runtime-root runtime/linux tests/seed/semantics.au	exit 0 | stdout: divide -42 / remainder -1 / minimum -9223372036854775808 / shift 44 / mask 3841 / byte 65 / pair -27 / copy 515 / array 100 / fill 6 / view 4120 / dark 4 / failed 20 / inert
+--runtime-root runtime/linux tests/seed/traps.au add	exit 4 | stderr: aurora-seed: trap: arithmetic overflow at tests/seed/traps.au:31
+--runtime-root runtime/linux tests/seed/traps.au unsigned	exit 4 | stderr: aurora-seed: trap: arithmetic overflow at tests/seed/traps.au:35
+--runtime-root runtime/linux tests/seed/traps.au divide	exit 4 | stderr: aurora-seed: trap: division by zero at tests/seed/traps.au:40
+--runtime-root runtime/linux tests/seed/traps.au shift	exit 4 | stderr: aurora-seed: trap: arithmetic overflow at tests/seed/traps.au:44
+--runtime-root runtime/linux tests/seed/traps.au convert	exit 4 | stderr: aurora-seed: trap: arithmetic overflow at tests/seed/traps.au:48
+--runtime-root runtime/linux tests/seed/traps.au index	exit 4 | stderr: aurora-seed: trap: array index at tests/seed/traps.au:53
+--runtime-root runtime/linux tests/seed/traps.au owner	exit 4 | stderr: aurora-seed: trap: owner index at tests/seed/traps.au:58
+--runtime-root runtime/linux tests/seed/traps.au window	exit 4 | stderr: aurora-seed: trap: subspan bounds at tests/seed/traps.au:62
+--runtime-root runtime/linux tests/seed/traps.au	exit 2
+--runtime-root runtime/linux tests/seed/unsupported.au u	exit 0
+--runtime-root runtime/linux tests/seed/unsupported.au r	exit 3 | stderr: aurora-seed: tests/seed/unsupported.au:14: unknown callable size_of
+--runtime-root runtime/linux tests/seed/unsupported.au o	exit 3 | stderr: aurora-seed: tests/seed/unsupported.au:18: unsupported type arguments
+--runtime-root runtime/linux tests/seed/syntax.au	exit 3 | stderr: aurora-seed: tests/seed/syntax.au:5: unsupported declaration near 'template'
+tests/seed/semantics.au	exit 3 | stderr: aurora-seed: module aurora.host needs --runtime-root
+--runtime-root runtime/linux tests/seed/missing.au	exit 3 | stderr: aurora-seed: cannot read tests/seed/missing.au
