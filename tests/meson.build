@@ -102,22 +102,14 @@ test('scratchpad-source-native', python,
 # (tools/air.au) and the initialization workspace probes, built by C1 with the
 # test-only bridge rows into its own object and header. Only test drivers link
 # it; the compiler never does.
-air_forwarders = custom_target('air-frontend-forwarders', input: 'tools/frontend.au', output: 'frontend.au',
-    command: [python, '-B', bridge_table, '@INPUT@', '@OUTPUT@'])
-air_frontend = custom_target('air-frontend',
-    input: frontend_modules + files('tools/air.au', 'compiler/initialization_probe.au') + [air_forwarders],
-    output: ['hosted-frontend.o', 'hosted-frontend.generated.o', 'hosted-frontend.abi.json',
-             'hosted_frontend_abi.hpp', 'hosted-frontend.stack.json'],
-    command: [python, '-B', files('../scripts/bootstrap_frontend.py'), aurorac, '--output-mode', 'object',
-              '--test-entries', '--output', '@OUTPUT0@', '@INPUT@'],
-    depend_files: bridge_table)
+subdir('air')
 air_frontend_library = static_library('air-frontend',
     [air_frontend[0], air_frontend[3],
      files('../compiler/hosted_resolver.cpp', '../compiler/hosted_pipeline.cpp', '../runtime/hosted_bytes.cpp')],
-    include_directories: include_directories('.', '../compiler'), native: true, override_options: fixture_options,
-    install: false)
+    include_directories: include_directories('air', '.', '../compiler'), native: true,
+    override_options: fixture_options, install: false)
 air_frontend_dep = declare_dependency(link_with: air_frontend_library, sources: air_frontend[3],
-                                      include_directories: include_directories('.', '../compiler'))
+                                      include_directories: include_directories('air', '.', '../compiler'))
 aurora_ir_check = executable('aurora-ir-check', 'tools/aurora_ir_check.cpp', dependencies: air_frontend_dep,
     native: true, override_options: fixture_options, install: false)
 air_lit = files('tools/air_lit.py')
