@@ -29,6 +29,8 @@ std::uint64_t pipelineOptions(const EmissionRequest &request) {
         result |= 32;
     if (request.listing)
         result |= 64;
+    if (request.kernelTarget)
+        result |= 128;
     return result;
 }
 

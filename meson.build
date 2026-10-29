@@ -48,13 +48,17 @@ bridge_table = files('scripts/frontend_bridge.py')
 # aurora.host and aurora.memory) and links with ld alone: no C or C++ objects,
 # startup or libc.
 hosted_runtime_root = meson.current_source_dir() / 'runtime/linux'
-if hosted_runtime_root.contains('"') or hosted_runtime_root.contains('\\')
+kernel_runtime_root = meson.current_source_dir() / 'runtime/aurora'
+if hosted_runtime_root.contains('"') or hosted_runtime_root.contains('\\') or kernel_runtime_root.contains('"')
   error('aurorac embeds its runtime root as a byte string: the source path must not contain " or a backslash.')
 endif
 hosted_runtime_sources = files('runtime/linux/aurora/host.au', 'runtime/linux/aurora/memory.au')
+# --target aurora's runtime root: programs for the Aurora kernel's process image.
+kernel_runtime_sources = files('runtime/aurora/aurora/host.au')
 hosted_linker = find_program('ld', native: true)
 compiler_driver = configure_file(input: 'compiler/aurorac.au', output: 'aurorac.au',
-                                 configuration: {'AURORA_RUNTIME_ROOT': hosted_runtime_root})
+                                 configuration: {'AURORA_RUNTIME_ROOT': hosted_runtime_root,
+                                                 'AURORA_KERNEL_RUNTIME_ROOT': kernel_runtime_root})
 compiler_stage = [python, '-B', files('scripts/bootstrap_frontend.py')]
 compiler_link = [hosted_linker, '-static', '-e', '_start', '-o', '@OUTPUT@', '@INPUT@']
 

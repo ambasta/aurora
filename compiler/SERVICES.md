@@ -299,9 +299,24 @@ entries, from `main`'s region, for [hosted memory](#hosted-memory)), so even the
 binding reaches the system only on behalf of a program that was handed the
 capability; a library
 importing `aurora.host` cannot name the primitives or the binding's private
-helpers. The binding is trusted code of the compiler. A binding
-over Aurora kernel services (Call/Serve or the file namespace service) would be
-another `aurora.host` with its own primitives and the same ten functions.
+helpers. The binding is trusted code of the compiler.
+
+`aurorac --target aurora` (default `--target linux`) compiles for the Aurora
+kernel's processes ([process image](../kernel/uefi/process.md#processes)): the
+configured runtime root is `runtime/aurora` instead of `runtime/linux`, and the
+typed IR admits the Linux primitives 13..28 only for `linux` and the kernel
+primitives only for `aurora`; a wrong pairing (for example `--target aurora
+--runtime-root runtime/linux`) fails closed. That binding,
+`runtime/aurora/aurora/host.au`, has the same ten functions over the session
+primitives and two kernel primitives emitted inline as `int $0x83`:
+`kernel_print(stream, offset, length)` (kernel operation 2, stream 1 or 2,
+returning 0 or a negative HostStatus) and `kernel_chunk(file, offset)` (operation
+3 into a cleared HostChunk, returning a count up to 504 or a negative HostStatus;
+anything else traps). The kernel has no file service yet, so every open is
+`denied`, every id `invalid_handle`, and print copies through the session
+block. Its `_start` takes the argument block from RDI and RSI and exits with
+operation 1 (RDI the HostExit ordinal); a main with a region is rejected until
+the kernel has a memory service.
 
 For a hosted entry the backend emits a global `_start`: it reads argc/argv from
 the initial stack, requires the argument strings to be contiguous, reserves and
@@ -313,8 +328,11 @@ lacks the runtime hooks is rejected. One aurorac object therefore
 links with `ld -static -e _start` and no C or C++ startup, libc or runtime (see
 `hosted_programs` in `meson.build`), including programs whose owners use the
 [hosted memory runtime](#hosted-memory). Stack facts record a
-`__au_linux_system_call` call for every function that makes one, and
-`kernel_stack_check.py` rejects it in every kernel and user image profile.
+`__au_linux_system_call` call (`__au_kernel_service_call` under `--target
+aurora`) for every function that makes one, and `kernel_stack_check.py` rejects
+both in every kernel and user image profile: such programs run only as processes
+loaded from the boot volume, whose stack bound the kernel enforces at run time
+with the stack's guard page.
 aurorac itself is such a program (`compiler/aurorac.au`, see
 [README](README.md)), with a region.
 

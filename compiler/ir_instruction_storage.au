@@ -225,7 +225,8 @@ export namespace compiler_ir_instructions {
         service_port_result,
         call_span_type,
         storage_span_type,
-        storage_span_values
+        storage_span_values,
+        service_platform
     };
     // The eight OutputRow-width leaves remain raw integers. The codec preserves
     // unknown scalar operators for source admission to reject without enum
@@ -436,6 +437,9 @@ export namespace compiler_ir_instructions {
         builtin::OwnedValues<BodyRow> bodies;
         InstructionStatus statusValue;
         InstructionError errorValue;
+        // Whether the code is for --target aurora: the typed-IR admission of
+        // the target's own HostFiles primitives reads it.
+        bool kernelTarget;
         // Structural mutation is private and runs only while admitted. Scratch
         // holds a sorted label-position index, the reachability queue, then
         // old-to-normalized positions. Structured service identity admission
@@ -779,7 +783,18 @@ export namespace compiler_ir_instructions {
             counts.instruction_count())), operands(operand_pool(region, counts.operand_count())),
             literals(region.try_allocate(counts.literal_count())), codeOrder(code_pool(region,
             counts.instruction_count())), bodies(body_pool(region, counts.body_count())),
-            statusValue(InstructionStatus::pending), errorValue(InstructionError::none) {
+            statusValue(InstructionStatus::pending), errorValue(InstructionError::none), kernelTarget(false) {
+        }
+        // Only pending ingress selects the target; it never changes afterwards.
+        auto select_kernel_target(bool value) -> bool {
+            if (statusValue != InstructionStatus::pending) {
+                return false;
+            }
+            kernelTarget = value;
+            return true;
+        }
+        auto kernel_target() const -> bool {
+            return kernelTarget;
         }
         auto initialize(InstructionCounts counts) -> bool {
             if (statusValue != InstructionStatus::pending) {

@@ -25,7 +25,7 @@ export namespace compiler_ir_verification {
         }
         return TypeKey(-1, -1);
     }
-    // An independent copy of the HostFiles primitive signatures (operations 9..28):
+    // An independent copy of the HostFiles primitive signatures (operations 9..30):
     // argument and result kinds in MetadataTypeKind ordinals (I64 0, U64 7, U8 10).
     auto host_argument_count(i64 operation) -> i64 {
         if (operation == 20) {
@@ -38,10 +38,11 @@ export namespace compiler_ir_verification {
             return 4;
         }
         if (operation == 10 || operation == 12 || operation == 14 || operation == 19 || operation == 21 || operation
-            == 22 || operation == 24 || operation == 26) {
+            == 22 || operation == 24 || operation == 26 || operation == 30) {
             return 2;
         }
-        if (operation == 15 || operation == 17 || operation == 25 || operation == 27 || operation == 28) {
+        if (operation == 15 || operation == 17 || operation == 25 || operation == 27 || operation == 28 || operation
+            == 29) {
             return 3;
         }
         return 1;
@@ -83,7 +84,7 @@ export namespace compiler_ir_verification {
                 arg = arg - 1;
             }
         }
-        if (operation != 14) {
+        if (operation != 14 && operation != 30) {
             return transfer_set_kind(w, host_result_kind(operation));
         }
         const i64 base = transfer_value(s, id, 2);
@@ -138,7 +139,7 @@ export namespace compiler_ir_verification {
                     VerificationErrorSecond::service_operation_requires_active_unsuspended_capability_provenance));
             }
             const i64 operation = transfer_value(s, id, 1);
-            if (operation > 8 && operation < 29) {
+            if (operation > 8 && operation < 31) {
                 return transfer_host(w, m, s, id, operation);
             }
             if (operation == 2) {

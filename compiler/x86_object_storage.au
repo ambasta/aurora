@@ -1317,6 +1317,14 @@ export namespace compiler_x86 {
             byte(u8(15));
             return byte(u8(5));
         }
+        // INT imm8 (CD ib).
+        auto interrupt(i64 vector) -> bool {
+            if (vector < 0 || vector > 255) {
+                return fail();
+            }
+            byte(u8(205));
+            return byte(u8(vector));
+        }
         auto return_instruction() -> bool {
             return byte(u8(195));
         }

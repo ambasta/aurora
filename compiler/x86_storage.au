@@ -214,7 +214,8 @@ export namespace compiler_x86 {
         bool directResult;
         bool leftInRcx;
         // Bit 0: owner-backed spans may be fragmented (kind 1); bit 1: the
-        // hosted memory runtime (the class is at its 520-byte bound).
+        // hosted memory runtime; bit 2: code for --target aurora (the class
+        // is at its 520-byte bound).
         i64 runtimeMode;
         bool objectMode;
         i64 objectNameWidth;
@@ -728,6 +729,12 @@ export namespace compiler_x86 {
         auto system_call() -> bool {
             return line("syscall");
         }
+        auto interrupt(i64 vector) -> bool {
+            if (vector < 0 || vector > 255) {
+                return fail();
+            }
+            return line_number("int $", vector, "");
+        }
         auto return_instruction() -> bool {
             return line("ret");
         }
@@ -1184,15 +1191,23 @@ export namespace compiler_x86 {
         // Whether the hosted entry takes a region, so the entry reserves the
         // memory runtime's mapping table and emits the byte runtime entries.
         auto hosted_memory() const -> bool {
-            return runtimeMode / 2 == 1;
+            return (runtimeMode / 2) % 2 == 1;
         }
-        auto set_runtime_mode(bool owned_spans, bool hosted_memory) -> bool {
+        // Whether the code runs on the Aurora kernel (--target aurora): the
+        // hosted entry and the HostFiles primitives enter it through INT 0x83.
+        auto kernel_target() const -> bool {
+            return runtimeMode / 4 == 1;
+        }
+        auto set_runtime_mode(bool owned_spans, bool hosted_memory, bool kernel) -> bool {
             runtimeMode = 0;
             if (owned_spans) {
                 runtimeMode = 1;
             }
             if (hosted_memory) {
                 runtimeMode = runtimeMode + 2;
+            }
+            if (kernel) {
+                runtimeMode = runtimeMode + 4;
             }
             return ok();
         }
@@ -2112,6 +2127,16 @@ export namespace compiler_x86 {
             return emit_object_status(w, object);
         }
         return w.system_call();
+    }
+    auto emit_interrupt(EmitWorkspace& w, ObjectWorkspace& object, i64 vector) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.interrupt(vector);
+            return emit_object_status(w, object);
+        }
+        return w.interrupt(vector);
     }
     // R10 already holds the admitted receiver, independent of RSP movement.
     // Preserve every GPR and arithmetic flag; the private ABI requires forward

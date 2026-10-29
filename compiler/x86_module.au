@@ -681,7 +681,9 @@ export namespace compiler_x86 {
     // (a failure exits 1 without main); after main, host::finish discards
     // uncommitted outputs and closes descriptors; exit_group reports the
     // HostExit ordinal (success 0, failure 1, usage 2). No C runtime or loader
-    // code is involved.
+    // code is involved. For --target aurora the Aurora kernel passes the block's
+    // address in RDI and its length in RSI instead, and the entry exits with
+    // kernel operation 1 through the INT 0x83 gate (compiler/SERVICES.md).
     //
     // When main also takes a region, the block holds the memory runtime's
     // mapping table and the session's own address after the session, the
@@ -705,6 +707,11 @@ export namespace compiler_x86 {
         if (memory && (memory_start < 0 || memory_finish < 0)) {
             return w.fail();
         }
+        // The Aurora kernel has no memory service yet (M3 of kernel/uefi/process.md).
+        const bool kernel = w.kernel_target();
+        if (kernel && memory) {
+            return w.fail();
+        }
         const i64 name = w.intern_runtime("_start");
         if (!w.begin_function(2, name, -1)) {
             return false;
@@ -720,33 +727,40 @@ export namespace compiler_x86 {
             w.text(".globl _start\n.type _start, @function\n_start:\n");
         }
         emit_alu_rr(w, o, AluOp::bit_xor, Register::rbp, Register::rbp);
-        const i64 argc = w.pack_address(1, 0);
-        emit_load(w, o, argc, Register::rcx, false);
-        const i64 argv = w.pack_address(1, 8);
-        emit_lea(w, o, argv, Register::rsi);
-        emit_alu_rr(w, o, AluOp::bit_xor, Register::rdx, Register::rdx);
-        emit_alu_rr(w, o, AluOp::bit_xor, Register::r9, Register::r9);
-        emit_alu_rr(w, o, AluOp::bit_xor, Register::r10, Register::r10);
-        emit_alu_rr(w, o, AluOp::test, Register::rcx, Register::rcx);
-        emit_branch(w, o, 4, 0, 1);
-        // RDX stays zero as the index register; R8 walks the block.
-        emit_indexed_load(w, o, Register::rsi, Register::rdx, indexed_address(1, 0), false);
-        emit_mov_rr(w, o, Register::rax, Register::r9);
-        emit_mov_rr(w, o, Register::rax, Register::r8);
-        emit_bind_label(w, o, 0, 0);
-        emit_indexed_load(w, o, Register::rsi, Register::rdx, indexed_address(1, 0), false);
-        emit_alu_rr(w, o, AluOp::compare, Register::rax, Register::r8);
-        emit_branch(w, o, 5, 4, 0);
-        emit_bind_label(w, o, 0, 2);
-        emit_indexed_load(w, o, Register::r8, Register::rdx, indexed_address(1, 0), true);
-        emit_alu_imm(w, o, AluOp::add, 1, Register::r8);
-        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
-        emit_branch(w, o, 5, 0, 2);
-        emit_alu_imm(w, o, AluOp::add, 8, Register::rsi);
-        emit_alu_imm(w, o, AluOp::subtract, 1, Register::rcx);
-        emit_branch(w, o, 5, 0, 0);
-        emit_mov_rr(w, o, Register::r8, Register::r10);
-        emit_alu_rr(w, o, AluOp::subtract, Register::r9, Register::r10);
+        if (kernel) {
+            // The Aurora kernel passes the argument block's address in RDI and
+            // its length in RSI (kernel/uefi/process.md#processes).
+            emit_mov_rr(w, o, Register::rdi, Register::r9);
+            emit_mov_rr(w, o, Register::rsi, Register::r10);
+        } else {
+            const i64 argc = w.pack_address(1, 0);
+            emit_load(w, o, argc, Register::rcx, false);
+            const i64 argv = w.pack_address(1, 8);
+            emit_lea(w, o, argv, Register::rsi);
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::rdx, Register::rdx);
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::r9, Register::r9);
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::r10, Register::r10);
+            emit_alu_rr(w, o, AluOp::test, Register::rcx, Register::rcx);
+            emit_branch(w, o, 4, 0, 1);
+            // RDX stays zero as the index register; R8 walks the block.
+            emit_indexed_load(w, o, Register::rsi, Register::rdx, indexed_address(1, 0), false);
+            emit_mov_rr(w, o, Register::rax, Register::r9);
+            emit_mov_rr(w, o, Register::rax, Register::r8);
+            emit_bind_label(w, o, 0, 0);
+            emit_indexed_load(w, o, Register::rsi, Register::rdx, indexed_address(1, 0), false);
+            emit_alu_rr(w, o, AluOp::compare, Register::rax, Register::r8);
+            emit_branch(w, o, 5, 4, 0);
+            emit_bind_label(w, o, 0, 2);
+            emit_indexed_load(w, o, Register::r8, Register::rdx, indexed_address(1, 0), true);
+            emit_alu_imm(w, o, AluOp::add, 1, Register::r8);
+            emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+            emit_branch(w, o, 5, 0, 2);
+            emit_alu_imm(w, o, AluOp::add, 8, Register::rsi);
+            emit_alu_imm(w, o, AluOp::subtract, 1, Register::rcx);
+            emit_branch(w, o, 5, 0, 0);
+            emit_mov_rr(w, o, Register::r8, Register::r10);
+            emit_alu_rr(w, o, AluOp::subtract, Register::r9, Register::r10);
+        }
         emit_bind_label(w, o, 0, 1);
         // R9 is the block address and R10 its length (both zero without argv).
         emit_alu_imm(w, o, AluOp::bit_and, -16, Register::rsp);
@@ -817,10 +831,18 @@ export namespace compiler_x86 {
         emit_mov_rr(w, o, Register::rsp, Register::r11);
         direct_target(w, o, m, finish);
         emit_load(w, o, status, Register::rdi, false);
-        emit_mov_imm(w, o, 231, Register::rax);
-        const i64 marker = w.intern_runtime("__au_linux_system_call");
-        w.record_call(2, marker);
-        emit_system_call(w, o);
+        if (kernel) {
+            // Kernel operation 1, exit; the kernel never returns from it.
+            emit_mov_imm(w, o, 1, Register::rax);
+            const i64 marker = w.intern_runtime("__au_kernel_service_call");
+            w.record_call(2, marker);
+            emit_interrupt(w, o, 131);
+        } else {
+            emit_mov_imm(w, o, 231, Register::rax);
+            const i64 marker = w.intern_runtime("__au_linux_system_call");
+            w.record_call(2, marker);
+            emit_system_call(w, o);
+        }
         emit_trap_instruction(w, o);
         if (o.object_mode()) {
             o.end_object_symbol();
@@ -1415,7 +1437,7 @@ export namespace compiler_x86 {
         }
         const bool resources = module_resource_graph(w, m, s);
         const bool private_graph = resources || module_service_graph(w, m);
-        w.set_runtime_mode(resources, hosted_region(m));
+        w.set_runtime_mode(resources, hosted_region(m), s.kernel_target());
         if (!o.object_mode()) {
             w.text("# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n");
         }

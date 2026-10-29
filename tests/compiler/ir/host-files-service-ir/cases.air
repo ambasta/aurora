@@ -4,7 +4,10 @@
 ; __au_<mode>_m2_6aurora4host_...). The memory primitives 21..28 (23
 ; unmap_memory, 24 memory_load, 27 memory_store8) belong to aurora.memory
 ; (__au_<mode>_m2_6aurora6memory_...) and are emitted only for a hosted entry
-; that takes a region.
+; that takes a region. The Aurora kernel binding's primitives 29 kernel_print
+; and 30 kernel_chunk belong to aurora.host under --target aurora (RUN ...
+; aurora) and the Linux ones 13..28 only to the default Linux target; the
+; session primitives 9..12 serve both.
 
 ; CASE: accepted host primitives
 ; RUN: emit
@@ -54,7 +57,58 @@ end
 ; EXPECT-ERROR: service operation
 @@ -7 +7 @@
 -    ServiceOperation 16 20 0 6
-+    ServiceOperation 16 29 0 6
++    ServiceOperation 16 31 0 6
+
+; CASE: rejected: Linux primitive for the Aurora kernel
+; BASE: accepted host primitives
+; RUN: verify aurora
+; EXPECT-ERROR: HostFiles primitive does not belong to the selected target
+
+; CASE: accepted kernel primitives
+; RUN: emit aurora
+; CHECK: int $131
+; CHECK-NOT: syscall
+; RUN: stack-facts aurora
+; CHECK-JSON-NOT: functions.__au_v_m2_6aurora4host_n1_4host_d5print.calls.__au_kernel_service_call <missing>
+; CHECK-JSON: functions.__au_v_m2_6aurora4host_n1_4host_d4word.calls {}
+function __au_v_m2_6aurora4host_n1_4host_d5print
+  result i64
+  params [22]
+  frame 32
+  service 16
+    BindServiceParameter 0 16 6
+    Constant 1 u64
+    Push
+    Constant 0 u64
+    Push
+    Constant 8 u64
+    Push
+    ServiceOperation 16 29 0 6
+    Return
+end
+function __au_v_m2_6aurora4host_n1_4host_d4word
+  result u64
+  params [22]
+  frame 32
+  service 16
+    BindServiceParameter 0 16 6
+    Constant 8 u64
+    ServiceOperation 16 9 0 6
+    Return
+end
+
+; CASE: rejected: kernel primitive for the Linux target
+; BASE: accepted kernel primitives
+; RUN: verify
+; EXPECT-ERROR: HostFiles primitive does not belong to the selected target
+
+; CASE: rejected: kernel primitive outside the runtime module
+; BASE: accepted kernel primitives
+; RUN: verify aurora
+; EXPECT-ERROR: service operation
+@@ -1 +1 @@
+-function __au_v_m2_6aurora4host_n1_4host_d5print
++function __au_v_m2_5other4host_n1_4host_d5print
 
 ; CASE: rejected: scalar primitive with a result object
 ; BASE: accepted host primitives
@@ -137,6 +191,26 @@ end
 @@ -3 +3 @@
 -enum __au_host_status 10
 +enum __au_host_status 9
+
+; CASE: accepted kernel chunk read
+; BASE: accepted chunk read
+; RUN: emit aurora
+; CHECK: int $131
+; CHECK-NOT: syscall
+@@ -17 +17 @@
+-    Constant -1 i64
++    Constant 1 u64
+@@ -21 +21 @@
+-    ServiceOperation 16 14 560 6
++    ServiceOperation 16 30 560 6
+
+; CASE: rejected: kernel chunk over an initialized result
+; BASE: accepted kernel chunk read
+; RUN: verify aurora
+; EXPECT-ERROR: sample
+@@ -21 +21 @@
+-    ServiceOperation 16 30 560 6
++    ServiceOperation 16 30 16 6
 
 ; CASE: accepted memory primitives
 ; RUN: verify

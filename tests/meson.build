@@ -120,6 +120,11 @@ test('host-files-impostor', python,
             '--module-root', 'tests/host-files/impostor'],
      depends: [aurorac], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
      timeout: 120)
+# --target selects the runtime root and the HostFiles primitives the typed IR admits.
+test('host-files-target', python,
+     args: ['-B', golden_runner, files('host-files/target.golden'), '--modes', '--', aurorac.full_path(), '--check'],
+     depends: [aurorac], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+     timeout: 120)
 
 # One scratchpad host and one linked driver; modes and transcripts are runtime data.
 scratchpad_host = static_library('scratchpad-host',

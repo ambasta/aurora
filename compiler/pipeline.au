@@ -436,6 +436,8 @@ export namespace compiler_ir_instructions {
             "span borrow, reborrow, window or byte load changes the span element type");
         value.typed(r == InstructionError::storage_span_values,
             "typed span element copy requires a typed span and an exact element object");
+        value.typed(r == InstructionError::service_platform,
+            "HostFiles primitive does not belong to the selected target");
         return value;
     }
 }
@@ -1092,6 +1094,11 @@ export namespace compiler_pipeline {
     auto listing_option() -> u64 {
         return 64u64;
     }
+    // Code for --target aurora: programs run on the Aurora kernel, whose
+    // primitives replace the Linux system calls (compiler/SERVICES.md).
+    auto kernel_option() -> u64 {
+        return 128u64;
+    }
     auto selected(u64 options, u64 option) -> bool {
         return (options & option) != 0u64;
     }
@@ -1532,6 +1539,10 @@ export namespace compiler_pipeline {
     auto stages(builtin::ByteRegion region, Result input, compiler_ir_metadata::MetadataStore metadata,
         compiler_ir_instructions::InstructionStore instructions, Declarations declarations, u64 options) -> Result {
         Result result = move(input);
+        if (!instructions.select_kernel_target(selected(options, kernel_option()))) {
+            result.stop(Stage::instruction_transport);
+            return move(result);
+        }
         compiler_ir_instructions::InstructionStatus status = compiler_ir_instructions::admit_instruction_storage(
             instructions, metadata);
         if (status == compiler_ir_instructions::InstructionStatus::admitted) {
