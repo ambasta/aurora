@@ -155,6 +155,14 @@ if get_option('kernel_images')
                                              '@INPUT@', '-o', '@OUTPUT@'])
   process_programs += {'assembly:process-recurse': custom_target('process-recurse', input: recurse_object,
                                                                  output: 'process-recurse', command: compiler_link)}
+  foreach case : ['1', '2', '3', '4', '5', '6', '7', '8']
+    isolation_object = custom_target('process-isolation-' + case + '-object',
+        input: 'tests/kernel-process/isolation.S', output: 'process-isolation-' + case + '.o',
+        command: [find_program('as', native: true), '--64', '-mx86-used-note=no', '--defsym', 'CASE=' + case,
+                  '@INPUT@', '-o', '@OUTPUT@'])
+    process_programs += {'assembly:process-isolation-' + case: custom_target('process-isolation-' + case,
+        input: isolation_object, output: 'process-isolation-' + case, command: compiler_link)}
+  endforeach
   foreach name, program : hosted_programs
     process_programs += {'linux:' + name: program}
   endforeach

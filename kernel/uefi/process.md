@@ -244,15 +244,20 @@ image's six rows (`meson test --suite guest-process`, about 2 s each on TCG,
   hello eprint oops exit failure` (with the walk probes of flag 2), the Linux build of the probe (ends at its
   first SYSCALL, `system_call`), `recurse` (a GNU as program, since the compiler
   rejects recursion reachable from a HostFiles main; ends at the guard,
-  `stack_guard`), `hostile spin` (ended by the watchdog after 4 ticks) and the
-  probe with `print 'two words' exit success`;
+  `stack_guard`), `hostile spin` (ended by the watchdog after 4 ticks), the
+  eight isolation programs of `tests/kernel-process/isolation.S` (writing its
+  code page, running its stack, `cli`, `in`, reading the kernel half, an unknown
+  kernel call, printing a kernel address and `int 14`) and the probe with
+  `print 'two words' exit success`, which shows the kernel continues after each;
 - `process-hostile` (case 2) rejects ELF images with a writable and executable
   segment, an interpreter, an entry outside code and overlapping segments and a
   missing path, runs `hostile` to exit 0, then faults in the kernel during the
   probe's first call, which stops the machine.
 
 `tests/kernel-process-smoke.py` reduces each run to one line compared with
-`tests/kernel-process/<row>.golden`; each probe run must also equal its hosted
+`tests/kernel-process/<row>.golden` (a fault keeps its vector and architectural
+error code, which tell the refusing check: page-fault present/write/user/fetch
+bits, or the gate's vector; a refused call keeps its operation); each probe run must also equal its hosted
 line in `tests/host-files/cases.golden` without the file tree. The case word is
 the fw_cfg file `opt/aurora/case` (`kernel_profiles.PROCESS_CASES`), read by the
 loader beside the fixture selector, so rows that differ only by run list share
@@ -275,10 +280,6 @@ Limits:
 - `int3` and `into` meet DPL 0 gates and end as `protection`, not `breakpoint`
   or `overflow`; SYSENTER on an Intel-vendor CPU (zeroed MSRs) ends as
   `protection`, on AMD as `system_call`;
-- guest rows cover classification only through real faults of the probe,
-  recursion and spin programs; hostile isolation probes (writing code, executing
-  data, privileged instructions, malformed kernel calls) are hosted cases of the
-  Aurora policies, not guest runs yet;
 - the physical width comes from CPUID 0x80000008 alone. On Zen with memory
   encryption, CPUID 0x8000001F EBX[11:6] reduces it, which Zen qualification must
   add;
