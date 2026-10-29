@@ -2249,15 +2249,16 @@ export namespace compiler_ir_instructions {
         // The bindings' primitives belong to functions of module aurora.host
         // only, whose native names are __au_<mode>_m2_6aurora4host_..., and the
         // memory primitives (21..28) to those of aurora.memory. The Linux
-        // system and memory primitives (13..28) exist only for the Linux
-        // target and the kernel primitives (29, 30) only for the Aurora one.
+        // system primitives (13..20) exist only for the Linux target and the
+        // kernel primitives (29, 30) only for the Aurora one; the memory
+        // primitives serve both.
         if (((operation > 8 && operation < 21) || operation > 28) && !host_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);
         }
         if (operation > 20 && operation < 29 && !memory_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);
         }
-        if ((operation > 12 && operation < 29 && store.kernel_target()) || (operation > 28 && !store.kernel_target())) {
+        if ((operation > 12 && operation < 21 && store.kernel_target()) || (operation > 28 && !store.kernel_target())) {
             return fail(store, InstructionError::service_platform);
         }
         if (operation > 8 && operation != 14 && operation != 30) {

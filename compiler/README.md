@@ -35,9 +35,10 @@ diagnostics and writes every artifact atomically, refusing an output that would
 replace a source or share another output's destination. Run under the name
 `aurora-fmt` (a second link of the same object) it is the formatter. It links
 with `ld -static -e _start` and contains no C or C++ code, startup or libc.
-The build configures `aurorac.au` with its runtime roots (`runtime/linux` and,
-for `--target aurora`, `runtime/aurora` of the source tree) as byte strings;
-`--runtime-root` names another.
+The build configures `aurorac.au` with its runtime roots (`runtime/linux` of
+the source tree and, for `--target aurora`, `runtime/aurora` of the build tree,
+which holds `runtime/aurora/aurora/host.au` and the shared memory runtime) as
+byte strings; `--runtime-root` names another.
 Textual-IR test cases are read in Aurora (`tests/tools/air.au`, built into a
 test-only graph) straight into the same stores and run the same pipeline stages;
 there is no C++ IR model. That bridged test graph, with the C++ adapters

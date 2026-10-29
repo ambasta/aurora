@@ -8,7 +8,10 @@ file of the same path; the volume size is the image's own ESP volume. A row
 with a run list reduces each run to one `ORDINAL PATH ARGUMENTS<TAB>OUTCOME`
 line compared with tests/kernel-process/MODE.golden; a run of bin/probe must
 also equal the hosted probe's line in tests/host-files/cases.golden (without
-its file tree, which the kernel has no file service for yet).
+its file tree, which the kernel has no file service for yet), a run of
+bin/memory with the whole quota its line in tests/host-files/memory.golden (a
+trap at the runtime's ud2 is SIGILL there) and the compiler with no arguments
+the Linux compiler's line in tests/host-files/usage.golden.
 """
 
 import base64
@@ -82,7 +85,7 @@ def runs(text, mode):
             need(current is None, "Run started before the previous one ended")
             run = int(values["run"])
             need(run == len(lines) + 1 and run <= len(expected), "Run order")
-            ticks, _, path, arguments = expected[run - 1]
+            ticks, _, _, path, arguments = expected[run - 1]
             need(values["path"] == path and int(values["ticks"]) == ticks, "Run record differs from its list")
             current, output = {"run": run, "loaded": None, "key": f"{run} {path} {arguments}"}, {}
             output.update(AURORA_STDOUT=[], AURORA_STDERR=[])
@@ -105,25 +108,31 @@ def runs(text, mode):
             current["loaded"] = int(values["pages"]) + int(values["tables"])
         elif kind == "AURORA_PROCESS_END":
             need(current["loaded"], "Ended before loading")
+            streams = [
+                f"{label}: " + flat(b"".join(output[stream]))
+                for stream, label in (("AURORA_STDOUT", "stdout"), ("AURORA_STDERR", "stderr"))
+                if output[stream]
+            ]
             if values["reason"] == "exit":
-                result = [f"exit {values['status']}"]
-                for stream, label in (("AURORA_STDOUT", "stdout"), ("AURORA_STDERR", "stderr")):
-                    if output[stream]:
-                        result.append(f"{label}: " + flat(b"".join(output[stream])))
-                outcome = " | ".join(result)
+                outcome = " | ".join([f"exit {values['status']}", *streams])
             elif values["reason"] == "watchdog":
                 outcome = f"watchdog ticks={values['ticks']}"
             elif values["reason"] == "call":
-                need(not output["AURORA_STDOUT"] and not output["AURORA_STDERR"], "Output before a refused call")
+                need(not streams, "Output before a refused call")
                 outcome = f"call operation={values['operation']}"
             else:
-                need(not output["AURORA_STDOUT"] and not output["AURORA_STDERR"], "Output before a fault")
                 # The architectural error code tells which check refused (a page
                 # fault's present/write/user/fetch bits, a gate's vector).
-                outcome = f"{values['reason']} vector={values['vector']} error={values['error']}"
+                outcome = " | ".join(
+                    [f"{values['reason']} vector={values['vector']} error={values['error']}", *streams]
+                )
             current["outcome"] = outcome
         elif kind == "AURORA_PROCESS_RELEASED":
-            need("outcome" in current and int(values["frames"]) == current["loaded"], "Released frames differ")
+            # Every frame of the load and of the memory service comes back.
+            need(
+                "outcome" in current and int(values["frames"]) == current["loaded"] + int(values["memory"]),
+                "Released frames differ",
+            )
             lines.append(f"{current['key']}\t{current['outcome']}")
             current = None
         elif kind == "AURORA_PROCESS_KERNEL_FAULT":
@@ -136,14 +145,22 @@ def runs(text, mode):
         elif kind != "AURORA_PROCESS_FAIL":
             raise ValueError("Unexpected process record " + kind)
     hosted = {}
-    for line in (ROOT / "tests/host-files/cases.golden").read_text().splitlines():
-        key, result = line.split("\t", 1)
-        hosted[key] = result.split(" | tree:", 1)[0]
-    for line in lines:
+    for name in ("cases", "memory", "usage"):
+        for line in (ROOT / f"tests/host-files/{name}.golden").read_text().splitlines():
+            key, result = line.split("\t", 1)
+            hosted[name, key] = result.split(" | tree:", 1)[0]
+    for (_, _, quota, _, _), line in zip(expected, lines):
         key, outcome = line.split("\t")
         _, path, arguments = key.split(" ", 2)
+        words = shlex.join(shlex.split(arguments))
         if path == "bin/probe" and not outcome.startswith("kernel fault"):
-            need(hosted.get(shlex.join(shlex.split(arguments))) == outcome, "Probe differs from its hosted golden")
+            need(hosted.get(("cases", words)) == outcome, "Probe differs from its hosted golden")
+        if path == "bin/memory" and quota == 0:
+            # The runtime's fail-stop trap is ud2: SIGILL on Linux.
+            linux = outcome.replace("invalid_opcode vector=6 error=0", "signal 4", 1)
+            need(hosted.get(("memory", words)) == linux, "Memory case differs from its hosted golden: " + words)
+        if path == "bin/aurorac" and quota == 0:
+            need(hosted.get(("usage", "")) == outcome, "Compiler differs from the Linux compiler")
     return lines
 
 

@@ -1,0 +1,359 @@
+export module kernel.process_memory;
+import std.binary;
+import kernel.process_space;
+
+// The memory service of a process (kernel/uefi/process.md#memory): the
+// reservation, growth, move and release decisions over the process's mapping
+// records, and the frame quota every frame it may hold is charged against. A
+// mapping lives in the memory area [64 TiB, 96 TiB), at a reservation of the
+// next power of two of its pages taken from a bump address that never goes
+// back, so no address is ever reused within a process; one unmapped page
+// follows every reservation. A mapping grows or shrinks in place within its
+// reservation, and otherwise moves to a fresh one: its pages' entries move,
+// no byte is copied. Charges are exact upper bounds: a mapping of pages at
+// first is charged its pages plus every page table its range could need (one
+// per 2 MiB, 1 GiB and 512 GiB slot it touches), and the loaded image, stack
+// and arguments likewise, so the frames a process holds never exceed its
+// charge and its charge never exceeds a quota the kernel holds free frames
+// for: frames are committed on first touch, and a touch never fails.
+//
+// The supervisor stores the state and the records (sorted by first, which the
+// bump order keeps), writes the page tables and moves the frames; these
+// decisions carry no address it has not recorded.
+export namespace kernel {
+    enum class MemoryVerdict {
+        mapped,
+        resized,
+        moved,
+        unmapped,
+        quota,
+        space,
+        records,
+        length,
+        malformed
+    };
+
+    enum class BudgetVerdict {
+        valid,
+        quota
+    };
+
+    // The bump address, the frames charged (load and mappings), the quota and
+    // the number of live mapping records.
+    class MemoryState {
+    public:
+        u64 next;
+        u64 charged;
+        u64 quota;
+        u64 count;
+    };
+
+    // One mapping: its reservation's first address and pages (a power of two)
+    // and its mapped pages from first.
+    class MemoryRecord {
+    public:
+        u64 first;
+        u64 reserved;
+        u64 pages;
+    };
+
+    // A decision: the mapping it leaves (first, reserved, pages) and the next
+    // state's bump address and charge.
+    class MemoryDecision {
+    public:
+        MemoryVerdict verdict;
+        u64 first;
+        u64 reserved;
+        u64 pages;
+        u64 next;
+        u64 charged;
+    };
+
+    // A loaded process's quota and initial charge.
+    class MemoryBudget {
+    public:
+        BudgetVerdict verdict;
+        u64 quota;
+        u64 charged;
+    };
+
+    auto memory_base() -> u64 {
+        return image_limit();
+    }
+
+    auto memory_limit() -> u64 {
+        return 105553116266496u64;
+    }
+
+    // The largest mapping, 64 TiB (the compiler's mapping lengths are below 2^46).
+    auto memory_bytes_limit() -> u64 {
+        return 70368744177664u64;
+    }
+
+    auto memory_records() -> u64 {
+        return 16384u64;
+    }
+
+    // A record is three little-endian words: first, reserved, pages.
+    auto memory_record_bytes() -> i64 {
+        return 24;
+    }
+
+    // A mapping length: whole pages, nonzero, at most memory_bytes_limit().
+    auto memory_length(u64 bytes) -> bool {
+        return bytes != 0u64 && bytes % 4096u64 == 0u64 && bytes <= memory_bytes_limit();
+    }
+
+    // The slots of 2^shift bytes that [first, first + pages pages) touches.
+    auto memory_slots(u64 first, u64 pages, i64 shift) -> u64 {
+        const u64 last = first + pages * 4096u64 - 1u64;
+        return (last >> shift) - (first >> shift) + 1u64;
+    }
+
+    // The frames a range may hold: its pages and the page tables, page
+    // directories and directory pointer tables that translate it.
+    auto memory_charge(u64 first, u64 pages) -> u64 {
+        if (pages == 0u64) {
+            return 0u64;
+        }
+        return pages + memory_slots(first, pages, 21) + memory_slots(first, pages, 30) + memory_slots(first, pages, 39);
+    }
+
+    // The smallest power of two at least pages (at most 2^34).
+    auto memory_reservation(u64 pages) -> u64 {
+        u64 reserved = 1u64;
+        while (reserved < pages) {
+            reserved = reserved * 2u64;
+        }
+        return reserved;
+    }
+
+    auto memory_state_valid(MemoryState state) -> bool {
+        return state.next >= memory_base() && state.next <= memory_limit() && state.next % 4096u64 == 0u64
+            && state.charged <= state.quota && state.count <= memory_records();
+    }
+
+    auto memory_record_valid(MemoryState state, MemoryRecord record) -> bool {
+        if (record.first < memory_base() || record.first % 4096u64 != 0u64 || record.pages == 0u64 || record.pages
+            > record.reserved || record.reserved > 17179869184u64 || memory_reservation(record.reserved)
+            != record.reserved || record.first >= state.next) {
+            return false;
+        }
+        return record.reserved * 4096u64 <= state.next - record.first;
+    }
+
+    auto memory_decision(MemoryVerdict verdict, MemoryState state) -> MemoryDecision {
+        const MemoryDecision result = MemoryDecision{
+            .verdict = verdict,
+            .first = 0u64,
+            .reserved = 0u64,
+            .pages = 0u64,
+            .next = state.next,
+            .charged = state.charged
+        };
+        return result;
+    }
+
+    // A fresh reservation for pages at the bump address, with the charge it
+    // adds on top of extra frames held meanwhile; quota or space when it does
+    // not fit, the state unchanged.
+    auto memory_reserve(MemoryState state, u64 pages, u64 released, u64 extra) -> MemoryDecision {
+        const u64 reserved = memory_reservation(pages);
+        if (reserved * 4096u64 > memory_limit() - state.next || memory_limit() - state.next - reserved * 4096u64
+            < 4096u64) {
+            const MemoryDecision space = memory_decision(MemoryVerdict::space, state);
+            return space;
+        }
+        const u64 charge = memory_charge(state.next, pages);
+        const u64 kept = state.charged - released;
+        if (charge > state.quota - kept || extra > state.quota - state.charged) {
+            const MemoryDecision quota = memory_decision(MemoryVerdict::quota, state);
+            return quota;
+        }
+        const MemoryDecision result = MemoryDecision{
+            .verdict = MemoryVerdict::mapped,
+            .first = state.next,
+            .reserved = reserved,
+            .pages = pages,
+            .next = state.next + reserved * 4096u64 + 4096u64,
+            .charged = kept + charge
+        };
+        return result;
+    }
+
+    // map(bytes): a new mapping.
+    auto memory_map(MemoryState state, u64 bytes) -> MemoryDecision {
+        if (!memory_state_valid(state)) {
+            const MemoryDecision malformed = memory_decision(MemoryVerdict::malformed, state);
+            return malformed;
+        }
+        if (!memory_length(bytes)) {
+            const MemoryDecision length = memory_decision(MemoryVerdict::length, state);
+            return length;
+        }
+        if (state.count == memory_records()) {
+            const MemoryDecision records = memory_decision(MemoryVerdict::records, state);
+            return records;
+        }
+        const MemoryDecision result = memory_reserve(state, bytes / 4096u64, 0u64, 0u64);
+        return result;
+    }
+
+    // remap(base, bytes, new bytes) of record, whose length bytes must be: in
+    // place within the reservation, otherwise moved to a fresh one. While a
+    // move runs, the tables of the range its committed pages move to exist
+    // beside the old ones, so those must fit on top of the current charge, and
+    // the moved mapping's charge in place of the old one's.
+    auto memory_remap(MemoryState state, MemoryRecord record, u64 bytes, u64 target) -> MemoryDecision {
+        if (!memory_state_valid(state) || !memory_record_valid(state, record) || memory_charge(record.first,
+            record.pages) > state.charged) {
+            const MemoryDecision malformed = memory_decision(MemoryVerdict::malformed, state);
+            return malformed;
+        }
+        if (bytes != record.pages * 4096u64 || !memory_length(target)) {
+            const MemoryDecision length = memory_decision(MemoryVerdict::length, state);
+            return length;
+        }
+        const u64 pages = target / 4096u64;
+        const u64 old = memory_charge(record.first, record.pages);
+        if (pages <= record.reserved) {
+            const u64 charge = memory_charge(record.first, pages);
+            if (charge > old && charge - old > state.quota - state.charged) {
+                const MemoryDecision quota = memory_decision(MemoryVerdict::quota, state);
+                return quota;
+            }
+            const MemoryDecision result = MemoryDecision{
+                .verdict = MemoryVerdict::resized,
+                .first = record.first,
+                .reserved = record.reserved,
+                .pages = pages,
+                .next = state.next,
+                .charged = state.charged - old + charge
+            };
+            return result;
+        }
+        const u64 transient = memory_charge(state.next, record.pages) - record.pages;
+        MemoryDecision moved = memory_reserve(state, pages, old, transient);
+        if (moved.verdict == MemoryVerdict::mapped) {
+            moved.verdict = MemoryVerdict::moved;
+        }
+        return moved;
+    }
+
+    // unmap(base, bytes) of record, whose length bytes must be.
+    auto memory_unmap(MemoryState state, MemoryRecord record, u64 bytes) -> MemoryDecision {
+        if (!memory_state_valid(state) || !memory_record_valid(state, record) || memory_charge(record.first,
+            record.pages) > state.charged) {
+            const MemoryDecision malformed = memory_decision(MemoryVerdict::malformed, state);
+            return malformed;
+        }
+        if (bytes != record.pages * 4096u64) {
+            const MemoryDecision length = memory_decision(MemoryVerdict::length, state);
+            return length;
+        }
+        const MemoryDecision result = MemoryDecision{
+            .verdict = MemoryVerdict::unmapped,
+            .first = 0u64,
+            .reserved = 0u64,
+            .pages = 0u64,
+            .next = state.next,
+            .charged = state.charged - memory_charge(record.first, record.pages)
+        };
+        return result;
+    }
+
+    auto memory_word(builtin::span<const u8> records, i64 index, i64 word) -> u64 {
+        const std::ByteReadResult value = std::read_le64(records, index * memory_record_bytes() + word * 8);
+        return value.value_or(0u64);
+    }
+
+    // The record of the last mapping starting at or below address: its index
+    // + 1, or 0 when there is none or the records do not cover count.
+    auto memory_below(builtin::span<const u8> records, u64 count, u64 address) -> u64 {
+        if (count > memory_records() || i64(count) * memory_record_bytes() > records.size()) {
+            return 0u64;
+        }
+        i64 low = 0;
+        i64 high = i64(count);
+        while (low < high) {
+            const i64 middle = low + (high - low) / 2;
+            if (memory_word(records, middle, 0) <= address) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        return u64(low);
+    }
+
+    // The mapping whose base is exactly base: index + 1, or 0.
+    auto memory_find(builtin::span<const u8> records, u64 count, u64 base) -> u64 {
+        const u64 found = memory_below(records, count, base);
+        if (found == 0u64 || memory_word(records, i64(found) - 1, 0) != base) {
+            return 0u64;
+        }
+        return found;
+    }
+
+    // A page fault the memory service commits: a user read or write of an
+    // absent page (error code 4 or 6: no protection, reserved-bit, fetch or
+    // key violation) inside a mapping's pages. Its index + 1, or 0.
+    auto memory_fault(builtin::span<const u8> records, u64 count, u64 address, u64 error) -> u64 {
+        if ((error | 2u64) != 6u64) {
+            return 0u64;
+        }
+        const u64 found = memory_below(records, count, address);
+        if (found == 0u64) {
+            return 0u64;
+        }
+        const u64 first = memory_word(records, i64(found) - 1, 0);
+        const u64 pages = memory_word(records, i64(found) - 1, 2);
+        if (pages > 17179869184u64 || address - first >= pages * 4096u64) {
+            return 0u64;
+        }
+        return found;
+    }
+
+    // The quota of a process whose image and arguments load with free frames
+    // left: its load (root, regions and their tables, and the two tables of
+    // each shared kernel slot) is charged first; the memory service may then
+    // charge requested frames (0 for every one left), at most those left.
+    auto memory_budget(builtin::span<const u8> image, u64 arguments, u64 slots, u64 requested,
+        u64 free) -> MemoryBudget {
+        const MemoryBudget refused = MemoryBudget{
+            .verdict = BudgetVerdict::quota,
+            .quota = 0u64,
+            .charged = 0u64
+        };
+        if (slots > 2u64) {
+            return refused;
+        }
+        u64 load = 1u64 + 2u64 * slots;
+        i64 index = 0;
+        while (index < 12) {
+            const ProcessRegion region = process_region(image, index, arguments);
+            if (region.kind == 0u64) {
+                index = 12;
+            } else {
+                if (region.pages > 17179869184u64 || region.first >= 140737488355328u64) {
+                    return refused;
+                }
+                load = load + memory_charge(region.first, region.pages);
+                index = index + 1;
+            }
+        }
+        if (load == 1u64 + 2u64 * slots || load > free) {
+            return refused;
+        }
+        u64 granted = free - load;
+        if (requested != 0u64 && requested < granted) {
+            granted = requested;
+        }
+        const MemoryBudget result = MemoryBudget{
+            .verdict = BudgetVerdict::valid,
+            .quota = load + granted,
+            .charged = load
+        };
+        return result;
+    }
+}

@@ -10,4 +10,7 @@
 10 bin/isolation-6 bad-call	call operation=99
 11 bin/isolation-7 kernel-print	call operation=2
 12 bin/isolation-8 raise-vector	protection vector=13 error=114
-13 bin/probe probe print 'two words' exit success	exit 0 | stdout: two words1 print success
+13 bin/isolation-9 past-mapping	page_fault vector=14 error=6
+14 bin/isolation-10 bad-unmap	call operation=6
+15 bin/isolation-11 moved-away	page_fault vector=14 error=4
+16 bin/probe probe print 'two words' exit success	exit 0 | stdout: two words1 print success

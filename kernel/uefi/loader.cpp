@@ -127,8 +127,8 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         Serial::number(*selected_case);
         Serial::text("\r\n");
     }
-    const auto volume =
-        aurora::uefi::VolumeLoader::read(boot, image, aurora::uefi::loader_fixture::volume_path(*selected));
+    const auto volume = aurora::uefi::VolumeLoader::read(
+        boot, image, aurora::uefi::loader_fixture::volume_path(*selected, *selected_case));
     if (!volume)
         fail("boot volume bounds");
 #endif

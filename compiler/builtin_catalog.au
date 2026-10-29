@@ -581,9 +581,10 @@ export namespace compiler_catalog {
     // byte offsets of 9..20 address the session block that the hosted entry
     // reserves; 21..28 map, unmap and access the memory runtime's mappings,
     // whose table follows the session block when the entry takes a region.
-    // 9..12 serve every target; 13..28 exist only for --target linux and 29
-    // (print) and 30 (read into a HostChunk) only for --target aurora, where
-    // they enter the Aurora kernel through INT 0x83.
+    // 9..12 and 21..28 serve every target; 13..20 exist only for --target
+    // linux and 29 (print) and 30 (read into a HostChunk) only for --target
+    // aurora, where they and map, remap and unmap enter the Aurora kernel
+    // through INT 0x83.
     // The ten public HostFiles operations are implemented by exported
     // functions of namespace host in module aurora.host; a call on the
     // capability forwards it to that function as its first argument.

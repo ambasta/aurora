@@ -143,6 +143,8 @@ def validate_native_abi(facts, source):
                 "kernel::TrapClass",
                 "kernel::CallAction",
                 "kernel::RunsVerdict",
+                "kernel::MemoryVerdict",
+                "kernel::BudgetVerdict",
             )
             else "records"
         )
@@ -384,7 +386,9 @@ def validate_native_abi(facts, source):
                 "kernel timer call system_call invalid_opcode stack_guard page_fault protection divide debug "
                 "breakpoint overflow bound fpu alignment simd",
             ),
-            ("kernel::CallAction", "invalid exit print read"),
+            ("kernel::CallAction", "invalid exit print read map remap unmap"),
+            ("kernel::MemoryVerdict", "mapped resized moved unmapped quota space records length malformed"),
+            ("kernel::BudgetVerdict", "valid quota"),
             (
                 "kernel::RunsVerdict",
                 "valid truncated magic version count ticks path arguments flags padding trailing",
@@ -397,11 +401,24 @@ def validate_native_abi(facts, source):
         record("kernel::ProcessTrap", 72, [(name, "u64", 0) for name in trap])
         record(
             "kernel::KernelCall",
-            24,
-            [("_action", "kernel::CallAction", 0), ("_value", "u64", 0), ("_length", "u64", 0)],
+            32,
+            [("_action", "kernel::CallAction", 0), ("_value", "u64", 0), ("_length", "u64", 0), ("_base", "u64", 0)],
         )
-        run = ("found", "ticks", "flags", "path", "path_bytes", "arguments", "argument_bytes")
-        record("kernel::RunEntry", 56, [(name, "u64", 0) for name in run])
+        run = ("found", "ticks", "flags", "quota", "path", "path_bytes", "arguments", "argument_bytes")
+        record("kernel::RunEntry", 64, [(name, "u64", 0) for name in run])
+        record("kernel::MemoryState", 32, [(name, "u64", 0) for name in ("next", "charged", "quota", "count")])
+        record("kernel::MemoryRecord", 24, [(name, "u64", 0) for name in ("first", "reserved", "pages")])
+        decision = ("first", "reserved", "pages", "next", "charged")
+        record(
+            "kernel::MemoryDecision",
+            48,
+            [("verdict", "kernel::MemoryVerdict", 0)] + [(name, "u64", 0) for name in decision],
+        )
+        record(
+            "kernel::MemoryBudget",
+            24,
+            [("verdict", "kernel::BudgetVerdict", 0), ("quota", "u64", 0), ("charged", "u64", 0)],
+        )
         entry("process_elf_admit", ["span"], "kernel::ElfVerdict")
         entry("process_layout", ["span", "u64", "u64", "u64"], "kernel::LayoutVerdict")
         entry("process_region", ["span", "u64", "u64"], "kernel::ProcessRegion")
@@ -410,6 +427,16 @@ def validate_native_abi(facts, source):
         entry("process_call", ["u64", "u64", "u64", "u64"], "kernel::KernelCall")
         entry("process_runs_admit", ["span"], "kernel::RunsVerdict")
         entry("process_run", ["span", "u64"], "kernel::RunEntry")
+        entry("process_memory_map", ["kernel::MemoryState", "u64"], "kernel::MemoryDecision")
+        entry(
+            "process_memory_remap",
+            ["kernel::MemoryState", "kernel::MemoryRecord", "u64", "u64"],
+            "kernel::MemoryDecision",
+        )
+        entry("process_memory_unmap", ["kernel::MemoryState", "kernel::MemoryRecord", "u64"], "kernel::MemoryDecision")
+        entry("process_memory_find", ["span", "u64", "u64"], "u64")
+        entry("process_memory_fault", ["span", "u64", "u64", "u64"], "u64")
+        entry("process_memory_budget", ["span", "u64", "u64", "u64", "u64"], "kernel::MemoryBudget")
 
 
 def render_bridge(source, facts):

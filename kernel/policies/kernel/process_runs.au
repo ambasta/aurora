@@ -3,14 +3,16 @@ import std.binary;
 
 // A run list (kernel/uefi/process.md#run-lists): an ordinary boot-volume entry
 // naming the programs one boot runs in order, each with its argument block and
-// watchdog budget. One canonical little-endian layout: a 16-byte header
-// (magic "AURORUNS", version 1, count 1..64), then per run a 16-byte record
-// (ticks 1..128, path bytes 1..255, argument bytes 1..65536, flags 0..3),
-// the path, the arguments (NUL-terminated words, so the last byte is zero) and
+// watchdog budget and frame quota. One canonical little-endian layout: a
+// 16-byte header (magic "AURORUNS", version 2, count 1..64), then per run a
+// 24-byte record (ticks 1..128, path bytes 1..255, argument bytes 1..65536,
+// flags 0..7, then the memory quota in frames, 0 for every free frame), the
+// path, the arguments (NUL-terminated words, so the last byte is zero) and
 // zero padding to 8 bytes, ending exactly at the end of the entry. The flags
 // are process-image fixtures: 1 faults the kernel during the run's first
-// kernel call, 2 checks that the load walk rejects edited tables. Admission
-// returns the first violated rule.
+// kernel call, 2 checks that the load walk rejects edited tables, 4 walks the
+// whole space after every memory call and commit. Admission returns the
+// first violated rule.
 export namespace kernel {
     enum class RunsVerdict {
         valid,
@@ -32,6 +34,7 @@ export namespace kernel {
         u64 found;
         u64 ticks;
         u64 flags;
+        u64 quota;
         u64 path;
         u64 path_bytes;
         u64 arguments;
@@ -56,11 +59,11 @@ export namespace kernel {
     // The bytes of one record and its payload, padded to 8; the fields are
     // bounded first.
     auto record_bytes(u64 path, u64 arguments) -> i64 {
-        const i64 used = 16 + i64(path) + i64(arguments);
+        const i64 used = 24 + i64(path) + i64(arguments);
         return (used + 7) / 8 * 8;
     }
 
-    // The verdict of the record at offset, whose 16 bytes are present.
+    // The verdict of the record at offset, whose 24 bytes are present.
     auto run_record(builtin::span<const u8> runs, i64 offset) -> RunsVerdict {
         const u64 ticks = runs_half(runs, offset);
         const u64 path = runs_half(runs, offset + 4);
@@ -75,13 +78,13 @@ export namespace kernel {
         if (arguments == 0u64 || arguments > 65536u64) {
             return RunsVerdict::arguments;
         }
-        if (flags > 3u64) {
+        if (flags > 7u64) {
             return RunsVerdict::flags;
         }
-        if (i64(path) + i64(arguments) > runs.size() - offset - 16) {
+        if (i64(path) + i64(arguments) > runs.size() - offset - 24) {
             return RunsVerdict::truncated;
         }
-        const i64 last = offset + 16 + i64(path) + i64(arguments) - 1;
+        const i64 last = offset + 24 + i64(path) + i64(arguments) - 1;
         if (runs.at(last) != 0u8) {
             return RunsVerdict::arguments;
         }
@@ -106,7 +109,7 @@ export namespace kernel {
         if (runs_word(runs, 0) != runs_magic()) {
             return RunsVerdict::magic;
         }
-        if (runs_half(runs, 8) != 1u64) {
+        if (runs_half(runs, 8) != 2u64) {
             return RunsVerdict::version;
         }
         const u64 count = runs_half(runs, 12);
@@ -116,7 +119,7 @@ export namespace kernel {
         i64 offset = 16;
         i64 index = 0;
         while (index < i64(count)) {
-            if (runs.size() - offset < 16) {
+            if (runs.size() - offset < 24) {
                 return RunsVerdict::truncated;
             }
             const RunsVerdict record = run_record(runs, offset);
@@ -137,6 +140,7 @@ export namespace kernel {
             .found = 0u64,
             .ticks = 0u64,
             .flags = 0u64,
+            .quota = 0u64,
             .path = 0u64,
             .path_bytes = 0u64,
             .arguments = 0u64,
@@ -156,9 +160,10 @@ export namespace kernel {
             .found = 1u64,
             .ticks = runs_half(runs, offset),
             .flags = runs_half(runs, offset + 12),
-            .path = u64(offset + 16),
+            .quota = runs_word(runs, offset + 16),
+            .path = u64(offset + 24),
             .path_bytes = path,
-            .arguments = u64(offset + 16) + path,
+            .arguments = u64(offset + 24) + path,
             .argument_bytes = runs_half(runs, offset + 8)
         };
         return entry;

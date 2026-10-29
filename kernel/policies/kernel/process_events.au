@@ -1,4 +1,5 @@
 export module kernel.process_events;
+import kernel.process_memory;
 import kernel.process_space;
 
 // Kernel entries from a running process (kernel/uefi/process.md#entries): the
@@ -45,17 +46,25 @@ export namespace kernel {
         invalid,
         exit,
         print,
-        read
+        read,
+        map,
+        remap,
+        unmap
     };
 
     // A decoded kernel call: exit with value, print length bytes to stream
-    // value (1 stdout, 2 stderr), or read, whose result word is value.
+    // value (1 stdout, 2 stderr), read, whose result word is value, or a
+    // memory call (kernel/uefi/process.md#memory): map length bytes, remap the
+    // mapping at base from value bytes to length bytes, unmap length bytes at
+    // base.
     class KernelCall {
         CallAction _action;
         u64 _value;
         u64 _length;
+        u64 _base;
     public:
-        KernelCall(CallAction action, u64 value, u64 length) : _action(action), _value(value), _length(length) {
+        KernelCall(CallAction action, u64 value, u64 length, u64 base) : _action(action), _value(value),
+            _length(length), _base(base) {
         }
         auto action() const -> CallAction {
             return _action;
@@ -125,28 +134,47 @@ export namespace kernel {
         return TrapClass::kernel;
     }
 
+    // A mapping's base: a page of the memory area.
+    auto memory_base_address(u64 base) -> bool {
+        return base >= memory_base() && base < memory_limit() && base % 4096u64 == 0u64;
+    }
+
     // Operation 1 exit(status 0..255), 2 print(stream, buffer, length up to
     // 64 KiB), 3 read(file, offset, chunk): with no file service yet every
-    // file id is invalid_handle (-1). Anything else is invalid.
+    // file id is invalid_handle (-1); 4 map(bytes), 5 remap(base, bytes, new
+    // bytes) and 6 unmap(base, bytes), with whole-page lengths up to 64 TiB
+    // and a base in the memory area. Anything else is invalid.
     auto process_call(u64 operation, u64 first, u64 second, u64 third) -> KernelCall {
-        const KernelCall invalid = KernelCall(CallAction::invalid, 0u64, 0u64);
+        const KernelCall invalid = KernelCall(CallAction::invalid, 0u64, 0u64, 0u64);
         if (operation == 1u64) {
             if (first > 255u64) {
                 return invalid;
             }
-            const KernelCall exit = KernelCall(CallAction::exit, first, 0u64);
+            const KernelCall exit = KernelCall(CallAction::exit, first, 0u64, 0u64);
             return exit;
         }
         if (operation == 2u64) {
             if ((first != 1u64 && first != 2u64) || third > arguments_limit()) {
                 return invalid;
             }
-            const KernelCall print = KernelCall(CallAction::print, first, third);
+            const KernelCall print = KernelCall(CallAction::print, first, third, 0u64);
             return print;
         }
         if (operation == 3u64) {
-            const KernelCall read = KernelCall(CallAction::read, 18446744073709551615u64, 0u64);
+            const KernelCall read = KernelCall(CallAction::read, 18446744073709551615u64, 0u64, 0u64);
             return read;
+        }
+        if (operation == 4u64 && memory_length(first)) {
+            const KernelCall map = KernelCall(CallAction::map, 0u64, first, 0u64);
+            return map;
+        }
+        if (operation == 5u64 && memory_base_address(first) && memory_length(second) && memory_length(third)) {
+            const KernelCall remap = KernelCall(CallAction::remap, second, third, first);
+            return remap;
+        }
+        if (operation == 6u64 && memory_base_address(first) && memory_length(second)) {
+            const KernelCall unmap = KernelCall(CallAction::unmap, 0u64, second, first);
+            return unmap;
         }
         return invalid;
     }

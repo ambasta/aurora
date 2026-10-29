@@ -9,14 +9,15 @@ through the INT 0x83 gate. Other images and `uefi/production` do not change;
 their image bytes are identical with and without this image.
 
 The decisions are Aurora (`examples/kernel-process.au` over
-`kernel/policies/kernel/{memory_map,frames,boot_volume,export_text,elf,process_space,process_events,process_runs}.au`
+`kernel/policies/kernel/{memory_map,frames,boot_volume,export_text,elf,process_space,process_memory,process_events,process_runs}.au`
 and the existing `interrupt_budget`), reached through the private bridge
 `process-entry.S`. The build checks every argument record, result class and
 enum against the compiler's ABI facts (`PROCESS_POLICY_ABI` in
 `scripts/meson_aurora_assembly.py`). Trusted C++ keeps only what the kernel
 bridge cannot express yet: firmware file reads in the loader, page-table
 writes and their walk, CR3, the frame-record storage and free-list head, the
-range table, byte copies, the LAPIC timer and serial output; assembly keeps the
+range table and the memory records, byte copies, the LAPIC timer and serial
+output; assembly keeps the
 trap entry (`kernel/exceptions.S`) and the CPL 3 transition (`process-user.S`).
 Each C++ decoder rejects a result outside its closed encoding before using it.
 
@@ -40,7 +41,9 @@ leaves.
 ## Boot volume
 
 The loader opens `\aurora\volume` on its own ESP through the loaded image's
-`EFI_SIMPLE_FILE_SYSTEM_PROTOCOL`. It requires a regular file of 1 byte to
+`EFI_SIMPLE_FILE_SYSTEM_PROTOCOL` (`\aurora\compiler` for case words from 3,
+whose run lists need the multi-MiB compiler image; every boot checksums its
+whole volume). It requires a regular file of 1 byte to
 64 MiB and reads it into fresh EfiLoaderData pages. It zeroes the last page's
 tail and closes both handles before the final map. The format has one canonical
 layout, little-endian (`scripts/kernel_volume.py` writes it):
@@ -93,9 +96,9 @@ the frame cases. The baseline row then checks that it rejects four single-entry
 edits: a user bit on a table link, an executable metadata leaf, a writable volume
 leaf and an open window.
 
-The metadata is one 8-byte record per frame and, from the next page, one 8-byte
-mapping word per frame (`KernelSpace::mappings`), zero unless a process maps the
-frame.
+The metadata is one 8-byte record per frame and, from the next page, one
+8-byte mapping word per frame (`KernelSpace::mappings`), zero unless a process maps the
+frame, then 96 pages for the running process's 16384 memory records.
 
 ## Export
 
@@ -122,11 +125,12 @@ The kernel reports each step:
 ```
 AURORA_PROCESS_RUN: run=<n> path=<volume path> ticks=<budget>
 AURORA_PROCESS_REJECTED: run=<n> reason=<missing | ELF verdict | layout verdict>
-AURORA_PROCESS_LOADED: run=<n> regions=<r> pages=<p> tables=<t>
+AURORA_PROCESS_LOADED: run=<n> regions=<r> pages=<p> tables=<t> quota=<memory frames>
 AURORA_STDOUT: run=<n> <padded base64 of one print>   (AURORA_STDERR likewise)
 AURORA_PROCESS_END: run=<n> reason=exit status=<s> | reason=watchdog ticks=<t>
   | reason=call operation=<rax> rip=<a> | reason=<trap class> vector= error= rip= cr2=
-AURORA_PROCESS_RELEASED: run=<n> frames=<pages + tables>
+AURORA_PROCESS_RELEASED: run=<n> frames=<all> memory=<memory pages + tables>
+  calls=<memory calls> commits=<committing faults>
 AURORA_PROCESS_RUNS_OK: runs=<n> free=<frames>
 ```
 
@@ -167,13 +171,62 @@ calls run under the process root. Tables are written and pages filled through th
 transient frame window, which is closed before a page's own leaf is written: no
 frame is ever reachable writable and executable at once. Each table and page frame
 gets a mapping word naming its one place (a page's address, or a table's level
-and first address). The walk at load and at exit checks every entry of every
-table reachable from the root: shared entries equal to the kernel's, links
-exactly user-writable to a table of this owner with the expected mapping word,
-leaves inside a region with its exact flags and a page of this owner with the
-expected mapping word; and that the walk saw every recorded table and region
-page, and that the owner holds no other frame. A kernel call's buffer must lie
-inside one region (`ProcessSpace::contains`).
+and first address, with a table's count of present entries in bits 4..13). The
+walk at load and at exit checks every entry of every table reachable from the
+root: shared entries equal to the kernel's, links exactly user-writable to a
+table of this owner with the expected mapping word, leaves inside a region or a
+memory mapping with its exact flags and a page of this owner with the expected
+mapping word, and each table's count; that the memory records are in address
+order inside their reservations below the bump address; that the walk saw every
+recorded table and region page and every committed page; and that no frame is
+allocated anywhere but the ones walked (one process runs at a time, so the
+frame table's allocated count must equal them), within the process's charge.
+It opens the frame window once per table and once per link, so its cost
+follows the space's tables and pages, not its address range. A kernel call's
+buffer must lie inside one region (`ProcessSpace::contains`); kernel calls
+never read memory mappings. At exit the space is released by walking its
+tables.
+
+### Memory
+
+`kernel.process_memory` decides the memory service behind the hosted memory
+runtime (`runtime/linux/aurora/memory.au`, the one source both runtime roots
+compile, compiler/SERVICES.md#hosted-memory):
+
+- map(bytes) reserves the next power of two of the pages at a bump address in
+  the memory area [64 TiB, 96 TiB) and leaves one unmapped page after it; the
+  bump address never goes back, so no address is reused within a process;
+- remap(base, bytes, new bytes) grows or shrinks in place within the
+  reservation (a shrink releases the pages past the new end), and otherwise
+  moves the committed pages' entries to a fresh reservation (mremap with
+  MREMAP_MAYMOVE; no byte is copied, the old range no longer translates);
+- unmap(base, bytes) releases the mapping's pages;
+- a base naming no mapping, or a length the mapping does not have, ends the
+  process as an invalid call (`length`); the area full (`space`), 16384 live
+  mappings (`records`) or the quota (`quota`) refuse with the HostStatus
+  `exhausted` (-6) and change nothing, which the runtime turns into a failed
+  owner (`ok false`), as an ENOMEM does on Linux. Unlike Linux, the area is
+  never reused: every map and move uses up its reservation and a page of the
+  32 TiB for the rest of the process (a 4 GiB map and unmap repeated about 8191
+  times, or a 1 MiB one about 2^25 times, then refuses with `space`).
+
+Every frame a process may hold is charged against its quota first: the load
+(root, regions, two tables per shared kernel slot) and each mapping's pages
+plus one page table per 2 MiB, 1 GiB and 512 GiB slot it touches (a move also
+needs room for its new tables beside the old ones). The quota is the run's
+(`quota` frames, 0 for all) on top of the load, at most the frames free when
+the process loads (`memory_budget`; a load that does not fit is `rejected
+reason=quota`). A mapping is committed on first touch: a user read or write of
+an absent page inside a mapping's pages (`memory_fault`) commits that page and
+the other absent pages of its aligned 64 KiB block in the mapping, with frames
+the charge already covers, so a touch never fails (but see the limits on
+retired frames) and the process sees eager
+commit's behaviour without its cost (one memory case maps 4 GiB and touches
+one page). Every frame is zeroed through the window before it is mapped, so no
+frame reaches a process with an earlier holder's bytes. A page table left
+empty by an unmap, shrink or move is released (its parent's count drops, up
+to the root); each cleared leaf and released table is invalidated with
+INVLPG before the process runs again.
 
 ### Entries
 
@@ -195,8 +248,11 @@ vector 64 is `timer`, 0x83 `call`, #UD `system_call` when the two bytes at RIP
 
 `process_call` decodes RAX: 1 exit(RDI status 0..255); 2 print(RDI stream 1 or
 2, RSI buffer, RDX length up to 64 KiB), returning 0; 3 read(file, offset,
-chunk), returning -1 (`invalid_handle`) because there is no file service yet.
-Anything else ends the process with `call`. The watchdog arms the LAPIC one-shot
+chunk), returning -1 (`invalid_handle`) because there is no file service yet;
+4 map(RDI bytes), 5 remap(RDI base, RSI bytes, RDX new bytes) and 6 unmap(RDI
+base, RSI bytes) with whole-page lengths up to 64 TiB, returning the base (0
+for unmap) or -6 ([memory](#memory)). Anything else ends the process with
+`call`. A page fault the memory service commits resumes the process. The watchdog arms the LAPIC one-shot
 timer (2^24 counts, divide by 16) per tick; each timer interrupt is charged by
 `kernel.interrupt_budget` and ends the process when its run's 1..128 ticks are
 spent. A timer interrupt pending when a process ends is taken in a kernel
@@ -204,12 +260,14 @@ spent. A timer interrupt pending when a process ends is taken in a kernel
 
 ### Run lists
 
-`kernel.process_runs` admits a run list: header `AURORUNS`, version 1, count
-1..64; per run ticks 1..128, path bytes 1..255, argument bytes 1..65536 and
-flags 0..3, then the path, the NUL-terminated arguments and zero padding to 8
+`kernel.process_runs` admits a run list: header `AURORUNS`, version 2, count
+1..64; per run a 24-byte record of ticks 1..128, path bytes 1..255, argument
+bytes 1..65536, flags 0..7 and the memory quota in frames (0 for all), then the
+path, the NUL-terminated arguments and zero padding to 8
 bytes, ending at the entry's end (`truncated`, `magic`, `version`, `count`,
 `ticks`, `path`, `arguments`, `flags`, `padding`, `trailing`). The flags are
-fixtures: 1 faults the kernel during the run's first kernel call (the
+fixtures: 4 runs the complete walk after every memory call and commit (it
+stops the machine if one fails), 1 faults the kernel during the run's first kernel call (the
 kernel-fault row), 2 checks after the load walk that it rejects each of four
 single-entry edits, each undone before the next: a no-execute code leaf, a code
 leaf aliasing the argument page's frame, an extra leaf after the argument block
@@ -225,10 +283,12 @@ rejected=4`).
 from `volumes.cases`; each edits one field of a canonical volume. Program and
 run-list cases are `programs.cases`: each edits one field of the writer's
 header-only ELF image (or of a run list) and prints the ELF and layout verdicts
-and the regions, or the run-list verdict and runs. Trap frames and kernel calls
-are `events.cases`. Verdicts are compared with the golden files beside them. The `guest-process` family boots the
-image's six rows (`meson test --suite guest-process`, about 2 s each on TCG,
-3 s for `process-run`):
+and the regions, the load charge and quota, or the run-list verdict and runs.
+Trap frames and kernel calls are `events.cases`; memory decisions
+(reservation, growth, move, quota, release, record lookup, committed faults,
+the memory calls and misuse) are `memory.cases`. Verdicts are compared with the golden files beside them. The `guest-process` family boots the
+image's seven rows (`meson test --suite guest-process`, about 2 s each on TCG,
+3 s for `process-run`, 11 s for `process-memory`):
 
 - `process-volume` allocates every free frame and writes and reads back a pattern
   and then zero through the window. It checks six misuse rejections, releases
@@ -245,20 +305,35 @@ image's six rows (`meson test --suite guest-process`, about 2 s each on TCG,
   first SYSCALL, `system_call`), `recurse` (a GNU as program, since the compiler
   rejects recursion reachable from a HostFiles main; ends at the guard,
   `stack_guard`), `hostile spin` (ended by the watchdog after 4 ticks), the
-  eight isolation programs of `tests/kernel-process/isolation.S` (writing its
+  eleven isolation programs of `tests/kernel-process/isolation.S` (writing its
   code page, running its stack, `cli`, `in`, reading the kernel half, an unknown
-  kernel call, printing a kernel address and `int 14`) and the probe with
+  kernel call, printing a kernel address, `int 14`, touching a mapping's
+  reservation past its pages, unmapping with a wrong length and reading a moved
+  mapping's old address after checking its byte moved) and the probe with
   `print 'two words' exit success`, which shows the kernel continues after each;
 - `process-hostile` (case 2) rejects ELF images with a writable and executable
   segment, an interpreter, an entry outside code and overlapping segments and a
   missing path, runs `hostile` to exit 0, then faults in the kernel during the
-  probe's first call, which stops the machine.
+  probe's first call, which stops the machine;
+- `process-memory` (case 3, 5 GiB guest, the compiler volume) runs the
+  `--target aurora` memory probe once per case of
+  `tests/host-files/memory.golden` (the first, second and fourth with the walk
+  after every memory call), the `--target aurora` compiler with no arguments
+  (usage, exit 2), the probe under a 140-frame quota (its 100000-byte owner
+  fails, its 10-byte one does not) and the compiler under a 1-frame quota (its
+  memory runtime cannot start: exit 1). Guest time per run is about 40 ms,
+  4 s for the 768 MiB of triples one case fills and 3.5 s for the case that
+  churns 100000 owners; 60 ms for the compiler.
 
 `tests/kernel-process-smoke.py` reduces each run to one line compared with
 `tests/kernel-process/<row>.golden` (a fault keeps its vector and architectural
 error code, which tell the refusing check: page-fault present/write/user/fetch
-bits, or the gate's vector; a refused call keeps its operation); each probe run must also equal its hosted
-line in `tests/host-files/cases.golden` without the file tree. The case word is
+bits, or the gate's vector, and the output before it; a refused call keeps its operation); each probe run must also equal its hosted
+line in `tests/host-files/cases.golden` without the file tree, each memory
+probe run with the whole quota its line in `tests/host-files/memory.golden`
+(the runtime's `ud2` trap is SIGILL there) and the compiler with no arguments
+the Linux compiler's (`tests/host-files/usage.golden`). Every released run
+must return its load's frames plus the memory frames it held. The case word is
 the fw_cfg file `opt/aurora/case` (`kernel_profiles.PROCESS_CASES`), read by the
 loader beside the fixture selector, so rows that differ only by run list share
 one selector and one volume.
@@ -267,8 +342,16 @@ Limits:
 
 - one CPU and one process at a time; no SMAP, SMEP or PCID (every kernel entry
   stays under the process root, but every process switch flushes the TLB);
-- eager commit: every region page, including the whole 8 MiB stack, is
-  allocated, zeroed and walked at load; no memory or file service yet (M3, M4);
+- eager commit of the image, stack and arguments: every region page,
+  including the whole 8 MiB stack (about 2050 frames), is allocated, zeroed
+  and walked at load; memory mappings commit on first touch; no file service
+  yet (M4); kernel calls read only regions, never mappings;
+- the frame table is audited after every run, over every frame (about 25 ms
+  per run at 5 GiB under TCG);
+- the quota holds the frames free at load, but a frame whose generation would
+  wrap (its 2^28th release in one boot) retires during the run; a process
+  that then uses its whole quota can meet a failing frame allocation at a
+  touch, which stops the machine;
 - map admission is quadratic over at most 512 descriptors, and boot-services
   memory is not reclaimed;
 - the plan stops the boot above about 250 GiB of usable memory (one metadata PD

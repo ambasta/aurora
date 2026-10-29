@@ -48,13 +48,17 @@ bridge_table = files('scripts/frontend_bridge.py')
 # aurora.host and aurora.memory) and links with ld alone: no C or C++ objects,
 # startup or libc.
 hosted_runtime_root = meson.current_source_dir() / 'runtime/linux'
-kernel_runtime_root = meson.current_source_dir() / 'runtime/aurora'
-if hosted_runtime_root.contains('"') or hosted_runtime_root.contains('\\') or kernel_runtime_root.contains('"')
-  error('aurorac embeds its runtime root as a byte string: the source path must not contain " or a backslash.')
+# --target aurora's runtime root, for programs of the Aurora kernel's process
+# image: its own aurora.host beside the one aurora.memory source both targets
+# compile, assembled in the build tree (runtime/aurora/aurora/meson.build).
+kernel_runtime_root = meson.current_build_dir() / 'runtime/aurora'
+if (hosted_runtime_root.contains('"') or hosted_runtime_root.contains('\\') or kernel_runtime_root.contains('"')
+    or kernel_runtime_root.contains('\\'))
+  error('aurorac embeds its runtime roots as byte strings: the source and build paths must not contain " or a backslash.')
 endif
 hosted_runtime_sources = files('runtime/linux/aurora/host.au', 'runtime/linux/aurora/memory.au')
-# --target aurora's runtime root: programs for the Aurora kernel's process image.
-kernel_runtime_sources = files('runtime/aurora/aurora/host.au')
+subdir('runtime/aurora/aurora')
+kernel_runtime_sources = files('runtime/aurora/aurora/host.au', 'runtime/linux/aurora/memory.au')
 hosted_linker = find_program('ld', native: true)
 compiler_driver = configure_file(input: 'compiler/aurorac.au', output: 'aurorac.au',
                                  configuration: {'AURORA_RUNTIME_ROOT': hosted_runtime_root,
@@ -139,10 +143,21 @@ foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
 endforeach
 
 # Programs for the Aurora kernel's process image (kernel/uefi/process.md#guest-rows):
-# --target aurora objects linked like the hosted programs, and one GNU as program.
+# --target aurora objects linked like the hosted programs, the --target aurora
+# build of the compiler itself, and GNU as programs.
 process_programs = {}
 if get_option('kernel_images')
+  aurorac_aurora_object = custom_target(
+    'aurorac-aurora-object', input: [compiler_driver] + frontend_modules, output: 'aurorac-aurora.o',
+    command: compiler_stage + [aurorac, '--program', kernel_runtime_root, '--target', 'aurora', '--output',
+                               '@OUTPUT@', '@INPUT@'],
+    depend_files: kernel_runtime_sources, build_by_default: false,
+  )
+  process_programs += {'aurora:aurorac': custom_target('aurorac-aurora', input: aurorac_aurora_object,
+                                                       output: 'aurorac-aurora', command: compiler_link,
+                                                       build_by_default: false)}
   foreach name, source : {'host-files-probe': 'tests/host-files/probe.au',
+                          'host-memory-probe': 'tests/host-files/memory.au',
                           'process-hostile': 'tests/kernel-process/hostile.au'}
     process_object = custom_target(name + '-aurora-object', input: source, output: name + '-aurora.o',
         command: [aurorac, '--emit-object', '--target', 'aurora', '@INPUT@', '-o', '@OUTPUT@'],
@@ -155,7 +170,7 @@ if get_option('kernel_images')
                                              '@INPUT@', '-o', '@OUTPUT@'])
   process_programs += {'assembly:process-recurse': custom_target('process-recurse', input: recurse_object,
                                                                  output: 'process-recurse', command: compiler_link)}
-  foreach case : ['1', '2', '3', '4', '5', '6', '7', '8']
+  foreach case : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']
     isolation_object = custom_target('process-isolation-' + case + '-object',
         input: 'tests/kernel-process/isolation.S', output: 'process-isolation-' + case + '.o',
         command: [find_program('as', native: true), '--64', '-mx86-used-note=no', '--defsym', 'CASE=' + case,

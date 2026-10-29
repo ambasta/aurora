@@ -5,6 +5,10 @@
 #   2 run code from its stack       6 kernel call with an unknown operation
 #   3 cli (privileged instruction)  7 print from a kernel address
 #   4 in from an I/O port           8 int 14, a vector user code may not raise
+#   9 touch a mapping's reservation past its pages (the first touch of its
+#     last page commits; the next page is not the mapping's)
+#  10 unmap a mapping with a length it does not have
+#  11 read a mapping's old address after it moved (its byte moved with it)
 # GNU as, because Aurora source cannot express these.
 .text
 .globl _start
@@ -32,6 +36,35 @@ _start:
     int $0x83
 .elseif CASE == 8
     int $14
+.elseif CASE == 9
+    movl $4, %eax
+    movl $12288, %edi
+    int $0x83
+    movb $1, 8192(%rax)
+    movb $1, 12288(%rax)
+.elseif CASE == 10
+    movl $4, %eax
+    movl $4096, %edi
+    int $0x83
+    movq %rax, %rdi
+    movl $6, %eax
+    movl $8192, %esi
+    int $0x83
+.elseif CASE == 11
+    movl $4, %eax
+    movl $4096, %edi
+    int $0x83
+    movq %rax, %rbx
+    movb $0x5a, (%rbx)
+    movq %rbx, %rdi
+    movl $5, %eax
+    movl $4096, %esi
+    movl $12288, %edx
+    int $0x83
+    cmpb $0x5a, (%rax)
+    jne 1f
+    movb (%rbx), %al
+1:
 .endif
     ud2
 .section .note.GNU-stack,"",@progbits

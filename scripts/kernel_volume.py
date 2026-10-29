@@ -7,8 +7,8 @@
 Entries: --file PATH (the repository file PATH under --root, stored as PATH),
 --text PATH=CONTENT, --program PATH=FILE (any file, such as a build product),
 --elf PATH=EDITS (the header-only ELF image below with comma-separated field
-edits) and --run CASE:TICKS:FLAGS:PATH:ARGUMENTS (appends one run to the run
-list runs/CASE; ARGUMENTS are shell words), and --entries N adds
+edits) and --run CASE:TICKS:FLAGS:QUOTA:PATH:ARGUMENTS (appends one run to
+the run list runs/CASE; ARGUMENTS are shell words), and --entries N adds
 entry/0000.. each holding its number. Entries are sorted unless --raw-order
 keeps their order.
 --set OFFSET:WIDTH:VALUE edits a little-endian field before the checksum is
@@ -131,10 +131,10 @@ def elf(edits):
 # A run list (kernel/uefi/process.md#run-lists): header, then per run its
 # record, path, NUL-terminated arguments and zero padding to 8 bytes.
 def run_list(runs):
-    data = struct.pack("<8sII", b"AURORUNS", 1, len(runs))
-    for ticks, flags, path, words in runs:
+    data = struct.pack("<8sII", b"AURORUNS", 2, len(runs))
+    for ticks, flags, quota, path, words in runs:
         arguments = b"".join(word.encode() + b"\0" for word in words)
-        record = struct.pack("<IIII", ticks, len(path), len(arguments), flags) + path + arguments
+        record = struct.pack("<IIIIQ", ticks, len(path), len(arguments), flags, quota) + path + arguments
         data += record + bytes(align8(len(record)) - len(record))
     return data
 
@@ -166,8 +166,10 @@ def build(args, root):
     entries += [(item.partition("=")[0].encode(), elf(item.partition("=")[2])) for item in args.elves]
     lists = {}
     for item in args.runs:
-        case, ticks, flags, path, arguments = item.split(":", 4)
-        lists.setdefault(case, []).append((number(ticks), number(flags), path.encode(), shlex.split(arguments)))
+        case, ticks, flags, quota, path, arguments = item.split(":", 5)
+        lists.setdefault(case, []).append(
+            (number(ticks), number(flags), number(quota), path.encode(), shlex.split(arguments))
+        )
     entries += [(b"runs/" + case.encode(), run_list(runs)) for case, runs in lists.items()]
     entries += [(b"entry/%04d" % index, b"%d" % index) for index in range(args.entries)]
     sets = [tuple(number(part) for part in edit.split(":")) for edit in args.sets]

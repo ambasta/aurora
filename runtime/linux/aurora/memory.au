@@ -1,6 +1,7 @@
 export module aurora.memory;
 
-// The Linux memory runtime of a hosted program's ByteRegion. When main takes
+// The memory runtime of a hosted program's ByteRegion, for both targets (the
+// --target aurora runtime root holds a build-time copy of this file). When main takes
 // a region (and the root module imports this module), the hosted entry mints
 // the region over its HostFiles session and the compiler defines the byte
 // runtime entries (__au_runtime_bytes_* and __au_runtime_values_*) that

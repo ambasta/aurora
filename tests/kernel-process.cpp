@@ -5,8 +5,11 @@
 //   kernel-process frames CASES   memory-map and record cases (frames.cases)
 //   kernel-process volumes BUNDLE volume cases built by scripts/kernel_volume.py;
 //                                 a query program:ARGUMENTS:RESERVED:PATH admits
-//                                 the entry as a program, runs:PATH as a run list
-//   kernel-process events CASES   trap frames and kernel calls (events.cases)
+//                                 the entry as a program, budget:ARGUMENTS:
+//                                 REQUESTED:FREE:PATH charges its load, runs:PATH
+//                                 admits a run list
+//   kernel-process events CASES   trap frames, kernel calls and memory decisions
+//                                 (events.cases, memory.cases)
 // stdout is compared with the golden file beside the cases.
 #include "../kernel/uefi/frames.hpp"
 #include "../kernel/uefi/kernel-space.hpp"
@@ -63,7 +66,9 @@ constexpr const char *trap_names[] = {"kernel",
                                       "fpu",
                                       "alignment",
                                       "simd"};
-constexpr const char *call_names[] = {"invalid", "exit", "print", "read"};
+constexpr const char *call_names[] = {"invalid", "exit", "print", "read", "map", "remap", "unmap"};
+constexpr const char *memory_names[] = {
+    "mapped", "resized", "moved", "unmapped", "quota", "space", "records", "length", "malformed"};
 constexpr const char *runs_names[] = {
     "valid", "truncated", "magic", "version", "count", "ticks", "path", "arguments", "flags", "padding", "trailing"};
 constexpr const char *region_names[] = {"none", "segment", "stack", "arguments"};
@@ -174,7 +179,7 @@ auto run_map(const MapCase &item) -> void {
         std::cout << (found.ranges ? "" : " inventory=rejected") << "\n";
         return;
     }
-    const auto plan = aurora::uefi::KernelSpace::plan(ranges->frames(), (item.bytes + 4095) / 4096);
+    const auto plan = aurora::uefi::KernelSpace::plan(ranges->frames(), (item.bytes + 4095) / 4096, 0);
     if (!plan) {
         std::cout << " plan=rejected\n";
         return;
@@ -310,6 +315,17 @@ auto program_query(std::span<const std::byte> image, U64 arguments, U64 reserved
     }
 }
 
+// The load charge and quota of an entry run with one shared kernel slot.
+auto budget_query(std::span<const std::byte> image, U64 arguments, U64 requested, U64 free) -> void {
+    const auto budget = process::memory_budget(image, arguments, 1, requested, free);
+    if (!budget)
+        std::cout << "malformed\n";
+    else if (budget->verdict != static_cast<U64>(process::BudgetVerdict::valid))
+        std::cout << "quota\n";
+    else
+        std::cout << "valid quota=" << budget->quota << " charged=" << budget->charged << "\n";
+}
+
 // An entry admitted as a run list: the verdict and each run.
 auto runs_query(std::span<const std::byte> runs) -> void {
     const auto verdict = process::runs_admit(runs);
@@ -325,7 +341,7 @@ auto runs_query(std::span<const std::byte> runs) -> void {
         if (!entry->found)
             return;
         std::cout << "    run " << index + 1 << " ticks=" << entry->ticks << " flags=" << entry->flags
-                  << " path=" << escaped(runs.subspan(entry->path, entry->path_bytes))
+                  << " quota=" << entry->quota << " path=" << escaped(runs.subspan(entry->path, entry->path_bytes))
                   << " arguments=" << escaped(runs.subspan(entry->arguments, entry->argument_bytes)) << "\n";
     }
 }
@@ -363,15 +379,17 @@ auto volumes_mode(const char *path) -> int {
         const auto verdict = process::volume_admit(bytes);
         std::cout << name << ": " << (verdict ? volume_names[static_cast<U64>(*verdict)] : "malformed") << "\n";
         for (const auto &query : queries) {
-            if (query.starts_with("program:") || query.starts_with("runs:")) {
-                // program:ARGUMENTS:RESERVED:PATH or runs:PATH.
+            if (query.starts_with("program:") || query.starts_with("budget:") || query.starts_with("runs:")) {
+                // program:ARGUMENTS:RESERVED:PATH, budget:ARGUMENTS:REQUESTED:FREE:PATH or runs:PATH.
                 std::istringstream parts{query};
-                std::string kind, arguments, reserved, name;
+                std::string kind, arguments, reserved, free, name;
                 std::getline(parts, kind, ':');
-                if (kind == "program") {
+                if (kind != "runs") {
                     std::getline(parts, arguments, ':');
                     std::getline(parts, reserved, ':');
                 }
+                if (kind == "budget")
+                    std::getline(parts, free, ':');
                 std::getline(parts, name);
                 const auto entry = process::volume_lookup(bytes, bytes_of(name));
                 std::cout << "  " << kind << " " << name << " -> ";
@@ -379,6 +397,8 @@ auto volumes_mode(const char *path) -> int {
                     std::cout << "absent\n";
                 else if (kind == "program")
                     program_query(*entry, number(arguments), number(reserved));
+                else if (kind == "budget")
+                    budget_query(*entry, number(arguments), number(reserved), number(free));
                 else
                     runs_query(*entry);
                 continue;
@@ -403,7 +423,20 @@ auto volumes_mode(const char *path) -> int {
     }
     return 0;
 }
-// trap VECTOR ERROR RIP CS FLAGS RSP SS CR2 OPCODE, or call OPERATION A B C.
+// A memory decision: its verdict, the mapping it leaves and the next state.
+auto decision_text(const std::optional<process::MemoryDecision> &decision) -> std::string {
+    if (!decision)
+        return "malformed decision";
+    std::string text = memory_names[decision->verdict];
+    if (decision->pages)
+        text += " first=" + hex(decision->first) + " reserved=" + std::to_string(decision->reserved) +
+                " pages=" + std::to_string(decision->pages);
+    return text + " next=" + hex(decision->next) + " charged=" + std::to_string(decision->charged);
+}
+// trap VECTOR ERROR RIP CS FLAGS RSP SS CR2 OPCODE, call OPERATION A B C, or a
+// memory decision: map STATE BYTES, remap STATE RECORD BYTES TARGET, unmap
+// STATE RECORD BYTES (STATE is NEXT CHARGED QUOTA COUNT, RECORD FIRST
+// RESERVED PAGES), find BASE RECORD... or fault ADDRESS ERROR RECORD....
 auto events_mode(const char *path) -> int {
     std::ifstream input{path};
     if (!input)
@@ -434,7 +467,29 @@ auto events_mode(const char *path) -> int {
                 std::cout << "malformed\n";
             else
                 std::cout << call_names[call->action] << " value=" << hex(call->value) << " length=" << call->length
-                          << "\n";
+                          << " base=" << hex(call->base) << "\n";
+        } else if ((verb == "map" && values.size() == 5) || (verb == "remap" && values.size() == 9) ||
+                   (verb == "unmap" && values.size() == 8)) {
+            const process::MemoryState state{values[0], values[1], values[2], values[3]};
+            const process::MemoryRecord record{values.size() > 5 ? values[4] : 0,
+                                               values.size() > 5 ? values[5] : 0,
+                                               values.size() > 6 ? values[6] : 0};
+            const auto decision = verb == "map"     ? process::memory_map(state, values[4])
+                                  : verb == "remap" ? process::memory_remap(state, record, values[7], values[8])
+                                                    : process::memory_unmap(state, record, values[7]);
+            std::cout << text << " -> " << decision_text(decision) << "\n";
+        } else if ((verb == "find" || verb == "fault") && values.size() >= (verb == "find" ? 1U : 2U) &&
+                   (values.size() - (verb == "find" ? 1 : 2)) % 3 == 0) {
+            std::vector<process::MemoryRecord> records;
+            for (auto at = verb == "find" ? 1U : 2U; at < values.size(); at += 3)
+                records.push_back({values[at], values[at + 1], values[at + 2]});
+            const auto found = verb == "find" ? process::memory_find(records, values[0])
+                                              : process::memory_fault(records, values[0], values[1]);
+            std::cout << text << " -> "
+                      << (found.malformed ? std::string{"malformed"}
+                          : found.index   ? "record " + std::to_string(*found.index)
+                                          : std::string{"none"})
+                      << "\n";
         } else {
             usage("unknown event: " + line);
         }
