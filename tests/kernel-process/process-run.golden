@@ -1,5 +1,13 @@
 1 bin/probe probe print hello eprint oops exit failure	exit 1 | stdout: hello1 print success  / 2 eprint success | stderr: oops
-2 bin/probe-linux probe print hello	system_call vector=6
-3 bin/recurse recurse	stack_guard vector=14
+2 bin/probe-linux probe print hello	system_call vector=6 error=0
+3 bin/recurse recurse	stack_guard vector=14 error=6
 4 bin/hostile hostile spin	watchdog ticks=4
-5 bin/probe probe print 'two words' exit success	exit 0 | stdout: two words1 print success
+5 bin/isolation-1 write-code	page_fault vector=14 error=7
+6 bin/isolation-2 run-stack	page_fault vector=14 error=21
+7 bin/isolation-3 cli	protection vector=13 error=0
+8 bin/isolation-4 port-in	protection vector=13 error=0
+9 bin/isolation-5 kernel-read	page_fault vector=14 error=4
+10 bin/isolation-6 bad-call	call operation=99
+11 bin/isolation-7 kernel-print	call operation=2
+12 bin/isolation-8 raise-vector	protection vector=13 error=114
+13 bin/probe probe print 'two words' exit success	exit 0 | stdout: two words1 print success

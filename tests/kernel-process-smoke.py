@@ -113,9 +113,14 @@ def runs(text, mode):
                 outcome = " | ".join(result)
             elif values["reason"] == "watchdog":
                 outcome = f"watchdog ticks={values['ticks']}"
+            elif values["reason"] == "call":
+                need(not output["AURORA_STDOUT"] and not output["AURORA_STDERR"], "Output before a refused call")
+                outcome = f"call operation={values['operation']}"
             else:
                 need(not output["AURORA_STDOUT"] and not output["AURORA_STDERR"], "Output before a fault")
-                outcome = f"{values['reason']} vector={values.get('vector', '')}"
+                # The architectural error code tells which check refused (a page
+                # fault's present/write/user/fetch bits, a gate's vector).
+                outcome = f"{values['reason']} vector={values['vector']} error={values['error']}"
             current["outcome"] = outcome
         elif kind == "AURORA_PROCESS_RELEASED":
             need("outcome" in current and int(values["frames"]) == current["loaded"], "Released frames differ")
