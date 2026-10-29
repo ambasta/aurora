@@ -43,8 +43,8 @@ leaves.
 ## Boot volume
 
 The loader opens `\aurora\volume` on its own ESP through the loaded image's
-`EFI_SIMPLE_FILE_SYSTEM_PROTOCOL` (`\aurora\compiler` for case word 3,
-whose run list needs the multi-MiB compiler image; every boot checksums its
+`EFI_SIMPLE_FILE_SYSTEM_PROTOCOL` (`\aurora\compiler` for case words 3
+and 5, whose run lists need the multi-MiB compiler image; every boot checksums its
 whole volume). It requires a regular file of 1 byte to
 64 MiB and reads it into fresh EfiLoaderData pages. It zeroes the last page's
 tail and closes both handles before the final map. The format has one canonical
@@ -367,9 +367,9 @@ volume of the HostFiles cases' tree: path walks and confinement, ids and their
 generations, exhaustion, reads, creation, overlay shadowing and replacement
 under open handles, the 64 MiB limit, the quota, export and misuse. Verdicts
 are compared with the golden files beside them. The `guest-process` family
-boots the image's eight rows (`meson test --suite guest-process`, about 2 s
-each on TCG, 3 s for `process-run`, 7 s for `process-files`, 11 s for
-`process-memory`):
+boots the image's nine rows (`meson test --suite guest-process`, about 2 s
+each on TCG, 3 s for `process-run`, 7 s for `process-files` and
+`process-compile`, 11 s for `process-memory`):
 
 - `process-volume` allocates every free frame and writes and reads back a pattern
   and then zero through the window. It checks six misuse rejections, releases
@@ -416,7 +416,21 @@ each on TCG, 3 s for `process-run`, 7 s for `process-files`, 11 s for
   of the cases' tree (`kernel_volume.py --host-files-tree`), except the six
   that need what the volume lacks by design (symlinks, a FIFO, `/dev`, a
   closed standard stream). Guest time is about 40 ms per run and 4 s for the
-  64 MiB output.
+  64 MiB output;
+- `process-compile` (case 5, the compiler volume, which also holds
+  `runtime/linux`, `examples/host-sort.au` and the sources of
+  `tests/kernel-process/compile.golden` as `rejections/case-NNNN.au`) runs
+  the `--target aurora` compiler as `aurorac --emit-object --target linux
+  --runtime-root /runtime/linux examples/host-sort.au -o host-sort.o`: it
+  reads the program and its imports from the volume, writes the object to the
+  overlay in the working directory (the volume root; HostFiles creates no
+  directory, on Linux either) and exits 0, and the exported object must equal
+  the hosted build's `host-sort.o` (from the build root, three levels above
+  the image directory) byte for byte. It then compiles each rejected source with
+  the same flags: exit 1, no output and the diagnostics of
+  `compile.golden`, which `kernel-process-compile` (merge suite) checks
+  against the hosted compiler with `golden.py --reject`. Guest time is about
+  2.7 s for the host-sort compile and up to 1 s per rejection.
 
 `tests/kernel-process-smoke.py` reduces each run to one line compared with
 `tests/kernel-process/<row>.golden` (a fault keeps its vector and architectural
@@ -428,7 +442,8 @@ probe run with the whole quota its line in `tests/host-files/memory.golden`
 the Linux compiler's (`tests/host-files/usage.golden`), and each
 `process-files` run, with the `tree:` listing of the volume's tree and the
 files it exported, its hosted line but for the hosted tree's symlinks and
-FIFO (no reviewed difference remains). A run of another row that exports
+FIFO (no reviewed difference remains), and the `process-compile` runs as
+above. A run of another row that exports
 names its files. Every released run must return its load's frames plus the
 memory frames it held. The case word is
 the fw_cfg file `opt/aurora/case` (`kernel_profiles.PROCESS_CASES`), read by the

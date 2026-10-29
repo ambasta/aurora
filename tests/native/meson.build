@@ -341,7 +341,8 @@ if get_option('kernel_images')
       canonical = profile_data.get('aliases.uefi/' + mode, 'uefi/' + mode)
       test('guest-uefi-' + mode, find_program('bash', native: true),
            args: [uefi_smoke, '--run-only', meson.project_build_root() / 'kernel-images' / canonical, mode],
-           depends: kernel_profile_images[canonical], suite: ['guest', 'guest-' + family],
+           depends: kernel_profile_images[canonical] + process_references.get(mode, []),
+           suite: ['guest', 'guest-' + family],
            workdir: native_root, timeout: 180)
     endforeach
   endforeach

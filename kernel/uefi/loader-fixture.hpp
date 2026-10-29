@@ -97,13 +97,14 @@ static_assert(static_cast<unsigned>(Fixture::console_service_report) + 1 == stat
 }
 #elif defined(AURORA_PROCESS_FIXTURE)
 // Each row reads its own ESP volume; the map row reads the valid one and its
-// loader then names the arena as the volume in the copied handoff. Run list
-// 3 runs the compiler, whose multi-MiB image only its volume carries (every
-// boot checksums its whole volume; scripts/kernel_profiles.py COMPILER_CASES).
+// loader then names the arena as the volume in the copied handoff. Run lists
+// 3 and 5 run the compiler, whose multi-MiB image only its volume carries
+// (every boot checksums its whole volume; scripts/kernel_profiles.py
+// COMPILER_CASES).
 [[nodiscard]] constexpr auto volume_path(Fixture fixture, std::uint64_t selected_case) -> const char16_t * {
     return fixture == Fixture::process_volume_corrupt ? u"\\aurora\\corrupt"
            : fixture == Fixture::process_volume_empty ? u"\\aurora\\empty"
-           : selected_case == 3                       ? u"\\aurora\\compiler"
+           : selected_case == 3 || selected_case == 5 ? u"\\aurora\\compiler"
                                                       : u"\\aurora\\volume";
 }
 // Every row hands over the RSDP (v9): the watchdog's timer comes from ACPI.

@@ -125,6 +125,14 @@ test('host-files-impostor', python,
 test('host-files-usage', python,
      args: ['-B', golden_runner, files('host-files/usage.golden'), '--modes', '--', aurorac.full_path()],
      depends: [aurorac], suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 60)
+# The rejected sources the process image's compile row also compiles in the
+# guest (kernel/uefi/process.md#tests), with its flags: the guest's
+# diagnostics and exit status must be these.
+test('kernel-process-compile', python,
+     args: ['-B', golden_runner, files('kernel-process/compile.golden'), '--reject', '--', aurorac.full_path(),
+            '--emit-object', '--target', 'linux', '--runtime-root', 'runtime/linux'],
+     depends: [aurorac], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+     timeout: 120)
 # --target selects the runtime root and the HostFiles primitives the typed IR admits.
 test('host-files-target', python,
      args: ['-B', golden_runner, files('host-files/target.golden'), '--modes', '--', aurorac.full_path(), '--check'],

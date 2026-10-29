@@ -15,7 +15,10 @@ tests/host-files/usage.golden. A run's committed files are exported when it
 ends; in process-files every run's line, with the volume's tree/ and the
 files the run exported under it, must equal its hosted line in
 tests/host-files/cases.golden (or limits.golden) but for the tree entries the
-volume lacks by design (symlinks and a FIFO).
+volume lacks by design (symlinks and a FIFO). In process-compile the first
+run's object must equal the hosted build's host-sort.o (in the build root
+above IMAGE_DIR) and each later run's diagnostics its line of
+tests/kernel-process/compile.golden.
 """
 
 import base64
@@ -30,7 +33,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "tests"))
 from golden import compare, flat  # noqa: E402
 from host_files import TREE  # noqa: E402
-from kernel_profiles import PROCESS_CASES  # noqa: E402
+from kernel_profiles import COMPILE_GOLDEN, PROCESS_CASES  # noqa: E402
 from kernel_uefi_oracle import exports, loader_selection, need  # noqa: E402
 
 RECORD = re.compile(r"(AURORA_PROCESS_[A-Z_]+|AURORA_STDOUT|AURORA_STDERR): (.*)")
@@ -198,9 +201,29 @@ def runs(text, mode):
             # The runtime's fail-stop trap is ud2: SIGILL on Linux.
             linux = outcome.replace("invalid_opcode vector=6 error=0", "signal 4", 1)
             need(hosted.get(("memory", words)) == linux, "Memory case differs from its hosted golden: " + words)
-        if path == "bin/aurorac" and quota == 0:
+        if mode == "process-memory" and path == "bin/aurorac" and quota == 0:
             need(hosted.get(("usage", "")) == outcome, "Compiler differs from the Linux compiler")
     return lines
+
+
+def compiled(text, mode, image):
+    """The compile row: the guest's object is the hosted build's, its rejections the hosted compiler's."""
+    lines, exported = runs(text, mode), run_exports(text)
+    _, expected = PROCESS_CASES[mode]
+    rejections = [line.split("\t", 1)[1] for line in (ROOT / COMPILE_GOLDEN).read_text().splitlines()]
+    need(len(lines) == len(expected) == 1 + len(rejections), "Compile runs")
+    # The meson build root holds the hosted object: IMAGE_DIR is kernel-images/uefi/process-fixture beneath it.
+    reference = (image.parents[2] / "host-sort.o").read_bytes()
+    need(lines and "AURORA_PROCESS_RUNS_OK:" in text, "Compile row incomplete")
+    need(lines[0].split("\t")[1] == f"exit 0 | exported: host-sort.o:{len(reference)}", "Compile run failed")
+    need(exported.get(1) == {"host-sort.o": reference}, "Guest object differs from the hosted host-sort.o")
+    for index, (line, diagnostic) in enumerate(zip(lines[1:], rejections)):
+        source = f"rejections/case-{index:04d}.au"
+        # Like golden.py --reject: exit 1, no stdout, no output, the diagnostic without the source path.
+        outcome = line.split("\t")[1].replace(f"{source}:", "")
+        need(
+            outcome == "exit 1 | stderr: " + diagnostic and not exported.get(index + 2), "Rejection differs: " + source
+        )
 
 
 def validate(status, text, mode, image):
@@ -234,6 +257,10 @@ def validate(status, text, mode, image):
         return
     if mode == "process-files":
         runs(text, mode)
+        need(status == 33 and "AURORA_PROCESS_FAIL" not in text, "Process row failed")
+        return
+    if mode == "process-compile":
+        compiled(text, mode, image)
         need(status == 33 and "AURORA_PROCESS_FAIL" not in text, "Process row failed")
         return
     if mode in PROCESS_CASES:

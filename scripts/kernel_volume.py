@@ -8,7 +8,9 @@ Entries: --file PATH (the repository file PATH under --root, stored as PATH),
 --text PATH=CONTENT, --program PATH=FILE (any file, such as a build product),
 --elf PATH=EDITS (the header-only ELF image below with comma-separated field
 edits), --host-files-tree (the regular files of the HostFiles cases' fixture,
-tests/host_files.py, under tree/) and --run CASE:TICKS:FLAGS:QUOTA:PATH:ARGUMENTS (appends one run to
+tests/host_files.py, under tree/), --rejections DIR=GOLDEN (each source of
+the rejection golden GOLDEN, tests/golden.py --reject, as DIR/case-NNNN.au
+in line order) and --run CASE:TICKS:FLAGS:QUOTA:PATH:ARGUMENTS (appends one run to
 the run list runs/CASE; ARGUMENTS are shell words), and --entries N adds
 entry/0000.. each holding its number. Entries are sorted unless --raw-order
 keeps their order.
@@ -24,6 +26,7 @@ name, u32 query count, (u32 length, query) each, u64 volume length, volume.
 """
 
 import argparse
+import json
 from pathlib import Path
 import shlex
 import struct
@@ -148,6 +151,7 @@ def parser():
     result.add_argument("--elf", action="append", default=[], dest="elves")
     result.add_argument("--run", action="append", default=[], dest="runs")
     result.add_argument("--host-files-tree", action="store_true")
+    result.add_argument("--rejections", action="append", default=[])
     result.add_argument("--entries", type=number, default=0)
     result.add_argument("--raw-order", action="store_true")
     result.add_argument("--set", action="append", default=[], dest="sets")
@@ -171,6 +175,13 @@ def build(args, root):
         from host_files import TREE
 
         entries += [(b"tree/" + path.encode(), content) for path, content in TREE.items()]
+    for item in args.rejections:
+        directory, _, golden = item.partition("=")
+        lines = (root / golden).read_text().splitlines()
+        entries += [
+            (f"{directory}/case-{index:04d}.au".encode(), json.loads(line.split("\t", 1)[0]).encode())
+            for index, line in enumerate(lines)
+        ]
     lists = {}
     for item in args.runs:
         case, ticks, flags, quota, path, arguments = item.split(":", 5)

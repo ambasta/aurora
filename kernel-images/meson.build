@@ -42,7 +42,7 @@ profile_file = configure_file(
   input: ['../scripts/kernel_profiles.py', '../scripts/kernel_layout.py', '../kernel/bootstrap-layout-values.inc',
          '../kernel/uefi/image-page-policies.inc', '../kernel/uefi/runtime-fixtures.inc',
          '../tests/host-files/memory.golden', '../tests/host-files/cases.golden',
-         '../tests/host-files/limits.golden'],
+         '../tests/host-files/limits.golden', '../tests/kernel-process/compile.golden'],
   output: 'profile-data.ini',
   command: [python, '-B', '@INPUT0@', '--meson-output', '@OUTPUT@'])
 profile_data = import('keyval').load(profile_file)
@@ -424,6 +424,9 @@ foreach profile_id : profile_data['profiles'].split('|')
           if previous == '--file'
             volume_inputs += files('../' + word)
           endif
+          if previous == '--rejections'
+            volume_inputs += files('../' + word.split('=')[1])
+          endif
           if previous == '--program'
             program = process_programs[word.split('=')[1]]
             volume_programs += program
@@ -464,7 +467,10 @@ foreach profile_id : profile_data['profiles'].split('|')
                 '--limit', stack_limit, '--output', '@OUTPUT@'] + stack_args + user_stack_args),
   ]
   kernel_profile_images += {profile_id: [profile_image] + checks + esp_files}
-  alias_target('kernel-' + prefix, [profile_image] + checks + esp_files)
+  # The direct smoke route (scripts/kernel-uefi-smoke.sh MODE) builds the alias,
+  # so it also builds the objects the process rows' exports must equal.
+  alias_target('kernel-' + prefix, [profile_image] + checks + esp_files +
+               (esp_files.length() > 0 ? process_reference_objects : []))
 endforeach
 
 # Guest-machine aliases share identical image bytes and native compilation.
