@@ -663,7 +663,8 @@ auto files_script(std::span<const std::byte> volume, const std::string &line) ->
         }
         if (verb == "dir" || verb == "file") {
             const auto path = path_word(take());
-            result = files->open(verb == "dir" ? 0 : 2, 0, path.size() > 4095 ? std::span<const std::byte>{} : bytes_of(path));
+            result = files->open(
+                verb == "dir" ? 0 : 2, 0, path.size() > 4095 ? std::span<const std::byte>{} : bytes_of(path));
         } else if (verb == "open") {
             const auto directory = id();
             const auto path = path_word(take());
@@ -673,7 +674,9 @@ auto files_script(std::span<const std::byte> volume, const std::string &line) ->
             result = files->create(path.size() > 4095 ? std::span<const std::byte>{} : bytes_of(path));
         } else if (verb == "close" || verb == "commit" || verb == "discard") {
             const auto handle = id();
-            result = verb == "close" ? files->close(handle) : verb == "commit" ? files->commit(handle) : files->discard(handle);
+            result = verb == "close"    ? files->close(handle)
+                     : verb == "commit" ? files->commit(handle)
+                                        : files->discard(handle);
         } else if (verb == "read") {
             const auto file = id();
             const auto offset = number(take());
@@ -699,7 +702,8 @@ auto files_script(std::span<const std::byte> volume, const std::string &line) ->
             }
             text = " written=" + std::to_string(done);
         } else if (verb == "frames") {
-            std::cout << "  " << ids.size() << " frames charged=" << store.charge_count << " held=" << store.files << "\n";
+            std::cout << "  " << ids.size() << " frames charged=" << store.charge_count << " held=" << store.files
+                      << "\n";
             ids.push_back(0);
             continue;
         } else if (verb == "finish") {

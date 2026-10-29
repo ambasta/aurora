@@ -163,8 +163,7 @@ public:
     // open_directory (0), open_beneath (1) or open_file (2) of path; a path
     // above 4095 bytes arrives empty (invalid_path in the same order).
     [[nodiscard]] auto open(U64 operation, U64 directory, std::span<const std::byte> path) -> Result {
-        const auto decided =
-            process::file_open(volume_, overlay_bytes(), table_bytes(), path, operation, directory);
+        const auto decided = process::file_open(volume_, overlay_bytes(), table_bytes(), path, operation, directory);
         if (!decided)
             return broken();
         Result result;
@@ -200,8 +199,8 @@ public:
         record = {1, decided->first, decided->depth, decided->leaf_length, 0, 0, 0, 0, {}};
         for (U64 at = 0; at < decided->leaf_length; ++at)
             record.leaf[at] = path[decided->leaf + at];
-        result.record = {decided->id, 0, decided->device, decided->inode, decided->directory_device,
-                         decided->directory_inode};
+        result.record = {
+            decided->id, 0, decided->device, decided->inode, decided->directory_device, decided->directory_inode};
         return result;
     }
     // Up to 504 bytes into chunk; the count, or a negative HostStatus.
@@ -297,8 +296,7 @@ public:
             return result;
         }
         const auto slot = decided->slot - 1;
-        if (!table_.outputs[slot].state || table_.outputs[slot].file + 1 != decided->file ||
-            !end_output(slot, true))
+        if (!table_.outputs[slot].state || table_.outputs[slot].file + 1 != decided->file || !end_output(slot, true))
             return broken();
         return result;
     }

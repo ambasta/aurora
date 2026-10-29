@@ -163,11 +163,11 @@ namespace host_session {
         }
         return slot;
     }
-    // The first free output entry (each live output has one, and the kernel
-    // holds at most four).
+    // The first free output entry, or output_slots() (each live output has
+    // one, and the kernel holds at most four).
     auto free_output(builtin::HostFiles& files) -> u64 {
         u64 slot = 0u64;
-        while (slot + 1u64 < output_slots() && files.load(output_entry(slot)) != 0u64) {
+        while (slot < output_slots() && files.load(output_entry(slot)) != 0u64) {
             slot = slot + 1u64;
         }
         return slot;
@@ -269,13 +269,27 @@ export namespace host {
             .directory_device = host_session::result_word(files, 4u64),
             .directory_inode = host_session::result_word(files, 5u64)
         };
-        if (result == 0) {
-            // The kernel holds at most four outputs, so their entries fit.
-            const u64 entry = host_session::output_entry(host_session::free_output(files));
-            files.store(entry, output.id);
-            files.store(entry + 8u64, 0u64);
-            files.store(entry + 16u64, 1u64);
+        if (result != 0) {
+            return output;
         }
+        const u64 slot = host_session::free_output(files);
+        if (slot == host_session::output_slots()) {
+            // Never while the kernel caps outputs at four; fail closed anyway.
+            host_session::file_call(files, host_session::discard_call(), output.id, host_session::data_buffer(), 0u64);
+            const builtin::HostOutputResult refused = builtin::HostOutputResult{
+                .status = builtin::HostStatus::exhausted,
+                .id = 0u64,
+                .device = 0u64,
+                .inode = 0u64,
+                .directory_device = 0u64,
+                .directory_inode = 0u64
+            };
+            return refused;
+        }
+        const u64 entry = host_session::output_entry(slot);
+        files.store(entry, output.id);
+        files.store(entry + 8u64, 0u64);
+        files.store(entry + 16u64, 1u64);
         return output;
     }
     auto files_write(builtin::HostFiles& files, u64 output, builtin::span<const u8> bytes) -> builtin::HostStatus {

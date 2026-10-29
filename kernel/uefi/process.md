@@ -442,9 +442,9 @@ Limits:
 - eager commit of the image, stack and arguments: every region page,
   including the whole 8 MiB stack (about 2050 frames), is allocated, zeroed
   and walked at load; memory mappings commit on first touch;
-- the file service holds at most 64 overlay records per run (pending outputs,
-  committed files and replaced files still open): while 64 are held,
-  create_output is `exhausted` where Linux has no such limit; the volume has
+- the file service holds at most 64 overlay records per run (pending
+  outputs, committed files and replaced files still open): while 64 are
+  held, create_output is `exhausted` where Linux has no such limit; the volume has
   no symlinks, FIFOs, devices or empty directories, and the overlay creates no
   directory; a kernel call's buffer must lie in one region or one mapping
   (a valid range crossing into the next region is refused); reads copy 504
@@ -455,7 +455,7 @@ Limits:
 - the quota holds the frames free at load, but a frame whose generation would
   wrap (its 2^28th release in one boot) retires during the run; a process
   that then uses its whole quota can meet a failing frame allocation at a
-  touch, which stops the machine;
+  touch, a kernel access or a file write, which stops the machine;
 - map admission is quadratic over at most 512 descriptors, and boot-services
   memory is not reclaimed;
 - the plan stops the boot above about 250 GiB of usable memory (one metadata PD

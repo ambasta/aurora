@@ -548,7 +548,8 @@ auto file_call(const process::KernelCall &call, volatile U64 *frame) -> bool {
         const auto chunk = user_bytes(call.base, process::file_chunk, true);
         if (!chunk)
             return false;
-        result = files.read(call.value, call.length, std::span<std::byte, process::file_chunk>{*chunk, process::file_chunk});
+        result =
+            files.read(call.value, call.length, std::span<std::byte, process::file_chunk>{*chunk, process::file_chunk});
     } else if (action == Action::write) {
         const auto bytes = user_bytes(call.base, call.length, false);
         if (!bytes)
@@ -563,7 +564,10 @@ auto file_call(const process::KernelCall &call, volatile U64 *frame) -> bool {
     } else if (action == Action::discard) {
         result = files.discard(call.value);
     } else {
-        result = files.open(action == Action::open_directory ? 0 : action == Action::open_beneath ? 1 : 2, call.value,
+        result = files.open(action == Action::open_directory ? 0
+                            : action == Action::open_beneath ? 1
+                                                             : 2,
+                            call.value,
                             path);
     }
     if (result.broken)

@@ -32,7 +32,7 @@ import kernel.boot_volume;
 // written), then at 1280 the last overlay inode. The overlay holds 64 records
 // of 320 bytes (state 0 free, 1 pending (an output's bytes), 2 linked, 3
 // unlinked while open; directory first and depth; leaf length; size; inode;
-// open handles; a reserved word; then the leaf bytes).
+// open handles; the frames the supervisor holds for it; then the leaf bytes).
 export namespace kernel {
     // The HostStatus ordinals, which the kernel returns negated.
     enum class FileStatus {
