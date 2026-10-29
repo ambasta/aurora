@@ -18,7 +18,8 @@ namespace aurora::uefi {
 }
 #endif
 
-#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||   \
+    defined(AURORA_PROCESS_FIXTURE)
 namespace {
 constinit std::optional<TimerTopology> copied_timer_topology;
 }
@@ -147,7 +148,8 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
 #else
     [[maybe_unused]] constexpr bool pci_row = true, ivrs_row = true;
 #endif
-#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||   \
+    defined(AURORA_PROCESS_FIXTURE)
     copied_timer_topology.reset();
 #endif
     std::uint32_t a, b, c, d;
@@ -352,7 +354,8 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     copied_bits = physical_bits;
     copied_mcfg_size = mcfg_size;
 #endif
-#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||   \
+    defined(AURORA_PROCESS_FIXTURE)
     copied_timer_topology.emplace(topology->timer_topology());
 #endif
     return true;
@@ -378,7 +381,8 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
 #endif
     // ACPI parsing/Topology temporaries have ended before PCI scan construction.
     const bool accepted = discover_pci(arena, handoff, bytes(arena + 0x70000, mcfg_size), physical_bits, pool);
-#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||   \
+    defined(AURORA_PROCESS_FIXTURE)
     // Preserve the public success boundary: rejected PCI leaves no timer topology.
     if (!accepted)
         copied_timer_topology.reset();

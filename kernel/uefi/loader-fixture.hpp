@@ -103,8 +103,9 @@ static_assert(static_cast<unsigned>(Fixture::console_service_report) + 1 == stat
            : fixture == Fixture::process_volume_empty ? u"\\aurora\\empty"
                                                       : u"\\aurora\\volume";
 }
+// Every row hands over the RSDP (v9): the watchdog's timer comes from ACPI.
 [[nodiscard]] constexpr auto acpi(Fixture) -> bool {
-    return false;
+    return true;
 }
 #else
 [[nodiscard]] constexpr auto acpi(Fixture) -> bool {

@@ -813,11 +813,12 @@ export namespace compiler_lowering {
                 return fail(session, LoweringError::unknown_service_operation, reference);
             }
             if (record_signed(session, target, OperandRole::ServiceKindId) == 6) {
-                // System primitives belong to aurora.host, memory primitives
-                // (operations 21..28) to aurora.memory.
+                // System and kernel primitives belong to aurora.host, memory
+                // primitives (operations 21..28) to aurora.memory.
                 const i64 caller = body_function(session);
                 const i64 caller_unit = compiler_resolver::mw(session, caller, 1);
-                const bool memory = record_signed(session, target, OperandRole::ServiceOperationId) > 20;
+                const i64 primitive = record_signed(session, target, OperandRole::ServiceOperationId);
+                const bool memory = primitive > 20 && primitive < 29;
                 if (memory && !memory_runtime_unit(session, caller_unit)) {
                     return fail(session, LoweringError::memory_runtime_operation_outside_runtime, reference);
                 }

@@ -96,9 +96,12 @@ def compiler_facts(paths):
                 frames[name] = max(local, frames.get(name, 0))
                 for callee, live in fact["calls"].items():
                     need(type(live) is int and 8 <= live <= local, f"{path}: invalid live bytes {name}->{callee}")
-                    # HostFiles' Linux binding enters the host kernel directly; no
-                    # kernel or user image profile admits it.
+                    # HostFiles' Linux binding enters the host kernel directly and the
+                    # Aurora binding (--target aurora) enters the Aurora kernel's
+                    # INT 0x83 gate; both programs run only as processes, never
+                    # linked into a kernel or user image profile.
                     need(callee != "__au_linux_system_call", f"{path}: {name} makes hosted Linux system calls")
+                    need(callee != "__au_kernel_service_call", f"{path}: {name} makes Aurora process calls")
                     calls = edges.setdefault(name, {})
                     calls[callee] = max(live, calls.get(callee) or 0)
             continue

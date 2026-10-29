@@ -49,7 +49,8 @@ measured build or execution saving; the PR records those.
   that the payload admits only within the image's interval, so every payload case
   shares the image (see below). `display-fixture`, `device-fixture`,
   `storage-fixture`, `snapshot-call-fixture`, `text-fixture` and `process-fixture`
-  (whose row also names its ESP boot volume) use the same loader row
+  (whose row also names its ESP boot volume, and whose run-list rows add a case
+  word from `opt/aurora/case`) use the same loader row
   (`loader-fixture.hpp`), because their subsystems differ from the loader onward
   and their interactive console sessions cannot take a serial byte. The
   `iommu-event` image reads the same file at Event entry, because its harness

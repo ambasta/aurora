@@ -1,0 +1,5 @@
+1 bin/probe probe print hello eprint oops exit failure	exit 1 | stdout: hello1 print success  / 2 eprint success | stderr: oops
+2 bin/probe-linux probe print hello	system_call vector=6
+3 bin/recurse recurse	stack_guard vector=14
+4 bin/hostile hostile spin	watchdog ticks=4
+5 bin/probe probe print 'two words' exit success	exit 0 | stdout: two words1 print success

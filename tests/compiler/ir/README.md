@@ -55,6 +55,7 @@ expand the same way.
 ; BASE: other name            optional: patch against an earlier case
 ; RUN: verify | emit [local] [referenced] [object] | emit-object [local] | stack-facts [...] | abi-facts [...]
 ;      | metadata | metrics [null]
+;      a trailing `aurora` on verify or an emitting action selects --target aurora
 ; EXPECT-OK / EXPECT-ERROR: substring of what() / EXPECT-MESSAGE: exact message / EXPECT-CODE: AU3001
 ; ABI: function|record|enum SYMBOL SOURCE-NAME [MEMBER...]   (declarations for abi-facts)
 ; CHECK: / CHECK-NEXT: / CHECK-SAME: / CHECK-NOT: / CHECK-DAG: on the RUN output

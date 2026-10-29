@@ -1,8 +1,12 @@
 module kernel_process;
 import kernel.boot_volume;
+import kernel.elf;
 import kernel.export_text;
 import kernel.frames;
 import kernel.memory_map;
+import kernel.process_events;
+import kernel.process_runs;
+import kernel.process_space;
 
 // The process image's kernel policies, entered only through the private bridge
 // kernel/uefi/process-entry.S. Inputs are copied scalars and readonly spans the
@@ -68,4 +72,56 @@ auto process_base64_group(builtin::span<const u8> bytes, u64 offset) -> u64 {
         return 0u64;
     }
     return kernel::base64_group(bytes, i64(offset));
+}
+
+// Programs (kernel/uefi/process.md#programs): ELF admission against the
+// process layout, the layout against the kernel's shared slots, the regions
+// to map and the entry point.
+auto process_elf_admit(builtin::span<const u8> image) -> kernel::ElfVerdict {
+    return kernel::elf_admit(image, kernel::image_floor(), kernel::image_limit());
+}
+
+auto process_layout(builtin::span<const u8> image, u64 reserved_first, u64 reserved_end,
+    u64 arguments) -> kernel::LayoutVerdict {
+    return kernel::process_layout(image, reserved_first, reserved_end, arguments);
+}
+
+auto process_region(builtin::span<const u8> image, u64 index, u64 arguments) -> kernel::ProcessRegion {
+    if (index > 16u64) {
+        const kernel::ProcessRegion none = kernel::region(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+        return none;
+    }
+    const kernel::ProcessRegion region = kernel::process_region(image, i64(index), arguments);
+    return region;
+}
+
+auto process_elf_entry(builtin::span<const u8> image) -> u64 {
+    if (kernel::elf_admit(image, kernel::image_floor(), kernel::image_limit()) != kernel::ElfVerdict::valid) {
+        return 0u64;
+    }
+    return kernel::elf_entry(image);
+}
+
+// Entries from a running process: the copied frame's class and a kernel call.
+auto process_trap(kernel::ProcessTrap trap) -> kernel::TrapClass {
+    return kernel::process_trap(trap);
+}
+
+auto process_call(u64 operation, u64 first, u64 second, u64 third) -> kernel::KernelCall {
+    const kernel::KernelCall call = kernel::process_call(operation, first, second, third);
+    return call;
+}
+
+// Run lists: admission and the index-th run of an admitted list.
+auto process_runs_admit(builtin::span<const u8> runs) -> kernel::RunsVerdict {
+    return kernel::runs_admit(runs);
+}
+
+auto process_run(builtin::span<const u8> runs, u64 index) -> kernel::RunEntry {
+    if (index > 64u64) {
+        const kernel::RunEntry absent = kernel::run_entry(runs, -1);
+        return absent;
+    }
+    const kernel::RunEntry entry = kernel::run_entry(runs, i64(index));
+    return entry;
 }

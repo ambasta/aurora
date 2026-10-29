@@ -48,13 +48,17 @@ bridge_table = files('scripts/frontend_bridge.py')
 # aurora.host and aurora.memory) and links with ld alone: no C or C++ objects,
 # startup or libc.
 hosted_runtime_root = meson.current_source_dir() / 'runtime/linux'
-if hosted_runtime_root.contains('"') or hosted_runtime_root.contains('\\')
+kernel_runtime_root = meson.current_source_dir() / 'runtime/aurora'
+if hosted_runtime_root.contains('"') or hosted_runtime_root.contains('\\') or kernel_runtime_root.contains('"')
   error('aurorac embeds its runtime root as a byte string: the source path must not contain " or a backslash.')
 endif
 hosted_runtime_sources = files('runtime/linux/aurora/host.au', 'runtime/linux/aurora/memory.au')
+# --target aurora's runtime root: programs for the Aurora kernel's process image.
+kernel_runtime_sources = files('runtime/aurora/aurora/host.au')
 hosted_linker = find_program('ld', native: true)
 compiler_driver = configure_file(input: 'compiler/aurorac.au', output: 'aurorac.au',
-                                 configuration: {'AURORA_RUNTIME_ROOT': hosted_runtime_root})
+                                 configuration: {'AURORA_RUNTIME_ROOT': hosted_runtime_root,
+                                                 'AURORA_KERNEL_RUNTIME_ROOT': kernel_runtime_root})
 compiler_stage = [python, '-B', files('scripts/bootstrap_frontend.py')]
 compiler_link = [hosted_linker, '-static', '-e', '_start', '-o', '@OUTPUT@', '@INPUT@']
 
@@ -133,6 +137,28 @@ foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
       depend_files: hosted_runtime_sources)
   hosted_programs += {name: custom_target(name, input: hosted_object, output: name, command: compiler_link)}
 endforeach
+
+# Programs for the Aurora kernel's process image (kernel/uefi/process.md#guest-rows):
+# --target aurora objects linked like the hosted programs, and one GNU as program.
+process_programs = {}
+if get_option('kernel_images')
+  foreach name, source : {'host-files-probe': 'tests/host-files/probe.au',
+                          'process-hostile': 'tests/kernel-process/hostile.au'}
+    process_object = custom_target(name + '-aurora-object', input: source, output: name + '-aurora.o',
+        command: [aurorac, '--emit-object', '--target', 'aurora', '@INPUT@', '-o', '@OUTPUT@'],
+        depend_files: kernel_runtime_sources)
+    process_programs += {'aurora:' + name: custom_target(name + '-aurora', input: process_object,
+                                                         output: name + '-aurora', command: compiler_link)}
+  endforeach
+  recurse_object = custom_target('process-recurse-object', input: 'tests/kernel-process/recurse.S',
+      output: 'process-recurse.o', command: [find_program('as', native: true), '--64', '-mx86-used-note=no',
+                                             '@INPUT@', '-o', '@OUTPUT@'])
+  process_programs += {'assembly:process-recurse': custom_target('process-recurse', input: recurse_object,
+                                                                 output: 'process-recurse', command: compiler_link)}
+  foreach name, program : hosted_programs
+    process_programs += {'linux:' + name: program}
+  endforeach
+endif
 
 # Preserve the configured compiler command (including wrappers and quoted paths)
 # for the existing Python native observer. This does not build or run a test.

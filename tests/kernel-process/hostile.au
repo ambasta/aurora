@@ -1,0 +1,37 @@
+module process_hostile;
+import aurora.host;
+
+// A process-image program (kernel/uefi/process.md#guest-rows): `hostile spin`
+// never returns, so only the kernel's watchdog ends it; `hostile` alone exits
+// successfully. (Recursion reachable from a HostFiles main is rejected by the
+// compiler, so the stack-guard case is recurse.S.)
+
+auto second_word(builtin::span<const u8> arguments, builtin::span<const u8> text) -> bool {
+    i64 begin = 0;
+    while (begin < arguments.size() && arguments.at(begin) != 0u8) {
+        begin = begin + 1;
+    }
+    begin = begin + 1;
+    if (begin > arguments.size() || arguments.size() - begin < text.size() + 1) {
+        return false;
+    }
+    i64 at = 0;
+    while (at < text.size()) {
+        if (arguments.at(begin + at) != text.at(at)) {
+            return false;
+        }
+        at = at + 1;
+    }
+    return arguments.at(begin + at) == 0u8;
+}
+
+auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {
+    if (second_word(arguments, "spin")) {
+        u64 turns = 0u64;
+        while (turns < 2u64) {
+            turns = 1u64 - turns;
+        }
+        return builtin::HostExit::failure;
+    }
+    return builtin::HostExit::success;
+}

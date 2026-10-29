@@ -1,0 +1,322 @@
+export module kernel.elf;
+import std.binary;
+
+// Static ELF64 x86-64 executables for the process image
+// (kernel/uefi/process.md#programs). Admission reads only the copied span of
+// the volume entry and returns the first violated rule; the segment facts it
+// returns carry no address, mapping or frame authority. Every sum is bounded
+// before it is formed, so no input traps.
+export namespace kernel {
+    enum class ElfVerdict {
+        valid,
+        truncated,
+        magic,
+        format,
+        type,
+        machine,
+        header,
+        segment,
+        interpreter,
+        dynamic,
+        tls,
+        stack,
+        permissions,
+        writable_executable,
+        alignment,
+        file,
+        memory,
+        address,
+        overlap,
+        entry,
+        empty
+    };
+
+    enum class ElfAccess {
+        none,
+        read,
+        read_execute,
+        read_write
+    };
+
+    // One PT_LOAD header: its access and copy extents.
+    class ElfSegment {
+        u64 _access;
+        u64 _vaddr;
+        u64 _memory;
+        u64 _offset;
+        u64 _file;
+    public:
+        ElfSegment(u64 access, u64 vaddr, u64 memory, u64 offset, u64 file) : _access(access), _vaddr(vaddr),
+            _memory(memory), _offset(offset), _file(file) {
+        }
+        auto access() const -> u64 {
+            return _access;
+        }
+        auto vaddr() const -> u64 {
+            return _vaddr;
+        }
+        auto memory() const -> u64 {
+            return _memory;
+        }
+        auto offset() const -> u64 {
+            return _offset;
+        }
+        auto file() const -> u64 {
+            return _file;
+        }
+    };
+
+    auto elf_page() -> u64 {
+        return 4096u64;
+    }
+
+    // At most sixteen program headers, of which at most eight load segments.
+    auto elf_headers() -> u64 {
+        return 16u64;
+    }
+
+    auto elf_loads() -> u64 {
+        return 8u64;
+    }
+
+    auto elf_word(builtin::span<const u8> image, i64 offset) -> u64 {
+        const std::ByteReadResult word = std::read_le64(image, offset);
+        return word.value_or(18446744073709551615u64);
+    }
+
+    auto elf_half(builtin::span<const u8> image, i64 offset) -> u64 {
+        const std::ByteReadResult half = std::read_le32(image, offset);
+        return half.value_or(18446744073709551615u64);
+    }
+
+    auto elf_short(builtin::span<const u8> image, i64 offset) -> u64 {
+        const std::ByteReadResult value = std::read_le16(image, offset);
+        return value.value_or(18446744073709551615u64);
+    }
+
+    // The program header table's offset; only read after the header admits it.
+    auto elf_table(builtin::span<const u8> image) -> i64 {
+        return i64(elf_word(image, 32));
+    }
+
+    auto elf_count(builtin::span<const u8> image) -> i64 {
+        return i64(elf_short(image, 56));
+    }
+
+    auto elf_type(builtin::span<const u8> image, i64 index) -> u64 {
+        return elf_half(image, elf_table(image) + index * 56);
+    }
+
+    auto elf_field(builtin::span<const u8> image, i64 index, i64 field) -> u64 {
+        return elf_word(image, elf_table(image) + index * 56 + field);
+    }
+
+    auto elf_first(u64 vaddr) -> u64 {
+        return vaddr - vaddr % elf_page();
+    }
+
+    // The page end of [vaddr, vaddr + memory); both are below 2^47 here.
+    auto elf_end(u64 vaddr, u64 memory) -> u64 {
+        const u64 end = vaddr + memory;
+        if (end % elf_page() == 0u64) {
+            return end;
+        }
+        return end - end % elf_page() + elf_page();
+    }
+
+    // The ELF header: identity, type, machine and the table's shape and extent.
+    auto elf_header(builtin::span<const u8> image) -> ElfVerdict {
+        if (image.size() < 64) {
+            return ElfVerdict::truncated;
+        }
+        if (elf_half(image, 0) != 1179403647u64) {
+            return ElfVerdict::magic;
+        }
+        // ELFCLASS64, little-endian, version 1, System V ABI version 0, zero
+        // padding (bytes 9..15), version 1 and no processor flags.
+        if (image.at(4) != 2u8 || image.at(5) != 1u8 || image.at(6) != 1u8 || image.at(7) != 0u8 || image.at(8) != 0u8
+            || (elf_word(image, 8) >> 8) != 0u64 || elf_half(image, 20) != 1u64 || elf_half(image, 48) != 0u64) {
+            return ElfVerdict::format;
+        }
+        if (elf_short(image, 16) != 2u64) {
+            return ElfVerdict::type;
+        }
+        if (elf_short(image, 18) != 62u64) {
+            return ElfVerdict::machine;
+        }
+        const u64 table = elf_word(image, 32);
+        const u64 count = elf_short(image, 56);
+        if (elf_short(image, 52) != 64u64 || elf_short(image, 54) != 56u64 || table < 64u64 || table % 8u64 != 0u64
+            || count == 0u64 || count > elf_headers()) {
+            return ElfVerdict::header;
+        }
+        if (table > u64(image.size()) || count * 56u64 > u64(image.size()) - table) {
+            return ElfVerdict::truncated;
+        }
+        return ElfVerdict::valid;
+    }
+
+    // Program header types: only PT_LOAD and one non-executable PT_GNU_STACK.
+    auto elf_types(builtin::span<const u8> image) -> ElfVerdict {
+        i64 index = 0;
+        i64 stacks = 0;
+        while (index < elf_count(image)) {
+            const u64 type = elf_type(image, index);
+            if (type == 3u64) {
+                return ElfVerdict::interpreter;
+            }
+            if (type == 2u64) {
+                return ElfVerdict::dynamic;
+            }
+            if (type == 7u64) {
+                return ElfVerdict::tls;
+            }
+            if (type == 1685382481u64) {
+                stacks = stacks + 1;
+                if (stacks > 1 || (elf_half(image, elf_table(image) + index * 56 + 4) & 1u64) != 0u64) {
+                    return ElfVerdict::stack;
+                }
+            } else {
+                if (type != 1u64) {
+                    return ElfVerdict::segment;
+                }
+            }
+            index = index + 1;
+        }
+        return ElfVerdict::valid;
+    }
+
+    // One PT_LOAD: access, alignment, file extent, memory size and the user range.
+    auto elf_load(builtin::span<const u8> image, i64 index, u64 floor, u64 limit) -> ElfVerdict {
+        const u64 flags = elf_half(image, elf_table(image) + index * 56 + 4);
+        const u64 offset = elf_field(image, index, 8);
+        const u64 vaddr = elf_field(image, index, 16);
+        const u64 file = elf_field(image, index, 32);
+        const u64 memory = elf_field(image, index, 40);
+        const u64 align = elf_field(image, index, 48);
+        if ((flags & 18446744073709551608u64) != 0u64 || (flags & 4u64) == 0u64) {
+            return ElfVerdict::permissions;
+        }
+        if ((flags & 3u64) == 3u64) {
+            return ElfVerdict::writable_executable;
+        }
+        // A power-of-two alignment of at least a page, file offset congruent to the address.
+        if (align < elf_page() || (align & (align - 1u64)) != 0u64 || offset % elf_page() != vaddr % elf_page()) {
+            return ElfVerdict::alignment;
+        }
+        if (offset > u64(image.size()) || file > u64(image.size()) - offset) {
+            return ElfVerdict::file;
+        }
+        if (memory == 0u64 || file > memory) {
+            return ElfVerdict::memory;
+        }
+        if (vaddr < floor || vaddr >= limit || memory > limit - vaddr) {
+            return ElfVerdict::address;
+        }
+        return ElfVerdict::valid;
+    }
+
+    // The index-th PT_LOAD header, or -1.
+    auto elf_load_header(builtin::span<const u8> image, i64 load) -> i64 {
+        i64 index = 0;
+        i64 seen = 0;
+        while (index < elf_count(image)) {
+            if (elf_type(image, index) == 1u64) {
+                if (seen == load) {
+                    return index;
+                }
+                seen = seen + 1;
+            }
+            index = index + 1;
+        }
+        return -1;
+    }
+
+    auto elf_admit(builtin::span<const u8> image, u64 floor, u64 limit) -> ElfVerdict {
+        const ElfVerdict header = elf_header(image);
+        if (header != ElfVerdict::valid) {
+            return header;
+        }
+        const ElfVerdict types = elf_types(image);
+        if (types != ElfVerdict::valid) {
+            return types;
+        }
+        if (floor % elf_page() != 0u64 || limit % elf_page() != 0u64 || floor == 0u64 || floor >= limit || limit
+            > 140737488355328u64) {
+            return ElfVerdict::address;
+        }
+        i64 loads = 0;
+        i64 index = 0;
+        while (index < elf_count(image)) {
+            if (elf_type(image, index) == 1u64) {
+                const ElfVerdict load = elf_load(image, index, floor, limit);
+                if (load != ElfVerdict::valid) {
+                    return load;
+                }
+                loads = loads + 1;
+            }
+            index = index + 1;
+        }
+        if (loads == 0) {
+            return ElfVerdict::empty;
+        }
+        if (u64(loads) > elf_loads()) {
+            return ElfVerdict::segment;
+        }
+        // Page-granular extents are pairwise disjoint: no page has two permissions.
+        i64 left = 0;
+        while (left < loads) {
+            const i64 a = elf_load_header(image, left);
+            const u64 a_first = elf_first(elf_field(image, a, 16));
+            const u64 a_end = elf_end(elf_field(image, a, 16), elf_field(image, a, 40));
+            i64 right = left + 1;
+            while (right < loads) {
+                const i64 b = elf_load_header(image, right);
+                const u64 b_first = elf_first(elf_field(image, b, 16));
+                const u64 b_end = elf_end(elf_field(image, b, 16), elf_field(image, b, 40));
+                if (a_first < b_end && b_first < a_end) {
+                    return ElfVerdict::overlap;
+                }
+                right = right + 1;
+            }
+            left = left + 1;
+        }
+        // The entry point lies inside an executable segment.
+        const u64 entry = elf_word(image, 24);
+        i64 load = 0;
+        while (load < loads) {
+            const i64 at = elf_load_header(image, load);
+            const u64 vaddr = elf_field(image, at, 16);
+            if ((elf_half(image, elf_table(image) + at * 56 + 4) & 1u64) != 0u64 && entry >= vaddr && entry - vaddr
+                < elf_field(image, at, 40)) {
+                return ElfVerdict::valid;
+            }
+            load = load + 1;
+        }
+        return ElfVerdict::entry;
+    }
+
+    // The load-th PT_LOAD of an admitted image; access none past the last.
+    auto elf_segment(builtin::span<const u8> image, i64 load) -> ElfSegment {
+        const i64 at = elf_load_header(image, load);
+        if (load < 0 || at < 0) {
+            const ElfSegment absent = ElfSegment(0u64, 0u64, 0u64, 0u64, 0u64);
+            return absent;
+        }
+        const u64 flags = elf_half(image, elf_table(image) + at * 56 + 4);
+        u64 access = 1u64;
+        if ((flags & 1u64) != 0u64) {
+            access = 2u64;
+        }
+        if ((flags & 2u64) != 0u64) {
+            access = 3u64;
+        }
+        const ElfSegment segment = ElfSegment(access, elf_field(image, at, 16), elf_field(image, at, 40),
+            elf_field(image, at, 8), elf_field(image, at, 32));
+        return segment;
+    }
+
+    auto elf_entry(builtin::span<const u8> image) -> u64 {
+        return elf_word(image, 24);
+    }
+}

@@ -1,8 +1,12 @@
-// Hosted driver for the process image's frame allocator and boot volume: the
-// generated Aurora policies (examples/kernel-process.au and its bridge) linked
-// with the kernel's own storage and transport headers. Cases are data:
+// Hosted driver for the process image's frame allocator, boot volume, programs
+// and process events: the generated Aurora policies (examples/kernel-process.au
+// and its bridge) linked with the kernel's own storage and transport headers.
+// Cases are data:
 //   kernel-process frames CASES   memory-map and record cases (frames.cases)
-//   kernel-process volumes BUNDLE volume cases built by scripts/kernel_volume.py
+//   kernel-process volumes BUNDLE volume cases built by scripts/kernel_volume.py;
+//                                 a query program:ARGUMENTS:RESERVED:PATH admits
+//                                 the entry as a program, runs:PATH as a run list
+//   kernel-process events CASES   trap frames and kernel calls (events.cases)
 // stdout is compared with the golden file beside the cases.
 #include "../kernel/uefi/frames.hpp"
 #include "../kernel/uefi/kernel-space.hpp"
@@ -38,6 +42,31 @@ constexpr const char *volume_names[] = {"valid",
                                         "order",
                                         "data",
                                         "nesting"};
+constexpr const char *elf_names[] = {
+    "valid",     "truncated",   "magic",   "format",  "type",    "machine",     "header",
+    "segment",   "interpreter", "dynamic", "tls",     "stack",   "permissions", "writable_executable",
+    "alignment", "file",        "memory",  "address", "overlap", "entry",       "empty"};
+constexpr const char *layout_names[] = {"valid", "image", "kernel", "arguments"};
+constexpr const char *trap_names[] = {"kernel",
+                                      "timer",
+                                      "call",
+                                      "system_call",
+                                      "invalid_opcode",
+                                      "stack_guard",
+                                      "page_fault",
+                                      "protection",
+                                      "divide",
+                                      "debug",
+                                      "breakpoint",
+                                      "overflow",
+                                      "bound",
+                                      "fpu",
+                                      "alignment",
+                                      "simd"};
+constexpr const char *call_names[] = {"invalid", "exit", "print", "read"};
+constexpr const char *runs_names[] = {
+    "valid", "truncated", "magic", "version", "count", "ticks", "path", "arguments", "flags", "padding", "trailing"};
+constexpr const char *region_names[] = {"none", "segment", "stack", "arguments"};
 constexpr const char *rejection_names[] = {"none",
                                            "operation",
                                            "record",
@@ -240,6 +269,67 @@ auto frames_mode(const char *path) -> int {
     return 0;
 }
 
+auto bytes_of(const std::string &text) -> std::span<const std::byte> {
+    return {reinterpret_cast<const std::byte *>(text.data()), text.size()};
+}
+auto escaped(std::span<const std::byte> bytes) -> std::string {
+    std::string text;
+    for (const auto byte : bytes)
+        text += byte == std::byte{0} ? std::string{"\\0"} : std::string(1, static_cast<char>(byte));
+    return text;
+}
+auto flags_name(U64 flags) -> std::string {
+    return flags == process::leaf_read      ? "read"
+           : flags == process::leaf_execute ? "execute"
+           : flags == process::leaf_write   ? "write"
+                                            : hex(flags);
+}
+
+// An entry admitted as a program: verdicts, entry point and regions.
+auto program_query(std::span<const std::byte> image, U64 arguments, U64 reserved) -> void {
+    const auto elf = process::elf_admit(image);
+    std::cout << "elf=" << (elf ? elf_names[static_cast<U64>(*elf)] : "malformed");
+    const auto layout = process::layout(image, reserved, reserved + (U64{4} << 20), arguments);
+    std::cout << " layout=" << (layout ? layout_names[static_cast<U64>(*layout)] : "malformed");
+    if (layout != process::LayoutVerdict::valid) {
+        std::cout << "\n";
+        return;
+    }
+    std::cout << " entry=" << hex(process::elf_entry(image)) << "\n";
+    for (U64 index = 0;; ++index) {
+        const auto region = process::region(image, index, arguments);
+        if (!region) {
+            std::cout << "    region malformed\n";
+            return;
+        }
+        if (region->kind == 0)
+            return;
+        std::cout << "    " << region_names[region->kind] << " first=" << hex(region->first)
+                  << " pages=" << region->pages << " " << flags_name(region->flags) << " vaddr=" << hex(region->vaddr)
+                  << " offset=" << region->offset << " bytes=" << region->bytes << "\n";
+    }
+}
+
+// An entry admitted as a run list: the verdict and each run.
+auto runs_query(std::span<const std::byte> runs) -> void {
+    const auto verdict = process::runs_admit(runs);
+    std::cout << (verdict ? runs_names[static_cast<U64>(*verdict)] : "malformed") << "\n";
+    if (verdict != process::RunsVerdict::valid)
+        return;
+    for (U64 index = 0;; ++index) {
+        const auto entry = process::run(runs, index);
+        if (!entry) {
+            std::cout << "    run malformed\n";
+            return;
+        }
+        if (!entry->found)
+            return;
+        std::cout << "    run " << index + 1 << " ticks=" << entry->ticks << " flags=" << entry->flags
+                  << " path=" << escaped(runs.subspan(entry->path, entry->path_bytes))
+                  << " arguments=" << escaped(runs.subspan(entry->arguments, entry->argument_bytes)) << "\n";
+    }
+}
+
 auto volumes_mode(const char *path) -> int {
     std::ifstream input{path, std::ios::binary | std::ios::ate};
     std::vector<char> raw(static_cast<std::size_t>(input.tellg()));
@@ -273,6 +363,26 @@ auto volumes_mode(const char *path) -> int {
         const auto verdict = process::volume_admit(bytes);
         std::cout << name << ": " << (verdict ? volume_names[static_cast<U64>(*verdict)] : "malformed") << "\n";
         for (const auto &query : queries) {
+            if (query.starts_with("program:") || query.starts_with("runs:")) {
+                // program:ARGUMENTS:RESERVED:PATH or runs:PATH.
+                std::istringstream parts{query};
+                std::string kind, arguments, reserved, name;
+                std::getline(parts, kind, ':');
+                if (kind == "program") {
+                    std::getline(parts, arguments, ':');
+                    std::getline(parts, reserved, ':');
+                }
+                std::getline(parts, name);
+                const auto entry = process::volume_lookup(bytes, bytes_of(name));
+                std::cout << "  " << kind << " " << name << " -> ";
+                if (!entry)
+                    std::cout << "absent\n";
+                else if (kind == "program")
+                    program_query(*entry, number(arguments), number(reserved));
+                else
+                    runs_query(*entry);
+                continue;
+            }
             const auto entry = process::volume_lookup(
                 bytes, std::span<const std::byte>{reinterpret_cast<const std::byte *>(query.data()), query.size()});
             std::cout << "  " << query << " -> ";
@@ -293,6 +403,44 @@ auto volumes_mode(const char *path) -> int {
     }
     return 0;
 }
+// trap VECTOR ERROR RIP CS FLAGS RSP SS CR2 OPCODE, or call OPERATION A B C.
+auto events_mode(const char *path) -> int {
+    std::ifstream input{path};
+    if (!input)
+        usage("cannot read cases");
+    std::string line;
+    while (std::getline(input, line)) {
+        if (const auto hash = line.find('#'); hash != std::string::npos)
+            line.resize(hash);
+        std::istringstream words{line};
+        std::string verb;
+        if (!(words >> verb))
+            continue;
+        std::vector<U64> values;
+        for (std::string word; words >> word;)
+            values.push_back(number(word));
+        std::string text = verb;
+        for (const auto value : values)
+            text += " " + hex(value);
+        if (verb == "trap" && values.size() == 9) {
+            const process::ProcessTrap trap{
+                values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8]};
+            const auto kind = process::trap(trap);
+            std::cout << text << " -> " << (kind ? trap_names[static_cast<U64>(*kind)] : "malformed") << "\n";
+        } else if (verb == "call" && values.size() == 4) {
+            const auto call = process::call(values[0], values[1], values[2], values[3]);
+            std::cout << text << " -> ";
+            if (!call)
+                std::cout << "malformed\n";
+            else
+                std::cout << call_names[call->action] << " value=" << hex(call->value) << " length=" << call->length
+                          << "\n";
+        } else {
+            usage("unknown event: " + line);
+        }
+    }
+    return 0;
+}
 } // namespace
 
 auto main(int argc, char **argv) -> int {
@@ -300,5 +448,7 @@ auto main(int argc, char **argv) -> int {
         return frames_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "volumes")
         return volumes_mode(argv[2]);
-    usage("usage: kernel-process frames CASES | volumes BUNDLE");
+    if (argc == 3 && std::string{argv[1]} == "events")
+        return events_mode(argv[2]);
+    usage("usage: kernel-process frames CASES | volumes BUNDLE | events CASES");
 }

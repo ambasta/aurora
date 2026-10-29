@@ -2215,7 +2215,7 @@ export namespace compiler_ir_instructions {
             return true;
         } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || operation > 28) {
+        if (operation < 0 || operation > 30) {
             return fail(store, InstructionError::service_operation);
         }
         i64 expected_kind = 0; // Console: Next, Put
@@ -2246,16 +2246,21 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::service_operation_root);
         }
         const i64 result_offset = call_value(store, instruction, 2);
-        // The Linux binding's primitives belong to functions of module aurora.host
+        // The bindings' primitives belong to functions of module aurora.host
         // only, whose native names are __au_<mode>_m2_6aurora4host_..., and the
-        // memory primitives (21..28) to those of aurora.memory.
-        if (operation > 8 && operation < 21 && !host_runtime_callable(metadata, callable)) {
+        // memory primitives (21..28) to those of aurora.memory. The Linux
+        // system and memory primitives (13..28) exist only for the Linux
+        // target and the kernel primitives (29, 30) only for the Aurora one.
+        if (((operation > 8 && operation < 21) || operation > 28) && !host_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);
         }
-        if (operation > 20 && !memory_runtime_callable(metadata, callable)) {
+        if (operation > 20 && operation < 29 && !memory_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);
         }
-        if (operation > 8 && operation != 14) {
+        if ((operation > 12 && operation < 29 && store.kernel_target()) || (operation > 28 && !store.kernel_target())) {
+            return fail(store, InstructionError::service_platform);
+        }
+        if (operation > 8 && operation != 14 && operation != 30) {
             if (result_offset != 0) {
                 return fail(store, InstructionError::service_operation);
             }
@@ -2298,8 +2303,8 @@ export namespace compiler_ir_instructions {
         if ((operation == 0 && !compiler_ir_metadata::named(metadata, type.name(), "__au_console_sample")) || (operation
             == 3 && !compiler_ir_metadata::named(metadata, type.name(), "__au_iommu_event_sample")) || (operation == 5
             && !compiler_ir_metadata::named(metadata, type.name(), "__au_call_result")) || (operation == 8
-            && !compiler_ir_metadata::named(metadata, type.name(), "__au_serve_request")) || (operation == 14
-            && !compiler_ir_metadata::named(metadata, type.name(), "__au_host_chunk"))) {
+            && !compiler_ir_metadata::named(metadata, type.name(), "__au_serve_request")) || ((operation == 14
+            || operation == 30) && !compiler_ir_metadata::named(metadata, type.name(), "__au_host_chunk"))) {
             return fail(store, InstructionError::service_sample_result);
         }
         return true;

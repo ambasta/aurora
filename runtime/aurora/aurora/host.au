@@ -1,0 +1,121 @@
+export module aurora.host;
+
+// The Aurora kernel binding of builtin::HostFiles (--target aurora). A call
+// `files.NAME(...)` on the capability is a call to host::NAME(files, ...)
+// below; these functions use the binding's private primitives, which only
+// this module may name: byte and word access to the zeroed 16384-byte session
+// block the hosted entry lends as the grant, and the kernel operations the
+// compiler emits inline through the INT 0x83 gate (kernel_print, print 2, and
+// kernel_chunk, read 3). Offsets and lengths are checked by the primitives
+// themselves; the kernel checks each address range against the process's own
+// mappings (kernel/uefi/process.md#processes).
+//
+// The kernel has no file service yet: every open is denied, no handle exists
+// (so every id is invalid_handle) and only print reaches the kernel.
+namespace host_session {
+    // The print staging buffer at the start of the session block.
+    auto data_buffer() -> u64 {
+        return 0u64;
+    }
+    auto data_bytes() -> i64 {
+        return 4096;
+    }
+    // Kernel stream numbers.
+    auto stdout_stream() -> u64 {
+        return 1u64;
+    }
+    auto stderr_stream() -> u64 {
+        return 2u64;
+    }
+    auto no_file(builtin::HostStatus status) -> builtin::HostFileResult {
+        const builtin::HostFileResult result = builtin::HostFileResult{
+            .status = status,
+            .id = 0u64,
+            .size = 0u64,
+            .device = 0u64,
+            .inode = 0u64
+        };
+        return result;
+    }
+}
+export namespace host {
+    auto files_open_directory(builtin::HostFiles& files, builtin::span<const u8> path) -> builtin::HostDirectoryResult {
+        const builtin::HostDirectoryResult result = builtin::HostDirectoryResult{
+            .status = builtin::HostStatus::denied,
+            .id = 0u64,
+            .device = 0u64,
+            .inode = 0u64
+        };
+        return result;
+    }
+    auto files_open_beneath(builtin::HostFiles& files, u64 directory,
+        builtin::span<const u8> relative) -> builtin::HostFileResult {
+        const builtin::HostFileResult result = host_session::no_file(builtin::HostStatus::invalid_handle);
+        return result;
+    }
+    auto files_open_file(builtin::HostFiles& files, builtin::span<const u8> path) -> builtin::HostFileResult {
+        const builtin::HostFileResult result = host_session::no_file(builtin::HostStatus::denied);
+        return result;
+    }
+    // The kernel fills the chunk; with no file service every id is invalid.
+    auto files_read(builtin::HostFiles& files, u64 file, u64 offset) -> builtin::HostChunk {
+        builtin::HostChunk chunk = files.kernel_chunk(file, offset);
+        return chunk;
+    }
+    auto files_create_output(builtin::HostFiles& files, builtin::span<const u8> path) -> builtin::HostOutputResult {
+        const builtin::HostOutputResult result = builtin::HostOutputResult{
+            .status = builtin::HostStatus::denied,
+            .id = 0u64,
+            .device = 0u64,
+            .inode = 0u64,
+            .directory_device = 0u64,
+            .directory_inode = 0u64
+        };
+        return result;
+    }
+    auto files_write(builtin::HostFiles& files, u64 output, builtin::span<const u8> bytes) -> builtin::HostStatus {
+        return builtin::HostStatus::invalid_handle;
+    }
+    auto files_commit(builtin::HostFiles& files, u64 output) -> builtin::HostStatus {
+        return builtin::HostStatus::invalid_handle;
+    }
+    auto files_discard(builtin::HostFiles& files, u64 output) -> builtin::HostStatus {
+        return builtin::HostStatus::invalid_handle;
+    }
+    // Copies the bytes through the session block, at most 4096 per kernel call.
+    auto files_print(builtin::HostFiles& files, builtin::HostStream stream,
+        builtin::span<const u8> bytes) -> builtin::HostStatus {
+        u64 target = host_session::stdout_stream();
+        if (stream == builtin::HostStream::stderr) {
+            target = host_session::stderr_stream();
+        }
+        i64 done = 0;
+        while (done < bytes.size()) {
+            i64 count = bytes.size() - done;
+            if (count > host_session::data_bytes()) {
+                count = host_session::data_bytes();
+            }
+            i64 at = 0;
+            while (at < count) {
+                files.store8(host_session::data_buffer() + u64(at), bytes.at(done + at));
+                at = at + 1;
+            }
+            if (files.kernel_print(target, host_session::data_buffer(), u64(count)) != 0) {
+                return builtin::HostStatus::failed;
+            }
+            done = done + count;
+        }
+        return builtin::HostStatus::success;
+    }
+    auto files_close(builtin::HostFiles& files, u64 handle) -> builtin::HostStatus {
+        return builtin::HostStatus::invalid_handle;
+    }
+    // Called by the hosted entry before and after main; the kernel opens no
+    // streams or handles for a process, so there is nothing to set up or close.
+    auto start(builtin::HostFiles& files) -> u64 {
+        return 0u64;
+    }
+    auto finish(builtin::HostFiles& files) -> u64 {
+        return 0u64;
+    }
+}

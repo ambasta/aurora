@@ -475,11 +475,14 @@ inline auto expected_flags(std::uint64_t offset, const Bytes &h) -> std::uint64_
             return flags;
     }
 #ifdef AURORA_PROCESS_FIXTURE
-    // Version 8 carries no ACPI snapshots.
-    if (h.get(8, 4) >= 2 && h.get(8, 4) != 8 && offset >= 0x60000 && offset < 0x81000)
-#else
-    if (h.get(8, 4) >= 2 && offset >= 0x60000 && offset < 0x81000)
+    // The process image's GDT and TSS page and its RSP0 and IST stacks, each
+    // stack between unmapped guard pages (process.md#entries).
+    if (offset == BootstrapLayout::gdt_offset ||
+        (offset >= BootstrapLayout::rsp0_bottom && offset < BootstrapLayout::rsp0_top) ||
+        (offset >= BootstrapLayout::ist_bottom && offset < BootstrapLayout::ist_top))
+        return 3 | PageTables::nx;
 #endif
+    if (h.get(8, 4) >= 2 && offset >= 0x60000 && offset < 0x81000)
         return 3 | PageTables::nx;
     if (offset == 0 || (offset >= Handoff::map_offset && offset < Handoff::tables_offset))
         return 1 | PageTables::nx;

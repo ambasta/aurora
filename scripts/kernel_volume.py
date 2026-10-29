@@ -4,9 +4,13 @@
     kernel_volume.py --output FILE [--root DIR] [ENTRY...] [EDIT...]
     kernel_volume.py --cases FILE --output BUNDLE [--root DIR]
 
-Entries: --file PATH (the repository file PATH under --root, stored as PATH) and
---text PATH=CONTENT, and --entries N adds entry/0000.. each holding its number.
-Entries are sorted unless --raw-order keeps their order.
+Entries: --file PATH (the repository file PATH under --root, stored as PATH),
+--text PATH=CONTENT, --program PATH=FILE (any file, such as a build product),
+--elf PATH=EDITS (the header-only ELF image below with comma-separated field
+edits) and --run CASE:TICKS:FLAGS:PATH:ARGUMENTS (appends one run to the run
+list runs/CASE; ARGUMENTS are shell words), and --entries N adds
+entry/0000.. each holding its number. Entries are sorted unless --raw-order
+keeps their order.
 --set OFFSET:WIDTH:VALUE edits a little-endian field before the checksum is
 computed; --corrupt OFFSET:VALUE edits one byte after it; --truncate N and
 --append N shorten or extend the written volume; --empty writes zero bytes.
@@ -84,10 +88,64 @@ def number(text):
     return int(text, 0)
 
 
+# The canonical admission image (kernel/uefi/process.md#programs): an ET_EXEC
+# x86-64 header with a read-only, an executable and a writable segment (data
+# then BSS) and a non-executable GNU_STACK. Its segment bytes are zero: it is
+# input for admission and layout cases, never run. Edits are FIELD=VALUE for
+# header fields or pN.FIELD=VALUE for program header N, and truncate=BYTES.
+ELF_HEADER = {"magic": (0, 1), "class": (4, 1), "data": (5, 1), "osabi": (7, 1), "padding": (15, 1)}
+ELF_HEADER.update({"etype": (16, 2)})
+ELF_HEADER.update({"machine": (18, 2), "entry": (24, 8), "phoff": (32, 8), "phentsize": (54, 2), "phnum": (56, 2)})
+ELF_FIELDS = {"type": (0, 4), "flags": (4, 4), "offset": (8, 8), "vaddr": (16, 8), "paddr": (24, 8)}
+ELF_FIELDS.update({"filesz": (32, 8), "memsz": (40, 8), "align": (48, 8)})
+ELF_SEGMENTS = (
+    (1, 4, 0x0, 0x400000, 0x200, 0x200, 0x1000),
+    (1, 5, 0x1000, 0x401000, 0x100, 0x100, 0x1000),
+    (1, 6, 0x2000, 0x402000, 0x10, 0x2000, 0x1000),
+    (0x6474E551, 6, 0, 0, 0, 0, 0x10),
+)
+
+
+def elf(edits):
+    image = bytearray(0x2010)
+    image[0:16] = b"\x7fELF\x02\x01\x01" + bytes(9)
+    image[16:64] = struct.pack("<HHIQQQIHHHHHH", 2, 62, 1, 0x401000, 64, 0, 0, 64, 56, len(ELF_SEGMENTS), 64, 0, 0)
+    for index, (kind, flags, offset, vaddr, filesz, memsz, align) in enumerate(ELF_SEGMENTS):
+        image[64 + 56 * index : 120 + 56 * index] = struct.pack(
+            "<IIQQQQQQ", kind, flags, offset, vaddr, vaddr, filesz, memsz, align
+        )
+    for edit in filter(None, edits.split(",")):
+        field, _, value = edit.partition("=")
+        if field == "truncate":
+            del image[number(value) :]
+            continue
+        if field.startswith("p") and "." in field:
+            header, _, field = field.partition(".")
+            base, (at, width) = 64 + 56 * int(header[1:]), ELF_FIELDS[field]
+        else:
+            base, (at, width) = 0, ELF_HEADER[field]
+        image[base + at : base + at + width] = number(value).to_bytes(width, "little")
+    return bytes(image)
+
+
+# A run list (kernel/uefi/process.md#run-lists): header, then per run its
+# record, path, NUL-terminated arguments and zero padding to 8 bytes.
+def run_list(runs):
+    data = struct.pack("<8sII", b"AURORUNS", 1, len(runs))
+    for ticks, flags, path, words in runs:
+        arguments = b"".join(word.encode() + b"\0" for word in words)
+        record = struct.pack("<IIII", ticks, len(path), len(arguments), flags) + path + arguments
+        data += record + bytes(align8(len(record)) - len(record))
+    return data
+
+
 def parser():
     result = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     result.add_argument("--file", action="append", default=[], dest="files")
     result.add_argument("--text", action="append", default=[], dest="texts")
+    result.add_argument("--program", action="append", default=[], dest="programs")
+    result.add_argument("--elf", action="append", default=[], dest="elves")
+    result.add_argument("--run", action="append", default=[], dest="runs")
     result.add_argument("--entries", type=number, default=0)
     result.add_argument("--raw-order", action="store_true")
     result.add_argument("--set", action="append", default=[], dest="sets")
@@ -104,6 +162,13 @@ def build(args, root):
         return b""
     entries = [(path.encode(), (root / path).read_bytes()) for path in args.files]
     entries += [(text.partition("=")[0].encode(), text.partition("=")[2].encode()) for text in args.texts]
+    entries += [(item.partition("=")[0].encode(), Path(item.partition("=")[2]).read_bytes()) for item in args.programs]
+    entries += [(item.partition("=")[0].encode(), elf(item.partition("=")[2])) for item in args.elves]
+    lists = {}
+    for item in args.runs:
+        case, ticks, flags, path, arguments = item.split(":", 4)
+        lists.setdefault(case, []).append((number(ticks), number(flags), path.encode(), shlex.split(arguments)))
+    entries += [(b"runs/" + case.encode(), run_list(runs)) for case, runs in lists.items()]
     entries += [(b"entry/%04d" % index, b"%d" % index) for index in range(args.entries)]
     sets = [tuple(number(part) for part in edit.split(":")) for edit in args.sets]
     result = volume(entries, args.raw_order, sets)

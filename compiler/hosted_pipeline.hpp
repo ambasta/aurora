@@ -32,6 +32,8 @@ public:
     bool abiFacts = false;
     // A listing of the published IR replaces the code; nothing is emitted.
     bool listing = false;
+    // Code for --target aurora: its HostFiles primitives instead of Linux ones.
+    bool kernelTarget = false;
 };
 class PipelineOutput {
 public:

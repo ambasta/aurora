@@ -74,12 +74,13 @@ class Handoff final {
 public:
     static constexpr std::uint64_t magic = 0x41524f5255454649ULL;
 #if defined(AURORA_PROCESS_FIXTURE)
-    // Version 8, the process image's: the selector word, then the boot volume's
-    // page address and byte length (process.md#handoff).
+    // Version 9, the process image's: the selector word, the boot volume's
+    // page address and byte length, then the case word (process.md#handoff).
     static constexpr std::size_t fixture_offset = 128;
     static constexpr std::size_t volume_word = 136;
     static constexpr std::size_t volume_bytes_word = 144;
-    static constexpr std::size_t header = 152;
+    static constexpr std::size_t case_word = 152;
+    static constexpr std::size_t header = 160;
 #elif defined(AURORA_LOADER_FIXTURE)
     // A loader fixture image appends one selector word; ordinary images have none.
     static constexpr std::size_t fixture_offset = 128;
@@ -107,15 +108,16 @@ public:
     static constexpr std::uint64_t framebuffer_record_offset = 0xe0000;
     static constexpr std::uint64_t volume_limit = 64ULL << 20;
 #ifdef AURORA_PROCESS_FIXTURE
-    // Version 8 is version 1 (no RSDP or record word) plus the boot volume: a
-    // nonzero page address and 1..64 MiB below the 52-bit physical limit. Only
-    // the final map, checked in Aurora by the kernel, grants those pages.
+    // Version 9 is version 2 (the RSDP, no record word) plus the boot volume (a
+    // nonzero page address and 1..64 MiB below the 52-bit physical limit) and
+    // the case word, at most 255. Only the final map, checked in Aurora by the
+    // kernel, grants the volume's pages.
     [[nodiscard]] static auto valid(std::span<const std::byte> bytes, std::uint64_t actual) -> bool {
         if (bytes.size() != header)
             return false;
         const Bytes h{bytes};
         const auto volume = h.get(volume_word), volume_bytes = h.get(volume_bytes_word);
-        return loader_fixture::admitted(h.get(fixture_offset)) && h.get(0) == magic && h.get(8, 4) == 8 &&
+        return loader_fixture::admitted(h.get(fixture_offset)) && h.get(0) == magic && h.get(8, 4) == 9 &&
                h.get(12, 4) == header && h.get(16) == arena_bytes && h.get(24) == actual && actual >= 0x100000 &&
                actual % 4096 == 0 && actual <= 0x100000000ULL - arena_bytes && h.get(32) > 0 &&
                h.get(32) <= MemoryMap::max_bytes && h.get(40) >= 40 && h.get(40) <= 256 && h.get(48, 4) == 1 &&
@@ -123,9 +125,9 @@ public:
                h.get(56) <= h.get(80) && h.get(64) > 0 && h.get(64) % 4096 == 0 && h.get(72) % 4096 == 0 &&
                h.get(80) % 4096 == 0 && h.get(64) <= h.get(72) && h.get(72) <= h.get(80) &&
                h.get(80) <= payload_limit && h.get(88) == actual + tables_offset && h.get(96) > 0 &&
-               h.get(96) <= table_pages && h.get(104) == actual + payload_offset && h.get(112) == 0 &&
-               h.get(120) == 0 && volume && volume % 4096 == 0 && volume_bytes && volume_bytes <= volume_limit &&
-               volume < (1ULL << 52) - (2 * volume_limit);
+               h.get(96) <= table_pages && h.get(104) == actual + payload_offset && h.get(112) > 0 && h.get(120) == 0 &&
+               volume && volume % 4096 == 0 && volume_bytes && volume_bytes <= volume_limit &&
+               volume < (1ULL << 52) - (2 * volume_limit) && h.get(case_word) <= 255;
     }
 #else
     [[nodiscard]] static auto valid(std::span<const std::byte> bytes, std::uint64_t actual) -> bool {

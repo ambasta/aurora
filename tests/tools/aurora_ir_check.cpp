@@ -133,13 +133,20 @@ std::string declarations(const Run &item) {
 }
 // Runs the case action; returns its textual output for CHECK lines.
 std::string execute(const Run &item, const std::string &module) {
-    const auto run = words(item.action);
+    auto run = words(item.action);
     if (run.empty())
         throw Error("empty RUN");
-    const auto &action = run[0];
+    const auto action = run[0];
     Measured measured;
     EmissionRequest request;
+    // A trailing "aurora" verifies and emits for --target aurora.
+    if (run.size() > 1 && run.back() == "aurora") {
+        request.kernelTarget = true;
+        run.pop_back();
+    }
     if (action == "verify") {
+        if (run.size() != 1)
+            throw Error("verify takes no option but aurora");
         compile(module, {}, request, measured);
         return {};
     }
