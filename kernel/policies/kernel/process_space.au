@@ -1,0 +1,172 @@
+export module kernel.process_space;
+import kernel.elf;
+
+// A process's address space (kernel/uefi/process.md#address-space): the fixed
+// layout and the regions of an admitted image, its eagerly committed stack and
+// its argument block. Each region is a copied record of virtual pages and their
+// exact leaf flags; the supervisor allocates, fills and maps the frames and
+// checks its page tables against these records.
+export namespace kernel {
+    enum class LayoutVerdict {
+        valid,
+        image,
+        kernel,
+        arguments
+    };
+
+    // Kind 0 none, 1 segment, 2 stack, 3 arguments. A region's pages start at
+    // first; its bytes [vaddr, vaddr + bytes) are copied from offset of the
+    // image (segments) or of the argument block, every other byte is zero.
+    class ProcessRegion {
+    public:
+        u64 kind;
+        u64 first;
+        u64 pages;
+        u64 flags;
+        u64 vaddr;
+        u64 offset;
+        u64 bytes;
+    };
+
+    auto region(u64 kind, u64 first, u64 pages, u64 flags, u64 vaddr, u64 offset) -> ProcessRegion {
+        const ProcessRegion result = ProcessRegion{
+            .kind = kind,
+            .first = first,
+            .pages = pages,
+            .flags = flags,
+            .vaddr = vaddr,
+            .offset = offset,
+            .bytes = 0u64
+        };
+        return result;
+    }
+
+    // Images load in [4 MiB, 64 TiB); the stack's 8 MiB end at 0x7fffff000000
+    // above an unmapped guard page, and the argument block follows one
+    // unmapped page later, read-only.
+    auto image_floor() -> u64 {
+        return 4194304u64;
+    }
+
+    auto image_limit() -> u64 {
+        return 70368744177664u64;
+    }
+
+    auto stack_top() -> u64 {
+        return 140737471578112u64;
+    }
+
+    auto stack_pages() -> u64 {
+        return 2048u64;
+    }
+
+    auto stack_bottom() -> u64 {
+        return stack_top() - stack_pages() * 4096u64;
+    }
+
+    auto stack_guard() -> u64 {
+        return stack_bottom() - 4096u64;
+    }
+
+    auto arguments_base() -> u64 {
+        return stack_top() + 4096u64;
+    }
+
+    auto arguments_limit() -> u64 {
+        return 65536u64;
+    }
+
+    // Leaf flags: present and user, then no-execute for data, writable for
+    // the stack and writable segments; never writable and executable.
+    auto leaf_read() -> u64 {
+        return 9223372036854775813u64;
+    }
+
+    auto leaf_execute() -> u64 {
+        return 5u64;
+    }
+
+    auto leaf_write() -> u64 {
+        return 9223372036854775815u64;
+    }
+
+    auto segment_count(builtin::span<const u8> image) -> i64 {
+        i64 count = 0;
+        while (count < 8) {
+            const ElfSegment segment = elf_segment(image, count);
+            if (segment.access() == 0u64) {
+                return count;
+            }
+            count = count + 1;
+        }
+        return count;
+    }
+
+    auto segment_region(builtin::span<const u8> image, i64 index) -> ProcessRegion {
+        const ElfSegment segment = elf_segment(image, index);
+        u64 flags = leaf_read();
+        if (segment.access() == 2u64) {
+            flags = leaf_execute();
+        }
+        if (segment.access() == 3u64) {
+            flags = leaf_write();
+        }
+        const u64 first = elf_first(segment.vaddr());
+        const u64 pages = (elf_end(segment.vaddr(), segment.memory()) - first) / 4096u64;
+        ProcessRegion result = region(1u64, first, pages, flags, segment.vaddr(), segment.offset());
+        result.bytes = segment.file();
+        return result;
+    }
+
+    // The 2 MiB-aligned slots [reserved_first, reserved_end) hold the kernel
+    // mappings every process root shares; no region may enter them.
+    auto process_layout(builtin::span<const u8> image, u64 reserved_first, u64 reserved_end,
+        u64 arguments) -> LayoutVerdict {
+        if (elf_admit(image, image_floor(), image_limit()) != ElfVerdict::valid) {
+            return LayoutVerdict::image;
+        }
+        if (arguments == 0u64 || arguments > arguments_limit()) {
+            return LayoutVerdict::arguments;
+        }
+        if (reserved_first % 2097152u64 != 0u64 || reserved_end % 2097152u64 != 0u64 || reserved_first >= reserved_end
+            || reserved_end > image_limit()) {
+            return LayoutVerdict::kernel;
+        }
+        const i64 count = segment_count(image);
+        i64 index = 0;
+        while (index < count) {
+            const ProcessRegion segment = segment_region(image, index);
+            if (segment.first < reserved_end && reserved_first < segment.first + segment.pages * 4096u64) {
+                return LayoutVerdict::kernel;
+            }
+            index = index + 1;
+        }
+        return LayoutVerdict::valid;
+    }
+
+    // Regions in order: the image's load segments, the stack, the arguments;
+    // kind none past them or for an image the layout does not admit.
+    auto process_region(builtin::span<const u8> image, i64 index, u64 arguments) -> ProcessRegion {
+        const ProcessRegion none = region(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+        if (index < 0 || elf_admit(image, image_floor(), image_limit()) != ElfVerdict::valid || arguments == 0u64
+            || arguments > arguments_limit()) {
+            return none;
+        }
+        const i64 count = segment_count(image);
+        if (index < count) {
+            const ProcessRegion segment = segment_region(image, index);
+            return segment;
+        }
+        if (index == count) {
+            const ProcessRegion stack = region(2u64, stack_bottom(), stack_pages(), leaf_write(), stack_bottom(), 0u64);
+            return stack;
+        }
+        if (index == count + 1) {
+            ProcessRegion block = region(3u64, arguments_base(), (arguments + 4095u64) / 4096u64, leaf_read(),
+                arguments_base(), 0u64);
+            block.bytes = arguments;
+            return block;
+        }
+        return none;
+    }
+}

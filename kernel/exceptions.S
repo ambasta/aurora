@@ -170,6 +170,14 @@ aurora_program_call:
     pushq $130
     jmp exception_common
 .endif
+.ifdef AURORA_PROCESS_CALL
+# The process image's kernel-call gate, INT 0x83 (kernel/uefi/process.md#entries).
+.global aurora_process_call
+aurora_process_call:
+    pushq $0
+    pushq $131
+    jmp exception_common
+.endif
 .global aurora_program_return
 aurora_program_return:
     pushq $0

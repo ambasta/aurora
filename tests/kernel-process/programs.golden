@@ -1,0 +1,148 @@
+canonical: valid
+  program p -> elf=valid layout=valid entry=0x401000
+    segment first=0x400000 pages=1 read vaddr=0x400000 offset=0 bytes=512
+    segment first=0x401000 pages=1 execute vaddr=0x401000 offset=4096 bytes=256
+    segment first=0x402000 pages=2 write vaddr=0x402000 offset=8192 bytes=16
+    stack first=0x7ffffe800000 pages=2048 write vaddr=0x7ffffe800000 offset=0 bytes=0
+    arguments first=0x7fffff001000 pages=1 read vaddr=0x7fffff001000 offset=0 bytes=6
+truncated-header: valid
+  program p -> elf=truncated layout=image
+truncated-table: valid
+  program p -> elf=truncated layout=image
+magic: valid
+  program p -> elf=magic layout=image
+class: valid
+  program p -> elf=format layout=image
+encoding: valid
+  program p -> elf=format layout=image
+abi: valid
+  program p -> elf=format layout=image
+padding: valid
+  program p -> elf=format layout=image
+type-shared: valid
+  program p -> elf=type layout=image
+machine: valid
+  program p -> elf=machine layout=image
+entry-size: valid
+  program p -> elf=header layout=image
+no-headers: valid
+  program p -> elf=header layout=image
+many-headers: valid
+  program p -> elf=header layout=image
+table-misaligned: valid
+  program p -> elf=header layout=image
+interpreter: valid
+  program p -> elf=interpreter layout=image
+dynamic: valid
+  program p -> elf=dynamic layout=image
+tls: valid
+  program p -> elf=tls layout=image
+note: valid
+  program p -> elf=segment layout=image
+stack-executable: valid
+  program p -> elf=stack layout=image
+stack-twice: valid
+  program p -> elf=stack layout=image
+unreadable: valid
+  program p -> elf=permissions layout=image
+unknown-flag: valid
+  program p -> elf=permissions layout=image
+writable-executable: valid
+  program p -> elf=writable_executable layout=image
+align-small: valid
+  program p -> elf=alignment layout=image
+align-odd: valid
+  program p -> elf=alignment layout=image
+misaligned: valid
+  program p -> elf=alignment layout=image
+file-offset: valid
+  program p -> elf=file layout=image
+file-size: valid
+  program p -> elf=file layout=image
+memory-small: valid
+  program p -> elf=memory layout=image
+memory-zero: valid
+  program p -> elf=memory layout=image
+below-floor: valid
+  program p -> elf=address layout=image
+at-limit: valid
+  program p -> elf=address layout=image
+past-limit: valid
+  program p -> elf=address layout=image
+memory-wrap: valid
+  program p -> elf=address layout=image
+overlap: valid
+  program p -> elf=overlap layout=image
+overlap-page: valid
+  program p -> elf=overlap layout=image
+entry-data: valid
+  program p -> elf=entry layout=image
+entry-end: valid
+  program p -> elf=entry layout=image
+entry-last: valid
+  program p -> elf=valid layout=valid entry=0x4010ff
+    segment first=0x400000 pages=1 read vaddr=0x400000 offset=0 bytes=512
+    segment first=0x401000 pages=1 execute vaddr=0x401000 offset=4096 bytes=256
+    segment first=0x402000 pages=2 write vaddr=0x402000 offset=8192 bytes=16
+    stack first=0x7ffffe800000 pages=2048 write vaddr=0x7ffffe800000 offset=0 bytes=0
+    arguments first=0x7fffff001000 pages=1 read vaddr=0x7fffff001000 offset=0 bytes=6
+no-loads: valid
+  program p -> elf=empty layout=image
+layout-kernel: valid
+  program p -> elf=valid layout=kernel
+layout-kernel-below: valid
+  program p -> elf=valid layout=kernel
+layout-kernel-misaligned: valid
+  program p -> elf=valid layout=kernel
+layout-arguments-empty: valid
+  program p -> elf=valid layout=arguments
+layout-arguments-large: valid
+  program p -> elf=valid layout=arguments
+layout-arguments-largest: valid
+  program p -> elf=valid layout=valid entry=0x401000
+    segment first=0x400000 pages=1 read vaddr=0x400000 offset=0 bytes=512
+    segment first=0x401000 pages=1 execute vaddr=0x401000 offset=4096 bytes=256
+    segment first=0x402000 pages=2 write vaddr=0x402000 offset=8192 bytes=16
+    stack first=0x7ffffe800000 pages=2048 write vaddr=0x7ffffe800000 offset=0 bytes=0
+    arguments first=0x7fffff001000 pages=16 read vaddr=0x7fffff001000 offset=0 bytes=65536
+runs-valid: valid
+  runs runs/1 -> valid
+    run 1 ticks=4 flags=0 path=bin/a arguments=a\0b\0c d\0
+    run 2 ticks=128 flags=3 path=x arguments=y\0
+runs-one: valid
+  runs runs/1 -> valid
+    run 1 ticks=4 flags=0 path=a arguments=a\0
+runs-magic: valid
+  runs runs/1 -> magic
+runs-version: valid
+  runs runs/1 -> version
+runs-count-zero: valid
+  runs runs/1 -> count
+runs-count-high: valid
+  runs runs/1 -> count
+runs-count-more: valid
+  runs runs/1 -> truncated
+runs-count-fewer: valid
+  runs runs/1 -> trailing
+runs-ticks-zero: valid
+  runs runs/1 -> ticks
+runs-ticks-high: valid
+  runs runs/1 -> ticks
+runs-path-empty: valid
+  runs runs/1 -> path
+runs-path-long: valid
+  runs runs/1 -> path
+runs-arguments-empty: valid
+  runs runs/1 -> arguments
+runs-arguments-long: valid
+  runs runs/1 -> arguments
+runs-arguments-beyond: valid
+  runs runs/1 -> truncated
+runs-flags: valid
+  runs runs/1 -> flags
+runs-terminator: valid
+  runs runs/1 -> arguments
+runs-padding: valid
+  runs runs/1 -> padding
+runs-short: valid
+  runs runs/1 -> truncated

@@ -38,6 +38,14 @@ process_entry __au_runtime_process_volume_admit, @process_volume_admit@
 process_entry __au_runtime_process_volume_find, @process_volume_find@
 process_result_entry __au_runtime_process_volume_entry, @process_volume_entry@
 process_entry __au_runtime_process_base64_group, @process_base64_group@
+process_entry __au_runtime_process_elf_admit, @process_elf_admit@
+process_entry __au_runtime_process_layout, @process_layout@
+process_result_entry __au_runtime_process_region, @process_region@
+process_entry __au_runtime_process_elf_entry, @process_elf_entry@
+process_entry __au_runtime_process_trap, @process_trap@
+process_result_entry __au_runtime_process_call, @process_call@
+process_entry __au_runtime_process_runs_admit, @process_runs_admit@
+process_result_entry __au_runtime_process_run, @process_run@
 # The scalar frame transition keeps the existing SysV scalar-symbol seam.
 .global aurora_kernel_frame_transition
 .hidden aurora_kernel_frame_transition

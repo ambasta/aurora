@@ -1,0 +1,153 @@
+export module kernel.process_events;
+import kernel.process_space;
+
+// Kernel entries from a running process (kernel/uefi/process.md#entries): the
+// classification of a copied CPU frame and the decoding of a kernel call. The
+// supervisor copies the frame and registers; the decisions carry no address,
+// mapping or authority. A frame this policy does not verify as the process's
+// own user frame is kernel: the machine stops.
+export namespace kernel {
+    enum class TrapClass {
+        kernel,
+        timer,
+        call,
+        system_call,
+        invalid_opcode,
+        stack_guard,
+        page_fault,
+        protection,
+        divide,
+        debug,
+        breakpoint,
+        overflow,
+        bound,
+        fpu,
+        alignment,
+        simd
+    };
+
+    // The interrupt frame and the two instruction bytes at its RIP (opcode,
+    // first byte in bits 0..7, or above 65535 when they are not executable).
+    class ProcessTrap {
+    public:
+        u64 vector;
+        u64 error;
+        u64 rip;
+        u64 cs;
+        u64 flags;
+        u64 rsp;
+        u64 ss;
+        u64 cr2;
+        u64 opcode;
+    };
+
+    enum class CallAction {
+        invalid,
+        exit,
+        print,
+        read
+    };
+
+    // A decoded kernel call: exit with value, print length bytes to stream
+    // value (1 stdout, 2 stderr), or read, whose result word is value.
+    class KernelCall {
+        CallAction _action;
+        u64 _value;
+        u64 _length;
+    public:
+        KernelCall(CallAction action, u64 value, u64 length) : _action(action), _value(value), _length(length) {
+        }
+        auto action() const -> CallAction {
+            return _action;
+        }
+    };
+
+    // User code 0x1b and data 0x23; RFLAGS with IF and bit 1 set, IOPL 0 and
+    // only the bits CPL 3 can change (arithmetic, TF, DF, NT, RF, AC, ID).
+    auto user_frame(ProcessTrap trap) -> bool {
+        const u64 allowed = 2445271u64;
+        return trap.cs == 27u64 && trap.ss == 35u64 && trap.rip < 140737488355328u64 && (trap.flags & 514u64) == 514u64
+            && (trap.flags & ~allowed) == 0u64;
+    }
+
+    auto process_trap(ProcessTrap trap) -> TrapClass {
+        if (!user_frame(trap)) {
+            return TrapClass::kernel;
+        }
+        const u64 vector = trap.vector;
+        if (vector == 64u64) {
+            return TrapClass::timer;
+        }
+        if (vector == 131u64) {
+            return TrapClass::call;
+        }
+        if (vector == 6u64) {
+            // SYSCALL (0f 05) and SYSENTER (0f 34) are not enabled for processes.
+            if (trap.opcode == 1295u64 || trap.opcode == 13327u64) {
+                return TrapClass::system_call;
+            }
+            return TrapClass::invalid_opcode;
+        }
+        if (vector == 14u64) {
+            if (trap.cr2 >= stack_guard() && trap.cr2 < stack_bottom()) {
+                return TrapClass::stack_guard;
+            }
+            return TrapClass::page_fault;
+        }
+        if (vector == 11u64 || vector == 12u64 || vector == 13u64) {
+            return TrapClass::protection;
+        }
+        if (vector == 0u64) {
+            return TrapClass::divide;
+        }
+        if (vector == 1u64) {
+            return TrapClass::debug;
+        }
+        if (vector == 3u64) {
+            return TrapClass::breakpoint;
+        }
+        if (vector == 4u64) {
+            return TrapClass::overflow;
+        }
+        if (vector == 5u64) {
+            return TrapClass::bound;
+        }
+        if (vector == 7u64 || vector == 16u64) {
+            return TrapClass::fpu;
+        }
+        if (vector == 17u64) {
+            return TrapClass::alignment;
+        }
+        if (vector == 19u64) {
+            return TrapClass::simd;
+        }
+        // NMI, double fault, machine check and the rest are not program faults.
+        return TrapClass::kernel;
+    }
+
+    // Operation 1 exit(status 0..255), 2 print(stream, buffer, length up to
+    // 64 KiB), 3 read(file, offset, chunk): with no file service yet every
+    // file id is invalid_handle (-1). Anything else is invalid.
+    auto process_call(u64 operation, u64 first, u64 second, u64 third) -> KernelCall {
+        const KernelCall invalid = KernelCall(CallAction::invalid, 0u64, 0u64);
+        if (operation == 1u64) {
+            if (first > 255u64) {
+                return invalid;
+            }
+            const KernelCall exit = KernelCall(CallAction::exit, first, 0u64);
+            return exit;
+        }
+        if (operation == 2u64) {
+            if ((first != 1u64 && first != 2u64) || third > arguments_limit()) {
+                return invalid;
+            }
+            const KernelCall print = KernelCall(CallAction::print, first, third);
+            return print;
+        }
+        if (operation == 3u64) {
+            const KernelCall read = KernelCall(CallAction::read, 18446744073709551615u64, 0u64);
+            return read;
+        }
+        return invalid;
+    }
+}

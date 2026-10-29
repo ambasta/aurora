@@ -23,15 +23,18 @@ public:
     static constexpr U64 address_mask = 0x000ffffffffff000ULL, hardware_bits = 0x60;
     // Frame count, pages and tables of one extension: PDPT, metadata PD and
     // PTs, then (with a volume) volume PD and PTs, at frame indices 0..tables-1.
+    // The metadata is one 8-byte record per frame, then from the next page one
+    // 8-byte mapping word per frame (process-space.hpp).
     class Plan final {
     public:
-        U64 metadata = 0, metadata_tables = 0, volume = 0, volume_tables = 0, tables = 0;
+        U64 metadata = 0, metadata_tables = 0, volume = 0, volume_tables = 0, tables = 0, records = 0;
     };
     [[nodiscard]] static auto plan(U64 frames, U64 volume_pages) -> std::optional<Plan> {
         Plan result;
         if (frames == 0 || frames > (U64{1} << 32) || volume_pages > 512 * 512)
             return std::nullopt;
-        result.metadata = (frames * 8 + frames::page - 1) / frames::page;
+        result.records = (frames * 8 + frames::page - 1) / frames::page;
+        result.metadata = 2 * result.records;
         result.metadata_tables = (result.metadata + 511) / 512;
         result.volume = volume_pages;
         result.volume_tables = (volume_pages + 511) / 512;
@@ -132,9 +135,15 @@ public:
         return true;
     }
     [[nodiscard]] auto metadata(U64 frames) const -> std::span<U64> {
-        if (!built_ || frames * 8 > plan_.metadata * frames::page)
+        if (!built_ || frames * 8 > plan_.records * frames::page)
             return {};
         return {reinterpret_cast<U64 *>(metadata_base), frames};
+    }
+    // The mapping words: what each frame holds in a process (process-space.hpp).
+    [[nodiscard]] auto mappings(U64 frames) const -> std::span<U64> {
+        if (!built_ || frames * 8 > plan_.records * frames::page)
+            return {};
+        return {reinterpret_cast<U64 *>(metadata_base + plan_.records * frames::page), frames};
     }
     [[nodiscard]] auto volume(U64 bytes) const -> std::span<const std::byte> {
         if (!built_ || bytes > plan_.volume * frames::page)

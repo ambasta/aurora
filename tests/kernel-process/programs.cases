@@ -1,0 +1,74 @@
+# Program and run-list cases for `kernel-process volumes`, built by
+# scripts/kernel_volume.py. --elf p=EDITS stores the writer's admission image
+# (read-only p0 at 0x400000, code p1 at 0x401000 with the entry, data p2 at
+# 0x402000 with 16 file bytes in 0x2000, GNU_STACK p3; 0x2010 bytes) as p, and
+# program:ARGUMENTS:RESERVED:PATH admits it with that argument block size and
+# the kernel's shared slots at [RESERVED, RESERVED + 4 MiB).
+canonical --elf p= --query program:6:0x40000000:p
+truncated-header --elf p=truncate=63 --query program:6:0x40000000:p
+truncated-table --elf p=truncate=200 --query program:6:0x40000000:p
+magic --elf p=magic=0x7e --query program:6:0x40000000:p
+class --elf p=class=1 --query program:6:0x40000000:p
+encoding --elf p=data=2 --query program:6:0x40000000:p
+abi --elf p=osabi=3 --query program:6:0x40000000:p
+padding --elf p=padding=1 --query program:6:0x40000000:p
+type-shared --elf p=etype=3 --query program:6:0x40000000:p
+machine --elf p=machine=3 --query program:6:0x40000000:p
+entry-size --elf p=phentsize=32 --query program:6:0x40000000:p
+no-headers --elf p=phnum=0 --query program:6:0x40000000:p
+many-headers --elf p=phnum=17 --query program:6:0x40000000:p
+table-misaligned --elf p=phoff=65 --query program:6:0x40000000:p
+interpreter --elf p=p3.type=3 --query program:6:0x40000000:p
+dynamic --elf p=p3.type=2 --query program:6:0x40000000:p
+tls --elf p=p3.type=7 --query program:6:0x40000000:p
+note --elf p=p3.type=4 --query program:6:0x40000000:p
+stack-executable --elf p=p3.flags=7 --query program:6:0x40000000:p
+stack-twice --elf p=p2.type=0x6474e551 --query program:6:0x40000000:p
+unreadable --elf p=p1.flags=1 --query program:6:0x40000000:p
+unknown-flag --elf p=p1.flags=0xd --query program:6:0x40000000:p
+writable-executable --elf p=p1.flags=7 --query program:6:0x40000000:p
+align-small --elf p=p1.align=0x10 --query program:6:0x40000000:p
+align-odd --elf p=p1.align=0x3000 --query program:6:0x40000000:p
+misaligned --elf p=p1.vaddr=0x401010 --query program:6:0x40000000:p
+file-offset --elf p=p2.offset=0x3000,p2.vaddr=0x403000 --query program:6:0x40000000:p
+file-size --elf p=p2.filesz=0x20 --query program:6:0x40000000:p
+memory-small --elf p=p2.memsz=8 --query program:6:0x40000000:p
+memory-zero --elf p=p0.filesz=0,p0.memsz=0 --query program:6:0x40000000:p
+below-floor --elf p=p0.vaddr=0x3ff000 --query program:6:0x40000000:p
+at-limit --elf p=p2.vaddr=0x400000000000 --query program:6:0x40000000:p
+past-limit --elf p=p2.vaddr=0x3ffffffff000,p2.memsz=0x2000 --query program:6:0x40000000:p
+memory-wrap --elf p=p2.memsz=0xffffffffffffffff --query program:6:0x40000000:p
+overlap --elf p=p2.vaddr=0x401000 --query program:6:0x40000000:p
+overlap-page --elf p=p0.memsz=0x1001 --query program:6:0x40000000:p
+entry-data --elf p=entry=0x402000 --query program:6:0x40000000:p
+entry-end --elf p=entry=0x401100 --query program:6:0x40000000:p
+entry-last --elf p=entry=0x4010ff --query program:6:0x40000000:p
+no-loads --elf p=phnum=1,p0.type=0x6474e551,p0.flags=6 --query program:6:0x40000000:p
+layout-kernel --elf p= --query program:6:0x400000:p
+layout-kernel-below --elf p= --query program:6:0x200000:p
+layout-kernel-misaligned --elf p= --query program:6:0x40001000:p
+layout-arguments-empty --elf p= --query program:0:0x40000000:p
+layout-arguments-large --elf p= --query program:65537:0x40000000:p
+layout-arguments-largest --elf p= --query program:65536:0x40000000:p
+# Run lists: one run "1:4:0:a:a" is the list at volume offset 104 (magic 104,
+# version 112, count 116; record 120: ticks, path bytes 124, argument bytes
+# 128, flags 132; path 136, arguments 137, padding 139..143).
+runs-valid --run "1:4:0:bin/a:a b 'c d'" --run "1:128:3:x:y" --query runs:runs/1
+runs-one --run 1:4:0:a:a --query runs:runs/1
+runs-magic --run 1:4:0:a:a --set 104:1:0x42 --query runs:runs/1
+runs-version --run 1:4:0:a:a --set 112:4:2 --query runs:runs/1
+runs-count-zero --run 1:4:0:a:a --set 116:4:0 --query runs:runs/1
+runs-count-high --run 1:4:0:a:a --set 116:4:65 --query runs:runs/1
+runs-count-more --run 1:4:0:a:a --set 116:4:2 --query runs:runs/1
+runs-count-fewer --run 1:4:0:a:a --run 1:4:0:a:a --set 116:4:1 --query runs:runs/1
+runs-ticks-zero --run 1:4:0:a:a --set 120:4:0 --query runs:runs/1
+runs-ticks-high --run 1:4:0:a:a --set 120:4:129 --query runs:runs/1
+runs-path-empty --run 1:4:0:a:a --set 124:4:0 --query runs:runs/1
+runs-path-long --run 1:4:0:a:a --set 124:4:256 --query runs:runs/1
+runs-arguments-empty --run 1:4:0:a:a --set 128:4:0 --query runs:runs/1
+runs-arguments-long --run 1:4:0:a:a --set 128:4:65537 --query runs:runs/1
+runs-arguments-beyond --run 1:4:0:a:a --set 128:4:1000 --query runs:runs/1
+runs-flags --run 1:4:0:a:a --set 132:4:4 --query runs:runs/1
+runs-terminator --run 1:4:0:a:a --set 138:1:0x78 --query runs:runs/1
+runs-padding --run 1:4:0:a:a --set 140:1:1 --query runs:runs/1
+runs-short --text runs/1=AURORUNS --query runs:runs/1

@@ -138,6 +138,28 @@ foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
   hosted_programs += {name: custom_target(name, input: hosted_object, output: name, command: compiler_link)}
 endforeach
 
+# Programs for the Aurora kernel's process image (kernel/uefi/process.md#guest-rows):
+# --target aurora objects linked like the hosted programs, and one GNU as program.
+process_programs = {}
+if get_option('kernel_images')
+  foreach name, source : {'host-files-probe': 'tests/host-files/probe.au',
+                          'process-hostile': 'tests/kernel-process/hostile.au'}
+    process_object = custom_target(name + '-aurora-object', input: source, output: name + '-aurora.o',
+        command: [aurorac, '--emit-object', '--target', 'aurora', '@INPUT@', '-o', '@OUTPUT@'],
+        depend_files: kernel_runtime_sources)
+    process_programs += {'aurora:' + name: custom_target(name + '-aurora', input: process_object,
+                                                         output: name + '-aurora', command: compiler_link)}
+  endforeach
+  recurse_object = custom_target('process-recurse-object', input: 'tests/kernel-process/recurse.S',
+      output: 'process-recurse.o', command: [find_program('as', native: true), '--64', '-mx86-used-note=no',
+                                             '@INPUT@', '-o', '@OUTPUT@'])
+  process_programs += {'assembly:process-recurse': custom_target('process-recurse', input: recurse_object,
+                                                                 output: 'process-recurse', command: compiler_link)}
+  foreach name, program : hosted_programs
+    process_programs += {'linux:' + name: program}
+  endforeach
+endif
+
 # Preserve the configured compiler command (including wrappers and quoted paths)
 # for the existing Python native observer. This does not build or run a test.
 oracle_cxx = run_command(

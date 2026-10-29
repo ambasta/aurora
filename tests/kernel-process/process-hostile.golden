@@ -1,0 +1,7 @@
+1 bin/elf-wx elf	rejected writable_executable
+2 bin/elf-interp elf	rejected interpreter
+3 bin/elf-entry elf	rejected entry
+4 bin/elf-overlap elf	rejected overlap
+5 bin/missing elf	rejected missing
+6 bin/hostile hostile	exit 0
+7 bin/probe probe print hello	kernel fault vector=14

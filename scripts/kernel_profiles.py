@@ -45,6 +45,36 @@ check_fixture_families(FIXTURES)
 FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if not name.startswith("bios_")
 }
+# Process-image rows that run a run list: the valid volume's selector plus a
+# case word (fw_cfg opt/aurora/case) naming runs/<case> in that volume. Each run
+# is (watchdog ticks, flags, volume path, arguments as shell words); flag 1
+# faults the kernel during the run's first kernel call and flag 2 checks that
+# the load walk rejects edited tables (kernel/uefi/process.md#run-lists).
+PROCESS_CASES = {
+    "process-run": (
+        1,
+        (
+            (32, 2, "bin/probe", "probe print hello eprint oops exit failure"),
+            (32, 0, "bin/probe-linux", "probe print hello"),
+            (32, 0, "bin/recurse", "recurse"),
+            (4, 0, "bin/hostile", "hostile spin"),
+            (32, 0, "bin/probe", "probe print 'two words' exit success"),
+        ),
+    ),
+    "process-hostile": (
+        2,
+        (
+            (8, 0, "bin/elf-wx", "elf"),
+            (8, 0, "bin/elf-interp", "elf"),
+            (8, 0, "bin/elf-entry", "elf"),
+            (8, 0, "bin/elf-overlap", "elf"),
+            (8, 0, "bin/missing", "elf"),
+            (8, 0, "bin/hostile", "hostile"),
+            (8, 1, "bin/probe", "probe print hello"),
+        ),
+    ),
+}
+FIXTURE_MODES.update({mode: FIXTURE_MODES["process-volume"] for mode in PROCESS_CASES})
 # These images read their selector from a QEMU fw_cfg file instead of a serial
 # byte. The loader fixture images read it at loader entry, echo it and hand it
 # over in one handoff word: platform-fixture's loader cases inject before
@@ -71,9 +101,9 @@ BIOS_FIXTURE_MODES = {
 # Base flags plus bounded variants mirror the existing admitted profiles.
 UEFI_FAMILIES = [
     ([], {"normal": []}),
-    # The boot volume, frame allocator and export (kernel/uefi/process.md),
-    # selected by a fw_cfg row read at loader entry.
-    ([], {"process-fixture": ["-DAURORA_PROCESS_FIXTURE"]}),
+    # The boot volume, frame allocator, export and processes (kernel/uefi/process.md),
+    # selected by a fw_cfg row and case word read at loader entry.
+    ([], {"process-fixture": ["-DAURORA_UEFI_ACPI", "-DAURORA_PROCESS_FIXTURE"]}),
     (
         ["-maccumulate-outgoing-args", "-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_IOMMU_EVENT"],
         {"iommu-event": []},
@@ -873,6 +903,11 @@ def uefi_profile(profile_mode, flags):
         cpp["event-intake"] = "kernel/uefi/event-intake.cpp"
     if process:
         cpp["process"] = "kernel/uefi/process.cpp"
+        assembly["process-user"] = dict(source="kernel/uefi/process-user.S", flags=["--64"])
+        assembly["process-exceptions"] = dict(
+            source="kernel/exceptions.S",
+            flags=["--64", "--defsym", "AURORA_RELATIVE_ONLY=1", "--defsym", "AURORA_PROCESS_CALL=1"],
+        )
     entry, bridge = "examples/kernel.au", ""
     for enabled, source, adapter in (
         (event, "iommu-event-service", "event-service"),
@@ -922,7 +957,7 @@ def uefi_profile(profile_mode, flags):
         + owned_objects
         + (["framebuffer"] if framebuffer else [])
         + (["event-intake"] if event else [])
-        + (["process"] if process else []),
+        + (["process", "process-user", "process-exceptions"] if process else []),
         closed=program,
         # Closed objects keep local symbols and referenced reflection only.
         sealed=program or scratchpad,
@@ -938,8 +973,32 @@ def uefi_profile(profile_mode, flags):
 # repository files): the valid volume, an unsorted index with a valid checksum
 # and an empty file. Every listed repository file is a build input.
 PROCESS_VOLUME_FILES = ("examples/core_math.au", "examples/host-sort.au")
+# Programs (--program PATH=KIND:NAME, a build product: aurora for --target
+# aurora, linux for the hosted Linux build, assembly for GNU as) and header-only ELF files (--elf
+# PATH=EDITS over the writer's admission image) the run lists name.
+PROCESS_PROGRAMS = {
+    "bin/probe": "aurora:host-files-probe",
+    "bin/hostile": "aurora:process-hostile",
+    "bin/recurse": "assembly:process-recurse",
+    "bin/probe-linux": "linux:host-files-probe",
+}
+PROCESS_ELVES = {
+    "bin/elf-wx": "p1.flags=7",
+    "bin/elf-interp": "p3.type=3",
+    "bin/elf-entry": "entry=0x400000",
+    "bin/elf-overlap": "p2.vaddr=0x401000",
+}
 PROCESS_ESP = {
-    "volume": [word for path in PROCESS_VOLUME_FILES for word in ("--file", path)] + ["--text", "aurora/empty="],
+    "volume": [word for path in PROCESS_VOLUME_FILES for word in ("--file", path)]
+    + ["--text", "aurora/empty="]
+    + [word for path, program in PROCESS_PROGRAMS.items() for word in ("--program", path + "=" + program)]
+    + [word for path, edits in PROCESS_ELVES.items() for word in ("--elf", path + "=" + edits)]
+    + [
+        word
+        for case, runs in PROCESS_CASES.values()
+        for ticks, flags, path, arguments in runs
+        for word in ("--run", f"{case}:{ticks}:{flags}:{path}:{arguments}")
+    ],
     "corrupt": ["--raw-order"] + [word for path in reversed(PROCESS_VOLUME_FILES) for word in ("--file", path)],
     "empty": ["--empty"],
 }
@@ -968,7 +1027,8 @@ GUEST_FAMILIES = {
     "user-ram-file-epochs user-ram-file-pending user-ram-file-frame user-ram-file-root",
     "tables": "runtime-table-readback runtime-table-reject runtime-table-exhaust runtime-table-quarantine",
     "pins": "runtime-pin-cancel runtime-pin-fault runtime-pin-stale runtime-pin-exhaust",
-    "process": "process-volume process-volume-corrupt process-volume-empty process-volume-map",
+    "process": "process-volume process-volume-corrupt process-volume-empty process-volume-map process-run "
+    "process-hostile",
 }
 
 
@@ -1024,7 +1084,10 @@ def serial_fixture_byte(mode):
 def fw_cfg_fixture(mode):
     """QEMU arguments carrying a fw_cfg selector; empty for serial-selector and ordinary modes."""
     image, value = FIXTURE_MODES.get(UEFI_VARIANTS.get(mode, mode), ("", 0))
-    return ["-fw_cfg", f"name=opt/aurora/fixture,string={value}"] if image in FW_CFG_IMAGES else []
+    if image not in FW_CFG_IMAGES:
+        return []
+    case = ["-fw_cfg", f"name=opt/aurora/case,string={PROCESS_CASES[mode][0]}"] if mode in PROCESS_CASES else []
+    return ["-fw_cfg", f"name=opt/aurora/fixture,string={value}", *case]
 
 
 def canonical_profile(platform, mode):

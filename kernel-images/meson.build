@@ -412,17 +412,26 @@ foreach profile_id : profile_data['profiles'].split('|')
     esp_names = profile_data.get(key + '.esp', '')
     if esp_names != ''
       foreach name : esp_names.split('|')
-        volume_words = profile_data[key + '.esp.' + name].split('|')
+        volume_words = []
         volume_inputs = []
+        volume_programs = []
         previous = ''
-        foreach word : volume_words
+        # --program PATH=KIND:NAME names a build product (process_programs).
+        foreach word : profile_data[key + '.esp.' + name].split('|')
           if previous == '--file'
             volume_inputs += files('../' + word)
           endif
+          if previous == '--program'
+            program = process_programs[word.split('=')[1]]
+            volume_programs += program
+            word = word.split('=')[0] + '=' + program.full_path()
+          endif
+          volume_words += word
           previous = word
         endforeach
         esp_files += [custom_target(prefix + '-esp-' + name, output: name,
           build_subdir: output_subdir / 'esp/aurora', depend_files: [volume_writer] + volume_inputs,
+          depends: volume_programs,
           command: [python, '-B', volume_writer, '--root', kernel_source, '--output', '@OUTPUT@'] + volume_words)]
       endforeach
     endif

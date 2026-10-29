@@ -138,6 +138,11 @@ def validate_native_abi(facts, source):
                 "kernel::MapVerdict",
                 "kernel::GrantVerdict",
                 "kernel::VolumeVerdict",
+                "kernel::ElfVerdict",
+                "kernel::LayoutVerdict",
+                "kernel::TrapClass",
+                "kernel::CallAction",
+                "kernel::RunsVerdict",
             )
             else "records"
         )
@@ -367,6 +372,44 @@ def validate_native_abi(facts, source):
         entry("process_volume_entry", ["span", "u64"], "kernel::VolumeEntry")
         entry("process_base64_group", ["span", "u64"], "u64")
         entry("aurora_kernel_frame_transition", ["u64", "u64", "u64", "u64", "u64"], "u64")
+        for name, names in (
+            (
+                "kernel::ElfVerdict",
+                "valid truncated magic format type machine header segment interpreter dynamic tls stack permissions "
+                "writable_executable alignment file memory address overlap entry empty",
+            ),
+            ("kernel::LayoutVerdict", "valid image kernel arguments"),
+            (
+                "kernel::TrapClass",
+                "kernel timer call system_call invalid_opcode stack_guard page_fault protection divide debug "
+                "breakpoint overflow bound fpu alignment simd",
+            ),
+            ("kernel::CallAction", "invalid exit print read"),
+            (
+                "kernel::RunsVerdict",
+                "valid truncated magic version count ticks path arguments flags padding trailing",
+            ),
+        ):
+            enum(name, names)
+        region = ("kind", "first", "pages", "flags", "vaddr", "offset", "bytes")
+        record("kernel::ProcessRegion", 56, [(name, "u64", 0) for name in region])
+        trap = ("vector", "error", "rip", "cs", "flags", "rsp", "ss", "cr2", "opcode")
+        record("kernel::ProcessTrap", 72, [(name, "u64", 0) for name in trap])
+        record(
+            "kernel::KernelCall",
+            24,
+            [("_action", "kernel::CallAction", 0), ("_value", "u64", 0), ("_length", "u64", 0)],
+        )
+        run = ("found", "ticks", "flags", "path", "path_bytes", "arguments", "argument_bytes")
+        record("kernel::RunEntry", 56, [(name, "u64", 0) for name in run])
+        entry("process_elf_admit", ["span"], "kernel::ElfVerdict")
+        entry("process_layout", ["span", "u64", "u64", "u64"], "kernel::LayoutVerdict")
+        entry("process_region", ["span", "u64", "u64"], "kernel::ProcessRegion")
+        entry("process_elf_entry", ["span"], "u64")
+        entry("process_trap", ["kernel::ProcessTrap"], "kernel::TrapClass")
+        entry("process_call", ["u64", "u64", "u64", "u64"], "kernel::KernelCall")
+        entry("process_runs_admit", ["span"], "kernel::RunsVerdict")
+        entry("process_run", ["span", "u64"], "kernel::RunEntry")
 
 
 def render_bridge(source, facts):

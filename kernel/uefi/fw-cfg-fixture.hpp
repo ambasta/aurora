@@ -80,5 +80,52 @@ public:
             return std::nullopt;
         return static_cast<Fixture>(value);
     }
+#ifdef AURORA_PROCESS_FIXTURE
+    // The process image's case word: the decimal 1..255 in opt/aurora/case,
+    // 0 when the file is absent (process.md#guest-rows), nullopt otherwise.
+    [[nodiscard]] static auto read_case() -> std::optional<unsigned> {
+        static constexpr char wanted[] = "opt/aurora/case";
+        select(0x19);
+        const auto count = big(4);
+        if (count > 4096)
+            return std::nullopt;
+        std::optional<std::uint16_t> key;
+        std::uint32_t size = 0;
+        for (std::uint32_t entry = 0; entry < count; ++entry) {
+            const auto entry_size = big(4);
+            const auto entry_key = static_cast<std::uint16_t>(big(2));
+            static_cast<void>(big(2));
+            bool match = true;
+            for (std::size_t i = 0; i < 56; ++i) {
+                const auto expected = i < sizeof(wanted) ? static_cast<unsigned char>(wanted[i]) : 0U;
+                const auto actual = byte();
+                match = match && (i >= sizeof(wanted) || actual == expected);
+            }
+            if (match) {
+                if (key)
+                    return std::nullopt;
+                key = entry_key;
+                size = entry_size;
+            }
+        }
+        if (!key)
+            return 0U;
+        if (size == 0 || size > 4)
+            return std::nullopt;
+        select(*key);
+        unsigned value = 0;
+        for (std::uint32_t i = 0; i < size; ++i) {
+            const auto digit = byte();
+            if (digit == 0 && i > 0 && i + 1 == size)
+                break;
+            if (i == 3 || digit < '0' || digit > '9' || (i == 0 && digit == '0'))
+                return std::nullopt;
+            value = value * 10 + (digit - '0');
+        }
+        if (value == 0 || value > 255)
+            return std::nullopt;
+        return value;
+    }
+#endif
 };
 } // namespace aurora::uefi::fw_cfg

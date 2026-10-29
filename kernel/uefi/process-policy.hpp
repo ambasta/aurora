@@ -104,6 +104,115 @@ static_assert(sizeof(MapArguments) == 72 && sizeof(GrantArguments) == 88 && size
               sizeof(VolumeArguments) == 56 && sizeof(FindArguments) == 112 && sizeof(EntryArguments) == 64 &&
               sizeof(FrameRange) == 24 && sizeof(VolumeEntry) == 24);
 
+// Programs and processes (process.md#programs, #entries, #run-lists).
+enum class ElfVerdict : U64 {
+    valid,
+    truncated,
+    magic,
+    format,
+    type,
+    machine,
+    header,
+    segment,
+    interpreter,
+    dynamic,
+    tls,
+    stack,
+    permissions,
+    writable_executable,
+    alignment,
+    file,
+    memory,
+    address,
+    overlap,
+    entry,
+    empty
+};
+enum class LayoutVerdict : U64 {
+    valid,
+    image,
+    kernel,
+    arguments
+};
+enum class TrapClass : U64 {
+    kernel,
+    timer,
+    call,
+    system_call,
+    invalid_opcode,
+    stack_guard,
+    page_fault,
+    protection,
+    divide,
+    debug,
+    breakpoint,
+    overflow,
+    bound,
+    fpu,
+    alignment,
+    simd
+};
+enum class CallAction : U64 {
+    invalid,
+    exit,
+    print,
+    read
+};
+enum class RunsVerdict : U64 {
+    valid,
+    truncated,
+    magic,
+    version,
+    count,
+    ticks,
+    path,
+    arguments,
+    flags,
+    padding,
+    trailing
+};
+// Region kinds of kernel.process_space and its exact leaf flags.
+enum class RegionKind : U64 {
+    none,
+    segment,
+    stack,
+    arguments
+};
+inline constexpr U64 leaf_read = (U64{1} << 63) | 5, leaf_execute = 5, leaf_write = (U64{1} << 63) | 7;
+class ProcessRegion final {
+public:
+    U64 kind = 0, first = 0, pages = 0, flags = 0, vaddr = 0, offset = 0, bytes = 0;
+};
+class ProcessTrap final {
+public:
+    U64 vector = 0, error = 0, rip = 0, cs = 0, flags = 0, rsp = 0, ss = 0, cr2 = 0, opcode = 0;
+};
+class KernelCall final {
+public:
+    U64 action = 0, value = 0, length = 0;
+};
+class RunEntry final {
+public:
+    U64 found = 0, ticks = 0, flags = 0, path = 0, path_bytes = 0, arguments = 0, argument_bytes = 0;
+};
+class LayoutArguments final {
+public:
+    PolicySpan image;
+    U64 reserved_first, reserved_end, arguments;
+};
+class RegionArguments final {
+public:
+    PolicySpan image;
+    U64 index, arguments;
+};
+class CallArguments final {
+public:
+    U64 operation, first, second, third;
+};
+static_assert(sizeof(ProcessRegion) == 56 && sizeof(ProcessTrap) == 72 && sizeof(KernelCall) == 24 &&
+              sizeof(RunEntry) == 56 && sizeof(LayoutArguments) == 80 && sizeof(RegionArguments) == 72 &&
+              sizeof(CallArguments) == 32);
+
 namespace bridge {
 auto map_admit(const MapArguments *) -> U64 asm("__au_runtime_process_map_admit") __attribute__((visibility("hidden")));
 auto volume_grant(const GrantArguments *) -> U64 asm("__au_runtime_process_volume_grant")
@@ -120,6 +229,20 @@ auto base64_group(const EntryArguments *) -> U64 asm("__au_runtime_process_base6
     __attribute__((visibility("hidden")));
 auto frame_transition(U64 operation, U64 record, U64 owner, U64 generation, U64 link) -> U64
     asm("aurora_kernel_frame_transition") __attribute__((visibility("hidden")));
+auto elf_admit(const VolumeArguments *) -> U64 asm("__au_runtime_process_elf_admit")
+    __attribute__((visibility("hidden")));
+auto layout(const LayoutArguments *) -> U64 asm("__au_runtime_process_layout") __attribute__((visibility("hidden")));
+auto region(const RegionArguments *, ProcessRegion *) -> void asm("__au_runtime_process_region")
+    __attribute__((visibility("hidden")));
+auto elf_entry(const VolumeArguments *) -> U64 asm("__au_runtime_process_elf_entry")
+    __attribute__((visibility("hidden")));
+auto trap(const ProcessTrap *) -> U64 asm("__au_runtime_process_trap") __attribute__((visibility("hidden")));
+auto call(const CallArguments *, KernelCall *) -> void asm("__au_runtime_process_call")
+    __attribute__((visibility("hidden")));
+auto runs_admit(const VolumeArguments *) -> U64 asm("__au_runtime_process_runs_admit")
+    __attribute__((visibility("hidden")));
+auto run(const EntryArguments *, RunEntry *) -> void asm("__au_runtime_process_run")
+    __attribute__((visibility("hidden")));
 } // namespace bridge
 
 // A closed enum result, or nullopt for an encoding outside it.
@@ -184,5 +307,85 @@ frame_range(std::span<const std::byte> map, U64 stride, U64 index, U64 arena, U6
     if (((group >> 16) & 255) == '=' && ((group >> 24) & 255) != '=')
         return std::nullopt;
     return group >> 32 ? std::nullopt : std::optional<U64>{group};
+}
+
+// Program admission, layout and regions. A region outside its closed shape is
+// nullopt: pages within the 47-bit user half, its exact leaf flags, the copy
+// extent inside its pages (and for segments inside the image).
+[[nodiscard]] inline auto elf_admit(std::span<const std::byte> image) -> std::optional<ElfVerdict> {
+    const VolumeArguments arguments{PolicySpan{image}};
+    return verdict<ElfVerdict, 20>(bridge::elf_admit(&arguments));
+}
+[[nodiscard]] inline auto layout(std::span<const std::byte> image, U64 reserved_first, U64 reserved_end, U64 bytes)
+    -> std::optional<LayoutVerdict> {
+    const LayoutArguments arguments{PolicySpan{image}, reserved_first, reserved_end, bytes};
+    return verdict<LayoutVerdict, 3>(bridge::layout(&arguments));
+}
+[[nodiscard]] inline auto region(std::span<const std::byte> image, U64 index, U64 bytes)
+    -> std::optional<ProcessRegion> {
+    const RegionArguments arguments{PolicySpan{image}, index, bytes};
+    ProcessRegion result{~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}};
+    bridge::region(&arguments, &result);
+    if (result.kind == 0)
+        return result.first || result.pages || result.flags || result.vaddr || result.offset || result.bytes
+                   ? std::nullopt
+                   : std::optional<ProcessRegion>{result};
+    constexpr U64 user_limit = U64{1} << 47;
+    if (result.kind > 3 || result.pages == 0 || result.first % 4096 || result.first >= user_limit ||
+        result.pages > (user_limit - result.first) / 4096 || result.vaddr < result.first ||
+        result.vaddr - result.first >= 4096 || result.bytes > result.pages * 4096 - (result.vaddr - result.first))
+        return std::nullopt;
+    const auto kind = static_cast<RegionKind>(result.kind);
+    if (kind == RegionKind::segment)
+        return (result.flags == leaf_read || result.flags == leaf_execute || result.flags == leaf_write) &&
+                       result.offset <= image.size() && result.bytes <= image.size() - result.offset
+                   ? std::optional<ProcessRegion>{result}
+                   : std::nullopt;
+    if (result.vaddr != result.first || result.offset != 0)
+        return std::nullopt;
+    if (kind == RegionKind::stack)
+        return result.flags == leaf_write && result.bytes == 0 ? std::optional<ProcessRegion>{result} : std::nullopt;
+    return result.flags == leaf_read && result.bytes == bytes ? std::optional<ProcessRegion>{result} : std::nullopt;
+}
+[[nodiscard]] inline auto elf_entry(std::span<const std::byte> image) -> U64 {
+    const VolumeArguments arguments{PolicySpan{image}};
+    return bridge::elf_entry(&arguments);
+}
+[[nodiscard]] inline auto trap(const ProcessTrap &frame) -> std::optional<TrapClass> {
+    return verdict<TrapClass, 15>(bridge::trap(&frame));
+}
+// A decoded kernel call in its closed encoding, or nullopt.
+[[nodiscard]] inline auto call(U64 operation, U64 first, U64 second, U64 third) -> std::optional<KernelCall> {
+    const CallArguments arguments{operation, first, second, third};
+    KernelCall result{~U64{0}, ~U64{0}, ~U64{0}};
+    bridge::call(&arguments, &result);
+    const auto action = static_cast<CallAction>(result.action);
+    if ((action == CallAction::invalid && result.value == 0 && result.length == 0) ||
+        (action == CallAction::exit && result.value <= 255 && result.length == 0) ||
+        (action == CallAction::print && (result.value == 1 || result.value == 2) && result.length <= 65536) ||
+        (action == CallAction::read && result.value == ~U64{0} && result.length == 0))
+        return result;
+    return std::nullopt;
+}
+[[nodiscard]] inline auto runs_admit(std::span<const std::byte> runs) -> std::optional<RunsVerdict> {
+    const VolumeArguments arguments{PolicySpan{runs}};
+    return verdict<RunsVerdict, 10>(bridge::runs_admit(&arguments));
+}
+// The index-th run of an admitted list (found 0 past the last), or nullopt.
+[[nodiscard]] inline auto run(std::span<const std::byte> runs, U64 index) -> std::optional<RunEntry> {
+    const EntryArguments arguments{PolicySpan{runs}, index};
+    RunEntry result{~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}};
+    bridge::run(&arguments, &result);
+    if (result.found == 0)
+        return result.ticks || result.flags || result.path || result.path_bytes || result.arguments ||
+                       result.argument_bytes
+                   ? std::nullopt
+                   : std::optional<RunEntry>{result};
+    if (result.found != 1 || result.ticks == 0 || result.ticks > 128 || result.flags > 3 || result.path_bytes == 0 ||
+        result.path_bytes > 255 || result.argument_bytes == 0 || result.argument_bytes > 65536 ||
+        result.path > runs.size() || result.path_bytes > runs.size() - result.path ||
+        result.arguments != result.path + result.path_bytes || result.argument_bytes > runs.size() - result.arguments)
+        return std::nullopt;
+    return result;
 }
 } // namespace aurora::uefi::process

@@ -481,6 +481,19 @@ test('kernel-process-volumes', python,
      args: ['-B', golden_runner, files('kernel-process/volumes.golden'), '--', kernel_process, 'volumes',
             process_volume_cases],
      depends: process_volume_cases, suite: ['full', 'merge', 'dev'], timeout: 60)
+# Programs (ELF admission, layout and regions), run lists and process events.
+process_program_cases = custom_target('process-program-cases', input: 'kernel-process/programs.cases',
+    output: 'process-programs.bin', depend_files: files('../scripts/kernel_volume.py'),
+    command: [python, '-B', files('../scripts/kernel_volume.py'), '--cases', '@INPUT@',
+              '--root', meson.project_source_root(), '--output', '@OUTPUT@'])
+test('kernel-process-programs', python,
+     args: ['-B', golden_runner, files('kernel-process/programs.golden'), '--', kernel_process, 'volumes',
+            process_program_cases],
+     depends: process_program_cases, suite: ['full', 'merge', 'dev'], timeout: 60)
+test('kernel-process-events', python,
+     args: ['-B', golden_runner, files('kernel-process/events.golden'), '--', kernel_process, 'events',
+            files('kernel-process/events.cases')],
+     suite: ['full', 'merge', 'dev'], timeout: 60)
 font_glyphs_object = custom_target('font-glyphs-module',
     input: 'kernel-programs/font-glyphs.au', output: 'font-glyphs.o', depfile: 'font-glyphs.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',

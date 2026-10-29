@@ -118,6 +118,15 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     for (auto &byte : span(arena, Handoff::arena_bytes))
         byte = std::byte{0};
 #ifdef AURORA_PROCESS_FIXTURE
+    // The case word names the row's run list in the volume (process.md#guest-rows).
+    const auto selected_case = aurora::uefi::fw_cfg::FwCfg::read_case();
+    if (!selected_case)
+        fail("process case selector");
+    if (*selected_case) {
+        Serial::text("AURORA_PROCESS_CASE_SELECTED: value=");
+        Serial::number(*selected_case);
+        Serial::text("\r\n");
+    }
     const auto volume =
         aurora::uefi::VolumeLoader::read(boot, image, aurora::uefi::loader_fixture::volume_path(*selected));
     if (!volume)
@@ -288,9 +297,10 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     put(handoff, Handoff::framebuffer_word, arena + Handoff::framebuffer_record_offset);
 #endif
 #ifdef AURORA_PROCESS_FIXTURE
-    put(handoff, 8, 8, 4);
+    put(handoff, 8, 9, 4);
     put(handoff, Handoff::volume_word, volume->address);
     put(handoff, Handoff::volume_bytes_word, volume->bytes);
+    put(handoff, Handoff::case_word, *selected_case);
 #endif
     put(handoff, 16, Handoff::arena_bytes);
     put(handoff, 24, arena);
@@ -318,7 +328,8 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
 #ifdef AURORA_UEFI_ACPI
     if (acpi && !tables.prepare_window())
         fail("firmware window tables");
-#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||   \
+    defined(AURORA_PROCESS_FIXTURE)
     if (acpi && !tables.prepare_interrupts())
         fail("interrupt tables");
 #endif

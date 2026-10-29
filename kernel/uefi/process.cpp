@@ -1,17 +1,28 @@
 #include "process.hpp"
-#include "kernel-space.hpp"
+#include "acpi.hpp"
+#include "apic-timer-io.hpp"
+#include "budget-transport.hpp"
+#include "process-space.hpp"
 #include "../console.hpp"
 
 using aurora::hardware::Serial;
 using U64 = std::uint64_t;
 namespace frames = aurora::uefi::frames;
 namespace process = aurora::uefi::process;
+using aurora::BootstrapLayout;
+using aurora::uefi::Bytes;
+using aurora::uefi::Handoff;
+using aurora::uefi::KernelSpace;
+using aurora::uefi::PageTables;
+using aurora::uefi::ProcessSpace;
+using Timer = aurora::uefi::LocalApicTimerIo;
 
 namespace {
 // Each table is far larger than the kernel stack; one boot owns one of each.
 constinit frames::Ranges ranges;
 constinit aurora::uefi::KernelSpace space;
 constinit frames::Table table;
+constinit ProcessSpace::Shared shared;
 // The probe's owner; owners below frames::first_owner are kernel uses.
 constexpr U64 probe_owner = frames::first_owner;
 constexpr std::string_view exported = "examples/host-sort.au";
@@ -23,6 +34,12 @@ constexpr char grant_names[] = "granted map bounds arena uncovered";
 constexpr char volume_names[] =
     "valid truncated limit magic version header count layout reserved checksum padding flags name path order data "
     "nesting";
+constexpr char elf_names[] = "valid truncated magic format type machine header segment interpreter dynamic tls stack "
+                             "permissions writable_executable alignment file memory address overlap entry empty";
+constexpr char layout_names[] = "valid image kernel arguments";
+constexpr char trap_names[] = "kernel timer call system_call invalid_opcode stack_guard page_fault protection divide "
+                              "debug breakpoint overflow bound fpu alignment simd";
+constexpr char runs_names[] = "valid truncated magic version count ticks path arguments flags padding trailing";
 auto name(std::string_view names, U64 index) -> std::string_view {
     std::size_t begin = 0, end = 0;
     for (U64 word = 0; word <= index; ++word) {
@@ -188,7 +205,518 @@ auto export_entry(std::span<const std::byte> volume, std::string_view path) -> v
 }
 } // namespace
 
+// The process entry, exit and drain (process-user.S).
+extern U64 process_kernel_root asm("uefi_process_kernel_root") __attribute__((visibility("hidden")));
+extern const std::byte drain_begin asm("uefi_process_drain_begin") __attribute__((visibility("hidden")));
+extern const std::byte drain_end asm("uefi_process_drain_end") __attribute__((visibility("hidden")));
+auto process_enter(const U64 *) -> U64 asm("uefi_process_enter") __attribute__((visibility("hidden")));
+auto process_handler(U64) -> U64 asm("uefi_process_handler") __attribute__((visibility("hidden")));
+auto process_drain() -> void asm("uefi_process_drain") __attribute__((visibility("hidden")));
+
+// Processes (process.md#processes). One process runs at a time; the dispatcher
+// below reaches it through these words, which only the kernel writes.
+namespace {
+constexpr U64 tick_count = U64{1} << 24;
+// The interrupt frame: 15 saved registers (R15 first, RAX last), the vector and
+// error code, then the CPU's RIP, CS, RFLAGS, RSP and SS.
+constexpr std::size_t frame_words = BootstrapLayout::fault_frame_words, frame_rax = 14, frame_rdi = 8, frame_rsi = 9,
+                      frame_rdx = 11, frame_rip = 17;
+class Running final {
+public:
+    ProcessSpace *space = nullptr;
+    U64 run = 0, flags = 0, initial = 0, remaining = 0, used = 0, calls = 0;
+};
+// How the process ended, copied from its last kernel entry.
+class Outcome final {
+public:
+    bool exited = false, watchdog = false, invalid_call = false;
+    process::TrapClass trap = process::TrapClass::kernel;
+    U64 status = 0, vector = 0, error = 0, rip = 0, cr2 = 0, operation = 0;
+};
+constinit Running running;
+constinit Outcome outcome;
+constinit U64 owned_arena = 0, kernel_root = 0;
+constinit bool draining = false;
+
+auto root() -> U64 {
+    U64 value;
+    asm volatile("mov %%cr3, %0" : "=r"(value));
+    return value;
+}
+auto read_msr(std::uint32_t index) -> U64 {
+    std::uint32_t low, high;
+    asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(index));
+    return (U64{high} << 32) | low;
+}
+auto write_msr(std::uint32_t index, U64 value) -> void {
+    asm volatile("wrmsr"
+                 :
+                 : "a"(static_cast<std::uint32_t>(value)), "d"(static_cast<std::uint32_t>(value >> 32)), "c"(index)
+                 : "memory");
+}
+auto store(U64 address, U64 value, unsigned width) -> void {
+    for (unsigned i = 0; i < width; ++i)
+        *reinterpret_cast<volatile std::uint8_t *>(address + i) = static_cast<std::uint8_t>(value >> (8 * i));
+}
+
+// A fault without a verified process frame stops the machine.
+[[noreturn]] auto kernel_fault(U64 vector, U64 error, U64 rip, U64 cs) -> void {
+    U64 cr2;
+    asm volatile("mov %%cr2, %0" : "=r"(cr2));
+    Serial::text("AURORA_PROCESS_KERNEL_FAULT:");
+    field("vector", vector);
+    field("error", error);
+    field("rip", rip);
+    field("cs", cs);
+    field("cr2", cr2);
+    Serial::text("\r\n");
+    fail("kernel fault");
+}
+
+// The LAPIC one-shot timer the watchdog charges, admitted against the copied
+// MADT, the final map and the CPU like the other timed images (console.cpp),
+// while the boot verifier still covers the whole kernel tree.
+auto establish_timer(U64 arena, const Bytes &h) -> void {
+    if (!Timer::irq_off() || root() != h.get(88) || !aurora::uefi::discovered_timer_topology())
+        fail("timer discovery");
+    std::uint32_t a, b, c, d;
+    asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
+    const auto leaf_ebx = b, leaf_edx = d;
+    asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0x80000008U), "c"(0));
+    const auto admitted = aurora::uefi::LocalApicAdmission::authorize(
+        *aurora::uefi::discovered_timer_topology(),
+        std::span<const std::byte>{reinterpret_cast<const std::byte *>(arena + Handoff::map_offset), h.get(32)},
+        h.get(40),
+        static_cast<std::uint32_t>(h.get(48, 4)),
+        arena,
+        a & 255,
+        leaf_edx,
+        leaf_ebx,
+        read_msr(0x1b),
+        read_msr(0x277));
+    if (!admitted)
+        fail("timer aperture admission");
+    const PageTables tables{h.get(88), static_cast<std::size_t>(h.get(96))};
+    const auto slot = tables.interrupt_slot();
+    if (!slot || *slot)
+        fail("empty timer aperture");
+    *slot = aurora::uefi::LocalApicAdmission::physical_address | aurora::uefi::LocalApicAdmission::leaf_flags;
+    asm volatile("invlpg (%0)" : : "r"(aurora::uefi::LocalApicAdmission::virtual_address) : "memory");
+    if (!tables.verify(arena, h, &*admitted) || !admitted->matches_registers(Timer::read(0x20), Timer::read(0x30)) ||
+        !Timer::initialize(Timer::read(0x30)))
+        fail("private timer mapping");
+}
+
+// GDT with user segments, the TSS (RSP0 and the double-fault IST stack), the
+// process IDT (INT 0x83 alone at DPL 3), SYSCALL disabled and FPU use trapping.
+auto install_architecture(U64 arena) -> void {
+    const auto gdt = arena + BootstrapLayout::gdt_offset, tss = gdt + 256;
+    const U64 entries[] = {
+        0, 0x00af9b000000ffffULL, 0x00cf93000000ffffULL, 0x00affb000000ffffULL, 0x00cff3000000ffffULL};
+    for (unsigned i = 0; i < 5; ++i)
+        store(gdt + i * 8, entries[i], 8);
+    store(gdt + 40, 103ULL | ((tss & 0xffffff) << 16) | (0x89ULL << 40) | (((tss >> 24) & 255) << 56), 8);
+    store(gdt + 48, tss >> 32, 8);
+    for (U64 i = 0; i < 104; ++i)
+        store(tss + i, 0, 1);
+    store(tss + 4, arena + BootstrapLayout::rsp0_top, 8);
+    store(tss + 36, arena + BootstrapLayout::ist_top, 8);
+    store(tss + 102, 104, 2);
+    std::array<std::byte, 10> gdtr{};
+    aurora::uefi::put(gdtr, 0, 55, 2);
+    aurora::uefi::put(gdtr, 2, gdt);
+    asm volatile("lgdt %0" : : "m"(gdtr) : "memory");
+    const std::uint16_t selector = 0x28;
+    asm volatile("ltr %0" : : "r"(selector) : "memory");
+    for (unsigned vector = 0; vector < 256; ++vector) {
+        const auto target = process_handler(vector);
+        if (target < arena + Handoff::payload_offset ||
+            target >= arena + Handoff::payload_offset + Handoff::payload_limit)
+            fail("IDT target");
+        const auto gate = arena + Handoff::idt_offset + vector * 16;
+        store(gate, target, 2);
+        store(gate + 2, 8, 2);
+        store(gate + 4, vector == 8 ? 1 : 0, 1);
+        store(gate + 5, vector == 131 ? 0xee : 0x8e, 1);
+        store(gate + 6, target >> 16, 2);
+        store(gate + 8, target >> 32, 4);
+        store(gate + 12, 0, 4);
+    }
+    U64 cr0, cr4;
+    asm volatile("mov %%cr0, %0; mov %%cr4, %1" : "=r"(cr0), "=r"(cr4));
+    if (cr4 & ((1ULL << 7) | (1ULL << 12) | (1ULL << 16) | (1ULL << 17) | (1ULL << 18) | (1ULL << 20)))
+        fail("integer paging profile");
+    asm volatile("mov %0, %%cr0" : : "r"(cr0 | 8) : "memory");
+    // SYSCALL stays disabled (EFER.SCE clear), so a process's SYSCALL is #UD.
+    write_msr(0xc0000080, read_msr(0xc0000080) & ~U64{1});
+    for (const std::uint32_t base : {0xc0000100U, 0xc0000101U, 0xc0000102U})
+        write_msr(base, 0);
+    // SYSENTER (legal at CPL 3 on Intel-vendor CPUs) enters nowhere: its
+    // MSRs are zero, so it faults through the IDT like every other entry.
+    std::uint32_t a, b, c, d;
+    asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
+    if (d & (1U << 11))
+        for (const std::uint32_t msr : {0x174U, 0x175U, 0x176U}) {
+            write_msr(msr, 0);
+            if (read_msr(msr))
+                fail("inherited sysenter entry");
+        }
+    // No firmware breakpoint survives into a process.
+    asm volatile("mov %0, %%dr7" : : "r"(U64{0x400}) : "memory");
+    const auto efer = read_msr(0xc0000080);
+    if ((efer & 1) || !(efer & (1ULL << 11)) || (efer & (5ULL << 8)) != (5ULL << 8))
+        fail("process machine state");
+}
+
+// Root entries 256..511 and the page-directory entries of the arena's 2 MiB
+// slots in the boot-verified root, shared by every process root.
+auto capture_shared(U64 arena) -> void {
+    const auto *top = reinterpret_cast<const volatile U64 *>(kernel_root);
+    for (U64 slot = 256; slot < 512; ++slot)
+        shared.upper[slot - 256] = top[slot];
+    // Every slot the arena spans is reserved; only those holding mapped
+    // arena pages have a page table to share.
+    const U64 first = arena & ~(ProcessSpace::slot_bytes - 1);
+    const U64 last = (arena + Handoff::arena_bytes - 1) & ~(ProcessSpace::slot_bytes - 1);
+    shared.reserved_first = first;
+    shared.reserved_end = last + ProcessSpace::slot_bytes;
+    for (auto slot = first; slot <= last; slot += ProcessSpace::slot_bytes) {
+        U64 table_page = kernel_root, entry = 0;
+        for (const unsigned at : {39U, 30U, 21U}) {
+            entry = reinterpret_cast<const volatile U64 *>(table_page)[(slot >> at) & 511];
+            if (!entry)
+                break;
+            if ((entry & ~KernelSpace::address_mask & ~ProcessSpace::hardware_bits) != 3)
+                fail("shared kernel slots");
+            table_page = entry & KernelSpace::address_mask;
+        }
+        if (!entry)
+            continue;
+        shared.slot[shared.slots] = slot;
+        shared.entry[shared.slots++] = entry & ~ProcessSpace::hardware_bits;
+    }
+    if (!shared.slots)
+        fail("shared kernel slots");
+}
+
+// Base64 records of one print, read under the process root (process.md#output).
+auto print_stream(U64 stream, U64 buffer, U64 length) -> void {
+    Serial::text(stream == 1 ? "AURORA_STDOUT:" : "AURORA_STDERR:");
+    field("run", running.run);
+    Serial::text(" ");
+    const std::span<const std::byte> bytes{reinterpret_cast<const std::byte *>(buffer), length};
+    for (U64 offset = 0; offset < length; offset += 3) {
+        const auto group = process::base64_group(bytes, offset);
+        if (!group)
+            fail("output encoding");
+        for (unsigned i = 0; i < 4; ++i)
+            Serial::put(static_cast<std::uint8_t>(*group >> (8 * i)));
+    }
+    Serial::text("\r\n");
+}
+
+// The watchdog budget after one charged interrupt: resume, or end the process.
+auto charge_tick(U64 vector, U64 error, U64 rip, U64 cs) -> U64 {
+    if (!Timer::acknowledge())
+        kernel_fault(vector, error, rip, cs);
+    const auto encoded = aurora::uefi::language_budget_tick(running.initial, running.remaining, running.used);
+    const auto next = aurora::uefi::BudgetTransition::decode(encoded, running.initial, running.remaining, running.used);
+    if (!next)
+        fail("Aurora budget transition");
+    running.remaining = next->remaining();
+    running.used = next->used();
+    if (next->resume()) {
+        if (!Timer::arm(tick_count))
+            fail("watchdog rearm");
+        return 0;
+    }
+    outcome.watchdog = true;
+    return 1;
+}
+
+// One kernel call: 0 resumes the process with RAX set, 1 ends it.
+auto kernel_call(volatile U64 *frame) -> U64 {
+    const auto decoded = process::call(frame[frame_rax], frame[frame_rdi], frame[frame_rsi], frame[frame_rdx]);
+    if (!decoded)
+        fail("Aurora kernel call decision");
+    // Fixture: fault in the kernel during the run's first call (process.md#guest-rows).
+    if ((running.flags & 1) && running.calls++ == 0)
+        static_cast<void>(*reinterpret_cast<volatile U64 *>(KernelSpace::window_base + frames::page));
+    const auto action = static_cast<process::CallAction>(decoded->action);
+    if (action == process::CallAction::exit) {
+        outcome.exited = true;
+        outcome.status = decoded->value;
+        return 1;
+    }
+    if (action == process::CallAction::print && running.space->contains(frame[frame_rsi], decoded->length)) {
+        print_stream(decoded->value, frame[frame_rsi], decoded->length);
+        frame[frame_rax] = 0;
+        return 0;
+    }
+    if (action == process::CallAction::read) {
+        frame[frame_rax] = decoded->value;
+        return 0;
+    }
+    outcome.invalid_call = true;
+    outcome.operation = frame[frame_rax];
+    outcome.rip = frame[frame_rip];
+    return 1;
+}
+} // namespace
+
+// Every trap, interrupt and kernel call (kernel/exceptions.S). A process's own
+// frame is the exact RSP0 frame under its root, which the Aurora policy then
+// verifies; it ends only that process (result 1) or resumes it (0). The timer
+// drain is the one kernel-mode interrupt admitted; anything else stops.
+auto dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("aurora_exception_dispatch")
+    __attribute__((visibility("hidden")));
+auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
+    const auto begin = reinterpret_cast<U64>(&drain_begin), end = reinterpret_cast<U64>(&drain_end);
+    if (vector == 64 && cs == 8 && draining && rip >= begin && rip <= end && root() == kernel_root &&
+        frame >= owned_arena + Handoff::stack_bottom && frame < owned_arena + Handoff::stack_top) {
+        if (!Timer::acknowledge())
+            kernel_fault(vector, error, rip, cs);
+        draining = false;
+        return 0;
+    }
+    if (!running.space || (cs & 3) != 3 || frame != owned_arena + BootstrapLayout::rsp0_top - frame_words * 8 ||
+        root() != running.space->root())
+        kernel_fault(vector, error, rip, cs);
+    auto *words = reinterpret_cast<volatile U64 *>(frame);
+    process::ProcessTrap trap{vector, error, words[17], words[18], words[19], words[20], words[21], 0, 0x10000};
+    if (vector == 14)
+        asm volatile("mov %%cr2, %0" : "=r"(trap.cr2));
+    if (vector == 6 && running.space->executable(trap.rip, 2))
+        trap.opcode = *reinterpret_cast<const volatile std::uint8_t *>(trap.rip) |
+                      (U64{*reinterpret_cast<const volatile std::uint8_t *>(trap.rip + 1)} << 8);
+    const auto kind = process::trap(trap);
+    if (!kind || *kind == process::TrapClass::kernel)
+        kernel_fault(vector, error, rip, cs);
+    if (*kind == process::TrapClass::timer)
+        return charge_tick(vector, error, rip, cs);
+    if (*kind == process::TrapClass::call)
+        return kernel_call(words);
+    outcome.trap = *kind;
+    outcome.vector = vector;
+    outcome.error = error;
+    outcome.rip = trap.rip;
+    outcome.cr2 = trap.cr2;
+    return 1;
+}
+
+namespace {
+auto end_record(U64 run) -> void {
+    Serial::text("AURORA_PROCESS_END:");
+    field("run", run);
+    if (outcome.exited) {
+        Serial::text(" reason=exit");
+        field("status", outcome.status);
+    } else if (outcome.watchdog) {
+        Serial::text(" reason=watchdog");
+        field("ticks", running.used);
+    } else if (outcome.invalid_call) {
+        Serial::text(" reason=call");
+        field("operation", outcome.operation);
+        field("rip", outcome.rip);
+    } else {
+        Serial::text(" reason=");
+        Serial::text(name(trap_names, static_cast<U64>(outcome.trap)));
+        field("vector", outcome.vector);
+        field("error", outcome.error);
+        field("rip", outcome.rip);
+        field("cr2", outcome.cr2);
+    }
+    Serial::text("\r\n");
+}
+
+// Fixture: the load walk rejects each single-entry edit, each undone before
+// the next: a no-execute code leaf, a code leaf aliasing the argument page's
+// frame, an extra leaf after the argument block and a user bit on the shared
+// arena slot's entry.
+auto walk_cases(ProcessSpace &process_space, U64 code, U64 block, U64 run) -> void {
+    const auto code_leaf = process_space.entry(code, 1), block_leaf = process_space.entry(block, 1),
+               after_leaf = process_space.entry(block + frames::page, 1), slot = process_space.entry(shared.slot[0], 2);
+    if (!code_leaf || !block_leaf || !after_leaf || !slot)
+        fail("walk probe entries");
+    const auto value = [&](const ProcessSpace::Slot &at) {
+        auto *words = space.open(at.table);
+        const auto result = words ? reinterpret_cast<volatile U64 *>(words)[at.slot] : 0;
+        if (words)
+            space.close();
+        return result;
+    };
+    const auto set = [&](const ProcessSpace::Slot &at, U64 word) {
+        auto *words = space.open(at.table);
+        if (!words)
+            fail("walk probe window");
+        reinterpret_cast<volatile U64 *>(words)[at.slot] = word;
+        space.close();
+    };
+    const auto code_word = value(*code_leaf), block_word = value(*block_leaf), slot_word = value(*slot);
+    class Edit final {
+    public:
+        ProcessSpace::Slot at;
+        U64 before, after;
+    };
+    const Edit edits[] = {
+        {*code_leaf, code_word, code_word | PageTables::nx},
+        {*code_leaf, code_word, (block_word & KernelSpace::address_mask) | (code_word & ~KernelSpace::address_mask)},
+        {*after_leaf, value(*after_leaf), block_word},
+        {*slot, slot_word, slot_word | 4},
+    };
+    U64 rejected = 0;
+    for (const auto &edit : edits) {
+        set(edit.at, edit.after);
+        rejected += !process_space.verify();
+        set(edit.at, edit.before);
+    }
+    if (rejected != 4 || !process_space.verify())
+        fail("process walk edit admitted");
+    Serial::text("AURORA_PROCESS_WALK_OK:");
+    field("run", run);
+    field("rejected", rejected);
+    Serial::text("\r\n");
+}
+
+auto refuse(U64 run, std::string_view reason) -> void {
+    Serial::text("AURORA_PROCESS_REJECTED:");
+    field("run", run);
+    Serial::text(" reason=");
+    Serial::text(reason);
+    Serial::text("\r\n");
+}
+
+// Load, run and release one process of the run list.
+auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, const process::RunEntry &entry, U64 run)
+    -> void {
+    const auto path = runs.subspan(entry.path, entry.path_bytes);
+    const auto arguments = runs.subspan(entry.arguments, entry.argument_bytes);
+    Serial::text("AURORA_PROCESS_RUN:");
+    field("run", run);
+    Serial::text(" path=");
+    for (const auto byte : path)
+        Serial::put(std::to_integer<std::uint8_t>(byte));
+    field("ticks", entry.ticks);
+    Serial::text("\r\n");
+    const auto image = process::volume_lookup(view, path);
+    if (!image)
+        return refuse(run, "missing");
+    const auto admitted = process::elf_admit(*image);
+    if (!admitted)
+        fail("Aurora ELF admission");
+    if (*admitted != process::ElfVerdict::valid)
+        return refuse(run, name(elf_names, static_cast<U64>(*admitted)));
+    const auto layout = process::layout(*image, shared.reserved_first, shared.reserved_end, arguments.size());
+    if (!layout)
+        fail("Aurora process layout");
+    if (*layout != process::LayoutVerdict::valid)
+        return refuse(run, name(layout_names, static_cast<U64>(*layout)));
+    ProcessSpace process_space{
+        space, table, ranges, space.mappings(ranges.frames()), shared, frames::first_owner + run};
+    if (!process_space.begin())
+        fail("process root");
+    U64 regions = 0, stack_top = 0, block = 0;
+    for (;; ++regions) {
+        const auto region = process::region(*image, regions, arguments.size());
+        if (!region)
+            fail("Aurora process region");
+        const auto kind = static_cast<process::RegionKind>(region->kind);
+        if (kind == process::RegionKind::none)
+            break;
+        if (kind == process::RegionKind::stack)
+            stack_top = region->first + region->pages * frames::page;
+        if (kind == process::RegionKind::arguments)
+            block = region->first;
+        if (!process_space.map(*region,
+                               kind == process::RegionKind::segment     ? *image
+                               : kind == process::RegionKind::arguments ? arguments
+                                                                        : std::span<const std::byte>{}))
+            fail("process mapping");
+    }
+    const auto entry_point = process::elf_entry(*image);
+    if (!stack_top || !block || !process_space.executable(entry_point, 1) || !process_space.verify())
+        fail("process load walk");
+    if (entry.flags & 2)
+        walk_cases(process_space, entry_point, block, run);
+    Serial::text("AURORA_PROCESS_LOADED:");
+    field("run", run);
+    field("regions", regions);
+    field("pages", process_space.leaves());
+    field("tables", process_space.tables());
+    Serial::text("\r\n");
+    // The initial stack ends in a zero qword for programs that read one.
+    const U64 context[] = {entry_point, stack_top - 16, block, arguments.size(), process_space.root()};
+    running = Running{&process_space, run, entry.flags, entry.ticks, entry.ticks, 0, 0};
+    outcome = Outcome{};
+    if (!Timer::arm(tick_count))
+        fail("watchdog arm");
+    if (process_enter(context) != 1 || root() != kernel_root || !Timer::stop())
+        fail("process exit");
+    running.space = nullptr;
+    if (Timer::pending()) {
+        draining = true;
+        process_drain();
+    }
+    if (draining || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
+        fail("timer drain");
+    end_record(run);
+    if (!process_space.verify())
+        fail("process exit walk");
+    const auto released = process_space.release();
+    const auto audit = table.audit();
+    if (!released || !audit.consistent || audit.allocated)
+        fail("process release");
+    Serial::text("AURORA_PROCESS_RELEASED:");
+    field("run", run);
+    field("frames", *released);
+    Serial::text("\r\n");
+}
+
+// The row's run list, runs/<case> in the volume, run in order.
+[[noreturn]] auto run_list(U64 arena, std::span<const std::byte> view, U64 selected) -> void {
+    char path[] = "runs/000";
+    std::size_t length = 5;
+    for (U64 scale = 100; scale; scale /= 10)
+        if (selected >= scale || scale == 1)
+            path[length++] = static_cast<char>('0' + selected / scale % 10);
+    const auto runs = process::volume_lookup(view, bytes_of({path, length}));
+    if (!runs)
+        fail("run list lookup");
+    const auto verdict = process::runs_admit(*runs);
+    if (verdict != process::RunsVerdict::valid) {
+        Serial::text("AURORA_PROCESS_RUNS_REJECTED: reason=");
+        Serial::text(verdict ? name(runs_names, static_cast<U64>(*verdict)) : "malformed");
+        Serial::text("\r\n");
+        fail("run list admission");
+    }
+    install_architecture(arena);
+    capture_shared(arena);
+    process_kernel_root = kernel_root;
+    U64 count = 0;
+    for (;; ++count) {
+        const auto entry = process::run(*runs, count);
+        if (!entry)
+            fail("Aurora run entry");
+        if (!entry->found)
+            break;
+        run_one(view, *runs, *entry, count + 1);
+    }
+    Serial::text("AURORA_PROCESS_RUNS_OK:");
+    field("runs", count);
+    field("free", table.free());
+    Serial::text("\r\n");
+    aurora::hardware::Io::write(0xf4, 0x10);
+    for (;;)
+        asm volatile("cli; hlt");
+}
+} // namespace
+
 auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
+    owned_arena = arena;
+    kernel_root = h.get(88);
+    const auto selected = h.get(Handoff::case_word);
+    if (selected)
+        establish_timer(arena, h);
     const auto map =
         std::span<const std::byte>{reinterpret_cast<const std::byte *>(arena + Handoff::map_offset), h.get(32)};
     const auto volume = h.get(Handoff::volume_word), bytes = h.get(Handoff::volume_bytes_word);
@@ -225,10 +753,12 @@ auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
     if (!plan || !space.bind(arena + Handoff::tables_offset, tables.window_slot()) ||
         !space.build(ranges, *plan, volume))
         fail("kernel space");
-    const auto records = space.metadata(ranges.frames());
+    const auto records = space.metadata(ranges.frames()), mappings = space.mappings(ranges.frames());
     for (auto &record : records)
         record = 0;
-    if (records.empty() || !table.bind(records, ranges, plan->tables, plan->metadata))
+    for (auto &mapping : mappings)
+        mapping = 0;
+    if (records.empty() || mappings.empty() || !table.bind(records, ranges, plan->tables, plan->metadata))
         fail("frame table");
     if (!space.verify(table, ranges, h.get(96)))
         fail("kernel space walk");
@@ -251,6 +781,8 @@ auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
     field("bytes", bytes);
     field("pages", volume_pages);
     Serial::text("\r\n");
+    if (selected)
+        run_list(arena, view, selected);
     frame_cases(h.get(96));
     space_cases(*plan, h.get(96));
     export_entry(view, exported);

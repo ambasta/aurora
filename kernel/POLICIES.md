@@ -413,5 +413,8 @@ Com1UartGrant primitive has exactly one device effect; a timeout never retries o
 `kernel.memory_map`, `kernel.frames`, `kernel.boot_volume` and `kernel.export_text`
 admit the final memory map and boot volume, decide frame-record transitions and
 encode export records over copied scalars and readonly spans the supervisor
-builds over its own mapped bytes. The contract, encodings and tests are in
+builds over its own mapped bytes. `kernel.elf`, `kernel.process_space`,
+`kernel.process_events` and `kernel.process_runs` admit program images and run
+lists, lay out a process's regions, classify its trap frames and decode its
+kernel calls; `kernel.interrupt_budget` charges its watchdog. The contract, encodings and tests are in
 [the process image](uefi/process.md).
