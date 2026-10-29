@@ -41,7 +41,8 @@ kernel_options = {
 profile_file = configure_file(
   input: ['../scripts/kernel_profiles.py', '../scripts/kernel_layout.py', '../kernel/bootstrap-layout-values.inc',
          '../kernel/uefi/image-page-policies.inc', '../kernel/uefi/runtime-fixtures.inc',
-         '../tests/host-files/memory.golden'],
+         '../tests/host-files/memory.golden', '../tests/host-files/cases.golden',
+         '../tests/host-files/limits.golden'],
   output: 'profile-data.ini',
   command: [python, '-B', '@INPUT0@', '--meson-output', '@OUTPUT@'])
 profile_data = import('keyval').load(profile_file)
@@ -56,7 +57,8 @@ image_check = files('../scripts/kernel_image_check.py')
 stack_check = files('../scripts/kernel_stack_check.py')
 image_policy = files('image-policy.py')
 check_dependencies = files('../scripts/kernel_elf.py')
-volume_writer = files('../scripts/kernel_volume.py')
+# The writer, and the HostFiles cases' tree it copies (--host-files-tree).
+volume_writer = files('../scripts/kernel_volume.py', '../tests/host_files.py')
 stack_limit = profile_data['layout.stack_cap']
 foreach profile_id : profile_data['profiles'].split('|')
   key = 'profiles.' + profile_id
@@ -433,7 +435,7 @@ foreach profile_id : profile_data['profiles'].split('|')
         esp_files += [custom_target(prefix + '-esp-' + name, output: name,
           build_subdir: output_subdir / 'esp/aurora', depend_files: [volume_writer] + volume_inputs,
           depends: volume_programs,
-          command: [python, '-B', volume_writer, '--root', kernel_source, '--output', '@OUTPUT@'] + volume_words)]
+          command: [python, '-B', volume_writer[0], '--root', kernel_source, '--output', '@OUTPUT@'] + volume_words)]
       endforeach
     endif
   endif

@@ -1,0 +1,1021 @@
+export module kernel.process_files;
+import std.binary;
+import kernel.boot_volume;
+
+// The file service of a process (kernel/uefi/process.md#files): the HostFiles
+// operations over the immutable boot volume and the run's in-memory overlay
+// of committed outputs, with the Linux binding's semantics
+// (runtime/linux/aurora/host.au, compiler/SERVICES.md#hosted-files). These
+// decisions resolve and confine paths, choose handle and output slots and
+// their ids, decide the overlay's directory changes and the status of every
+// operation; the supervisor stores the tables and the overlay records, copies
+// the bytes and holds the data frames, and applies a decision only in its
+// closed shape.
+//
+// The process sees one tree: the volume root is "/" and the working
+// directory. Volume entries are files; a directory is a path prefix of some
+// entry (the volume admits no path that is also another's directory), named
+// (first, depth) by the index of the first entry beneath it and its number of
+// components, the root (0, 0). Overlay files live in volume directories and
+// shadow a volume file of the same name. Identities: the volume is device 1
+// (a file's inode its index + 1, a directory's 65536 + first * 256 + depth),
+// the overlay device 2 (inodes from 1 in commit order, never reused in a
+// run). Ids are generation * 64 + slot + 1 as on Linux: handles in slots
+// 0..31, outputs in 32..35; a slot's generation advances on every claim, so
+// an id is never reused within a run.
+//
+// Supervisor layouts (little-endian words): the table holds 32 handles of 32
+// bytes (state 0 free, 1 directory, 2 volume file, 3 overlay file; generation;
+// target: a directory's first entry, a volume file's index or an overlay
+// record; a directory's depth or a file's size), then at 1024 four outputs of
+// 64 bytes (state 0 free, 1 open, 2 failed; generation; overlay record; bytes
+// written), then at 1280 the last overlay inode. The overlay holds 64 records
+// of 320 bytes (state 0 free, 1 pending (an output's bytes), 2 linked, 3
+// unlinked while open; directory first and depth; leaf length; size; inode;
+// open handles; a reserved word; then the leaf bytes).
+export namespace kernel {
+    // The HostStatus ordinals, which the kernel returns negated.
+    enum class FileStatus {
+        success,
+        invalid_handle,
+        not_found,
+        denied,
+        escape,
+        not_regular,
+        exhausted,
+        too_large,
+        invalid_path,
+        failed
+    };
+
+    // A path's resolution: a directory (first, depth), a volume file (target
+    // its index), an overlay file (target its record), the last component
+    // absent beneath directory (first, depth) with its leaf bytes, an earlier
+    // component missing, a file used as a directory or a component above 255
+    // bytes. The Linux errors are ENOENT, ENOENT, ENOTDIR and ENAMETOOLONG.
+    enum class PathKind {
+        directory,
+        volume_file,
+        overlay_file,
+        absent,
+        missing,
+        not_directory,
+        too_long
+    };
+
+    class Resolution {
+    public:
+        PathKind kind;
+        u64 first;
+        u64 depth;
+        u64 target;
+        u64 leaf;
+        u64 leaf_length;
+    };
+
+    // An open: the handle slot it claims with its generation and id, the
+    // handle's kind, target and depth or size, and the identity.
+    class FileOpen {
+    public:
+        FileStatus status;
+        u64 slot;
+        u64 generation;
+        u64 id;
+        u64 kind;
+        u64 target;
+        u64 extent;
+        u64 size;
+        u64 device;
+        u64 inode;
+    };
+
+    // A creation: the output slot and pending overlay record it claims, the
+    // destination's directory and leaf (bytes of the path), and the existing
+    // destination's and the directory's identities.
+    class FileCreate {
+    public:
+        FileStatus status;
+        u64 slot;
+        u64 generation;
+        u64 id;
+        u64 file;
+        u64 first;
+        u64 depth;
+        u64 leaf;
+        u64 leaf_length;
+        u64 device;
+        u64 inode;
+        u64 directory_device;
+        u64 directory_inode;
+    };
+
+    // A read: count bytes at offset of a volume file (kind 2, target its
+    // index) or an overlay record (kind 3).
+    class FileRead {
+    public:
+        FileStatus status;
+        u64 kind;
+        u64 target;
+        u64 offset;
+        u64 count;
+    };
+
+    // Changes to one slot: slot + 1 (0 for none), the overlay record + 1 it
+    // releases a reference to or holds (0 for none) and whether that record
+    // is freed; a write's new output state, frames to charge and size; a
+    // commit's replaced record + 1, that record's next state (0 freed, 3
+    // unlinked while open) and the new inode.
+    class FileChange {
+    public:
+        FileStatus status;
+        u64 slot;
+        u64 file;
+        u64 release;
+        u64 state;
+        u64 frames;
+        u64 size;
+        u64 replaced;
+        u64 inode;
+    };
+
+    auto handle_slots() -> u64 {
+        return 32u64;
+    }
+    auto output_slots() -> u64 {
+        return 4u64;
+    }
+    auto overlay_records() -> u64 {
+        return 64u64;
+    }
+    auto overlay_record_bytes() -> u64 {
+        return 320u64;
+    }
+    auto file_table_bytes() -> i64 {
+        return 1344;
+    }
+    auto path_limit() -> i64 {
+        return 4095;
+    }
+    auto leaf_limit() -> i64 {
+        return 255;
+    }
+    // Each output holds at most 64 MiB.
+    auto output_limit() -> u64 {
+        return 67108864u64;
+    }
+    auto chunk_bytes() -> u64 {
+        return 504u64;
+    }
+    auto volume_device() -> u64 {
+        return 1u64;
+    }
+    auto overlay_device() -> u64 {
+        return 2u64;
+    }
+    // Generations stay below 2^58, so every id fits a word.
+    auto id_generation_limit() -> u64 {
+        return 288230376151711744u64;
+    }
+
+    auto file_word(builtin::span<const u8> bytes, u64 offset) -> u64 {
+        if (offset > 1048576u64) {
+            return 0u64;
+        }
+        const std::ByteReadResult word = std::read_le64(bytes, i64(offset));
+        return word.value_or(0u64);
+    }
+    auto handle_word(builtin::span<const u8> table, u64 slot, u64 field) -> u64 {
+        return file_word(table, slot * 32u64 + field * 8u64);
+    }
+    auto output_word(builtin::span<const u8> table, u64 slot, u64 field) -> u64 {
+        return file_word(table, 1024u64 + slot * 64u64 + field * 8u64);
+    }
+    auto record_word(builtin::span<const u8> overlay, u64 record, u64 field) -> u64 {
+        return file_word(overlay, record * overlay_record_bytes() + field * 8u64);
+    }
+    auto make_id(u64 generation, u64 slot) -> u64 {
+        return generation * 64u64 + slot + 1u64;
+    }
+
+    // Volume names: an admitted volume's entry count and each name's bytes.
+    auto entry_count(builtin::span<const u8> volume) -> i64 {
+        const std::ByteReadResult half = std::read_le32(volume, 16);
+        const u64 count = half.value_or(0u64);
+        if (count > 4096u64 || volume.size() < 64 + i64(count) * 32) {
+            return 0;
+        }
+        return i64(count);
+    }
+    auto name_at(builtin::span<const u8> volume, i64 index) -> i64 {
+        const std::ByteReadResult offset = std::read_le64(volume, 64 + index * 32);
+        return 64 + entry_count(volume) * 32 + i64(offset.value_or(0u64) % 67108864u64);
+    }
+    auto name_bytes(builtin::span<const u8> volume, i64 index) -> i64 {
+        const std::ByteReadResult length = std::read_le32(volume, 64 + index * 32 + 8);
+        const i64 bytes = i64(length.value_or(0u64) % 256u64);
+        if (name_at(volume, index) + bytes > volume.size()) {
+            return 0;
+        }
+        return bytes;
+    }
+
+    // The bytes of directory (first, depth)'s path in entry first's name, or
+    // -1 when that name is not that deep.
+    auto directory_prefix(builtin::span<const u8> volume, u64 first, u64 depth) -> i64 {
+        if (depth == 0u64) {
+            return 0;
+        }
+        if (first >= u64(entry_count(volume))) {
+            return -1;
+        }
+        const i64 name = name_at(volume, i64(first));
+        const i64 length = name_bytes(volume, i64(first));
+        u64 seen = 0u64;
+        i64 at = 0;
+        while (at < length) {
+            if (volume.at(name + at) == '/') {
+                seen = seen + 1u64;
+                if (seen == depth) {
+                    return at;
+                }
+            }
+            at = at + 1;
+        }
+        return -1;
+    }
+
+    // A lookup key: directory first's path (prefix bytes of its name, name
+    // at base), then "/" when that is not the root, then the path's bytes
+    // [start, start + length), then "/" when slash.
+    class Key {
+    public:
+        i64 base;
+        i64 prefix;
+        i64 start;
+        i64 length;
+        bool slash;
+    };
+    auto key_bytes(Key key) -> i64 {
+        i64 bytes = key.prefix + key.length;
+        if (key.prefix > 0) {
+            bytes = bytes + 1;
+        }
+        if (key.slash) {
+            bytes = bytes + 1;
+        }
+        return bytes;
+    }
+    auto key_byte(builtin::span<const u8> volume, builtin::span<const u8> path, Key key, i64 at) -> u8 {
+        i64 offset = at;
+        if (key.prefix > 0) {
+            if (offset < key.prefix) {
+                return volume.at(key.base + offset);
+            }
+            if (offset == key.prefix) {
+                return '/';
+            }
+            offset = offset - key.prefix - 1;
+        }
+        if (offset < key.length) {
+            return path.at(key.start + offset);
+        }
+        return '/';
+    }
+    // -1, 0 or 1 for entry index's name against the key; with prefix, 0 when
+    // the name starts with the key and is longer.
+    auto compare_key(builtin::span<const u8> volume, builtin::span<const u8> path, Key key, i64 index,
+        bool prefix) -> i64 {
+        const i64 name = name_at(volume, index);
+        const i64 length = name_bytes(volume, index);
+        const i64 bytes = key_bytes(key);
+        i64 at = 0;
+        while (at < length && at < bytes) {
+            const u8 a = volume.at(name + at);
+            const u8 b = key_byte(volume, path, key, at);
+            if (a < b) {
+                return -1;
+            }
+            if (a > b) {
+                return 1;
+            }
+            at = at + 1;
+        }
+        if (length < bytes) {
+            return -1;
+        }
+        if (length > bytes && !prefix) {
+            return 1;
+        }
+        return 0;
+    }
+    // The first entry not before the key.
+    auto lower_bound(builtin::span<const u8> volume, builtin::span<const u8> path, Key key) -> i64 {
+        i64 low = 0;
+        i64 high = entry_count(volume);
+        while (low < high) {
+            const i64 middle = low + (high - low) / 2;
+            if (compare_key(volume, path, key, middle, false) < 0) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        return low;
+    }
+    auto directory_key(builtin::span<const u8> volume, u64 first, u64 depth, i64 start, i64 length, bool slash) -> Key {
+        i64 base = 0;
+        if (depth > 0u64) {
+            base = name_at(volume, i64(first));
+        }
+        const Key key = Key{
+            .base = base,
+            .prefix = directory_prefix(volume, first, depth),
+            .start = start,
+            .length = length,
+            .slash = slash
+        };
+        return key;
+    }
+    // The volume file named by the key, or -1.
+    auto volume_child(builtin::span<const u8> volume, builtin::span<const u8> path, Key key) -> i64 {
+        const i64 found = lower_bound(volume, path, key);
+        if (found < entry_count(volume) && compare_key(volume, path, key, found, false) == 0) {
+            return found;
+        }
+        return -1;
+    }
+    // The first entry beneath the key's directory (a key ending in "/"), or -1.
+    auto volume_directory(builtin::span<const u8> volume, builtin::span<const u8> path, Key key) -> i64 {
+        const i64 found = lower_bound(volume, path, key);
+        if (found < entry_count(volume) && compare_key(volume, path, key, found, true) == 0) {
+            return found;
+        }
+        return -1;
+    }
+
+    // The linked overlay record of leaf [start, start + length) of the path
+    // in directory (first, depth), or -1.
+    auto overlay_child(builtin::span<const u8> overlay, u64 first, u64 depth, builtin::span<const u8> path, i64 start,
+        i64 length) -> i64 {
+        u64 record = 0u64;
+        while (record < overlay_records()) {
+            if (record_word(overlay, record, 0u64) == 2u64 && record_word(overlay, record, 1u64) == first
+                && record_word(overlay, record, 2u64) == depth && record_word(overlay, record, 3u64) == u64(length)) {
+                const i64 leaf = i64(record * overlay_record_bytes()) + 64;
+                bool same = leaf + length <= overlay.size();
+                i64 at = 0;
+                while (same && at < length) {
+                    same = overlay.at(leaf + at) == path.at(start + at);
+                    at = at + 1;
+                }
+                if (same) {
+                    return i64(record);
+                }
+            }
+            record = record + 1u64;
+        }
+        return -1;
+    }
+
+    auto resolution(PathKind kind, u64 first, u64 depth, u64 target, i64 leaf, i64 length) -> Resolution {
+        const Resolution result = Resolution{
+            .kind = kind,
+            .first = first,
+            .depth = depth,
+            .target = target,
+            .leaf = u64(leaf),
+            .leaf_length = u64(length)
+        };
+        return result;
+    }
+
+    // Path bytes [leaf, leaf + leaf_length) of base resolved from its
+    // directory (first, depth), or from the root when they begin with "/". Components are walked in order as
+    // Linux walks them: an empty one or "." stays, ".." goes up (the root's
+    // parent is the root), anything else names a child: an overlay file,
+    // else a volume file, else a volume directory. No component may follow a
+    // file. The volume has no symlinks.
+    auto resolve(builtin::span<const u8> volume, builtin::span<const u8> overlay, builtin::span<const u8> path,
+        Resolution base) -> Resolution {
+        u64 first = base.first;
+        u64 depth = base.depth;
+        const i64 start = i64(base.leaf);
+        const i64 end = start + i64(base.leaf_length);
+        if (start < end && path.at(start) == '/') {
+            first = 0u64;
+            depth = 0u64;
+        }
+        u64 file = 0u64;
+        u64 target = 0u64;
+        i64 component = start;
+        i64 at = start;
+        while (at <= end) {
+            if (at == end || path.at(at) == '/') {
+                const i64 length = at - component;
+                if (file != 0u64) {
+                    const Resolution not_directory = resolution(PathKind::not_directory, 0u64, 0u64, 0u64, 0, 0);
+                    return not_directory;
+                }
+                if (length == 2 && path.at(component) == '.' && path.at(component + 1) == '.') {
+                    if (depth <= 1u64) {
+                        first = 0u64;
+                        depth = 0u64;
+                    } else {
+                        const Key parent = directory_key(volume, first, depth - 1u64, 0, 0, false);
+                        first = u64(lower_bound(volume, path, parent));
+                        depth = depth - 1u64;
+                    }
+                } else {
+                    if (length > leaf_limit()) {
+                        const Resolution too_long = resolution(PathKind::too_long, 0u64, 0u64, 0u64, 0, 0);
+                        return too_long;
+                    }
+                    if (length > 1 || (length == 1 && path.at(component) != '.')) {
+                        const i64 shadow = overlay_child(overlay, first, depth, path, component, length);
+                        const Key name = directory_key(volume, first, depth, component, length, false);
+                        const Key below = directory_key(volume, first, depth, component, length, true);
+                        if (name.prefix < 0) {
+                            const Resolution broken = resolution(PathKind::missing, 0u64, 0u64, 0u64, 0, 0);
+                            return broken;
+                        }
+                        const i64 child = volume_child(volume, path, name);
+                        const i64 directory = volume_directory(volume, path, below);
+                        if (shadow >= 0) {
+                            file = 3u64;
+                            target = u64(shadow);
+                        } else {
+                            if (child >= 0) {
+                                file = 2u64;
+                                target = u64(child);
+                            } else {
+                                if (directory >= 0) {
+                                    first = u64(directory);
+                                    depth = depth + 1u64;
+                                } else {
+                                    if (at == end) {
+                                        const Resolution absent = resolution(PathKind::absent, first, depth, 0u64,
+                                            component, length);
+                                        return absent;
+                                    }
+                                    const Resolution missing = resolution(PathKind::missing, 0u64, 0u64, 0u64, 0, 0);
+                                    return missing;
+                                }
+                            }
+                        }
+                    }
+                }
+                component = at + 1;
+            }
+            at = at + 1;
+        }
+        if (file == 2u64) {
+            const Resolution volume_file = resolution(PathKind::volume_file, 0u64, 0u64, target, 0, 0);
+            return volume_file;
+        }
+        if (file == 3u64) {
+            const Resolution overlay_file = resolution(PathKind::overlay_file, 0u64, 0u64, target, 0, 0);
+            return overlay_file;
+        }
+        const Resolution directory = resolution(PathKind::directory, first, depth, 0u64, 0, 0);
+        return directory;
+    }
+    auto directory_inode(u64 first, u64 depth) -> u64 {
+        return 65536u64 + first * 256u64 + depth;
+    }
+    // A volume file's size, or an overlay record's.
+    auto file_size(builtin::span<const u8> volume, builtin::span<const u8> overlay, Resolution file) -> u64 {
+        if (file.kind == PathKind::overlay_file) {
+            return record_word(overlay, file.target, 4u64);
+        }
+        const VolumeEntry entry = volume_entry(volume, i64(file.target));
+        return entry.size();
+    }
+    auto file_inode(builtin::span<const u8> overlay, Resolution file) -> u64 {
+        if (file.kind == PathKind::overlay_file) {
+            return record_word(overlay, file.target, 5u64);
+        }
+        return file.target + 1u64;
+    }
+    auto file_device(Resolution file) -> u64 {
+        if (file.kind == PathKind::overlay_file) {
+            return overlay_device();
+        }
+        return volume_device();
+    }
+
+    // 1..4095 bytes without NUL (host.au's valid_path).
+    auto valid_path(builtin::span<const u8> path) -> bool {
+        if (path.size() < 1 || path.size() > path_limit()) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < path.size()) {
+            if (path.at(at) == 0u8) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    // Absolute, or naming a ".." component (host.au's escapes).
+    auto escapes(builtin::span<const u8> path) -> bool {
+        if (path.at(0) == '/') {
+            return true;
+        }
+        i64 begin = 0;
+        i64 at = 0;
+        while (at <= path.size()) {
+            if (at == path.size() || path.at(at) == '/') {
+                if (at - begin == 2 && path.at(begin) == '.' && path.at(begin + 1) == '.') {
+                    return true;
+                }
+                begin = at + 1;
+            }
+            at = at + 1;
+        }
+        return false;
+    }
+    // A leaf in the outputs' reserved temporary namespace on Linux.
+    auto temporary_leaf(builtin::span<const u8> path, i64 begin) -> bool {
+        const array<u8, 15> prefix = ".aurora-output-";
+        const builtin::span<const u8> expected = borrow_bytes(prefix);
+        if (path.size() - begin < expected.size()) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < expected.size()) {
+            if (path.at(begin + at) != expected.at(at)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+
+    // The live handle slot of id whose state is in kinds (bit per state), or -1.
+    auto handle_slot(builtin::span<const u8> table, u64 id, u64 kinds) -> i64 {
+        if (id == 0u64) {
+            return -1;
+        }
+        const u64 slot = (id - 1u64) % 64u64;
+        const u64 state = handle_word(table, slot, 0u64);
+        if (slot >= handle_slots() || state == 0u64 || state > 3u64 || (kinds >> i64(state)) % 2u64 == 0u64
+            || handle_word(table, slot, 1u64) != (id - 1u64) / 64u64) {
+            return -1;
+        }
+        return i64(slot);
+    }
+    // The live output slot of id, or -1.
+    auto output_slot(builtin::span<const u8> table, u64 id) -> i64 {
+        if (id == 0u64) {
+            return -1;
+        }
+        const u64 number = (id - 1u64) % 64u64;
+        if (number < handle_slots() || number >= handle_slots() + output_slots()) {
+            return -1;
+        }
+        const u64 slot = number - handle_slots();
+        const u64 state = output_word(table, slot, 0u64);
+        if (state == 0u64 || state > 2u64 || output_word(table, slot, 1u64) != (id - 1u64) / 64u64) {
+            return -1;
+        }
+        return i64(slot);
+    }
+    // The first free handle slot whose next generation fits, or -1.
+    auto free_handle(builtin::span<const u8> table) -> i64 {
+        u64 slot = 0u64;
+        while (slot < handle_slots()) {
+            if (handle_word(table, slot, 0u64) == 0u64 && handle_word(table, slot, 1u64) + 1u64
+                < id_generation_limit()) {
+                return i64(slot);
+            }
+            slot = slot + 1u64;
+        }
+        return -1;
+    }
+    auto free_output(builtin::span<const u8> table) -> i64 {
+        u64 slot = 0u64;
+        while (slot < output_slots()) {
+            if (output_word(table, slot, 0u64) == 0u64 && output_word(table, slot, 1u64) + 1u64
+                < id_generation_limit()) {
+                return i64(slot);
+            }
+            slot = slot + 1u64;
+        }
+        return -1;
+    }
+    auto free_record(builtin::span<const u8> overlay) -> i64 {
+        u64 record = 0u64;
+        while (record < overlay_records()) {
+            if (record_word(overlay, record, 0u64) == 0u64) {
+                return i64(record);
+            }
+            record = record + 1u64;
+        }
+        return -1;
+    }
+
+    auto open_failure(FileStatus status) -> FileOpen {
+        const FileOpen result = FileOpen{
+            .status = status,
+            .slot = 0u64,
+            .generation = 0u64,
+            .id = 0u64,
+            .kind = 0u64,
+            .target = 0u64,
+            .extent = 0u64,
+            .size = 0u64,
+            .device = 0u64,
+            .inode = 0u64
+        };
+        return result;
+    }
+
+    // open_directory (operation 0, any path), open_beneath (1, beneath the
+    // directory handle) and open_file (2, a regular file at any path), in
+    // the Linux binding's order of checks: the directory handle, the path,
+    // escapes, a free handle, then the resolution. Linux's errors map as
+    // host.au maps them: ENOENT not_found; ENOTDIR not_regular for a
+    // directory and not_found for a file; ENAMETOOLONG invalid_path; a
+    // directory opened as a file (or a file as a directory) not_regular.
+    auto file_open(builtin::span<const u8> volume, builtin::span<const u8> overlay, builtin::span<const u8> table,
+        builtin::span<const u8> path, u64 operation, u64 directory) -> FileOpen {
+        if (operation > 2u64 || table.size() != file_table_bytes() || overlay.size() != i64(overlay_records()
+            * overlay_record_bytes())) {
+            const FileOpen malformed = open_failure(FileStatus::failed);
+            return malformed;
+        }
+        u64 first = 0u64;
+        u64 depth = 0u64;
+        if (operation == 1u64) {
+            const i64 parent = handle_slot(table, directory, 2u64);
+            if (parent < 0) {
+                const FileOpen invalid = open_failure(FileStatus::invalid_handle);
+                return invalid;
+            }
+            first = handle_word(table, u64(parent), 2u64);
+            depth = handle_word(table, u64(parent), 3u64);
+        }
+        if (!valid_path(path)) {
+            const FileOpen invalid_path = open_failure(FileStatus::invalid_path);
+            return invalid_path;
+        }
+        if (operation == 1u64 && escapes(path)) {
+            const FileOpen escape = open_failure(FileStatus::escape);
+            return escape;
+        }
+        const i64 slot = free_handle(table);
+        if (slot < 0) {
+            const FileOpen exhausted = open_failure(FileStatus::exhausted);
+            return exhausted;
+        }
+        const Resolution found = resolve(volume, overlay, path, resolution(PathKind::directory, first, depth, 0u64, 0,
+            path.size()));
+        FileStatus status = FileStatus::success;
+        if (found.kind == PathKind::absent || found.kind == PathKind::missing) {
+            status = FileStatus::not_found;
+        }
+        if (found.kind == PathKind::too_long) {
+            status = FileStatus::invalid_path;
+        }
+        if (found.kind == PathKind::not_directory) {
+            status = FileStatus::not_found;
+            if (operation == 0u64) {
+                status = FileStatus::not_regular;
+            }
+        }
+        const bool file = found.kind == PathKind::volume_file || found.kind == PathKind::overlay_file;
+        if ((operation == 0u64 && file) || (operation != 0u64 && found.kind == PathKind::directory)) {
+            status = FileStatus::not_regular;
+        }
+        if (status != FileStatus::success) {
+            const FileOpen failure = open_failure(status);
+            return failure;
+        }
+        const u64 generation = handle_word(table, u64(slot), 1u64) + 1u64;
+        if (!file) {
+            const FileOpen opened = FileOpen{
+                .status = FileStatus::success,
+                .slot = u64(slot),
+                .generation = generation,
+                .id = make_id(generation, u64(slot)),
+                .kind = 1u64,
+                .target = found.first,
+                .extent = found.depth,
+                .size = 0u64,
+                .device = volume_device(),
+                .inode = directory_inode(found.first, found.depth)
+            };
+            return opened;
+        }
+        u64 kind = 2u64;
+        if (found.kind == PathKind::overlay_file) {
+            kind = 3u64;
+        }
+        const u64 size = file_size(volume, overlay, found);
+        const FileOpen opened = FileOpen{
+            .status = FileStatus::success,
+            .slot = u64(slot),
+            .generation = generation,
+            .id = make_id(generation, u64(slot)),
+            .kind = kind,
+            .target = found.target,
+            .extent = size,
+            .size = size,
+            .device = file_device(found),
+            .inode = file_inode(overlay, found)
+        };
+        return opened;
+    }
+
+    auto create_failure(FileStatus status) -> FileCreate {
+        const FileCreate result = FileCreate{
+            .status = status,
+            .slot = 0u64,
+            .generation = 0u64,
+            .id = 0u64,
+            .file = 0u64,
+            .first = 0u64,
+            .depth = 0u64,
+            .leaf = 0u64,
+            .leaf_length = 0u64,
+            .device = 0u64,
+            .inode = 0u64,
+            .directory_device = 0u64,
+            .directory_inode = 0u64
+        };
+        return result;
+    }
+
+    // create_output: the leaf must be 1..255 bytes, not "." or "..", and
+    // outside the reserved ".aurora-output-" namespace; then a free output;
+    // then the parent ("." without a slash, "/" for a leaf at the root)
+    // opened as a directory (ENOTDIR is not_found here, as host.au maps it);
+    // then the destination must be absent or a regular file; then a free
+    // overlay record holds the bytes until commit or discard.
+    auto file_create(builtin::span<const u8> volume, builtin::span<const u8> overlay, builtin::span<const u8> table,
+        builtin::span<const u8> path) -> FileCreate {
+        if (table.size() != file_table_bytes() || overlay.size() != i64(overlay_records() * overlay_record_bytes())) {
+            const FileCreate malformed = create_failure(FileStatus::failed);
+            return malformed;
+        }
+        const bool valid = valid_path(path);
+        i64 split = -1;
+        if (valid) {
+            i64 at = 0;
+            while (at < path.size()) {
+                if (path.at(at) == '/') {
+                    split = at;
+                }
+                at = at + 1;
+            }
+        }
+        const i64 leaf = path.size() - split - 1;
+        if (!valid || leaf < 1 || leaf > leaf_limit() || (leaf == 1 && path.at(split + 1) == '.') || (leaf == 2
+            && path.at(split + 1) == '.' && path.at(split + 2) == '.') || temporary_leaf(path, split + 1)) {
+            const FileCreate invalid_path = create_failure(FileStatus::invalid_path);
+            return invalid_path;
+        }
+        const i64 slot = free_output(table);
+        if (slot < 0) {
+            const FileCreate exhausted = create_failure(FileStatus::exhausted);
+            return exhausted;
+        }
+        i64 parent_length = split;
+        if (split == 0) {
+            parent_length = 1;
+        }
+        if (split < 0) {
+            parent_length = 0;
+        }
+        const Resolution parent = resolve(volume, overlay, path, resolution(PathKind::directory, 0u64, 0u64, 0u64, 0,
+            parent_length));
+        if (parent.kind != PathKind::directory) {
+            FileStatus status = FileStatus::not_found;
+            if (parent.kind == PathKind::too_long) {
+                status = FileStatus::invalid_path;
+            }
+            const FileCreate failure = create_failure(status);
+            return failure;
+        }
+        const Resolution destination = resolve(volume, overlay, path, resolution(PathKind::directory, parent.first,
+            parent.depth, 0u64, split + 1, leaf));
+        u64 device = 0u64;
+        u64 inode = 0u64;
+        if (destination.kind == PathKind::volume_file || destination.kind == PathKind::overlay_file) {
+            device = file_device(destination);
+            inode = file_inode(overlay, destination);
+        } else {
+            if (destination.kind != PathKind::absent) {
+                const FileCreate not_regular = create_failure(FileStatus::not_regular);
+                return not_regular;
+            }
+        }
+        const i64 record = free_record(overlay);
+        if (record < 0) {
+            const FileCreate exhausted = create_failure(FileStatus::exhausted);
+            return exhausted;
+        }
+        const u64 generation = output_word(table, u64(slot), 1u64) + 1u64;
+        const FileCreate created = FileCreate{
+            .status = FileStatus::success,
+            .slot = u64(slot),
+            .generation = generation,
+            .id = make_id(generation, handle_slots() + u64(slot)),
+            .file = u64(record),
+            .first = parent.first,
+            .depth = parent.depth,
+            .leaf = u64(split + 1),
+            .leaf_length = u64(leaf),
+            .device = device,
+            .inode = inode,
+            .directory_device = volume_device(),
+            .directory_inode = directory_inode(parent.first, parent.depth)
+        };
+        return created;
+    }
+
+    // read(file, offset): up to 504 bytes, none at or after the end; an
+    // offset beyond pread's signed range fails as it does there.
+    auto file_read(builtin::span<const u8> table, u64 id, u64 offset) -> FileRead {
+        const i64 slot = handle_slot(table, id, 12u64);
+        FileRead result = FileRead{
+            .status = FileStatus::invalid_handle,
+            .kind = 0u64,
+            .target = 0u64,
+            .offset = 0u64,
+            .count = 0u64
+        };
+        if (table.size() != file_table_bytes() || slot < 0) {
+            return result;
+        }
+        if (offset > 9223372036854775807u64) {
+            result.status = FileStatus::failed;
+            return result;
+        }
+        const u64 size = handle_word(table, u64(slot), 3u64);
+        u64 count = 0u64;
+        if (offset < size) {
+            count = size - offset;
+            if (count > chunk_bytes()) {
+                count = chunk_bytes();
+            }
+        }
+        result.status = FileStatus::success;
+        result.kind = handle_word(table, u64(slot), 0u64);
+        result.target = handle_word(table, u64(slot), 2u64);
+        result.offset = offset;
+        result.count = count;
+        return result;
+    }
+
+    auto change(FileStatus status) -> FileChange {
+        const FileChange result = FileChange{
+            .status = status,
+            .slot = 0u64,
+            .file = 0u64,
+            .release = 0u64,
+            .state = 0u64,
+            .frames = 0u64,
+            .size = 0u64,
+            .replaced = 0u64,
+            .inode = 0u64
+        };
+        return result;
+    }
+
+    // close(handle): a directory or file; a file in an overlay record no
+    // longer linked is freed with its last handle.
+    auto file_close(builtin::span<const u8> overlay, builtin::span<const u8> table, u64 id) -> FileChange {
+        const i64 slot = handle_slot(table, id, 14u64);
+        if (table.size() != file_table_bytes() || slot < 0) {
+            const FileChange invalid = change(FileStatus::invalid_handle);
+            return invalid;
+        }
+        FileChange result = change(FileStatus::success);
+        result.slot = u64(slot) + 1u64;
+        if (handle_word(table, u64(slot), 0u64) == 3u64) {
+            const u64 record = handle_word(table, u64(slot), 2u64);
+            result.file = record + 1u64;
+            if (record_word(overlay, record, 0u64) == 3u64 && record_word(overlay, record, 6u64) == 1u64) {
+                result.release = 1u64;
+            }
+        }
+        return result;
+    }
+
+    // The data and index frames of size bytes: a frame per 4096 bytes and an
+    // index frame per 512 of those.
+    auto data_frames(u64 size) -> u64 {
+        const u64 pages = (size + 4095u64) / 4096u64;
+        return pages + (pages + 511u64) / 512u64;
+    }
+
+    // write(output, bytes): to an open output, at most 64 MiB in all (beyond
+    // it the output fails: too_large), with its new frames charged within the
+    // quota (else it fails: failed, as a full disk fails on Linux).
+    auto file_write(builtin::span<const u8> table, u64 id, u64 bytes, u64 charged, u64 quota) -> FileChange {
+        const i64 slot = output_slot(table, id);
+        if (table.size() != file_table_bytes() || slot < 0) {
+            const FileChange invalid = change(FileStatus::invalid_handle);
+            return invalid;
+        }
+        FileChange result = change(FileStatus::failed);
+        result.slot = u64(slot) + 1u64;
+        result.file = output_word(table, u64(slot), 2u64) + 1u64;
+        result.state = 2u64;
+        const u64 written = output_word(table, u64(slot), 3u64);
+        if (output_word(table, u64(slot), 0u64) != 1u64 || written > output_limit() || charged > quota) {
+            return result;
+        }
+        if (bytes > output_limit() - written) {
+            result.status = FileStatus::too_large;
+            return result;
+        }
+        const u64 frames = data_frames(written + bytes) - data_frames(written);
+        if (frames > quota - charged) {
+            return result;
+        }
+        result.status = FileStatus::success;
+        result.state = 1u64;
+        result.frames = frames;
+        result.size = written + bytes;
+        return result;
+    }
+
+    // commit(output): a failed output is discarded (failed); otherwise the
+    // destination must still be absent or a regular file, and the pending
+    // record is linked under its name with the next inode, replacing a linked
+    // record of the same name (freed, or kept unlinked while handles read it).
+    auto file_commit(builtin::span<const u8> volume, builtin::span<const u8> overlay, builtin::span<const u8> table,
+        u64 id) -> FileChange {
+        const i64 slot = output_slot(table, id);
+        if (table.size() != file_table_bytes() || overlay.size() != i64(overlay_records() * overlay_record_bytes())
+            || slot < 0) {
+            const FileChange invalid = change(FileStatus::invalid_handle);
+            return invalid;
+        }
+        const u64 record = output_word(table, u64(slot), 2u64);
+        FileChange result = change(FileStatus::failed);
+        result.slot = u64(slot) + 1u64;
+        result.file = record + 1u64;
+        result.release = 1u64;
+        if (output_word(table, u64(slot), 0u64) != 1u64 || record >= overlay_records() || record_word(overlay, record,
+            0u64) != 1u64) {
+            return result;
+        }
+        const u64 first = record_word(overlay, record, 1u64);
+        const u64 depth = record_word(overlay, record, 2u64);
+        const u64 length = record_word(overlay, record, 3u64);
+        const i64 leaf = i64(record * overlay_record_bytes()) + 64;
+        if (length < 1u64 || length > 255u64) {
+            return result;
+        }
+        const Resolution destination = resolve(volume, overlay, overlay, resolution(PathKind::directory, first, depth,
+            0u64, leaf, i64(length)));
+        if (destination.kind != PathKind::absent && destination.kind != PathKind::volume_file && destination.kind
+            != PathKind::overlay_file) {
+            result.status = FileStatus::not_regular;
+            return result;
+        }
+        result.status = FileStatus::success;
+        result.release = 0u64;
+        result.inode = file_word(table, 1280u64) + 1u64;
+        if (destination.kind == PathKind::overlay_file) {
+            result.replaced = destination.target + 1u64;
+            if (record_word(overlay, destination.target, 6u64) != 0u64) {
+                result.state = 3u64;
+            }
+        }
+        return result;
+    }
+
+    // discard(output): the output and its pending record end.
+    auto file_discard(builtin::span<const u8> table, u64 id) -> FileChange {
+        const i64 slot = output_slot(table, id);
+        if (table.size() != file_table_bytes() || slot < 0) {
+            const FileChange invalid = change(FileStatus::invalid_handle);
+            return invalid;
+        }
+        FileChange result = change(FileStatus::success);
+        result.slot = u64(slot) + 1u64;
+        result.file = output_word(table, u64(slot), 2u64) + 1u64;
+        result.release = 1u64;
+        return result;
+    }
+
+    // An exported path's next byte as text: itself when it is one of the
+    // volume's name characters or "/", else "%" and two hexadecimal digits;
+    // the characters in bits 0..23, their count in bits 56..63.
+    auto path_text(u8 value) -> u64 {
+        const bool letter = (value >= 65u8 && value <= 90u8) || (value >= 97u8 && value <= 122u8);
+        const bool digit = value >= 48u8 && value <= 57u8;
+        if (letter || digit || value == 46u8 || value == 95u8 || value == 45u8 || value == 47u8) {
+            return u64(value) | 72057594037927936u64;
+        }
+        const array<u8, 16> digits = "0123456789ABCDEF";
+        const u64 high = u64(digits[i64(value / 16u8)]);
+        const u64 low = u64(digits[i64(value % 16u8)]);
+        return 37u64 | (high << 8) | (low << 16) | 216172782113783808u64;
+    }
+}

@@ -5,9 +5,9 @@
 ; unmap_memory, 24 memory_load, 27 memory_store8) belong to aurora.memory
 ; (__au_<mode>_m2_6aurora6memory_...) and are emitted only for a hosted entry
 ; that takes a region. The Aurora kernel binding's primitives 29 kernel_print
-; and 30 kernel_chunk belong to aurora.host under --target aurora (RUN ...
-; aurora) and the Linux ones 13..28 only to the default Linux target; the
-; session primitives 9..12 serve both.
+; and 30 kernel_chunk and 31 kernel_file belong to aurora.host under --target
+; aurora (RUN ... aurora) and the Linux ones 13..28 only to the default Linux
+; target; the session primitives 9..12 serve both.
 
 ; CASE: accepted host primitives
 ; RUN: emit
@@ -57,7 +57,7 @@ end
 ; EXPECT-ERROR: service operation
 @@ -7 +7 @@
 -    ServiceOperation 16 20 0 6
-+    ServiceOperation 16 31 0 6
++    ServiceOperation 16 32 0 6
 
 ; CASE: rejected: Linux primitive for the Aurora kernel
 ; BASE: accepted host primitives
@@ -101,6 +101,43 @@ end
 ; BASE: accepted kernel primitives
 ; RUN: verify
 ; EXPECT-ERROR: HostFiles primitive does not belong to the selected target
+
+; CASE: accepted kernel file operation
+; RUN: emit aurora
+; CHECK: int $131
+; CHECK-NOT: syscall
+function __au_v_m2_6aurora4host_n1_4host_d4file
+  result i64
+  params [22]
+  frame 32
+  service 16
+    BindServiceParameter 0 16 6
+    Constant 0 u64
+    Push
+    Constant 0 u64
+    Push
+    Constant 4096 u64
+    Push
+    Constant 4 u64
+    Push
+    Constant 8192 u64
+    Push
+    ServiceOperation 16 31 0 6
+    Return
+end
+
+; CASE: rejected: kernel file operation for the Linux target
+; BASE: accepted kernel file operation
+; RUN: verify
+; EXPECT-ERROR: HostFiles primitive does not belong to the selected target
+
+; CASE: rejected: kernel file operation without its record
+; BASE: accepted kernel file operation
+; RUN: verify aurora
+; EXPECT-ERROR: value stack underflow
+@@ -15,2 +14,0 @@
+-    Constant 8192 u64
+-    Push
 
 ; CASE: rejected: kernel primitive outside the runtime module
 ; BASE: accepted kernel primitives

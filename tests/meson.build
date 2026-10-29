@@ -503,6 +503,17 @@ test('kernel-process-memory', python,
      args: ['-B', golden_runner, files('kernel-process/memory.golden'), '--', kernel_process, 'events',
             files('kernel-process/memory.cases')],
      suite: ['full', 'merge', 'dev'], timeout: 60)
+# The file service over a volume of the HostFiles cases' tree and a few more
+# entries for path order and depth.
+process_files_volume = custom_target('process-files-volume', output: 'process-files.volume',
+    depend_files: files('../scripts/kernel_volume.py', 'host_files.py'),
+    command: [python, '-B', files('../scripts/kernel_volume.py'), '--output', '@OUTPUT@', '--host-files-tree',
+              '--text', 'deep/x/y/z.txt=deep', '--text', 'a-b/c.txt=dash', '--text', 'ab/c=plain',
+              '--text', 'top.txt=top'])
+test('kernel-process-files', python,
+     args: ['-B', golden_runner, files('kernel-process/files.golden'), '--', kernel_process, 'files',
+            process_files_volume, files('kernel-process/files.cases')],
+     depends: process_files_volume, suite: ['full', 'merge', 'dev'], timeout: 60)
 font_glyphs_object = custom_target('font-glyphs-module',
     input: 'kernel-programs/font-glyphs.au', output: 'font-glyphs.o', depfile: 'font-glyphs.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',

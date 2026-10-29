@@ -7,6 +7,7 @@
 // Decoders reject any result outside the closed encodings before it is used.
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <span>
 
@@ -159,7 +160,15 @@ enum class CallAction : U64 {
     read,
     map,
     remap,
-    unmap
+    unmap,
+    open_directory,
+    open_beneath,
+    open_file,
+    close,
+    create_output,
+    write,
+    commit,
+    discard
 };
 enum class RunsVerdict : U64 {
     valid,
@@ -192,7 +201,7 @@ public:
 };
 class KernelCall final {
 public:
-    U64 action = 0, value = 0, length = 0, base = 0;
+    U64 action = 0, value = 0, length = 0, base = 0, record = 0;
 };
 class RunEntry final {
 public:
@@ -210,11 +219,11 @@ public:
 };
 class CallArguments final {
 public:
-    U64 operation, first, second, third;
+    U64 operation, first, second, third, fourth;
 };
-static_assert(sizeof(ProcessRegion) == 56 && sizeof(ProcessTrap) == 72 && sizeof(KernelCall) == 32 &&
+static_assert(sizeof(ProcessRegion) == 56 && sizeof(ProcessTrap) == 72 && sizeof(KernelCall) == 40 &&
               sizeof(RunEntry) == 64 && sizeof(LayoutArguments) == 80 && sizeof(RegionArguments) == 72 &&
-              sizeof(CallArguments) == 32);
+              sizeof(CallArguments) == 40);
 
 // The memory service (process.md#memory): kernel.process_memory's records.
 enum class MemoryVerdict : U64 {
@@ -287,6 +296,85 @@ static_assert(sizeof(MemoryState) == 32 && sizeof(MemoryRecord) == 24 && sizeof(
               sizeof(MemoryUnmapArguments) == 64 && sizeof(MemoryFindArguments) == 72 &&
               sizeof(MemoryFaultArguments) == 80 && sizeof(MemoryBudgetArguments) == 88);
 
+// The file service (process.md#files): kernel.process_files's decisions. The
+// statuses are the HostStatus ordinals; the kernel returns them negated.
+enum class FileStatus : U64 {
+    success,
+    invalid_handle,
+    not_found,
+    denied,
+    escape,
+    not_regular,
+    exhausted,
+    too_large,
+    invalid_path,
+    failed
+};
+inline constexpr U64 file_handles = 32, file_outputs = 4, file_records = 64, file_path_limit = 4095,
+                     file_chunk = 504, file_output_limit = U64{1} << 26, file_generation_limit = U64{1} << 58;
+class FileOpen final {
+public:
+    U64 status = 0, slot = 0, generation = 0, id = 0, kind = 0, target = 0, extent = 0, size = 0, device = 0,
+        inode = 0;
+};
+class FileCreate final {
+public:
+    U64 status = 0, slot = 0, generation = 0, id = 0, file = 0, first = 0, depth = 0, leaf = 0, leaf_length = 0,
+        device = 0, inode = 0, directory_device = 0, directory_inode = 0;
+};
+class FileRead final {
+public:
+    U64 status = 0, kind = 0, target = 0, offset = 0, count = 0;
+};
+class FileChange final {
+public:
+    U64 status = 0, slot = 0, file = 0, release = 0, state = 0, frames = 0, size = 0, replaced = 0, inode = 0;
+};
+class FileOpenArguments final {
+public:
+    PolicySpan volume, overlay, table, path;
+    U64 operation, directory;
+};
+class FileCreateArguments final {
+public:
+    PolicySpan volume, overlay, table, path;
+};
+class FileReadArguments final {
+public:
+    PolicySpan table;
+    U64 id, offset;
+};
+class FileCloseArguments final {
+public:
+    PolicySpan overlay, table;
+    U64 id;
+};
+class FileWriteArguments final {
+public:
+    PolicySpan table;
+    U64 id, bytes, charged, quota;
+};
+class FileCommitArguments final {
+public:
+    PolicySpan volume, overlay, table;
+    U64 id;
+};
+class EntryPrefixArguments final {
+public:
+    PolicySpan volume;
+    U64 first, depth;
+};
+class FileDiscardArguments final {
+public:
+    PolicySpan table;
+    U64 id;
+};
+static_assert(sizeof(FileOpen) == 80 && sizeof(FileCreate) == 104 && sizeof(FileRead) == 40 &&
+              sizeof(FileChange) == 72 && sizeof(FileOpenArguments) == 240 && sizeof(FileCreateArguments) == 224 &&
+              sizeof(FileReadArguments) == 72 && sizeof(FileCloseArguments) == 120 &&
+              sizeof(FileWriteArguments) == 88 && sizeof(FileCommitArguments) == 176 &&
+              sizeof(FileDiscardArguments) == 64);
+
 namespace bridge {
 auto map_admit(const MapArguments *) -> U64 asm("__au_runtime_process_map_admit") __attribute__((visibility("hidden")));
 auto volume_grant(const GrantArguments *) -> U64 asm("__au_runtime_process_volume_grant")
@@ -328,6 +416,24 @@ auto memory_find(const MemoryFindArguments *) -> U64 asm("__au_runtime_process_m
 auto memory_fault(const MemoryFaultArguments *) -> U64 asm("__au_runtime_process_memory_fault")
     __attribute__((visibility("hidden")));
 auto memory_budget(const MemoryBudgetArguments *, MemoryBudget *) -> void asm("__au_runtime_process_memory_budget")
+    __attribute__((visibility("hidden")));
+auto file_open(const FileOpenArguments *, FileOpen *) -> void asm("__au_runtime_process_file_open")
+    __attribute__((visibility("hidden")));
+auto file_create(const FileCreateArguments *, FileCreate *) -> void asm("__au_runtime_process_file_create")
+    __attribute__((visibility("hidden")));
+auto file_read(const FileReadArguments *, FileRead *) -> void asm("__au_runtime_process_file_read")
+    __attribute__((visibility("hidden")));
+auto file_close(const FileCloseArguments *, FileChange *) -> void asm("__au_runtime_process_file_close")
+    __attribute__((visibility("hidden")));
+auto file_write(const FileWriteArguments *, FileChange *) -> void asm("__au_runtime_process_file_write")
+    __attribute__((visibility("hidden")));
+auto file_commit(const FileCommitArguments *, FileChange *) -> void asm("__au_runtime_process_file_commit")
+    __attribute__((visibility("hidden")));
+auto file_discard(const FileDiscardArguments *, FileChange *) -> void asm("__au_runtime_process_file_discard")
+    __attribute__((visibility("hidden")));
+auto path_text(U64 value) -> U64 asm("__au_runtime_process_path_text")
+    __attribute__((visibility("hidden")));
+auto directory_prefix(const EntryPrefixArguments *) -> U64 asm("__au_runtime_process_directory_prefix")
     __attribute__((visibility("hidden")));
 } // namespace bridge
 
@@ -378,6 +484,36 @@ frame_range(std::span<const std::byte> map, U64 stride, U64 index, U64 arena, U6
     if (entry.found != 1 || entry.offset > volume.size() || entry.size > volume.size() - entry.offset)
         return std::nullopt;
     return volume.subspan(entry.offset, entry.size);
+}
+// The bytes of an admitted volume's index-th entry, or nullopt.
+[[nodiscard]] inline auto volume_extent(std::span<const std::byte> volume, U64 index)
+    -> std::optional<std::span<const std::byte>> {
+    const EntryArguments arguments{PolicySpan{volume}, index};
+    VolumeEntry entry{~U64{0}, ~U64{0}, ~U64{0}};
+    bridge::volume_entry(&arguments, &entry);
+    if (entry.found != 1 || entry.offset > volume.size() || entry.size > volume.size() - entry.offset)
+        return std::nullopt;
+    return volume.subspan(entry.offset, entry.size);
+}
+// The name of an admitted volume's index-th entry (its index row's name
+// offset and length inside the names), or nullopt.
+[[nodiscard]] inline auto volume_name(std::span<const std::byte> volume, U64 index)
+    -> std::optional<std::span<const std::byte>> {
+    const auto word = [&](U64 offset, unsigned width) {
+        U64 value = 0;
+        for (unsigned i = 0; i < width; ++i)
+            value |= U64{std::to_integer<std::uint8_t>(volume[offset + i])} << (8 * i);
+        return value;
+    };
+    if (volume.size() < 64)
+        return std::nullopt;
+    const auto count = word(16, 4), names = 64 + 32 * count;
+    if (index >= count || names > volume.size())
+        return std::nullopt;
+    const auto offset = word(64 + 32 * index, 8), length = word(72 + 32 * index, 4);
+    if (length == 0 || length > 255 || offset > volume.size() - names || length > volume.size() - names - offset)
+        return std::nullopt;
+    return volume.subspan(names + offset, length);
 }
 // Four base64 characters, first in bits 0..7, for the group at offset.
 [[nodiscard]] inline auto base64_group(std::span<const std::byte> bytes, U64 offset) -> std::optional<U64> {
@@ -441,26 +577,37 @@ frame_range(std::span<const std::byte> map, U64 stride, U64 index, U64 arena, U6
     return verdict<TrapClass, 15>(bridge::trap(&frame));
 }
 // A decoded kernel call in its closed encoding, or nullopt.
-[[nodiscard]] inline auto call(U64 operation, U64 first, U64 second, U64 third) -> std::optional<KernelCall> {
-    const CallArguments arguments{operation, first, second, third};
-    KernelCall result{~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}};
+[[nodiscard]] inline auto call(U64 operation, U64 first, U64 second, U64 third, U64 fourth)
+    -> std::optional<KernelCall> {
+    const CallArguments arguments{operation, first, second, third, fourth};
+    KernelCall result{~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}};
     bridge::call(&arguments, &result);
     const auto action = static_cast<CallAction>(result.action);
     const auto length = [](U64 bytes) {
         return bytes && bytes % 4096 == 0 && bytes <= memory_bytes_limit;
     };
     const auto base = result.base >= memory_base && result.base < memory_limit && result.base % 4096 == 0;
-    if ((action == CallAction::invalid && result.value == 0 && result.length == 0 && result.base == 0) ||
-        (action == CallAction::exit && result.value <= 255 && result.length == 0 && result.base == 0) ||
+    const auto bare = result.length == 0 && result.base == 0 && result.record == 0;
+    const auto handle = action == CallAction::close || action == CallAction::commit || action == CallAction::discard;
+    const auto path = action == CallAction::open_directory || action == CallAction::open_beneath ||
+                      action == CallAction::open_file || action == CallAction::create_output;
+    if ((action == CallAction::invalid && result.value == 0 && bare) ||
+        (action == CallAction::exit && result.value <= 255 && bare) ||
         (action == CallAction::print && (result.value == 1 || result.value == 2) && result.length <= 65536 &&
-         result.base == 0) ||
-        (action == CallAction::read && result.value == ~U64{0} && result.length == 0 && result.base == 0) ||
-        (action == CallAction::map && result.value == 0 && length(result.length) && result.base == 0) ||
-        (action == CallAction::remap && length(result.value) && length(result.length) && base) ||
-        (action == CallAction::unmap && result.value == 0 && length(result.length) && base))
+         result.record == 0) ||
+        (action == CallAction::read && result.record == 0) ||
+        (action == CallAction::map && result.value == 0 && length(result.length) && result.base == 0 &&
+         result.record == 0) ||
+        (action == CallAction::remap && length(result.value) && length(result.length) && base &&
+         result.record == 0) ||
+        (action == CallAction::unmap && result.value == 0 && length(result.length) && base && result.record == 0) ||
+        (handle && bare) ||
+        (path && result.length <= 65536 && (action == CallAction::open_beneath || result.value == 0)) ||
+        (action == CallAction::write && result.length <= 65536 && result.record == 0))
         return result;
     return std::nullopt;
 }
+
 [[nodiscard]] inline auto runs_admit(std::span<const std::byte> runs) -> std::optional<RunsVerdict> {
     const VolumeArguments arguments{PolicySpan{runs}};
     return verdict<RunsVerdict, 10>(bridge::runs_admit(&arguments));
@@ -592,5 +739,222 @@ memory_budget(std::span<const std::byte> image, U64 arguments, U64 slots, U64 re
         result.charged > result.quota || result.quota > free)
         return std::nullopt;
     return result;
+}
+
+// File decisions in their closed shapes (process.md#files); nullopt for any
+// other encoding. A failure names nothing; a success names a slot of its
+// table with the next generation and the id that slot and generation make.
+[[nodiscard]] inline auto file_status(U64 raw) -> std::optional<FileStatus> {
+    return verdict<FileStatus, 9>(raw);
+}
+[[nodiscard]] inline auto file_open(std::span<const std::byte> volume,
+                                    std::span<const std::byte> overlay,
+                                    std::span<const std::byte> table,
+                                    std::span<const std::byte> path,
+                                    U64 operation,
+                                    U64 directory) -> std::optional<FileOpen> {
+    const FileOpenArguments arguments{
+        PolicySpan{volume}, PolicySpan{overlay}, PolicySpan{table}, PolicySpan{path}, operation, directory};
+    FileOpen result{~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}};
+    bridge::file_open(&arguments, &result);
+    const auto status = file_status(result.status);
+    if (!status)
+        return std::nullopt;
+    if (*status != FileStatus::success)
+        return result.slot || result.generation || result.id || result.kind || result.target || result.extent ||
+                       result.size || result.device || result.inode
+                   ? std::nullopt
+                   : std::optional<FileOpen>{result};
+    const auto directory_shape = result.kind == 1 && operation == 0 && result.size == 0 && result.extent <= 127 &&
+                                 result.target < 4096 && result.device == 1 &&
+                                 result.inode == 65536 + result.target * 256 + result.extent;
+    const auto volume_shape = result.kind == 2 && operation != 0 && result.size == result.extent &&
+                              result.target < 4096 && result.device == 1 && result.inode == result.target + 1;
+    const auto overlay_shape = result.kind == 3 && operation != 0 && result.size == result.extent &&
+                               result.size <= file_output_limit && result.target < file_records &&
+                               result.device == 2 && result.inode != 0;
+    if (result.slot >= file_handles || result.generation == 0 || result.generation >= file_generation_limit ||
+        result.id != result.generation * 64 + result.slot + 1 || !(directory_shape || volume_shape || overlay_shape))
+        return std::nullopt;
+    return result;
+}
+[[nodiscard]] inline auto file_create(std::span<const std::byte> volume,
+                                      std::span<const std::byte> overlay,
+                                      std::span<const std::byte> table,
+                                      std::span<const std::byte> path) -> std::optional<FileCreate> {
+    const FileCreateArguments arguments{PolicySpan{volume}, PolicySpan{overlay}, PolicySpan{table}, PolicySpan{path}};
+    FileCreate result;
+    for (auto *word : {&result.status,
+                       &result.slot,
+                       &result.generation,
+                       &result.id,
+                       &result.file,
+                       &result.first,
+                       &result.depth,
+                       &result.leaf,
+                       &result.leaf_length,
+                       &result.device,
+                       &result.inode,
+                       &result.directory_device,
+                       &result.directory_inode})
+        *word = ~U64{0};
+    bridge::file_create(&arguments, &result);
+    const auto status = file_status(result.status);
+    if (!status)
+        return std::nullopt;
+    if (*status != FileStatus::success)
+        return result.slot || result.generation || result.id || result.file || result.first || result.depth ||
+                       result.leaf || result.leaf_length || result.device || result.inode ||
+                       result.directory_device || result.directory_inode
+                   ? std::nullopt
+                   : std::optional<FileCreate>{result};
+    if (result.slot >= file_outputs || result.generation == 0 || result.generation >= file_generation_limit ||
+        result.id != result.generation * 64 + file_handles + result.slot + 1 || result.file >= file_records ||
+        result.first >= 4096 || result.depth > 127 || result.leaf_length == 0 || result.leaf_length > 255 ||
+        result.leaf > path.size() || result.leaf_length != path.size() - result.leaf ||
+        (result.leaf && std::to_integer<unsigned>(path[result.leaf - 1]) != '/') || result.directory_device != 1 ||
+        result.directory_inode != 65536 + result.first * 256 + result.depth || (result.device == 0) != (result.inode == 0) ||
+        result.device > 2)
+        return std::nullopt;
+    for (const auto byte : path.subspan(result.leaf))
+        if (std::to_integer<unsigned>(byte) == '/' || std::to_integer<unsigned>(byte) == 0)
+            return std::nullopt;
+    return result;
+}
+[[nodiscard]] inline auto file_read(std::span<const std::byte> table, U64 id, U64 offset) -> std::optional<FileRead> {
+    const FileReadArguments arguments{PolicySpan{table}, id, offset};
+    FileRead result{~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}};
+    bridge::file_read(&arguments, &result);
+    const auto status = file_status(result.status);
+    if (!status)
+        return std::nullopt;
+    if (*status != FileStatus::success)
+        return (*status == FileStatus::invalid_handle || *status == FileStatus::failed) && !result.kind &&
+                       !result.target && !result.offset && !result.count
+                   ? std::optional<FileRead>{result}
+                   : std::nullopt;
+    if ((result.kind != 2 && result.kind != 3) || result.offset != offset || result.count > file_chunk ||
+        (result.kind == 3 && result.target >= file_records) || (result.kind == 2 && result.target >= 4096))
+        return std::nullopt;
+    return result;
+}
+// A change names at most its own slot (+ 1) and one record (+ 1), and a
+// replaced record (+ 1) other than that one.
+[[nodiscard]] inline auto file_change(const FileChange &result, U64 slots) -> std::optional<FileChange> {
+    const auto status = file_status(result.status);
+    if (!status || result.slot > slots || result.file > file_records || result.release > 1 || result.state > 3 ||
+        result.replaced > file_records || (result.replaced && result.replaced == result.file))
+        return std::nullopt;
+    return result;
+}
+[[nodiscard]] inline auto unchanged() -> FileChange {
+    return {~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}};
+}
+[[nodiscard]] inline auto file_close(std::span<const std::byte> overlay, std::span<const std::byte> table, U64 id)
+    -> std::optional<FileChange> {
+    const FileCloseArguments arguments{PolicySpan{overlay}, PolicySpan{table}, id};
+    auto result = unchanged();
+    bridge::file_close(&arguments, &result);
+    const auto decided = file_change(result, file_handles);
+    if (!decided || decided->state || decided->frames || decided->size || decided->replaced || decided->inode)
+        return std::nullopt;
+    const auto success = decided->status == static_cast<U64>(FileStatus::success);
+    if (success ? !decided->slot || (!decided->file && decided->release)
+                : decided->status != static_cast<U64>(FileStatus::invalid_handle) || decided->slot ||
+                      decided->file || decided->release)
+        return std::nullopt;
+    return decided;
+}
+[[nodiscard]] inline auto file_write(std::span<const std::byte> table, U64 id, U64 bytes, U64 charged, U64 quota)
+    -> std::optional<FileChange> {
+    const FileWriteArguments arguments{PolicySpan{table}, id, bytes, charged, quota};
+    auto result = unchanged();
+    bridge::file_write(&arguments, &result);
+    const auto decided = file_change(result, file_outputs);
+    if (!decided || decided->release || decided->replaced || decided->inode)
+        return std::nullopt;
+    const auto status = static_cast<FileStatus>(decided->status);
+    if (status == FileStatus::invalid_handle)
+        return decided->slot || decided->file || decided->state || decided->frames || decided->size
+                   ? std::nullopt
+                   : decided;
+    if (!decided->slot || !decided->file ||
+        (status == FileStatus::success
+             ? decided->state != 1 || decided->size > file_output_limit || decided->size < bytes ||
+                   charged > quota || decided->frames > quota - charged
+             : (status != FileStatus::too_large && status != FileStatus::failed) || decided->state != 2 ||
+                   decided->frames || decided->size))
+        return std::nullopt;
+    return decided;
+}
+[[nodiscard]] inline auto file_commit(std::span<const std::byte> volume,
+                                      std::span<const std::byte> overlay,
+                                      std::span<const std::byte> table,
+                                      U64 id) -> std::optional<FileChange> {
+    const FileCommitArguments arguments{PolicySpan{volume}, PolicySpan{overlay}, PolicySpan{table}, id};
+    auto result = unchanged();
+    bridge::file_commit(&arguments, &result);
+    const auto decided = file_change(result, file_outputs);
+    if (!decided || decided->frames || decided->size)
+        return std::nullopt;
+    const auto status = static_cast<FileStatus>(decided->status);
+    if (status == FileStatus::invalid_handle)
+        return decided->slot || decided->file || decided->release || decided->state || decided->replaced ||
+                       decided->inode
+                   ? std::nullopt
+                   : decided;
+    if (!decided->slot || !decided->file ||
+        (status == FileStatus::success
+             ? decided->release || decided->inode == 0 || (decided->state != 0 && decided->state != 3) ||
+                   (!decided->replaced && decided->state)
+             : (status != FileStatus::failed && status != FileStatus::not_regular) || !decided->release ||
+                   decided->state || decided->replaced || decided->inode))
+        return std::nullopt;
+    return decided;
+}
+[[nodiscard]] inline auto file_discard(std::span<const std::byte> table, U64 id) -> std::optional<FileChange> {
+    const FileDiscardArguments arguments{PolicySpan{table}, id};
+    auto result = unchanged();
+    bridge::file_discard(&arguments, &result);
+    const auto decided = file_change(result, file_outputs);
+    if (!decided || decided->state || decided->frames || decided->size || decided->replaced || decided->inode)
+        return std::nullopt;
+    const auto success = decided->status == static_cast<U64>(FileStatus::success);
+    if (success ? !decided->slot || !decided->file || !decided->release
+                : decided->status != static_cast<U64>(FileStatus::invalid_handle) || decided->slot ||
+                      decided->file || decided->release)
+        return std::nullopt;
+    return decided;
+}
+// One byte of an exported path as one or three printable characters.
+class PathText final {
+public:
+    std::array<char, 3> characters{};
+    unsigned count = 0;
+};
+[[nodiscard]] inline auto path_text(std::uint8_t value) -> std::optional<PathText> {
+    // A scalar-only entry takes its argument in RDI (the SysV scalar seam).
+    const auto text = bridge::path_text(value);
+    PathText result;
+    result.count = static_cast<unsigned>(text >> 56);
+    if ((result.count != 1 && result.count != 3) || ((text >> 24) & ((U64{1} << 32) - 1)))
+        return std::nullopt;
+    for (unsigned i = 0; i < 3; ++i) {
+        const auto c = static_cast<char>((text >> (8 * i)) & 255);
+        if (i < result.count ? c < '!' || c > '~' : c != 0)
+            return std::nullopt;
+        result.characters[i] = c;
+    }
+    return result;
+}
+// The bytes of directory (first, depth)'s path at the start of entry first's
+// name, or nullopt.
+[[nodiscard]] inline auto directory_prefix(std::span<const std::byte> volume, U64 first, U64 depth)
+    -> std::optional<U64> {
+    const EntryPrefixArguments arguments{PolicySpan{volume}, first, depth};
+    const auto prefix = bridge::directory_prefix(&arguments);
+    if (prefix == 0 || prefix > 256 || (depth == 0) != (prefix == 1))
+        return std::nullopt;
+    return prefix - 1;
 }
 } // namespace aurora::uefi::process

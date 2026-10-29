@@ -7,6 +7,7 @@ separate reviewed model, firmware, admission and supervised-plan requirements.
 
 import argparse
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -46,12 +47,12 @@ FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if not name.startswith("bios_")
 }
 # Process-image rows that run a run list: the valid volume's selector plus a
-# case word (fw_cfg opt/aurora/case) naming runs/<case> in that volume (from
-# case 3 on, the compiler volume). Each run is (watchdog ticks, flags, memory
-# quota in frames or 0 for all, volume path, arguments as shell words); flag 1
-# faults the kernel during the run's first kernel call, flag 2 checks that the
-# load walk rejects edited tables and flag 4 walks the whole space after every
-# memory call and commit (kernel/uefi/process.md#run-lists).
+# case word (fw_cfg opt/aurora/case) naming runs/<case> in that volume (the
+# compiler volume for COMPILER_CASES). Each run is (watchdog ticks, flags,
+# memory quota in frames or 0 for all, volume path, arguments as shell words);
+# flag 1 faults the kernel during the run's first kernel call, flag 2 checks
+# that the load walk rejects edited tables and flag 4 walks the whole space
+# after every memory call, commit and kernel access (kernel/uefi/process.md#run-lists).
 ROOT = Path(__file__).resolve().parents[1]
 # One process per hosted memory-runtime case (tests/host-files/memory.golden),
 # each walked after every memory call unless it churns, then the compiler with
@@ -61,6 +62,30 @@ MEMORY_GOLDEN = ROOT / "tests/host-files/memory.golden"
 MEMORY_RUNS = tuple(
     (128, 4 if index in (0, 1, 3) else 0, 0, "bin/memory", key)
     for index, key in enumerate(line.split("\t", 1)[0] for line in MEMORY_GOLDEN.read_text().splitlines())
+)
+# One process per HostFiles case (tests/host-files/cases.golden, then the
+# 64 MiB output of limits.golden) of the cat, probe and sort programs, over
+# the volume's copy of the cases' tree, except the cases that need what the
+# volume lacks by design: symlinks (link, dirlink), a FIFO, /dev and a closed
+# standard stream.
+FILES_GOLDEN = [ROOT / "tests/host-files" / name for name in ("cases.golden", "limits.golden")]
+FILES_PROGRAMS = {"cat": "bin/cat", "probe": "bin/probe", "sort": "bin/sort"}
+FILES_ABSENT = {"link", "dirlink", "fifo", "!closed"}
+
+
+def files_case(key):
+    words = shlex.split(key)
+    return (
+        words[0] in FILES_PROGRAMS
+        and not FILES_ABSENT & {part for word in words for part in word.split("/")}
+        and not any(word.startswith("/dev") for word in words)
+    )
+
+
+FILES_RUNS = tuple(
+    (128, 0, 0, FILES_PROGRAMS[key.split()[0]], key)
+    for key in (line.split("\t", 1)[0] for golden in FILES_GOLDEN for line in golden.read_text().splitlines())
+    if files_case(key)
 )
 PROCESS_CASES = {
     "process-run": (
@@ -81,6 +106,12 @@ PROCESS_CASES = {
             (8, 4, 0, "bin/isolation-9", "past-mapping"),
             (8, 4, 0, "bin/isolation-10", "bad-unmap"),
             (8, 4, 0, "bin/isolation-11", "moved-away"),
+            (8, 4, 0, "bin/isolation-12", "heap-read"),
+            (8, 0, 0, "bin/isolation-13", "read-unmapped"),
+            (8, 0, 0, "bin/isolation-14", "read-code"),
+            (8, 0, 0, "bin/isolation-15", "path-kernel"),
+            (8, 0, 0, "bin/isolation-16", "write-gap"),
+            (8, 0, 0, "bin/isolation-17", "forged-ids"),
             (32, 0, 0, "bin/probe", "probe print 'two words' exit success"),
         ),
     ),
@@ -105,10 +136,14 @@ PROCESS_CASES = {
             (32, 0, 1, "bin/aurorac", "aurorac"),
         ),
     ),
+    "process-files": (4, FILES_RUNS),
 }
+# The run lists of the compiler volume (\\aurora\\compiler, kernel/uefi/loader-fixture.hpp).
+COMPILER_CASES = frozenset({3})
 # Guest memory of the rows that need more than the UEFI default: one memory
 # case keeps 4 GiB mapped (committed on first touch, but charged in full).
-PROCESS_MEMORY = {"process-memory": "5G"}
+# The files row holds a 64 MiB output beside the probe's 8 MiB stack.
+PROCESS_MEMORY = {"process-memory": "5G", "process-files": "256M"}
 FIXTURE_MODES.update({mode: FIXTURE_MODES["process-volume"] for mode in PROCESS_CASES})
 # These images read their selector from a QEMU fw_cfg file instead of a serial
 # byte. The loader fixture images read it at loader entry, echo it and hand it
@@ -1028,6 +1063,14 @@ PROCESS_PROGRAMS = {
     "bin/isolation-9": "assembly:process-isolation-9",
     "bin/isolation-10": "assembly:process-isolation-10",
     "bin/isolation-11": "assembly:process-isolation-11",
+    "bin/isolation-12": "assembly:process-isolation-12",
+    "bin/isolation-13": "assembly:process-isolation-13",
+    "bin/isolation-14": "assembly:process-isolation-14",
+    "bin/isolation-15": "assembly:process-isolation-15",
+    "bin/isolation-16": "assembly:process-isolation-16",
+    "bin/isolation-17": "assembly:process-isolation-17",
+    "bin/cat": "aurora:host-files-cat",
+    "bin/sort": "aurora:host-sort",
     "bin/probe-linux": "linux:host-files-probe",
 }
 PROCESS_ELVES = {
@@ -1038,13 +1081,13 @@ PROCESS_ELVES = {
 }
 PROCESS_ESP = {
     "volume": [word for path in PROCESS_VOLUME_FILES for word in ("--file", path)]
-    + ["--text", "aurora/empty="]
+    + ["--text", "aurora/empty=", "--host-files-tree"]
     + [word for path, program in PROCESS_PROGRAMS.items() for word in ("--program", path + "=" + program)]
     + [word for path, edits in PROCESS_ELVES.items() for word in ("--elf", path + "=" + edits)]
     + [
         word
         for case, runs in PROCESS_CASES.values()
-        if case < 3
+        if case not in COMPILER_CASES
         for ticks, flags, quota, path, arguments in runs
         for word in ("--run", f"{case}:{ticks}:{flags}:{quota}:{path}:{arguments}")
     ],
@@ -1054,7 +1097,7 @@ PROCESS_ESP = {
     + [
         word
         for case, runs in PROCESS_CASES.values()
-        if case >= 3
+        if case in COMPILER_CASES
         for ticks, flags, quota, path, arguments in runs
         for word in ("--run", f"{case}:{ticks}:{flags}:{quota}:{path}:{arguments}")
     ],
@@ -1087,7 +1130,7 @@ GUEST_FAMILIES = {
     "tables": "runtime-table-readback runtime-table-reject runtime-table-exhaust runtime-table-quarantine",
     "pins": "runtime-pin-cancel runtime-pin-fault runtime-pin-stale runtime-pin-exhaust",
     "process": "process-volume process-volume-corrupt process-volume-empty process-volume-map process-run "
-    "process-hostile process-memory",
+    "process-hostile process-memory process-files",
 }
 
 

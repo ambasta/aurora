@@ -156,7 +156,9 @@ if get_option('kernel_images')
   process_programs += {'aurora:aurorac': custom_target('aurorac-aurora', input: aurorac_aurora_object,
                                                        output: 'aurorac-aurora', command: compiler_link,
                                                        build_by_default: false)}
-  foreach name, source : {'host-files-probe': 'tests/host-files/probe.au',
+  foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
+                          'host-files-probe': 'tests/host-files/probe.au',
+                          'host-sort': 'examples/host-sort.au',
                           'host-memory-probe': 'tests/host-files/memory.au',
                           'process-hostile': 'tests/kernel-process/hostile.au'}
     process_object = custom_target(name + '-aurora-object', input: source, output: name + '-aurora.o',
@@ -170,7 +172,7 @@ if get_option('kernel_images')
                                              '@INPUT@', '-o', '@OUTPUT@'])
   process_programs += {'assembly:process-recurse': custom_target('process-recurse', input: recurse_object,
                                                                  output: 'process-recurse', command: compiler_link)}
-  foreach case : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']
+  foreach case : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17']
     isolation_object = custom_target('process-isolation-' + case + '-object',
         input: 'tests/kernel-process/isolation.S', output: 'process-isolation-' + case + '.o',
         command: [find_program('as', native: true), '--64', '-mx86-used-note=no', '--defsym', 'CASE=' + case,

@@ -7,7 +7,8 @@
 Entries: --file PATH (the repository file PATH under --root, stored as PATH),
 --text PATH=CONTENT, --program PATH=FILE (any file, such as a build product),
 --elf PATH=EDITS (the header-only ELF image below with comma-separated field
-edits) and --run CASE:TICKS:FLAGS:QUOTA:PATH:ARGUMENTS (appends one run to
+edits), --host-files-tree (the regular files of the HostFiles cases' fixture,
+tests/host_files.py, under tree/) and --run CASE:TICKS:FLAGS:QUOTA:PATH:ARGUMENTS (appends one run to
 the run list runs/CASE; ARGUMENTS are shell words), and --entries N adds
 entry/0000.. each holding its number. Entries are sorted unless --raw-order
 keeps their order.
@@ -146,6 +147,7 @@ def parser():
     result.add_argument("--program", action="append", default=[], dest="programs")
     result.add_argument("--elf", action="append", default=[], dest="elves")
     result.add_argument("--run", action="append", default=[], dest="runs")
+    result.add_argument("--host-files-tree", action="store_true")
     result.add_argument("--entries", type=number, default=0)
     result.add_argument("--raw-order", action="store_true")
     result.add_argument("--set", action="append", default=[], dest="sets")
@@ -164,6 +166,11 @@ def build(args, root):
     entries += [(text.partition("=")[0].encode(), text.partition("=")[2].encode()) for text in args.texts]
     entries += [(item.partition("=")[0].encode(), Path(item.partition("=")[2]).read_bytes()) for item in args.programs]
     entries += [(item.partition("=")[0].encode(), elf(item.partition("=")[2])) for item in args.elves]
+    if args.host_files_tree:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
+        from host_files import TREE
+
+        entries += [(b"tree/" + path.encode(), content) for path, content in TREE.items()]
     lists = {}
     for item in args.runs:
         case, ticks, flags, quota, path, arguments = item.split(":", 5)

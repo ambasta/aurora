@@ -43,7 +43,8 @@ trap 14 0 0x401000 0x1b 0x3202 0x7fffff000000 0x23 0 0x10000
 trap 14 0 0x401000 0x1b 0x20202 0x7fffff000000 0x23 0 0x10000
 trap 14 0 0x401000 0x1b 0x254fd7 0x7fffff000000 0x23 0 0x10000
 trap 14 0 0x401000 0x1b 0x254fdf 0x7fffff000000 0x23 0 0x10000
-# Kernel calls: 1 exit(status), 2 print(stream, buffer, length), 3 read.
+# Kernel calls: 1 exit(status), 2 print(stream, buffer, length), 3
+# read(file, offset, chunk).
 call 1 0 0 0
 call 1 255 0 0
 call 1 256 0 0
@@ -53,6 +54,24 @@ call 2 2 0x7ffffe800000 65537
 call 2 0 0x7ffffe800000 1
 call 2 3 0x7ffffe800000 1
 call 3 1 0 0x7ffffe800000
+call 3 0xffffffffffffffff 0xffffffffffffffff 0
 call 0 0 0 0
 call 4 0 0 0
 call 0xffffffffffffffff 0 0 0
+# File calls (`call OPERATION A B C D`, D the result record): 7
+# open_directory, 8 open_beneath, 9 open_file and 11 create_output (handle,
+# path, length up to 64 KiB, record); 10 close, 12 write(output, buffer,
+# length up to 64 KiB), 13 commit and 14 discard. Only open_beneath names a
+# handle with a path; unused arguments are ignored; 15 is unknown.
+call 7 0 0x7ffffe800000 4 0x7ffffe801000
+call 7 65 0x7ffffe800000 4 0x7ffffe801000
+call 8 65 0x7ffffe800000 65536 0x7ffffe801000
+call 8 65 0x7ffffe800000 65537 0x7ffffe801000
+call 9 0 0x7ffffe800000 4096 0
+call 11 0 0x7ffffe800000 10 0x7ffffe801000
+call 10 66 0x7ffffe800000 7 9
+call 12 97 0x7ffffe800000 65536 0x7ffffe801000
+call 12 97 0x7ffffe800000 65537 0
+call 13 97 0 0 0
+call 14 0xffffffffffffffff 0 0 0
+call 15 0 0 0 0

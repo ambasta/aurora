@@ -1,0 +1,59 @@
+# File-service scripts for `kernel-process files VOLUME CASES`
+# (kernel/uefi/process.md#files): one fresh service per line over the volume
+# tests/meson.build writes (the HostFiles cases' tree/ plus deep/x/y/z.txt,
+# a-b/c.txt, ab/c and top.txt). Operations as the HostFiles probe names them;
+# each prints its ordinal, status and raw result words (id, size, device:inode,
+# an output's directory). An id operand is @N (operation N's id), @N+K or a
+# literal; in a path %XX is a byte and {N} repeats the byte before it to N.
+# `quota N` caps the frames the overlay may hold, `frames` prints what it
+# holds and `finish` ends the process: every output ends, every handle
+# closes, and each committed file is exported (path, size, first bytes).
+#
+# Paths: from the root ("/" and the working directory), "." and empty
+# components stay, ".." stops at the root, a file takes no further component.
+dir tree dir /tree dir tree/ dir tree//sub dir ./tree/. dir / dir . dir .. dir /.. dir tree/sub/../.. dir tree/../tree/sub
+dir tree/a.txt dir tree/a.txt/ dir tree/a.txt/x dir tree/missing dir missing/.. dir tree/sub/b.txt/.. dir deep/x/y dir deep/x/y/z.txt
+file tree/a.txt file /tree/sub/../a.txt file tree/a.txt/ file tree/a.txt/. file tree/sub file tree file / file missing/../tree/a.txt file deep/x/y/z.txt
+# Bytewise order: "a-b" and "ab" sort around "a.b"-like names, a prefix of a
+# name is not its directory.
+dir a-b dir ab dir a dir ab/c file a-b/c.txt file ab/c file a-b/c file top.txt dir top.txt dir top
+# Components above 255 bytes are invalid_path where the walk meets them; a
+# path above 4095 bytes is invalid_path before anything else.
+dir tree/a{256} dir missing/a{256} dir a{255} file a{4095} file a{4096} file tree/%00 dir tree%00 open 0 a{4096}
+# Beneath a directory: no absolute path and no ".." component at all.
+dir tree open @1 a.txt open @1 sub/b.txt open @1 ./a.txt open @1 sub//b.txt open @1 . open @1 sub open @1 .. open @1 sub/.. open @1 sub/../a.txt open @1 /tree/a.txt open @1 a.txt/ open @1 nope/x open @1 '' open @1 ..x
+dir tree/sub open @1 b.txt open @1 ../a.txt dir deep/x open @4 y/z.txt open @4 y
+# Ids: generation * 64 + slot + 1; a slot's next claim has the next
+# generation, so a closed id stays invalid; kinds are checked.
+dir tree open @1 a.txt close @2 open @1 a.txt read @2 0 read @4 0 close @2 close @4 close @4 open @1 a.txt
+dir tree open @1 a.txt read @1 0 open @2 a.txt read @2+64 0 read @2+1 0 read 0 0 read 32 0 read 33 0 read 37 0 close 37 close 0 close @1+64 close @1
+create tree/o.txt close @1 read @1 0 open @1 o.txt write @1 x commit @1 commit @1 discard @1 write @1 x
+dir tree commit @1 discard @1 write @1 x
+# Handle exhaustion at 32 and output exhaustion at 4, each freed by a close
+# or an end.
+dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree open @1 a.txt file tree/a.txt close @7 dir tree file tree/a.txt
+create tree/1 create tree/2 create tree/3 create tree/4 create tree/5 commit @1 create tree/5 discard @2 create tree/6 create tree/7 finish
+# Reads: up to 504 bytes, none at or after the end, failed beyond pread's
+# signed offsets.
+dir tree open @1 big.txt read @2 0 read @2 1000 read @2 1499 read @2 1500 read @2 99999 read @2 9223372036854775807 read @2 9223372036854775808 open @1 empty.txt read @10 0
+# create_output: the leaf, then a free output, then the parent as a
+# directory, then the destination absent or regular.
+create '' create tree/ create tree/. create tree/.. create tree/.aurora-output-1 create tree/.aurora-output create tree/x%00 create tree/a{256} create tree/a{255}
+create nodir/x create tree/a.txt/x create tree/sub create tree/a.txt create /top.txt create top.txt create x
+create /x create tree/sub/n create deep/x/../x/y/n create ../../x
+# The overlay: a commit adds or shadows a name for the rest of the run, with
+# a new overlay identity (device 2, inodes in commit order); a replaced file
+# open by a handle keeps its bytes until its last close.
+create tree/o.txt write @1 hello commit @1 dir tree open @4 o.txt read @5 0 file tree/o.txt create tree/o.txt write @8 again! commit @8 read @5 0 open @4 o.txt read @12 0 frames close @5 frames close @7 frames finish
+create tree/a.txt write @1 replaced commit @1 dir tree open @4 a.txt read @5 0 file tree/a.txt create tree/a.txt finish
+dir tree open @1 a.txt create tree/a.txt write @3 new commit @3 read @2 0 open @1 a.txt read @7 0 close @2 finish
+create tree/b write @1 one create tree/b write @3 two commit @3 commit @1 file tree/b read @7 0 finish
+create tree/d write @1 gone discard @1 file tree/d create tree/p write @5 pending finish
+create tree/sub/n.txt write @1 n commit @1 dir tree/sub open @4 n.txt read @5 0 file tree/sub/n.txt/x create tree/sub/n.txt/x finish
+create top%20file write @1 spaced commit @1 file top%20file finish
+# Writes: 64 MiB per output, then too_large fails the output; a failed
+# output's commit fails and discards it; the quota caps what the overlay holds.
+create tree/big fill @1 67108864 write @1 x write @1 x commit @1 create tree/big frames finish
+create tree/big fill @1 67108863 write @1 xy commit @1 finish
+quota 3 create tree/q fill @1 8192 write @1 x commit @1 frames finish
+quota 2 create tree/q fill @1 4096 commit @1 frames finish

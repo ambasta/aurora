@@ -13,4 +13,10 @@
 13 bin/isolation-9 past-mapping	page_fault vector=14 error=6
 14 bin/isolation-10 bad-unmap	call operation=6
 15 bin/isolation-11 moved-away	page_fault vector=14 error=4
-16 bin/probe probe print 'two words' exit success	exit 0 | stdout: two words1 print success
+16 bin/isolation-12 heap-read	exit 0 | stdout: alpha
+17 bin/isolation-13 read-unmapped	call operation=3
+18 bin/isolation-14 read-code	call operation=3
+19 bin/isolation-15 path-kernel	call operation=9
+20 bin/isolation-16 write-gap	call operation=12
+21 bin/isolation-17 forged-ids	exit 0 | exported: tree/f.txt:0
+22 bin/probe probe print 'two words' exit success	exit 0 | stdout: two words1 print success

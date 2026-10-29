@@ -1,0 +1,314 @@
+dir tree dir /tree dir tree/ dir tree//sub dir ./tree/. dir / dir . dir .. dir /.. dir tree/sub/../.. dir tree/../tree/sub
+  1 dir success id=65 identity=1:66561
+  2 dir success id=66 identity=1:66561
+  3 dir success id=67 identity=1:66561
+  4 dir success id=68 identity=1:67330
+  5 dir success id=69 identity=1:66561
+  6 dir success id=70 identity=1:65536
+  7 dir success id=71 identity=1:65536
+  8 dir success id=72 identity=1:65536
+  9 dir success id=73 identity=1:65536
+  10 dir success id=74 identity=1:65536
+  11 dir success id=75 identity=1:67330
+dir tree/a.txt dir tree/a.txt/ dir tree/a.txt/x dir tree/missing dir missing/.. dir tree/sub/b.txt/.. dir deep/x/y dir deep/x/y/z.txt
+  1 dir not_regular id=0 identity=0:0
+  2 dir not_regular id=0 identity=0:0
+  3 dir not_regular id=0 identity=0:0
+  4 dir not_found id=0 identity=0:0
+  5 dir not_found id=0 identity=0:0
+  6 dir not_regular id=0 identity=0:0
+  7 dir success id=65 identity=1:66051
+  8 dir not_regular id=0 identity=0:0
+file tree/a.txt file /tree/sub/../a.txt file tree/a.txt/ file tree/a.txt/. file tree/sub file tree file / file missing/../tree/a.txt file deep/x/y/z.txt
+  1 file success id=65 size=6 identity=1:5
+  2 file success id=66 size=6 identity=1:5
+  3 file not_found id=0 size=0 identity=0:0
+  4 file not_found id=0 size=0 identity=0:0
+  5 file not_regular id=0 size=0 identity=0:0
+  6 file not_regular id=0 size=0 identity=0:0
+  7 file not_regular id=0 size=0 identity=0:0
+  8 file not_found id=0 size=0 identity=0:0
+  9 file success id=67 size=4 identity=1:3
+dir a-b dir ab dir a dir ab/c file a-b/c.txt file ab/c file a-b/c file top.txt dir top.txt dir top
+  1 dir success id=65 identity=1:65537
+  2 dir success id=66 identity=1:65793
+  3 dir not_found id=0 identity=0:0
+  4 dir not_regular id=0 identity=0:0
+  5 file success id=67 size=4 identity=1:1
+  6 file success id=68 size=5 identity=1:2
+  7 file not_found id=0 size=0 identity=0:0
+  8 file success id=69 size=3 identity=1:4
+  9 dir not_regular id=0 identity=0:0
+  10 dir not_found id=0 identity=0:0
+dir tree/a{256} dir missing/a{256} dir a{255} file a{4095} file a{4096} file tree/%00 dir tree%00 open 0 a{4096}
+  1 dir invalid_path id=0 identity=0:0
+  2 dir not_found id=0 identity=0:0
+  3 dir not_found id=0 identity=0:0
+  4 file invalid_path id=0 size=0 identity=0:0
+  5 file invalid_path id=0 size=0 identity=0:0
+  6 file invalid_path id=0 size=0 identity=0:0
+  7 dir invalid_path id=0 identity=0:0
+  8 open invalid_handle id=0 size=0 identity=0:0
+dir tree open @1 a.txt open @1 sub/b.txt open @1 ./a.txt open @1 sub//b.txt open @1 . open @1 sub open @1 .. open @1 sub/.. open @1 sub/../a.txt open @1 /tree/a.txt open @1 a.txt/ open @1 nope/x open @1 '' open @1 ..x
+  1 dir success id=65 identity=1:66561
+  2 open success id=66 size=6 identity=1:5
+  3 open success id=67 size=10 identity=1:8
+  4 open success id=68 size=6 identity=1:5
+  5 open success id=69 size=10 identity=1:8
+  6 open not_regular id=0 size=0 identity=0:0
+  7 open not_regular id=0 size=0 identity=0:0
+  8 open escape id=0 size=0 identity=0:0
+  9 open escape id=0 size=0 identity=0:0
+  10 open escape id=0 size=0 identity=0:0
+  11 open escape id=0 size=0 identity=0:0
+  12 open not_found id=0 size=0 identity=0:0
+  13 open not_found id=0 size=0 identity=0:0
+  14 open invalid_path id=0 size=0 identity=0:0
+  15 open not_found id=0 size=0 identity=0:0
+dir tree/sub open @1 b.txt open @1 ../a.txt dir deep/x open @4 y/z.txt open @4 y
+  1 dir success id=65 identity=1:67330
+  2 open success id=66 size=10 identity=1:8
+  3 open escape id=0 size=0 identity=0:0
+  4 dir success id=67 identity=1:66050
+  5 open success id=68 size=4 identity=1:3
+  6 open not_regular id=0 size=0 identity=0:0
+dir tree open @1 a.txt close @2 open @1 a.txt read @2 0 read @4 0 close @2 close @4 close @4 open @1 a.txt
+  1 dir success id=65 identity=1:66561
+  2 open success id=66 size=6 identity=1:5
+  3 close success
+  4 open success id=130 size=6 identity=1:5
+  5 read invalid_handle
+  6 read success 6 alpha
+
+  7 close invalid_handle
+  8 close success
+  9 close invalid_handle
+  10 open success id=194 size=6 identity=1:5
+dir tree open @1 a.txt read @1 0 open @2 a.txt read @2+64 0 read @2+1 0 read 0 0 read 32 0 read 33 0 read 37 0 close 37 close 0 close @1+64 close @1
+  1 dir success id=65 identity=1:66561
+  2 open success id=66 size=6 identity=1:5
+  3 read invalid_handle
+  4 open invalid_handle id=0 size=0 identity=0:0
+  5 read invalid_handle
+  6 read invalid_handle
+  7 read invalid_handle
+  8 read invalid_handle
+  9 read invalid_handle
+  10 read invalid_handle
+  11 close invalid_handle
+  12 close invalid_handle
+  13 close invalid_handle
+  14 close success
+create tree/o.txt close @1 read @1 0 open @1 o.txt write @1 x commit @1 commit @1 discard @1 write @1 x
+  1 create success id=97 identity=0:0 directory=1:66561
+  2 close invalid_handle
+  3 read invalid_handle
+  4 open invalid_handle id=0 size=0 identity=0:0
+  5 write success
+  6 commit success
+  7 commit invalid_handle
+  8 discard invalid_handle
+  9 write invalid_handle
+dir tree commit @1 discard @1 write @1 x
+  1 dir success id=65 identity=1:66561
+  2 commit invalid_handle
+  3 discard invalid_handle
+  4 write invalid_handle
+dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree dir tree open @1 a.txt file tree/a.txt close @7 dir tree file tree/a.txt
+  1 dir success id=65 identity=1:66561
+  2 dir success id=66 identity=1:66561
+  3 dir success id=67 identity=1:66561
+  4 dir success id=68 identity=1:66561
+  5 dir success id=69 identity=1:66561
+  6 dir success id=70 identity=1:66561
+  7 dir success id=71 identity=1:66561
+  8 dir success id=72 identity=1:66561
+  9 dir success id=73 identity=1:66561
+  10 dir success id=74 identity=1:66561
+  11 dir success id=75 identity=1:66561
+  12 dir success id=76 identity=1:66561
+  13 dir success id=77 identity=1:66561
+  14 dir success id=78 identity=1:66561
+  15 dir success id=79 identity=1:66561
+  16 dir success id=80 identity=1:66561
+  17 dir success id=81 identity=1:66561
+  18 dir success id=82 identity=1:66561
+  19 dir success id=83 identity=1:66561
+  20 dir success id=84 identity=1:66561
+  21 dir success id=85 identity=1:66561
+  22 dir success id=86 identity=1:66561
+  23 dir success id=87 identity=1:66561
+  24 dir success id=88 identity=1:66561
+  25 dir success id=89 identity=1:66561
+  26 dir success id=90 identity=1:66561
+  27 dir success id=91 identity=1:66561
+  28 dir success id=92 identity=1:66561
+  29 dir success id=93 identity=1:66561
+  30 dir success id=94 identity=1:66561
+  31 dir success id=95 identity=1:66561
+  32 dir success id=96 identity=1:66561
+  33 dir exhausted id=0 identity=0:0
+  34 open exhausted id=0 size=0 identity=0:0
+  35 file exhausted id=0 size=0 identity=0:0
+  36 close success
+  37 dir success id=135 identity=1:66561
+  38 file exhausted id=0 size=0 identity=0:0
+create tree/1 create tree/2 create tree/3 create tree/4 create tree/5 commit @1 create tree/5 discard @2 create tree/6 create tree/7 finish
+  1 create success id=97 identity=0:0 directory=1:66561
+  2 create success id=98 identity=0:0 directory=1:66561
+  3 create success id=99 identity=0:0 directory=1:66561
+  4 create success id=100 identity=0:0 directory=1:66561
+  5 create exhausted id=0 identity=0:0 directory=0:0
+  6 commit success
+  7 create success id=161 identity=0:0 directory=1:66561
+  8 discard success
+  9 create success id=162 identity=0:0 directory=1:66561
+  10 create exhausted id=0 identity=0:0 directory=0:0
+  export tree/1 bytes=0 
+  11 finish clean charged=0 held=0
+dir tree open @1 big.txt read @2 0 read @2 1000 read @2 1499 read @2 1500 read @2 99999 read @2 9223372036854775807 read @2 9223372036854775808 open @1 empty.txt read @10 0
+  1 dir success id=65 identity=1:66561
+  2 open success id=66 size=1500 identity=1:6
+  3 read success 504 0123456789:;<=>?@ABCDEFGHIJKLMNO
+  4 read success 500 IJKLMNOPQRSTUVWXYZ[\]^_`abcdefgh
+  5 read success 1 z
+  6 read success 0 
+  7 read success 0 
+  8 read success 0 
+  9 read failed
+  10 open success id=67 size=0 identity=1:7
+  11 read success 0 
+create '' create tree/ create tree/. create tree/.. create tree/.aurora-output-1 create tree/.aurora-output create tree/x%00 create tree/a{256} create tree/a{255}
+  1 create invalid_path id=0 identity=0:0 directory=0:0
+  2 create invalid_path id=0 identity=0:0 directory=0:0
+  3 create invalid_path id=0 identity=0:0 directory=0:0
+  4 create invalid_path id=0 identity=0:0 directory=0:0
+  5 create invalid_path id=0 identity=0:0 directory=0:0
+  6 create success id=97 identity=0:0 directory=1:66561
+  7 create invalid_path id=0 identity=0:0 directory=0:0
+  8 create invalid_path id=0 identity=0:0 directory=0:0
+  9 create success id=98 identity=0:0 directory=1:66561
+create nodir/x create tree/a.txt/x create tree/sub create tree/a.txt create /top.txt create top.txt create x
+  1 create not_found id=0 identity=0:0 directory=0:0
+  2 create not_found id=0 identity=0:0 directory=0:0
+  3 create not_regular id=0 identity=0:0 directory=0:0
+  4 create success id=97 identity=1:5 directory=1:66561
+  5 create success id=98 identity=1:4 directory=1:65536
+  6 create success id=99 identity=1:4 directory=1:65536
+  7 create success id=100 identity=0:0 directory=1:65536
+create /x create tree/sub/n create deep/x/../x/y/n create ../../x
+  1 create success id=97 identity=0:0 directory=1:65536
+  2 create success id=98 identity=0:0 directory=1:67330
+  3 create success id=99 identity=0:0 directory=1:66051
+  4 create success id=100 identity=0:0 directory=1:65536
+create tree/o.txt write @1 hello commit @1 dir tree open @4 o.txt read @5 0 file tree/o.txt create tree/o.txt write @8 again! commit @8 read @5 0 open @4 o.txt read @12 0 frames close @5 frames close @7 frames finish
+  1 create success id=97 identity=0:0 directory=1:66561
+  2 write success
+  3 commit success
+  4 dir success id=65 identity=1:66561
+  5 open success id=66 size=5 identity=2:1
+  6 read success 5 hello
+  7 file success id=67 size=5 identity=2:1
+  8 create success id=161 identity=2:1 directory=1:66561
+  9 write success
+  10 commit success
+  11 read success 5 hello
+  12 open success id=68 size=6 identity=2:2
+  13 read success 6 again!
+  14 frames charged=4 held=4
+  15 close success
+  16 frames charged=4 held=4
+  17 close success
+  18 frames charged=2 held=2
+  export tree/o.txt bytes=6 again!
+  19 finish clean charged=0 held=0
+create tree/a.txt write @1 replaced commit @1 dir tree open @4 a.txt read @5 0 file tree/a.txt create tree/a.txt finish
+  1 create success id=97 identity=1:5 directory=1:66561
+  2 write success
+  3 commit success
+  4 dir success id=65 identity=1:66561
+  5 open success id=66 size=8 identity=2:1
+  6 read success 8 replaced
+  7 file success id=67 size=8 identity=2:1
+  8 create success id=161 identity=2:1 directory=1:66561
+  export tree/a.txt bytes=8 replaced
+  9 finish clean charged=0 held=0
+dir tree open @1 a.txt create tree/a.txt write @3 new commit @3 read @2 0 open @1 a.txt read @7 0 close @2 finish
+  1 dir success id=65 identity=1:66561
+  2 open success id=66 size=6 identity=1:5
+  3 create success id=97 identity=1:5 directory=1:66561
+  4 write success
+  5 commit success
+  6 read success 6 alpha
+
+  7 open success id=67 size=3 identity=2:1
+  8 read success 3 new
+  9 close success
+  export tree/a.txt bytes=3 new
+  10 finish clean charged=0 held=0
+create tree/b write @1 one create tree/b write @3 two commit @3 commit @1 file tree/b read @7 0 finish
+  1 create success id=97 identity=0:0 directory=1:66561
+  2 write success
+  3 create success id=98 identity=0:0 directory=1:66561
+  4 write success
+  5 commit success
+  6 commit success
+  7 file success id=65 size=3 identity=2:2
+  8 read success 3 one
+  export tree/b bytes=3 one
+  9 finish clean charged=0 held=0
+create tree/d write @1 gone discard @1 file tree/d create tree/p write @5 pending finish
+  1 create success id=97 identity=0:0 directory=1:66561
+  2 write success
+  3 discard success
+  4 file not_found id=0 size=0 identity=0:0
+  5 create success id=161 identity=0:0 directory=1:66561
+  6 write success
+  7 finish clean charged=0 held=0
+create tree/sub/n.txt write @1 n commit @1 dir tree/sub open @4 n.txt read @5 0 file tree/sub/n.txt/x create tree/sub/n.txt/x finish
+  1 create success id=97 identity=0:0 directory=1:67330
+  2 write success
+  3 commit success
+  4 dir success id=65 identity=1:67330
+  5 open success id=66 size=1 identity=2:1
+  6 read success 1 n
+  7 file not_found id=0 size=0 identity=0:0
+  8 create not_found id=0 identity=0:0 directory=0:0
+  export tree/sub/n.txt bytes=1 n
+  9 finish clean charged=0 held=0
+create top%20file write @1 spaced commit @1 file top%20file finish
+  1 create success id=97 identity=0:0 directory=1:65536
+  2 write success
+  3 commit success
+  4 file success id=65 size=6 identity=2:1
+  export top%20file bytes=6 spaced
+  5 finish clean charged=0 held=0
+create tree/big fill @1 67108864 write @1 x write @1 x commit @1 create tree/big frames finish
+  1 create success id=97 identity=0:0 directory=1:66561
+  2 fill success written=67108864
+  3 write too_large
+  4 write failed
+  5 commit failed
+  6 create success id=161 identity=0:0 directory=1:66561
+  7 frames charged=0 held=0
+  8 finish clean charged=0 held=0
+create tree/big fill @1 67108863 write @1 xy commit @1 finish
+  1 create success id=97 identity=0:0 directory=1:66561
+  2 fill success written=67108863
+  3 write too_large
+  4 commit failed
+  5 finish clean charged=0 held=0
+quota 3 create tree/q fill @1 8192 write @1 x commit @1 frames finish
+  1 create success id=97 identity=0:0 directory=1:66561
+  2 fill success written=8192
+  3 write failed
+  4 commit failed
+  5 frames charged=0 held=0
+  6 finish clean charged=0 held=0
+quota 2 create tree/q fill @1 4096 commit @1 frames finish
+  1 create success id=97 identity=0:0 directory=1:66561
+  2 fill success written=4096
+  3 commit success
+  4 frames charged=2 held=2
+  export tree/q bytes=4096 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  5 finish clean charged=0 held=0

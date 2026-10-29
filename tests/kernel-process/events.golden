@@ -35,15 +35,28 @@ trap 0xe 0 0x401000 0x1b 0x3202 0x7fffff000000 0x23 0 0x10000 -> kernel
 trap 0xe 0 0x401000 0x1b 0x20202 0x7fffff000000 0x23 0 0x10000 -> kernel
 trap 0xe 0 0x401000 0x1b 0x254fd7 0x7fffff000000 0x23 0 0x10000 -> page_fault
 trap 0xe 0 0x401000 0x1b 0x254fdf 0x7fffff000000 0x23 0 0x10000 -> kernel
-call 0x1 0 0 0 -> exit value=0 length=0 base=0
-call 0x1 0xff 0 0 -> exit value=0xff length=0 base=0
-call 0x1 0x100 0 0 -> invalid value=0 length=0 base=0
-call 0x2 0x1 0x7ffffe800000 0x1000 -> print value=0x1 length=4096 base=0
-call 0x2 0x2 0x7ffffe800000 0x10000 -> print value=0x2 length=65536 base=0
-call 0x2 0x2 0x7ffffe800000 0x10001 -> invalid value=0 length=0 base=0
-call 0x2 0 0x7ffffe800000 0x1 -> invalid value=0 length=0 base=0
-call 0x2 0x3 0x7ffffe800000 0x1 -> invalid value=0 length=0 base=0
-call 0x3 0x1 0 0x7ffffe800000 -> read value=0xffffffffffffffff length=0 base=0
-call 0 0 0 0 -> invalid value=0 length=0 base=0
-call 0x4 0 0 0 -> invalid value=0 length=0 base=0
-call 0xffffffffffffffff 0 0 0 -> invalid value=0 length=0 base=0
+call 0x1 0 0 0 -> exit value=0 length=0 base=0 record=0
+call 0x1 0xff 0 0 -> exit value=0xff length=0 base=0 record=0
+call 0x1 0x100 0 0 -> invalid value=0 length=0 base=0 record=0
+call 0x2 0x1 0x7ffffe800000 0x1000 -> print value=0x1 length=4096 base=0x7ffffe800000 record=0
+call 0x2 0x2 0x7ffffe800000 0x10000 -> print value=0x2 length=65536 base=0x7ffffe800000 record=0
+call 0x2 0x2 0x7ffffe800000 0x10001 -> invalid value=0 length=0 base=0 record=0
+call 0x2 0 0x7ffffe800000 0x1 -> invalid value=0 length=0 base=0 record=0
+call 0x2 0x3 0x7ffffe800000 0x1 -> invalid value=0 length=0 base=0 record=0
+call 0x3 0x1 0 0x7ffffe800000 -> read value=0x1 length=0 base=0x7ffffe800000 record=0
+call 0x3 0xffffffffffffffff 0xffffffffffffffff 0 -> read value=0xffffffffffffffff length=18446744073709551615 base=0 record=0
+call 0 0 0 0 -> invalid value=0 length=0 base=0 record=0
+call 0x4 0 0 0 -> invalid value=0 length=0 base=0 record=0
+call 0xffffffffffffffff 0 0 0 -> invalid value=0 length=0 base=0 record=0
+call 0x7 0 0x7ffffe800000 0x4 0x7ffffe801000 -> open_directory value=0 length=4 base=0x7ffffe800000 record=0x7ffffe801000
+call 0x7 0x41 0x7ffffe800000 0x4 0x7ffffe801000 -> open_directory value=0 length=4 base=0x7ffffe800000 record=0x7ffffe801000
+call 0x8 0x41 0x7ffffe800000 0x10000 0x7ffffe801000 -> open_beneath value=0x41 length=65536 base=0x7ffffe800000 record=0x7ffffe801000
+call 0x8 0x41 0x7ffffe800000 0x10001 0x7ffffe801000 -> invalid value=0 length=0 base=0 record=0
+call 0x9 0 0x7ffffe800000 0x1000 0 -> open_file value=0 length=4096 base=0x7ffffe800000 record=0
+call 0xb 0 0x7ffffe800000 0xa 0x7ffffe801000 -> create_output value=0 length=10 base=0x7ffffe800000 record=0x7ffffe801000
+call 0xa 0x42 0x7ffffe800000 0x7 0x9 -> close value=0x42 length=0 base=0 record=0
+call 0xc 0x61 0x7ffffe800000 0x10000 0x7ffffe801000 -> write value=0x61 length=65536 base=0x7ffffe800000 record=0
+call 0xc 0x61 0x7ffffe800000 0x10001 0 -> invalid value=0 length=0 base=0 record=0
+call 0xd 0x61 0 0 0 -> commit value=0x61 length=0 base=0 record=0
+call 0xe 0xffffffffffffffff 0 0 0 -> discard value=0xffffffffffffffff length=0 base=0 record=0
+call 0xf 0 0 0 0 -> invalid value=0 length=0 base=0 record=0

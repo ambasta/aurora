@@ -2,6 +2,7 @@
 #include "acpi.hpp"
 #include "apic-timer-io.hpp"
 #include "budget-transport.hpp"
+#include "process-files.hpp"
 #include "process-space.hpp"
 #include "../console.hpp"
 
@@ -220,7 +221,7 @@ constexpr U64 tick_count = U64{1} << 24;
 // The interrupt frame: 15 saved registers (R15 first, RAX last), the vector and
 // error code, then the CPU's RIP, CS, RFLAGS, RSP and SS.
 constexpr std::size_t frame_words = BootstrapLayout::fault_frame_words, frame_rax = 14, frame_rdi = 8, frame_rsi = 9,
-                      frame_rdx = 11, frame_rip = 17;
+                      frame_rdx = 11, frame_r10 = 5, frame_rip = 17;
 class Running final {
 public:
     ProcessSpace *space = nullptr;
@@ -434,9 +435,150 @@ auto charge_tick(U64 vector, U64 error, U64 rip, U64 cs) -> U64 {
     return 1;
 }
 
+// The file service's storage: the running process's frames (charged to its
+// quota) through the kernel's transient window.
+class KernelStore final {
+public:
+    ProcessSpace *process = nullptr;
+    [[nodiscard]] auto take() -> std::optional<U64> {
+        return process->file_frame();
+    }
+    [[nodiscard]] auto give(U64 frame) -> bool {
+        return process->drop_file_frame(frame);
+    }
+    [[nodiscard]] auto charge(U64 count) -> bool {
+        return process->charge_files(count);
+    }
+    [[nodiscard]] auto uncharge(U64 count) -> bool {
+        return process->uncharge_files(count);
+    }
+    [[nodiscard]] auto charged() const -> U64 {
+        return process->charged();
+    }
+    [[nodiscard]] auto quota() const -> U64 {
+        return process->quota();
+    }
+    [[nodiscard]] auto charged_files() const -> U64 {
+        return process->file_charge();
+    }
+    [[nodiscard]] auto read_word(U64 frame, U64 index) -> U64 {
+        auto *words = index < 512 ? space.open(frame) : nullptr;
+        if (!words)
+            return 0;
+        const auto value = reinterpret_cast<volatile U64 *>(words)[index];
+        space.close();
+        return value;
+    }
+    [[nodiscard]] auto write_word(U64 frame, U64 index, U64 value) -> bool {
+        auto *words = index < 512 ? space.open(frame) : nullptr;
+        if (!words)
+            return false;
+        reinterpret_cast<volatile U64 *>(words)[index] = value;
+        space.close();
+        return true;
+    }
+    [[nodiscard]] auto copy_in(U64 frame, U64 offset, std::span<const std::byte> bytes) -> bool {
+        auto *words = offset <= frames::page && bytes.size() <= frames::page - offset ? space.open(frame) : nullptr;
+        if (!words)
+            return false;
+        auto *target = reinterpret_cast<volatile std::byte *>(words) + offset;
+        for (std::size_t at = 0; at < bytes.size(); ++at)
+            target[at] = bytes[at];
+        space.close();
+        return true;
+    }
+    [[nodiscard]] auto copy_out(U64 frame, U64 offset, std::span<std::byte> bytes) -> bool {
+        auto *words = offset <= frames::page && bytes.size() <= frames::page - offset ? space.open(frame) : nullptr;
+        if (!words)
+            return false;
+        const auto *source = reinterpret_cast<volatile const std::byte *>(words) + offset;
+        for (std::size_t at = 0; at < bytes.size(); ++at)
+            bytes[at] = source[at];
+        space.close();
+        return true;
+    }
+};
+constinit KernelStore file_store;
+constinit aurora::uefi::FileService<KernelStore> files;
+// The kernel's copy of a call's path, read from the process before any
+// decision sees it.
+constinit std::array<std::byte, process::file_path_limit + 1> path_copy{};
+
+// A process buffer the call reads (or writes) under its root
+// (ProcessSpace::access): nullopt ends the process as an invalid call.
+auto user_bytes(U64 address, U64 length, bool write) -> std::optional<std::byte *> {
+    const auto access = running.space->access(address, length, write);
+    if (access == ProcessSpace::Access::broken)
+        fail("process memory access");
+    if (access == ProcessSpace::Access::refused)
+        return std::nullopt;
+    // Fixture: the whole space verifies after each access (it may commit).
+    if ((running.flags & 4) && !running.space->verify())
+        fail("memory walk");
+    return reinterpret_cast<std::byte *>(address);
+}
+
+// A file call (process.md#files): RAX becomes 0, a count or a negative
+// HostStatus; the result record is written for the opens and create_output.
+// False for a path or buffer the process cannot lend: the process ends as an
+// invalid call.
+auto file_call(const process::KernelCall &call, volatile U64 *frame) -> bool {
+    using Action = process::CallAction;
+    const auto action = static_cast<Action>(call.action);
+    const auto path_call = action == Action::open_directory || action == Action::open_beneath ||
+                           action == Action::open_file || action == Action::create_output;
+    std::optional<std::byte *> record;
+    std::span<const std::byte> path;
+    if (path_call) {
+        record = user_bytes(call.record, 48, true);
+        // A path above the limit is never read: it arrives empty, which the
+        // policy refuses as invalid_path in the same order.
+        const auto readable = call.length <= process::file_path_limit;
+        const auto source = readable ? user_bytes(call.base, call.length, false) : std::optional<std::byte *>{nullptr};
+        if (!record || !source)
+            return false;
+        if (readable) {
+            for (U64 at = 0; at < call.length; ++at)
+                path_copy[at] = (*source)[at];
+            path = {path_copy.data(), call.length};
+        }
+    }
+    aurora::uefi::FileService<KernelStore>::Result result;
+    if (action == Action::read) {
+        const auto chunk = user_bytes(call.base, process::file_chunk, true);
+        if (!chunk)
+            return false;
+        result = files.read(call.value, call.length, std::span<std::byte, process::file_chunk>{*chunk, process::file_chunk});
+    } else if (action == Action::write) {
+        const auto bytes = user_bytes(call.base, call.length, false);
+        if (!bytes)
+            return false;
+        result = files.write(call.value, {*bytes, call.length});
+    } else if (action == Action::create_output) {
+        result = files.create(path);
+    } else if (action == Action::close) {
+        result = files.close(call.value);
+    } else if (action == Action::commit) {
+        result = files.commit(call.value);
+    } else if (action == Action::discard) {
+        result = files.discard(call.value);
+    } else {
+        result = files.open(action == Action::open_directory ? 0 : action == Action::open_beneath ? 1 : 2, call.value,
+                            path);
+    }
+    if (result.broken)
+        fail("file service");
+    if (record)
+        for (U64 word = 0; word < 6; ++word)
+            store(reinterpret_cast<U64>(*record) + 8 * word, result.record[word], 8);
+    frame[frame_rax] = result.value;
+    return true;
+}
+
 // One kernel call: 0 resumes the process with RAX set, 1 ends it.
 auto kernel_call(volatile U64 *frame) -> U64 {
-    const auto decoded = process::call(frame[frame_rax], frame[frame_rdi], frame[frame_rsi], frame[frame_rdx]);
+    const auto decoded =
+        process::call(frame[frame_rax], frame[frame_rdi], frame[frame_rsi], frame[frame_rdx], frame[frame_r10]);
     if (!decoded)
         fail("Aurora kernel call decision");
     // Fixture: fault in the kernel during the run's first call (process.md#guest-rows).
@@ -448,15 +590,16 @@ auto kernel_call(volatile U64 *frame) -> U64 {
         outcome.status = decoded->value;
         return 1;
     }
-    if (action == process::CallAction::print && running.space->contains(frame[frame_rsi], decoded->length)) {
-        print_stream(decoded->value, frame[frame_rsi], decoded->length);
-        frame[frame_rax] = 0;
-        return 0;
+    if (action == process::CallAction::print) {
+        if (const auto bytes = user_bytes(decoded->base, decoded->length, false)) {
+            print_stream(decoded->value, reinterpret_cast<U64>(*bytes), decoded->length);
+            frame[frame_rax] = 0;
+            return 0;
+        }
     }
-    if (action == process::CallAction::read) {
-        frame[frame_rax] = decoded->value;
+    if ((action == process::CallAction::read || action >= process::CallAction::open_directory) &&
+        file_call(*decoded, frame))
         return 0;
-    }
     // The memory service (process.md#memory); a call naming no mapping, or
     // one whose length differs, ends the process like any invalid call.
     if (action == process::CallAction::map || action == process::CallAction::remap ||
@@ -613,6 +756,49 @@ auto walk_cases(ProcessSpace &process_space, U64 code, U64 block, U64 run) -> vo
     Serial::text("\r\n");
 }
 
+// Framed base64 export records of one committed overlay file
+// (process.md#export), its path encoded byte by byte (process.md#files).
+auto export_file(U64 record) -> bool {
+    const auto size = files.record(record).size;
+    bool encoded = true;
+    const auto path = [&]() {
+        return files.path(record, [&](std::uint8_t byte) {
+            const auto text = process::path_text(byte);
+            encoded = encoded && text;
+            for (unsigned i = 0; text && i < text->count; ++i)
+                Serial::put(static_cast<std::uint8_t>(text->characters[i]));
+        });
+    };
+    Serial::text("AURORA_EXPORT_BEGIN: path=");
+    if (!path() || !encoded)
+        return false;
+    field("bytes", size);
+    Serial::text("\r\n");
+    U64 lines = 0;
+    std::array<std::byte, 57> line{};
+    for (U64 offset = 0; offset < size; offset += line.size()) {
+        const auto count = aurora::uefi::least(line.size(), size - offset);
+        if (!files.bytes(record, offset, {line.data(), count}))
+            return false;
+        Serial::text("AURORA_EXPORT_DATA: ");
+        for (U64 at = 0; at < count; at += 3) {
+            const auto group = process::base64_group({line.data(), count}, at);
+            if (!group)
+                return false;
+            for (unsigned i = 0; i < 4; ++i)
+                Serial::put(static_cast<std::uint8_t>(*group >> (8 * i)));
+        }
+        Serial::text("\r\n");
+        ++lines;
+    }
+    Serial::text("AURORA_EXPORT_END: path=");
+    if (!path() || !encoded)
+        return false;
+    field("lines", lines);
+    Serial::text("\r\n");
+    return true;
+}
+
 auto refuse(U64 run, std::string_view reason) -> void {
     Serial::text("AURORA_PROCESS_REJECTED:");
     field("run", run);
@@ -696,6 +882,9 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
     const U64 context[] = {entry_point, stack_top - 16, block, arguments.size(), process_space.root()};
     running = Running{&process_space, run, entry.flags, entry.ticks, entry.ticks, 0, 0, 0, 0};
     outcome = Outcome{};
+    file_store.process = &process_space;
+    if (!files.begin(view, file_store))
+        fail("file service start");
     if (!Timer::arm(tick_count))
         fail("watchdog arm");
     if (process_enter(context) != 1 || root() != kernel_root || !Timer::stop())
@@ -710,6 +899,12 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
     end_record(run);
     if (!process_space.verify())
         fail("process exit walk");
+    // The run's committed files leave over serial; then the overlay is gone.
+    if (!files.finish([&](U64 record) {
+            return export_file(record);
+        }))
+        fail("file service finish");
+    file_store.process = nullptr;
     const auto memory = process_space.memory();
     const auto released = process_space.release();
     const auto audit = table.audit();

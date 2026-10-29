@@ -8,10 +8,14 @@ file of the same path; the volume size is the image's own ESP volume. A row
 with a run list reduces each run to one `ORDINAL PATH ARGUMENTS<TAB>OUTCOME`
 line compared with tests/kernel-process/MODE.golden; a run of bin/probe must
 also equal the hosted probe's line in tests/host-files/cases.golden (without
-its file tree, which the kernel has no file service for yet), a run of
-bin/memory with the whole quota its line in tests/host-files/memory.golden (a
-trap at the runtime's ud2 is SIGILL there) and the compiler with no arguments
-the Linux compiler's line in tests/host-files/usage.golden.
+its file tree), a run of bin/memory with the whole quota its line in
+tests/host-files/memory.golden (a trap at the runtime's ud2 is SIGILL there)
+and the compiler with no arguments the Linux compiler's line in
+tests/host-files/usage.golden. A run's committed files are exported when it
+ends; in process-files every run's line, with the volume's tree/ and the
+files the run exported under it, must equal its hosted line in
+tests/host-files/cases.golden (or limits.golden) but for the tree entries the
+volume lacks by design (symlinks and a FIFO).
 """
 
 import base64
@@ -25,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "tests"))
 from golden import compare, flat  # noqa: E402
+from host_files import TREE  # noqa: E402
 from kernel_profiles import PROCESS_CASES  # noqa: E402
 from kernel_uefi_oracle import exports, loader_selection, need  # noqa: E402
 
@@ -43,6 +48,8 @@ FRAMES = re.compile(
     r"AURORA_PROCESS_FRAMES: frames=(\d+) ranges=(\d+) tables=(\d+) metadata=(\d+) free=(\d+)\r?$", re.M
 )
 EXPORTED = "examples/host-sort.au"
+# Hosted tree entries the volume lacks by design.
+ABSENT = {"dirlink", "fifo", "link"}
 
 
 def ordered(text, markers):
@@ -66,9 +73,26 @@ def fields(rest):
     return dict(word.split("=", 1) for word in rest.split() if "=" in word)
 
 
+def tree(exported):
+    """The hosted cases' `tree:` listing of the volume's tree/ and a run's exports."""
+    entries = {path.split("/")[0]: None if "/" in path else len(content) for path, content in TREE.items()}
+    for path, content in exported.items():
+        parts = path.split("/")
+        if parts[0] == "tree" and len(parts) == 2:
+            entries[parts[1]] = len(content)
+    return "tree: " + " ".join(name if size is None else f"{name}:{size}" for name, size in sorted(entries.items()))
+
+
+def run_exports(text):
+    """Each run's exported files, decoded from the records between its start and the next."""
+    pieces = re.split(r"(?m)^(?=AURORA_PROCESS_RUN: )", text.replace("\r", ""))
+    return {int(fields(piece.split("\n", 1)[0])["run"]): exports(piece) for piece in pieces[1:]}
+
+
 def runs(text, mode):
     """One outcome line per run, checking each run's record order and release."""
     case, expected = PROCESS_CASES[mode]
+    exported = run_exports(text)
     need(text.count(f"AURORA_PROCESS_CASE_SELECTED: value={case}\n") == 1, "Missing case selector echo")
     initial = int(FRAMES.search(text)[5])
     lines, current, output = [], None, None
@@ -115,6 +139,12 @@ def runs(text, mode):
             ]
             if values["reason"] == "exit":
                 outcome = " | ".join([f"exit {values['status']}", *streams])
+                if mode == "process-files":
+                    outcome += " | " + tree(exported.get(current["run"], {}))
+                elif exported.get(current["run"]):
+                    outcome += " | exported: " + " ".join(
+                        f"{path}:{len(content)}" for path, content in sorted(exported[current["run"]].items())
+                    )
             elif values["reason"] == "watchdog":
                 outcome = f"watchdog ticks={values['ticks']}"
             elif values["reason"] == "call":
@@ -144,11 +174,20 @@ def runs(text, mode):
             need(int(values["free"]) == initial, "Frames leaked across runs")
         elif kind != "AURORA_PROCESS_FAIL":
             raise ValueError("Unexpected process record " + kind)
-    hosted = {}
-    for name in ("cases", "memory", "usage"):
+    hosted, files = {}, {}
+    for name in ("cases", "limits", "memory", "usage"):
         for line in (ROOT / f"tests/host-files/{name}.golden").read_text().splitlines():
             key, result = line.split("\t", 1)
             hosted[name, key] = result.split(" | tree:", 1)[0]
+            if name in ("cases", "limits") and " | tree: " in result:
+                head, listing = result.split(" | tree: ", 1)
+                files[key] = head + " | tree: " + " ".join(e for e in listing.split() if e.split(":")[0] not in ABSENT)
+    if mode == "process-files":
+        for line in lines:
+            key, outcome = line.split("\t")
+            words = shlex.join(shlex.split(key.split(" ", 2)[2]))
+            need(outcome == files.get(words), "Files case differs from its hosted golden: " + key)
+        return lines
     for (_, _, quota, _, _), line in zip(expected, lines):
         key, outcome = line.split("\t")
         _, path, arguments = key.split(" ", 2)
@@ -192,6 +231,10 @@ def validate(status, text, mode, image):
             "Unsorted volume accepted",
         )
         need("AURORA_PROCESS_VOLUME_OK" not in text and "AURORA_EXPORT" not in text, "Unsorted volume continued")
+        return
+    if mode == "process-files":
+        runs(text, mode)
+        need(status == 33 and "AURORA_PROCESS_FAIL" not in text, "Process row failed")
         return
     if mode in PROCESS_CASES:
         compare(ROOT / f"tests/kernel-process/{mode}.golden", runs(text, mode))

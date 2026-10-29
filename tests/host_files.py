@@ -25,13 +25,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from golden import compare, flat  # noqa: E402
 
 
+# The fixture's regular files, which the Aurora kernel's boot volume also
+# carries under tree/ (scripts/kernel_volume.py --host-files-tree).
+TREE = {
+    "a.txt": b"alpha\n",
+    "sub/b.txt": b"beta beta\n",
+    "big.txt": bytes(48 + i % 75 for i in range(1500)),
+    "empty.txt": b"",
+}
+
+
 def fixture(root):
     tree = root / "tree"
     (tree / "sub").mkdir(parents=True)
-    (tree / "a.txt").write_bytes(b"alpha\n")
-    (tree / "sub" / "b.txt").write_bytes(b"beta beta\n")
-    (tree / "big.txt").write_bytes(bytes(48 + i % 75 for i in range(1500)))
-    (tree / "empty.txt").write_bytes(b"")
+    for path, content in TREE.items():
+        (tree / path).write_bytes(content)
     (tree / "link").symlink_to("a.txt")
     (tree / "dirlink").symlink_to("sub", target_is_directory=True)
     os.mkfifo(tree / "fifo")

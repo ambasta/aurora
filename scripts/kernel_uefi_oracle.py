@@ -3,6 +3,7 @@
 import base64
 import binascii
 import re
+from urllib.parse import unquote
 import sys
 from pathlib import Path
 
@@ -42,9 +43,9 @@ def loader_selection(text, mode, selected=True):
     return text[: echoes[0].start(1)] + text[echoes[0].end(1) :]
 
 
-EXPORT_BEGIN = re.compile(r"AURORA_EXPORT_BEGIN: path=([A-Za-z0-9._/-]+) bytes=(0|[1-9][0-9]*)")
+EXPORT_BEGIN = re.compile(r"AURORA_EXPORT_BEGIN: path=([A-Za-z0-9._/%-]+) bytes=(0|[1-9][0-9]*)")
 EXPORT_DATA = re.compile(r"AURORA_EXPORT_DATA: ([A-Za-z0-9+/=]{4,76})")
-EXPORT_END = re.compile(r"AURORA_EXPORT_END: path=([A-Za-z0-9._/-]+) lines=(0|[1-9][0-9]*)")
+EXPORT_END = re.compile(r"AURORA_EXPORT_END: path=([A-Za-z0-9._/%-]+) lines=(0|[1-9][0-9]*)")
 
 
 def exports(text):
@@ -52,7 +53,8 @@ def exports(text):
 
     Each record is BEGIN, one DATA line per 57 bytes (the last may be shorter)
     and END naming the same path and line count. Returns {path: bytes}; any
-    stray, truncated, duplicate or miscounted record rejects.
+    stray, truncated, duplicate or miscounted record rejects. A path byte
+    outside the volume's name characters is %XX (an overlay file's leaf).
     """
     result, lines, index = {}, text.replace("\r", "").split("\n"), 0
     while index < len(lines):
@@ -75,6 +77,7 @@ def exports(text):
         need(end and end[1] == path and int(end[2]) == len(chunks), "Unterminated export record")
         need(all(len(chunk) == 57 for chunk in chunks[:-1]) and chunks[-1:] != [b""], "Export line framing")
         payload = b"".join(chunks)
+        path = unquote(path, errors="surrogateescape")
         need(len(payload) == size and path not in result, "Export length or duplicate path")
         result[path] = payload
     return result

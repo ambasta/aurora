@@ -418,5 +418,7 @@ builds over its own mapped bytes. `kernel.elf`, `kernel.process_space`,
 lists, lay out a process's regions, classify its trap frames and decode its
 kernel calls; `kernel.process_memory` decides its memory service's
 reservations, growth, moves, releases, committed faults and frame quota;
+`kernel.process_files` decides its file service's path walks and
+confinement, handle and output slots and ids, overlay changes and statuses;
 `kernel.interrupt_budget` charges its watchdog. The contract, encodings and tests are in
 [the process image](uefi/process.md).
