@@ -131,6 +131,7 @@ endforeach
 # Hosted Aurora programs: a root main(builtin::HostFiles&, builtin::span<const u8>)
 # -> builtin::HostExit gets a compiler-emitted _start and links like aurorac.
 hosted_programs = {}
+hosted_objects = {}
 foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
                         'host-files-probe': 'tests/host-files/probe.au',
                         'host-sort': 'examples/host-sort.au',
@@ -139,6 +140,7 @@ foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
   hosted_object = custom_target(name + '-object', input: source, output: name + '.o',
       command: [aurorac, '--emit-object', '@INPUT@', '-o', '@OUTPUT@'],
       depend_files: hosted_runtime_sources)
+  hosted_objects += {name: hosted_object}
   hosted_programs += {name: custom_target(name, input: hosted_object, output: name, command: compiler_link)}
 endforeach
 
@@ -184,6 +186,10 @@ if get_option('kernel_images')
     process_programs += {'linux:' + name: program}
   endforeach
 endif
+# The build products a guest row's exports must equal (tests/kernel-process-smoke.py
+# reads them from the build root).
+process_references = {'process-compile': [hosted_objects['host-sort']]}
+process_reference_objects = [hosted_objects['host-sort']]
 
 # Preserve the configured compiler command (including wrappers and quoted paths)
 # for the existing Python native observer. This does not build or run a test.

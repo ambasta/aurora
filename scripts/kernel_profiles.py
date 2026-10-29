@@ -87,6 +87,18 @@ FILES_RUNS = tuple(
     for key in (line.split("\t", 1)[0] for golden in FILES_GOLDEN for line in golden.read_text().splitlines())
     if files_case(key)
 )
+# The --target aurora compiler compiling for Linux in the guest: host-sort to
+# an object in the working directory (the volume root; HostFiles creates no
+# directories, on Linux either), which must equal the hosted build's
+# host-sort.o, then each rejected source of COMPILE_GOLDEN (the volume's
+# rejections/case-NNNN.au), whose diagnostics and exit status must be the
+# hosted compiler's.
+COMPILE_GOLDEN = "tests/kernel-process/compile.golden"
+COMPILE_FLAGS = "aurorac --emit-object --target linux --runtime-root /runtime/linux"
+COMPILE_RUNS = ((128, 0, 0, "bin/aurorac", COMPILE_FLAGS + " examples/host-sort.au -o host-sort.o"),) + tuple(
+    (32, 0, 0, "bin/aurorac", f"{COMPILE_FLAGS} rejections/case-{index:04d}.au -o case-{index:04d}.o")
+    for index, _ in enumerate((ROOT / COMPILE_GOLDEN).read_text().splitlines())
+)
 PROCESS_CASES = {
     "process-run": (
         1,
@@ -137,9 +149,10 @@ PROCESS_CASES = {
         ),
     ),
     "process-files": (4, FILES_RUNS),
+    "process-compile": (5, COMPILE_RUNS),
 }
 # The run lists of the compiler volume (\\aurora\\compiler, kernel/uefi/loader-fixture.hpp).
-COMPILER_CASES = frozenset({3})
+COMPILER_CASES = frozenset({3, 5})
 # Guest memory of the rows that need more than the UEFI default: one memory
 # case keeps 4 GiB mapped (committed on first touch, but charged in full).
 # The files row holds a 64 MiB output beside the probe's 8 MiB stack.
@@ -1046,8 +1059,10 @@ PROCESS_VOLUME_FILES = ("examples/core_math.au", "examples/host-sort.au")
 # Programs (--program PATH=KIND:NAME, a build product: aurora for --target
 # aurora, linux for the hosted Linux build, assembly for GNU as) and header-only ELF files (--elf
 # PATH=EDITS over the writer's admission image) the run lists name. The
-# compiler volume carries the compiler and the memory probe for cases 3 on.
+# compiler volume carries the compiler and the memory probe for cases 3 and 5.
 PROCESS_COMPILER_PROGRAMS = {"bin/aurorac": "aurora:aurorac", "bin/memory": "aurora:host-memory-probe"}
+# It also holds what the compile row reads: the Linux runtime root and the program.
+PROCESS_COMPILER_FILES = ("examples/host-sort.au", "runtime/linux/aurora/host.au", "runtime/linux/aurora/memory.au")
 PROCESS_PROGRAMS = {
     "bin/probe": "aurora:host-files-probe",
     "bin/hostile": "aurora:process-hostile",
@@ -1094,6 +1109,8 @@ PROCESS_ESP = {
     "compiler": [
         word for path, program in PROCESS_COMPILER_PROGRAMS.items() for word in ("--program", path + "=" + program)
     ]
+    + [word for path in PROCESS_COMPILER_FILES for word in ("--file", path)]
+    + ["--rejections", "rejections=" + COMPILE_GOLDEN]
     + [
         word
         for case, runs in PROCESS_CASES.values()
@@ -1130,7 +1147,7 @@ GUEST_FAMILIES = {
     "tables": "runtime-table-readback runtime-table-reject runtime-table-exhaust runtime-table-quarantine",
     "pins": "runtime-pin-cancel runtime-pin-fault runtime-pin-stale runtime-pin-exhaust",
     "process": "process-volume process-volume-corrupt process-volume-empty process-volume-map process-run "
-    "process-hostile process-memory process-files",
+    "process-hostile process-memory process-files process-compile",
 }
 
 
