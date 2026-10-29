@@ -33,6 +33,26 @@ General terminal sessions and file services remain open. The shared typed named-
 core is separate from parsing/presentation and serves both console paths and the
 opt-in protected volatile namespace described below.
 
+The kernel is to become entirely Aurora. The [process image](../kernel/uefi/process.md)
+already decides in Aurora (memory map, frames, ELF admission, address-space
+regions, faults, kernel calls, memory and file services) while C++ keeps only
+glue. Retiring that glue needs these language and bridge capabilities, each a
+milestone with its own consumer:
+
+- kernel-side Aurora state that persists across bridge calls (frame records,
+  mapping records, handle tables and run state live in C++ today);
+- mutable spans over kernel-supplied memory (record insertion, data copies);
+- a privileged-instruction and physical-address capability (page-table writes,
+  CR3, INVLPG, MSRs, LAPIC, GDT/IDT loads, IRETQ);
+- a trap-entry form for interrupt and kernel-call entry;
+- a UEFI call surface for the loader;
+- variable-length results (paths) and a validated user-range type;
+- more than six parameters per function or constructor, and one calling
+  convention for scalar-only bridge functions;
+- recursion reachable from a hosted `main` (fixtures use GNU as today).
+
+Linking guest-built objects still needs host `ld`.
+
 ## 1. Protected programs and file services
 
 Build from the existing protected-domain fixtures, bounded scheduling, copied
