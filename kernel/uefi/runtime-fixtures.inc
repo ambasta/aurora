@@ -243,3 +243,7 @@ AURORA_FIXTURE(snapshot_reply_byte, "snapshot-reply-byte", "snapshot-call-fixtur
 AURORA_FIXTURE(snapshot_reply_reserved, "snapshot-reply-reserved", "snapshot-call-fixture", 249)
 AURORA_FIXTURE(namespace_console, "namespace-console", "storage-fixture", 250)
 AURORA_FIXTURE(namespace_fixture, "namespace-console-fixture", "storage-fixture", 251)
+AURORA_FIXTURE(process_volume, "process-volume", "process-fixture", 252)
+AURORA_FIXTURE(process_volume_corrupt, "process-volume-corrupt", "process-fixture", 253)
+AURORA_FIXTURE(process_volume_empty, "process-volume-empty", "process-fixture", 254)
+AURORA_FIXTURE(process_volume_map, "process-volume-map", "process-fixture", 255)

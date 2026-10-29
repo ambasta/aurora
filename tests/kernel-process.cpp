@@ -1,0 +1,304 @@
+// Hosted driver for the process image's frame allocator and boot volume: the
+// generated Aurora policies (examples/kernel-process.au and its bridge) linked
+// with the kernel's own storage and transport headers. Cases are data:
+//   kernel-process frames CASES   memory-map and record cases (frames.cases)
+//   kernel-process volumes BUNDLE volume cases built by scripts/kernel_volume.py
+// stdout is compared with the golden file beside the cases.
+#include "../kernel/uefi/frames.hpp"
+#include "../kernel/uefi/kernel-space.hpp"
+#include <cstdio>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
+
+namespace {
+namespace frames = aurora::uefi::frames;
+namespace process = aurora::uefi::process;
+using U64 = std::uint64_t;
+
+constexpr const char *map_names[] = {"valid", "version", "stride", "length", "alignment", "range", "overlap"};
+constexpr const char *grant_names[] = {"granted", "map", "bounds", "arena", "uncovered"};
+constexpr const char *volume_names[] = {"valid",
+                                        "truncated",
+                                        "limit",
+                                        "magic",
+                                        "version",
+                                        "header",
+                                        "count",
+                                        "layout",
+                                        "reserved",
+                                        "checksum",
+                                        "padding",
+                                        "flags",
+                                        "name",
+                                        "path",
+                                        "order",
+                                        "data",
+                                        "nesting"};
+constexpr const char *rejection_names[] = {"none",
+                                           "operation",
+                                           "record",
+                                           "owner",
+                                           "link",
+                                           "not_free",
+                                           "not_allocated",
+                                           "kernel",
+                                           "retired",
+                                           "wrong_owner",
+                                           "stale"};
+
+auto rejection(frames::Rejection value) -> std::string {
+    const auto raw = static_cast<U64>(value);
+    if (raw <= static_cast<U64>(frames::Rejection::stale))
+        return rejection_names[raw];
+    return value == frames::Rejection::malformed ? "malformed" : value == frames::Rejection::index ? "index" : "?";
+}
+auto hex(U64 value) -> std::string {
+    char text[24];
+    std::snprintf(text, sizeof text, "%#llx", static_cast<unsigned long long>(value));
+    return text;
+}
+[[noreturn]] auto usage(const std::string &reason) -> void {
+    std::cerr << "kernel-process: " << reason << "\n";
+    std::exit(2);
+}
+
+// One memory-map case: descriptor rows, the arena and volume, then operations.
+class MapCase final {
+public:
+    std::string name;
+    U64 stride = 48, version = 1, arena = 0, volume = 0, bytes = 0;
+    std::vector<std::byte> map;
+    std::vector<std::string> operations;
+    auto descriptor(U64 type, U64 start, U64 pages, U64 attribute) -> void {
+        const auto at = map.size();
+        map.resize(at + stride);
+        // A stride below the descriptor's 40 bytes keeps only the fields it holds.
+        const auto put = [&](U64 offset, U64 value, unsigned width) {
+            for (unsigned i = 0; i < width && offset + i < stride; ++i)
+                map[at + offset + i] = std::byte(value >> (8 * i));
+        };
+        put(0, type, 4);
+        put(8, start, 8);
+        put(16, start, 8);
+        put(24, pages, 8);
+        put(32, attribute, 8);
+    }
+};
+
+auto run_operations(const MapCase &item, frames::Table &table) -> void {
+    for (const auto &line : item.operations) {
+        std::istringstream words{line};
+        std::string verb;
+        words >> verb;
+        if (verb == "allocate") {
+            U64 owner = 0, count = 1;
+            words >> owner >> count;
+            for (U64 i = 0; i < count; ++i) {
+                const auto frame = table.allocate(owner);
+                std::cout << "  allocate " << owner << " -> ";
+                if (frame)
+                    std::cout << "frame " << frame->index << " generation " << frame->generation << " at "
+                              << hex(*table.address(frame->index)) << "\n";
+                else
+                    std::cout << "none\n";
+            }
+        } else if (verb == "release") {
+            U64 index = 0, generation = 0, owner = 0;
+            words >> index >> generation >> owner;
+            std::cout << "  release " << index << " " << generation << " " << owner << " -> "
+                      << rejection(table.release({index, generation}, owner)) << "\n";
+        } else if (verb == "audit") {
+            const auto audit = table.audit();
+            std::cout << "  audit consistent=" << audit.consistent << " free=" << audit.free
+                      << " allocated=" << audit.allocated << " kernel=" << audit.kernel << " retired=" << audit.retired
+                      << " poisoned=" << table.poisoned() << "\n";
+        } else if (verb == "transition") {
+            // The policy alone: operation, record, owner, generation, link.
+            U64 operation = 0, record = 0, owner = 0, generation = 0, link = 0;
+            words >> operation >> std::hex >> record >> std::dec >> owner >> generation >> link;
+            const auto decision =
+                frames::transition(static_cast<frames::Operation>(operation), record, owner, generation, link);
+            std::cout << "  transition " << operation << " " << hex(record) << " " << owner << " " << generation << " "
+                      << link << " -> "
+                      << (decision.rejection == frames::Rejection::none ? hex(decision.record)
+                                                                        : rejection(decision.rejection))
+                      << "\n";
+        } else {
+            usage("unknown operation: " + line);
+        }
+    }
+}
+
+auto run_map(const MapCase &item) -> void {
+    auto ranges = std::make_unique<frames::Ranges>();
+    const auto found =
+        frames::inventory(item.map, item.stride, item.version, item.arena, item.volume, item.bytes, *ranges);
+    std::cout << item.name << ": map=" << map_names[static_cast<U64>(found.map)]
+              << " grant=" << (found.grant ? grant_names[static_cast<U64>(*found.grant)] : "none")
+              << " ranges=" << ranges->count() << " frames=" << ranges->frames();
+    if (found.map != process::MapVerdict::valid || (found.grant && found.grant != process::GrantVerdict::granted) ||
+        !found.ranges) {
+        std::cout << (found.ranges ? "" : " inventory=rejected") << "\n";
+        return;
+    }
+    const auto plan = aurora::uefi::KernelSpace::plan(ranges->frames(), (item.bytes + 4095) / 4096);
+    if (!plan) {
+        std::cout << " plan=rejected\n";
+        return;
+    }
+    std::cout << " tables=" << plan->tables << " metadata=" << plan->metadata << "\n";
+    // Long inventories show their first two and last ranges.
+    for (std::size_t i = 0; i < ranges->count(); ++i) {
+        if (ranges->count() > 8 && i == 2)
+            std::cout << "  ...\n";
+        if (ranges->count() > 8 && i >= 2 && i + 1 < ranges->count())
+            continue;
+        std::cout << "  range " << hex(ranges->range(i).first_page * 4096) << " pages=" << ranges->range(i).pages
+                  << " index=" << ranges->range(i).first_index << "\n";
+    }
+    if (ranges->frames() > (U64{1} << 20)) {
+        std::cout << "  table=not-bound\n";
+        return;
+    }
+    std::vector<U64> records(ranges->frames());
+    frames::Table table;
+    if (!table.bind(records, *ranges, plan->tables, plan->metadata)) {
+        std::cout << "  bind=rejected\n";
+        return;
+    }
+    std::cout << "  bound reserved=" << table.reserved() << " free=" << table.free() << "\n";
+    run_operations(item, table);
+}
+
+auto number(const std::string &text) -> U64 {
+    std::size_t used = 0;
+    const auto value = std::stoull(text, &used, 0);
+    if (used != text.size())
+        usage("bad number: " + text);
+    return value;
+}
+
+auto frames_mode(const char *path) -> int {
+    std::ifstream input{path};
+    if (!input)
+        usage("cannot read cases");
+    std::optional<MapCase> current;
+    std::string line;
+    while (std::getline(input, line)) {
+        if (const auto hash = line.find('#'); hash != std::string::npos)
+            line.resize(hash);
+        std::istringstream words{line};
+        std::string verb;
+        if (!(words >> verb))
+            continue;
+        std::vector<std::string> rest;
+        for (std::string word; words >> word;)
+            rest.push_back(word);
+        if (verb == "case") {
+            if (current || rest.size() != 1)
+                usage("unterminated or unnamed case");
+            current = MapCase{};
+            current->name = rest[0];
+        } else if (!current) {
+            usage("row outside a case: " + line);
+        } else if (verb == "end") {
+            run_map(*current);
+            current.reset();
+        } else if (verb == "stride" && rest.size() == 1) {
+            current->stride = number(rest[0]);
+        } else if (verb == "version" && rest.size() == 1) {
+            current->version = number(rest[0]);
+        } else if (verb == "arena" && rest.size() == 1) {
+            current->arena = number(rest[0]);
+        } else if (verb == "volume" && rest.size() == 2) {
+            current->volume = number(rest[0]);
+            current->bytes = number(rest[1]);
+        } else if (verb == "desc" && (rest.size() == 3 || rest.size() == 4)) {
+            current->descriptor(
+                number(rest[0]), number(rest[1]), number(rest[2]), rest.size() == 4 ? number(rest[3]) : 0);
+        } else if (verb == "repeat" && rest.size() == 5) {
+            // COUNT descriptors of TYPE and PAGES from START, STEP bytes apart.
+            for (U64 i = 0; i < number(rest[0]); ++i)
+                current->descriptor(number(rest[1]), number(rest[2]) + i * number(rest[4]), number(rest[3]), 0);
+        } else if (verb == "truncate" && rest.size() == 1) {
+            current->map.resize(current->map.size() - number(rest[0]));
+        } else if (verb == "op") {
+            std::string joined;
+            for (const auto &word : rest)
+                joined += (joined.empty() ? "" : " ") + word;
+            current->operations.push_back(joined);
+        } else {
+            usage("unknown row: " + line);
+        }
+    }
+    if (current)
+        usage("unterminated case");
+    return 0;
+}
+
+auto volumes_mode(const char *path) -> int {
+    std::ifstream input{path, std::ios::binary | std::ios::ate};
+    std::vector<char> raw(static_cast<std::size_t>(input.tellg()));
+    input.seekg(0);
+    if (!input || !input.read(raw.data(), static_cast<std::streamsize>(raw.size())))
+        usage("cannot read bundle");
+    std::size_t at = 0;
+    const auto take = [&](std::size_t size) {
+        if (size > raw.size() - at)
+            usage("truncated bundle");
+        const auto *begin = raw.data() + at;
+        at += size;
+        return std::string{begin, size};
+    };
+    const auto word = [&](unsigned width) {
+        const auto bytes = take(width);
+        U64 value = 0;
+        for (unsigned i = 0; i < width; ++i)
+            value |= U64(static_cast<unsigned char>(bytes[i])) << (8 * i);
+        return value;
+    };
+    while (at < raw.size()) {
+        const auto name = take(word(4));
+        std::vector<std::string> queries(word(4));
+        for (auto &query : queries)
+            query = take(word(4));
+        const auto text = take(word(8));
+        std::vector<std::byte> bytes(text.size());
+        for (std::size_t i = 0; i < text.size(); ++i)
+            bytes[i] = std::byte(static_cast<unsigned char>(text[i]));
+        const auto verdict = process::volume_admit(bytes);
+        std::cout << name << ": " << (verdict ? volume_names[static_cast<U64>(*verdict)] : "malformed") << "\n";
+        for (const auto &query : queries) {
+            const auto entry = process::volume_lookup(
+                bytes, std::span<const std::byte>{reinterpret_cast<const std::byte *>(query.data()), query.size()});
+            std::cout << "  " << query << " -> ";
+            if (!entry) {
+                std::cout << "absent\n";
+                continue;
+            }
+            std::cout << "offset " << entry->data() - bytes.data() << " bytes " << entry->size() << " base64=";
+            for (U64 offset = 0; offset < entry->size(); offset += 3) {
+                const auto group = process::base64_group(*entry, offset);
+                if (!group)
+                    usage("malformed base64 group");
+                for (unsigned i = 0; i < 4; ++i)
+                    std::cout << static_cast<char>(*group >> (8 * i));
+            }
+            std::cout << "\n";
+        }
+    }
+    return 0;
+}
+} // namespace
+
+auto main(int argc, char **argv) -> int {
+    if (argc == 3 && std::string{argv[1]} == "frames")
+        return frames_mode(argv[2]);
+    if (argc == 3 && std::string{argv[1]} == "volumes")
+        return volumes_mode(argv[2]);
+    usage("usage: kernel-process frames CASES | volumes BUNDLE");
+}

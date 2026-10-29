@@ -1,0 +1,167 @@
+export module kernel.frames;
+
+// Physical frame record transitions (kernel/uefi/process.md#frames). A record is
+// one copied word: bits 0..3 state, 4..31 generation, 32..63 owner (allocated
+// and kernel frames) or link (free frames: next free index + 1, 0 ends the
+// list). Trusted C++ stores records and maps frames; this policy alone decides
+// whether a transition is admitted and what the next record is. A rejection is
+// the reason in bits 4..11 with state zero; it never changes a record.
+export namespace kernel {
+    enum class FrameOperation {
+        none,
+        initialize_free,
+        initialize_kernel,
+        allocate,
+        release
+    };
+
+    enum class FrameRejection {
+        none,
+        operation,
+        record,
+        owner,
+        link,
+        not_free,
+        not_allocated,
+        kernel,
+        retired,
+        wrong_owner,
+        stale
+    };
+
+    auto frame_free() -> u64 {
+        return 1u64;
+    }
+
+    auto frame_allocated() -> u64 {
+        return 2u64;
+    }
+
+    auto frame_kernel() -> u64 {
+        return 3u64;
+    }
+
+    auto frame_retired() -> u64 {
+        return 4u64;
+    }
+
+    auto generation_limit() -> u64 {
+        return 268435455u64;
+    }
+
+    // Owners 1..15 name kernel uses and are never allocated or released.
+    auto kernel_owner(u64 owner) -> bool {
+        return owner >= 1u64 && owner <= 15u64;
+    }
+
+    auto frame_record(u64 state, u64 generation, u64 word) -> u64 {
+        return state | (generation << 4) | (word << 32);
+    }
+
+    auto frame_reject(FrameRejection reason) -> u64 {
+        u64 code = 1u64;
+        if (reason == FrameRejection::record) {
+            code = 2u64;
+        }
+        if (reason == FrameRejection::owner) {
+            code = 3u64;
+        }
+        if (reason == FrameRejection::link) {
+            code = 4u64;
+        }
+        if (reason == FrameRejection::not_free) {
+            code = 5u64;
+        }
+        if (reason == FrameRejection::not_allocated) {
+            code = 6u64;
+        }
+        if (reason == FrameRejection::kernel) {
+            code = 7u64;
+        }
+        if (reason == FrameRejection::retired) {
+            code = 8u64;
+        }
+        if (reason == FrameRejection::wrong_owner) {
+            code = 9u64;
+        }
+        if (reason == FrameRejection::stale) {
+            code = 10u64;
+        }
+        return code << 4;
+    }
+
+    // Canonical records only: a known state, retired frames carry no word and
+    // allocated and kernel frames a nonzero owner of their class.
+    auto record_valid(u64 record) -> bool {
+        const u64 state = record & 15u64;
+        const u64 word = record >> 32;
+        if (state == frame_free()) {
+            return true;
+        }
+        if (state == frame_allocated()) {
+            return word != 0u64 && !kernel_owner(word);
+        }
+        if (state == frame_kernel()) {
+            return kernel_owner(word);
+        }
+        return state == frame_retired() && word == 0u64;
+    }
+
+    auto frame_transition(FrameOperation operation, u64 record, u64 owner, u64 generation, u64 link) -> u64 {
+        if (operation == FrameOperation::initialize_free || operation == FrameOperation::initialize_kernel) {
+            if (record != 0u64) {
+                return frame_reject(FrameRejection::record);
+            }
+            if (operation == FrameOperation::initialize_kernel) {
+                if (!kernel_owner(owner)) {
+                    return frame_reject(FrameRejection::owner);
+                }
+                return frame_record(frame_kernel(), 0u64, owner);
+            }
+            if (link > 4294967295u64) {
+                return frame_reject(FrameRejection::link);
+            }
+            return frame_record(frame_free(), 0u64, link);
+        }
+        if (operation != FrameOperation::allocate && operation != FrameOperation::release) {
+            return frame_reject(FrameRejection::operation);
+        }
+        if (!record_valid(record)) {
+            return frame_reject(FrameRejection::record);
+        }
+        if (owner == 0u64 || owner > 4294967295u64 || kernel_owner(owner)) {
+            return frame_reject(FrameRejection::owner);
+        }
+        const u64 state = record & 15u64;
+        const u64 current = (record >> 4) & generation_limit();
+        if (state == frame_kernel()) {
+            return frame_reject(FrameRejection::kernel);
+        }
+        if (state == frame_retired()) {
+            return frame_reject(FrameRejection::retired);
+        }
+        if (operation == FrameOperation::allocate) {
+            if (state != frame_free()) {
+                return frame_reject(FrameRejection::not_free);
+            }
+            return frame_record(frame_allocated(), current, owner);
+        }
+        if (state != frame_allocated()) {
+            return frame_reject(FrameRejection::not_allocated);
+        }
+        if ((record >> 32) != owner) {
+            return frame_reject(FrameRejection::wrong_owner);
+        }
+        if (generation != current) {
+            return frame_reject(FrameRejection::stale);
+        }
+        if (link > 4294967295u64) {
+            return frame_reject(FrameRejection::link);
+        }
+        // A frame whose generation would wrap is retired forever, never reused.
+        if (current == generation_limit()) {
+            return frame_record(frame_retired(), current, 0u64);
+        }
+        return frame_record(frame_free(), current + 1u64, link);
+    }
+}

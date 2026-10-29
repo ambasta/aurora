@@ -1,0 +1,349 @@
+export module kernel.boot_volume;
+import std.binary;
+import std.checksum;
+
+// The read-only boot volume (kernel/uefi/process.md#boot-volume): one canonical
+// layout of a 64-byte header, a sorted 32-byte entry index, contiguous path
+// names and 8-byte aligned file data. Admission reads only the copied span; the
+// verdict and entry facts carry no address, mapping or file authority.
+export namespace kernel {
+    enum class VolumeVerdict {
+        valid,
+        truncated,
+        limit,
+        magic,
+        version,
+        header,
+        count,
+        layout,
+        reserved,
+        checksum,
+        padding,
+        flags,
+        name,
+        path,
+        order,
+        data,
+        nesting
+    };
+
+    class VolumeEntry {
+        u64 _found;
+        u64 _offset;
+        u64 _size;
+    public:
+        VolumeEntry(u64 found, u64 offset, u64 size) : _found(found), _offset(offset), _size(size) {
+        }
+        auto found() const -> u64 {
+            return _found;
+        }
+        auto offset() const -> u64 {
+            return _offset;
+        }
+        auto size() const -> u64 {
+            return _size;
+        }
+    };
+
+    // "AURORAVL" little-endian; version 1; at most 64 MiB and 4096 entries.
+    auto volume_magic() -> u64 {
+        return 5500655816653559105u64;
+    }
+
+    auto volume_limit() -> i64 {
+        return 67108864;
+    }
+
+    auto volume_word(builtin::span<const u8> volume, i64 offset) -> u64 {
+        const std::ByteReadResult word = std::read_le64(volume, offset);
+        return word.value_or(18446744073709551615u64);
+    }
+
+    auto volume_half(builtin::span<const u8> volume, i64 offset) -> u64 {
+        const std::ByteReadResult half = std::read_le32(volume, offset);
+        return half.value_or(18446744073709551615u64);
+    }
+
+    auto align8(i64 value) -> i64 {
+        return (value + 7) / 8 * 8;
+    }
+
+    auto zero_bytes(builtin::span<const u8> volume, i64 begin, i64 end) -> bool {
+        i64 at = begin;
+        while (at < end) {
+            if (volume.at(at) != 0u8) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+
+    // Relative path components of [A-Za-z0-9._-], never empty, "." or "..".
+    auto path_valid(builtin::span<const u8> volume, i64 begin, i64 length) -> bool {
+        i64 component = 0;
+        i64 dots = 0;
+        i64 at = 0;
+        while (at < length) {
+            const u8 byte = volume.at(begin + at);
+            if (byte == 47u8) {
+                if (component == 0 || (component == dots && component <= 2)) {
+                    return false;
+                }
+                component = 0;
+                dots = 0;
+            } else {
+                const bool letter = (byte >= 65u8 && byte <= 90u8) || (byte >= 97u8 && byte <= 122u8);
+                const bool digit = byte >= 48u8 && byte <= 57u8;
+                if (!letter && !digit && byte != 46u8 && byte != 95u8 && byte != 45u8) {
+                    return false;
+                }
+                if (byte == 46u8) {
+                    dots = dots + 1;
+                }
+                component = component + 1;
+            }
+            at = at + 1;
+        }
+        return component != 0 && !(component == dots && component <= 2);
+    }
+
+    // -1, 0 or 1 for bytewise order of left against right.
+    auto compare_bytes(builtin::span<const u8> left, i64 left_begin, i64 left_length, builtin::span<const u8> right,
+        i64 right_begin, i64 right_length) -> i64 {
+        i64 at = 0;
+        while (at < left_length && at < right_length) {
+            const u8 a = left.at(left_begin + at);
+            const u8 b = right.at(right_begin + at);
+            if (a < b) {
+                return -1;
+            }
+            if (a > b) {
+                return 1;
+            }
+            at = at + 1;
+        }
+        if (left_length < right_length) {
+            return -1;
+        }
+        if (left_length > right_length) {
+            return 1;
+        }
+        return 0;
+    }
+
+    // -1 when left sorts before right + "/", otherwise 0 (equal, or after it).
+    auto compare_directory(builtin::span<const u8> volume, i64 left, i64 left_length, i64 right,
+        i64 right_length) -> i64 {
+        i64 at = 0;
+        while (at < left_length && at <= right_length) {
+            u8 b = 47u8;
+            if (at < right_length) {
+                b = volume.at(right + at);
+            }
+            const u8 a = volume.at(left + at);
+            if (a < b) {
+                return -1;
+            }
+            if (a > b) {
+                return 1;
+            }
+            at = at + 1;
+        }
+        if (left_length <= right_length) {
+            return -1;
+        }
+        return 0;
+    }
+
+    auto entry_name(builtin::span<const u8> volume, i64 names, i64 index) -> i64 {
+        return names + i64(volume_word(volume, 64 + index * 32));
+    }
+
+    auto entry_length(builtin::span<const u8> volume, i64 index) -> i64 {
+        return i64(volume_half(volume, 64 + index * 32 + 8));
+    }
+
+    // In an otherwise admitted volume, whether some path is also a directory
+    // of another ("a" and "a/b"): the first path not below path + "/" in
+    // sorted order must not start with it.
+    auto nested(builtin::span<const u8> volume, i64 names, i64 count) -> bool {
+        i64 index = 0;
+        while (index < count) {
+            const i64 name = entry_name(volume, names, index);
+            const i64 length = entry_length(volume, index);
+            i64 low = index + 1;
+            i64 high = count;
+            while (low < high) {
+                const i64 middle = low + (high - low) / 2;
+                if (compare_directory(volume, entry_name(volume, names, middle), entry_length(volume, middle), name,
+                    length) < 0) {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            }
+            if (low < count && entry_length(volume, low) > length && compare_directory(volume, entry_name(volume, names,
+                low), length + 1, name, length) == 0) {
+                return true;
+            }
+            index = index + 1;
+        }
+        return false;
+    }
+
+    auto volume_admit(builtin::span<const u8> volume) -> VolumeVerdict {
+        const i64 size = volume.size();
+        if (size < 64) {
+            return VolumeVerdict::truncated;
+        }
+        if (size > volume_limit()) {
+            return VolumeVerdict::limit;
+        }
+        if (volume_word(volume, 0) != volume_magic()) {
+            return VolumeVerdict::magic;
+        }
+        if (volume_half(volume, 8) != 1u64) {
+            return VolumeVerdict::version;
+        }
+        if (volume_half(volume, 12) != 64u64 || volume_half(volume, 20) != 32u64) {
+            return VolumeVerdict::header;
+        }
+        const u64 count = volume_half(volume, 16);
+        if (count > 4096u64) {
+            return VolumeVerdict::count;
+        }
+        // Every region is bounded by the copied size before it is converted.
+        const i64 names = 64 + i64(count) * 32;
+        const u64 names_offset = volume_word(volume, 24);
+        const u64 names_bytes = volume_word(volume, 32);
+        const u64 data_offset = volume_word(volume, 40);
+        const u64 data_bytes = volume_word(volume, 48);
+        if (names > size || names_offset != u64(names) || names_bytes > u64(size - names)) {
+            return VolumeVerdict::layout;
+        }
+        const i64 names_end = names + i64(names_bytes);
+        const i64 data = align8(names_end);
+        if (data > size || data_offset != u64(data) || data_bytes != u64(size - data)) {
+            return VolumeVerdict::layout;
+        }
+        if (volume_half(volume, 60) != 0u64) {
+            return VolumeVerdict::reserved;
+        }
+        const std::ChecksumResult header_sum = std::crc32c(volume, 0, 56);
+        const std::ChecksumResult sum = std::crc32c_extend(header_sum.value_or(0u64), volume, 64, size - 64);
+        if (header_sum.status() != std::ChecksumStatus::success || sum.status() != std::ChecksumStatus::success
+            || sum.value_or(0u64) != volume_half(volume, 56)) {
+            return VolumeVerdict::checksum;
+        }
+        if (!zero_bytes(volume, names_end, data)) {
+            return VolumeVerdict::padding;
+        }
+        // The canonical layout: names and data follow index order without gaps.
+        i64 name_cursor = 0;
+        i64 data_cursor = 0;
+        i64 previous = 0;
+        i64 previous_length = 0;
+        i64 index = 0;
+        while (index < i64(count)) {
+            const i64 entry = 64 + index * 32;
+            const u64 name_offset = volume_word(volume, entry);
+            const u64 name_length = volume_half(volume, entry + 8);
+            const u64 entry_flags = volume_half(volume, entry + 12);
+            const u64 file_offset = volume_word(volume, entry + 16);
+            const u64 file_size = volume_word(volume, entry + 24);
+            if (entry_flags != 0u64) {
+                return VolumeVerdict::flags;
+            }
+            if (name_offset != u64(name_cursor) || name_length == 0u64 || name_length > 255u64 || name_length
+                > names_bytes - name_offset) {
+                return VolumeVerdict::name;
+            }
+            const i64 name = names + name_cursor;
+            const i64 length = i64(name_length);
+            if (!path_valid(volume, name, length)) {
+                return VolumeVerdict::path;
+            }
+            if (index > 0 && compare_bytes(volume, previous, previous_length, volume, name, length) >= 0) {
+                return VolumeVerdict::order;
+            }
+            if (file_offset != u64(data_cursor) || file_size > data_bytes - file_offset) {
+                return VolumeVerdict::data;
+            }
+            const i64 end = data_cursor + i64(file_size);
+            const i64 next = align8(end);
+            if (next > i64(data_bytes)) {
+                return VolumeVerdict::data;
+            }
+            if (!zero_bytes(volume, data + end, data + next)) {
+                return VolumeVerdict::padding;
+            }
+            name_cursor = name_cursor + length;
+            data_cursor = next;
+            previous = name;
+            previous_length = length;
+            index = index + 1;
+        }
+        if (name_cursor != i64(names_bytes)) {
+            return VolumeVerdict::name;
+        }
+        if (data_cursor != i64(data_bytes)) {
+            return VolumeVerdict::data;
+        }
+        if (nested(volume, names, i64(count))) {
+            return VolumeVerdict::nesting;
+        }
+        return VolumeVerdict::valid;
+    }
+
+    // Binary search of an admitted volume; -1 when the path is absent.
+    auto volume_find(builtin::span<const u8> volume, builtin::span<const u8> path) -> i64 {
+        const u64 count = volume_half(volume, 16);
+        if (count > 4096u64 || volume.size() < 64 + i64(count) * 32) {
+            return -1;
+        }
+        const i64 names = 64 + i64(count) * 32;
+        i64 low = 0;
+        i64 high = i64(count);
+        while (low < high) {
+            const i64 middle = low + (high - low) / 2;
+            const i64 entry = 64 + middle * 32;
+            const u64 offset = volume_word(volume, entry);
+            const u64 length = volume_half(volume, entry + 8);
+            if (length > 255u64 || offset > u64(volume.size() - names) || i64(length) > volume.size() - names
+                - i64(offset)) {
+                return -1;
+            }
+            const i64 order = compare_bytes(volume, names + i64(offset), i64(length), path, 0, path.size());
+            if (order == 0) {
+                return middle;
+            }
+            if (order < 0) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        return -1;
+    }
+
+    // The absolute file extent of an admitted volume's entry.
+    auto volume_entry(builtin::span<const u8> volume, i64 index) -> VolumeEntry {
+        const u64 count = volume_half(volume, 16);
+        if (index < 0 || count > 4096u64 || u64(index) >= count || volume.size() < 64 + i64(count) * 32) {
+            const VolumeEntry absent = VolumeEntry(0u64, 0u64, 0u64);
+            return absent;
+        }
+        const i64 entry = 64 + index * 32;
+        const u64 data = volume_word(volume, 40);
+        const u64 offset = volume_word(volume, entry + 16);
+        const u64 size = volume_word(volume, entry + 24);
+        const u64 total = u64(volume.size());
+        if (data > total || offset > total - data || size > total - data - offset) {
+            const VolumeEntry absent = VolumeEntry(0u64, 0u64, 0u64);
+            return absent;
+        }
+        const VolumeEntry found = VolumeEntry(1u64, data + offset, size);
+        return found;
+    }
+}

@@ -1,0 +1,181 @@
+export module kernel.memory_map;
+import std.binary;
+
+// Admission of the copied final UEFI memory map and the facts the frame
+// allocator and boot volume derive from it (kernel/uefi/process.md#frames).
+// Descriptors are copied bytes; no verdict or range grants a mapping.
+export namespace kernel {
+    enum class MapVerdict {
+        valid,
+        version,
+        stride,
+        length,
+        alignment,
+        range,
+        overlap
+    };
+
+    enum class GrantVerdict {
+        granted,
+        map,
+        bounds,
+        arena,
+        uncovered
+    };
+
+    // status: 0 skipped (not conventional, runtime-tagged or legacy low memory),
+    // 1 usable frames, 2 rejected (conventional memory overlapping a grant).
+    class FrameRange {
+        u64 _status;
+        u64 _first;
+        u64 _pages;
+    public:
+        FrameRange(u64 status, u64 first, u64 pages) : _status(status), _first(first), _pages(pages) {
+        }
+        auto status() const -> u64 {
+            return _status;
+        }
+        auto first_page() const -> u64 {
+            return _first;
+        }
+        auto pages() const -> u64 {
+            return _pages;
+        }
+    };
+
+    // Physical addresses stay below the 52-bit architectural limit.
+    auto physical_limit() -> u64 {
+        return 4503599627370496u64;
+    }
+
+    auto descriptor_field(builtin::span<const u8> map, i64 offset) -> u64 {
+        const std::ByteReadResult field = std::read_le64(map, offset);
+        return field.value_or(0u64);
+    }
+
+    auto descriptor_type(builtin::span<const u8> map, i64 offset) -> u64 {
+        const std::ByteReadResult field = std::read_le32(map, offset);
+        return field.value_or(4294967295u64);
+    }
+
+    auto shape_valid(builtin::span<const u8> map, u64 stride, u64 version) -> bool {
+        return version == 1u64 && stride >= 40u64 && stride <= 256u64 && stride % 8u64 == 0u64 && map.size() > 0
+            && map.size() <= 65536 && u64(map.size()) % stride == 0u64 && u64(map.size()) / stride <= 512u64;
+    }
+
+    // One descriptor of a well-shaped map: an aligned nonempty range below the
+    // physical limit. Every type is admitted (UEFI reserves OEM and OS types
+    // above 15); only conventional memory is ever usable.
+    auto descriptor_admit(builtin::span<const u8> map, i64 at) -> MapVerdict {
+        const u64 start = descriptor_field(map, at + 8);
+        const u64 pages = descriptor_field(map, at + 24);
+        if (start % 4096u64 != 0u64) {
+            return MapVerdict::alignment;
+        }
+        if (pages == 0u64 || start >= physical_limit() || pages > (physical_limit() - start) / 4096u64) {
+            return MapVerdict::range;
+        }
+        return MapVerdict::valid;
+    }
+
+    // Bounded quadratic check: at most 512 descriptors, each nonempty, aligned,
+    // below the physical limit and disjoint from every other descriptor.
+    auto map_admit(builtin::span<const u8> map, u64 stride, u64 version) -> MapVerdict {
+        if (version != 1u64) {
+            return MapVerdict::version;
+        }
+        if (stride < 40u64 || stride > 256u64 || stride % 8u64 != 0u64) {
+            return MapVerdict::stride;
+        }
+        if (!shape_valid(map, stride, version)) {
+            return MapVerdict::length;
+        }
+        const i64 step = i64(stride);
+        i64 at = 0;
+        while (at < map.size()) {
+            const MapVerdict descriptor = descriptor_admit(map, at);
+            if (descriptor != MapVerdict::valid) {
+                return descriptor;
+            }
+            const u64 start = descriptor_field(map, at + 8);
+            const u64 pages = descriptor_field(map, at + 24);
+            const u64 end = start + pages * 4096u64;
+            i64 other = 0;
+            while (other < at) {
+                const u64 other_start = descriptor_field(map, other + 8);
+                const u64 other_end = other_start + descriptor_field(map, other + 24) * 4096u64;
+                if (start < other_end && other_start < end) {
+                    return MapVerdict::overlap;
+                }
+                other = other + step;
+            }
+            at = at + step;
+        }
+        return MapVerdict::valid;
+    }
+
+    // The loader's boot volume pages: wholly inside one non-runtime
+    // EfiLoaderData descriptor and disjoint from the 2 MiB arena.
+    auto volume_grant(builtin::span<const u8> map, u64 stride, u64 arena, u64 volume, u64 bytes) -> GrantVerdict {
+        if (map_admit(map, stride, 1u64) != MapVerdict::valid) {
+            return GrantVerdict::map;
+        }
+        if (bytes == 0u64 || bytes > 67108864u64 || volume % 4096u64 != 0u64 || volume == 0u64 || volume
+            > physical_limit() - 134217728u64) {
+            return GrantVerdict::bounds;
+        }
+        const u64 end = volume + (bytes + 4095u64) / 4096u64 * 4096u64;
+        if (arena > physical_limit() - 2097152u64 || (volume < arena + 2097152u64 && arena < end)) {
+            return GrantVerdict::arena;
+        }
+        const i64 step = i64(stride);
+        i64 at = 0;
+        while (at < map.size()) {
+            const u64 start = descriptor_field(map, at + 8);
+            const u64 limit = start + descriptor_field(map, at + 24) * 4096u64;
+            const bool runtime = (descriptor_field(map, at + 32) >> 63) != 0u64;
+            if (descriptor_type(map, at) == 2u64 && !runtime && start <= volume && end <= limit) {
+                return GrantVerdict::granted;
+            }
+            at = at + step;
+        }
+        return GrantVerdict::uncovered;
+    }
+
+    // One descriptor's usable frames: conventional, neither runtime-tagged nor
+    // specific-purpose (EFI_MEMORY_SP, soft-reserved as Linux does), above
+    // the first MiB (reserved, as Linux reserves it on x86) and disjoint from
+    // the arena and the boot volume. It checks its own descriptor, not the whole
+    // map again; the caller admits the map once, and its range table rejects
+    // overlapping usable ranges.
+    auto frame_range(builtin::span<const u8> map, u64 stride, u64 index, u64 arena, u64 volume,
+        u64 bytes) -> FrameRange {
+        const FrameRange skipped = FrameRange(0u64, 0u64, 0u64);
+        const FrameRange rejected = FrameRange(2u64, 0u64, 0u64);
+        if (!shape_valid(map, stride, 1u64) || index >= u64(map.size()) / stride || arena > physical_limit()
+            - 2097152u64 || volume > physical_limit() - 134217728u64 || bytes > 67108864u64) {
+            return rejected;
+        }
+        const i64 at = i64(index * stride);
+        if (descriptor_admit(map, at) != MapVerdict::valid) {
+            return rejected;
+        }
+        const u64 start = descriptor_field(map, at + 8);
+        const u64 end = start + descriptor_field(map, at + 24) * 4096u64;
+        const u64 attribute = descriptor_field(map, at + 32);
+        if (descriptor_type(map, at) != 7u64 || (attribute >> 63) != 0u64 || ((attribute >> 18) & 1u64) != 0u64 || end
+            <= 1048576u64) {
+            return skipped;
+        }
+        u64 first = start;
+        if (first < 1048576u64) {
+            first = 1048576u64;
+        }
+        const u64 volume_end = volume + (bytes + 4095u64) / 4096u64 * 4096u64;
+        if ((first < arena + 2097152u64 && arena < end) || (bytes != 0u64 && first < volume_end && volume < end)) {
+            return rejected;
+        }
+        const FrameRange usable = FrameRange(1u64, first / 4096u64, (end - first) / 4096u64);
+        return usable;
+    }
+}

@@ -1,0 +1,66 @@
+valid-repository: valid
+  examples/core_math.au -> offset 216 bytes 106 base64=bW9kdWxlIGNvcmVfZGVtbzsKaW1wb3J0IHN0ZC5jb3JlOwoKYXV0byBjb3JlX2Fuc3dlcigpIC0+IGk2NCB7CiAgICByZXR1cm4gc3RkOjptYXgoc3RkOjphYnMoLTQyKSwgMjApOwp9Cg==
+  aurora/empty -> offset 216 bytes 0 base64=
+  examples -> absent
+  examples/core_math.a -> absent
+  examples/missing.au -> absent
+valid-padding: valid
+  a -> offset 240 bytes 1 base64=eA==
+  b -> offset 248 bytes 2 base64=eHk=
+  c -> offset 256 bytes 3 base64=eHl6
+  d -> offset 264 bytes 4 base64=eHl6dw==
+  ... -> offset 232 bytes 4 base64=ZG90cw==
+  e -> absent
+valid-no-entries: valid
+  a -> absent
+empty: truncated
+truncated: truncated
+limit: limit
+magic: magic
+version: version
+header-bytes: header
+entry-bytes: header
+count: count
+names-offset: layout
+names-bytes: layout
+data-offset: layout
+data-bytes: layout
+trailing: layout
+reserved: reserved
+checksum-data: checksum
+checksum-field: checksum
+padding-names: padding
+padding-data: padding
+flags: flags
+name-offset: name
+name-empty: name
+name-longest: valid
+  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -> offset 352 bytes 1 base64=eA==
+name-long: name
+name-total: name
+path-parent: path
+path-inner-parent: path
+path-dot: path
+path-empty-component: path
+path-absolute: path
+path-trailing-slash: path
+path-space: path
+path-backslash: path
+path-byte: path
+order-duplicate: order
+order-unsorted: order
+order-prefix: order
+nesting: nesting
+nesting-gap: nesting
+nesting-deep: nesting
+valid-siblings: valid
+  a/b -> offset 176 bytes 1 base64=eA==
+  ab -> offset 184 bytes 1 base64=eQ==
+  a -> absent
+valid-4096: valid
+  entry/0000 -> offset 172096 bytes 1 base64=MA==
+  entry/2048 -> offset 188480 bytes 4 base64=MjA0OA==
+  entry/4095 -> offset 204856 bytes 4 base64=NDA5NQ==
+  entry/4096 -> absent
+data-gap: data
+data-size: data

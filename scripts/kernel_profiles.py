@@ -60,6 +60,7 @@ LOADER_FIXTURE_IMAGES = frozenset(
         "storage-fixture",
         "snapshot-call-fixture",
         "text-fixture",
+        "process-fixture",
     )
 )
 FW_CFG_IMAGES = LOADER_FIXTURE_IMAGES | {"iommu-event"}
@@ -70,6 +71,9 @@ BIOS_FIXTURE_MODES = {
 # Base flags plus bounded variants mirror the existing admitted profiles.
 UEFI_FAMILIES = [
     ([], {"normal": []}),
+    # The boot volume, frame allocator and export (kernel/uefi/process.md),
+    # selected by a fw_cfg row read at loader entry.
+    ([], {"process-fixture": ["-DAURORA_PROCESS_FIXTURE"]}),
     (
         ["-maccumulate-outgoing-args", "-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_IOMMU_EVENT"],
         {"iommu-event": []},
@@ -709,6 +713,7 @@ def uefi_profile(profile_mode, flags):
     console = owned_bytes = mode == "device-fixture"
     graphical = framebuffer = mode == "display-fixture"
     event = mode == "iommu-event"
+    process = mode == "process-fixture"
     user_mode = "normal"
     if mode.startswith("runtime-") and mode[8:] in ("owned-text", "fixture"):
         user_mode = mode[8:]
@@ -866,6 +871,8 @@ def uefi_profile(profile_mode, flags):
         cpp["framebuffer"] = "kernel/uefi/framebuffer.cpp"
     if event:
         cpp["event-intake"] = "kernel/uefi/event-intake.cpp"
+    if process:
+        cpp["process"] = "kernel/uefi/process.cpp"
     entry, bridge = "examples/kernel.au", ""
     for enabled, source, adapter in (
         (event, "iommu-event-service", "event-service"),
@@ -886,6 +893,7 @@ def uefi_profile(profile_mode, flags):
         (terminal, "terminal", "graphical-terminal", "graphical-terminal", ["library"]),
         (framebuffer, "display", "display-service", "display-service", ["kernel/policies", "library"]),
         (owned_bytes, "owned-bytes", "owned-bytes", "owned-bytes", ["kernel/policies", "library"]),
+        (process, "process-policy", "process", "process", ["kernel/policies", "library"]),
     ):
         if enabled:
             languages[stem] = dict(
@@ -913,7 +921,8 @@ def uefi_profile(profile_mode, flags):
         + list(languages)
         + owned_objects
         + (["framebuffer"] if framebuffer else [])
-        + (["event-intake"] if event else []),
+        + (["event-intake"] if event else [])
+        + (["process"] if process else []),
         closed=program,
         # Closed objects keep local symbols and referenced reflection only.
         sealed=program or scratchpad,
@@ -921,7 +930,19 @@ def uefi_profile(profile_mode, flags):
         optimization="s" if program or scratchpad else "2",
         languages=languages,
         owned_objects=owned_objects,
+        esp=PROCESS_ESP if process else {},
     )
+
+
+# The process image's ESP volumes (scripts/kernel_volume.py arguments over
+# repository files): the valid volume, an unsorted index with a valid checksum
+# and an empty file. Every listed repository file is a build input.
+PROCESS_VOLUME_FILES = ("examples/core_math.au", "examples/host-sort.au")
+PROCESS_ESP = {
+    "volume": [word for path in PROCESS_VOLUME_FILES for word in ("--file", path)] + ["--text", "aurora/empty="],
+    "corrupt": ["--raw-order"] + [word for path in reversed(PROCESS_VOLUME_FILES) for word in ("--file", path)],
+    "empty": ["--empty"],
+}
 
 
 # UEFI guest families booted by scripts/kernel-uefi-smoke.sh; Meson registers each
@@ -947,6 +968,7 @@ GUEST_FAMILIES = {
     "user-ram-file-epochs user-ram-file-pending user-ram-file-frame user-ram-file-root",
     "tables": "runtime-table-readback runtime-table-reject runtime-table-exhaust runtime-table-quarantine",
     "pins": "runtime-pin-cancel runtime-pin-fault runtime-pin-stale runtime-pin-exhaust",
+    "process": "process-volume process-volume-corrupt process-volume-empty process-volume-map",
 }
 
 

@@ -1,0 +1,71 @@
+module kernel_process;
+import kernel.boot_volume;
+import kernel.export_text;
+import kernel.frames;
+import kernel.memory_map;
+
+// The process image's kernel policies, entered only through the private bridge
+// kernel/uefi/process-entry.S. Inputs are copied scalars and readonly spans the
+// kernel builds over its own mapped bytes; results are copied verdicts, records
+// and facts. Mapping, storage and serial output stay in the trusted supervisor.
+auto process_map_admit(builtin::span<const u8> map, u64 stride, u64 version) -> kernel::MapVerdict {
+    return kernel::map_admit(map, stride, version);
+}
+
+auto process_volume_grant(builtin::span<const u8> map, u64 stride, u64 arena, u64 volume,
+    u64 bytes) -> kernel::GrantVerdict {
+    return kernel::volume_grant(map, stride, arena, volume, bytes);
+}
+
+auto process_frame_range(builtin::span<const u8> map, u64 stride, u64 index, u64 arena, u64 volume,
+    u64 bytes) -> kernel::FrameRange {
+    const kernel::FrameRange range = kernel::frame_range(map, stride, index, arena, volume, bytes);
+    return range;
+}
+
+// Operation 1 initialize free, 2 initialize kernel, 3 allocate, 4 release.
+auto aurora_kernel_frame_transition(u64 operation, u64 record, u64 owner, u64 generation, u64 link) -> u64 {
+    kernel::FrameOperation selected = kernel::FrameOperation::none;
+    if (operation == 1u64) {
+        selected = kernel::FrameOperation::initialize_free;
+    }
+    if (operation == 2u64) {
+        selected = kernel::FrameOperation::initialize_kernel;
+    }
+    if (operation == 3u64) {
+        selected = kernel::FrameOperation::allocate;
+    }
+    if (operation == 4u64) {
+        selected = kernel::FrameOperation::release;
+    }
+    return kernel::frame_transition(selected, record, owner, generation, link);
+}
+
+auto process_volume_admit(builtin::span<const u8> volume) -> kernel::VolumeVerdict {
+    return kernel::volume_admit(volume);
+}
+
+// Index + 1 of the entry, zero when absent.
+auto process_volume_find(builtin::span<const u8> volume, builtin::span<const u8> path) -> u64 {
+    const i64 index = kernel::volume_find(volume, path);
+    if (index < 0) {
+        return 0u64;
+    }
+    return u64(index) + 1u64;
+}
+
+auto process_volume_entry(builtin::span<const u8> volume, u64 index) -> kernel::VolumeEntry {
+    if (index > 4096u64) {
+        const kernel::VolumeEntry absent = kernel::VolumeEntry(0u64, 0u64, 0u64);
+        return absent;
+    }
+    const kernel::VolumeEntry entry = kernel::volume_entry(volume, i64(index));
+    return entry;
+}
+
+auto process_base64_group(builtin::span<const u8> bytes, u64 offset) -> u64 {
+    if (offset > 67108864u64) {
+        return 0u64;
+    }
+    return kernel::base64_group(bytes, i64(offset));
+}

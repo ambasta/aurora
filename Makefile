@@ -176,6 +176,10 @@ smoke-uefi-dispatch:
 smoke-uefi-user-phases:
 	$(MESON_TEST) --suite guest-user-phases
 
+.PHONY: smoke-uefi-process
+smoke-uefi-process:
+	$(MESON_TEST) --suite guest-process
+
 .PHONY: smoke-all
 smoke-all:
 	$(MESON_TEST) --suite guest

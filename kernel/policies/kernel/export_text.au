@@ -1,0 +1,47 @@
+export module kernel.export_text;
+
+// Base64 (RFC 4648, padded) for serial export records. One group of up to three
+// copied bytes becomes four ASCII characters; it carries no file authority.
+export namespace kernel {
+    auto base64_character(u64 value) -> u64 {
+        if (value < 26u64) {
+            return 65u64 + value;
+        }
+        if (value < 52u64) {
+            return 71u64 + value;
+        }
+        if (value < 62u64) {
+            return value - 4u64;
+        }
+        if (value == 62u64) {
+            return 43u64;
+        }
+        return 47u64;
+    }
+
+    // The four characters of the group at offset, first in bits 0..7; zero
+    // when the offset is outside the bytes.
+    auto base64_group(builtin::span<const u8> bytes, i64 offset) -> u64 {
+        if (offset < 0 || offset >= bytes.size()) {
+            return 0u64;
+        }
+        const i64 count = bytes.size() - offset;
+        u64 group = u64(bytes.at(offset)) << 16;
+        if (count > 1) {
+            group = group | (u64(bytes.at(offset + 1)) << 8);
+        }
+        if (count > 2) {
+            group = group | u64(bytes.at(offset + 2));
+        }
+        u64 third = 61u64;
+        u64 fourth = 61u64;
+        if (count > 1) {
+            third = base64_character((group >> 6) & 63u64);
+        }
+        if (count > 2) {
+            fourth = base64_character(group & 63u64);
+        }
+        return base64_character(group >> 18) | (base64_character((group >> 12) & 63u64) << 8) | (third << 16) | (fourth
+            << 24);
+    }
+}

@@ -1,5 +1,7 @@
 """Shared ordinary UEFI serial oracle; no process or image access."""
 
+import base64
+import binascii
 import re
 import sys
 from pathlib import Path
@@ -38,6 +40,44 @@ def loader_selection(text, mode, selected=True):
         "Wrong loader fixture selector",
     )
     return text[: echoes[0].start(1)] + text[echoes[0].end(1) :]
+
+
+EXPORT_BEGIN = re.compile(r"AURORA_EXPORT_BEGIN: path=([A-Za-z0-9._/-]+) bytes=(0|[1-9][0-9]*)")
+EXPORT_DATA = re.compile(r"AURORA_EXPORT_DATA: ([A-Za-z0-9+/=]{4,76})")
+EXPORT_END = re.compile(r"AURORA_EXPORT_END: path=([A-Za-z0-9._/-]+) lines=(0|[1-9][0-9]*)")
+
+
+def exports(text):
+    """Decode the framed base64 export records (kernel/uefi/process.md#export).
+
+    Each record is BEGIN, one DATA line per 57 bytes (the last may be shorter)
+    and END naming the same path and line count. Returns {path: bytes}; any
+    stray, truncated, duplicate or miscounted record rejects.
+    """
+    result, lines, index = {}, text.replace("\r", "").split("\n"), 0
+    while index < len(lines):
+        begin = EXPORT_BEGIN.fullmatch(lines[index])
+        index += 1
+        if not begin:
+            need("AURORA_EXPORT" not in lines[index - 1], "Export record outside a frame")
+            continue
+        path, size, chunks = begin[1], int(begin[2]), []
+        while index < len(lines) and lines[index].startswith("AURORA_EXPORT_DATA:"):
+            data = EXPORT_DATA.fullmatch(lines[index])
+            need(data and len(data[1]) % 4 == 0, "Malformed export data")
+            try:
+                chunks.append(base64.b64decode(data[1], validate=True))
+            except binascii.Error as error:
+                raise ValueError("Malformed export base64") from error
+            index += 1
+        end = EXPORT_END.fullmatch(lines[index]) if index < len(lines) else None
+        index += 1
+        need(end and end[1] == path and int(end[2]) == len(chunks), "Unterminated export record")
+        need(all(len(chunk) == 57 for chunk in chunks[:-1]) and chunks[-1:] != [b""], "Export line framing")
+        payload = b"".join(chunks)
+        need(len(payload) == size and path not in result, "Export length or duplicate path")
+        result[path] = payload
+    return result
 
 
 def validate(status, text, mode):

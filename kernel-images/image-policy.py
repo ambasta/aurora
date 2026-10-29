@@ -150,6 +150,20 @@ RULES = [
         "profiles": ["uefi/service-fixture"],
         "reachable": ["aurora_kernel_round_robin_next", "aurora_kernel_client_disposal"],
     },
+    # The process image's frame, map, volume and export decisions stay in Aurora.
+    {
+        "profiles": ["uefi/process-fixture"],
+        "reachable": [
+            "__au_runtime_process_map_admit",
+            "__au_runtime_process_volume_grant",
+            "__au_runtime_process_frame_range",
+            "__au_runtime_process_volume_admit",
+            "__au_runtime_process_volume_find",
+            "__au_runtime_process_volume_entry",
+            "__au_runtime_process_base64_group",
+            "aurora_kernel_frame_transition",
+        ],
+    },
     # No fixture state or capture handshake links into the production image.
     {
         "profiles": ["uefi/production"],

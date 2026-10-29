@@ -18,6 +18,9 @@
 #ifdef AURORA_UEFI_OWNED_BYTES
 #include "owned-bytes.hpp"
 #endif
+#ifdef AURORA_PROCESS_FIXTURE
+#include "process.hpp"
+#endif
 using aurora::hardware::Serial;
 using aurora::uefi::Bytes;
 using aurora::uefi::Handoff;
@@ -203,6 +206,9 @@ auto payload_main(U64 arena, U64 size) -> void {
 #endif
         fail("compiled language result");
     Serial::text("AURORA_UEFI_LANGUAGE_OK: value=42\r\nAURORA_UEFI_OK\r\n");
+#ifdef AURORA_PROCESS_FIXTURE
+    aurora::uefi::run_process(arena, h);
+#endif
 #ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
     if (aurora::uefi::loader_fixture::graphical(row))
         aurora::uefi::run_graphical_console(arena, h);

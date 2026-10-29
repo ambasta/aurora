@@ -4,7 +4,8 @@
 #include <span>
 #include "runtime-layout.hpp"
 #if defined(AURORA_PLATFORM_FIXTURE) || defined(AURORA_DISPLAY_FIXTURE) || defined(AURORA_DEVICE_FIXTURE) ||           \
-    defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_SNAPSHOT_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
+    defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_SNAPSHOT_FIXTURE) || defined(AURORA_TEXT_FIXTURE) ||             \
+    defined(AURORA_PROCESS_FIXTURE)
 #define AURORA_LOADER_FIXTURE 1
 #include "loader-fixture.hpp"
 #endif
@@ -72,7 +73,14 @@ public:
 class Handoff final {
 public:
     static constexpr std::uint64_t magic = 0x41524f5255454649ULL;
-#ifdef AURORA_LOADER_FIXTURE
+#if defined(AURORA_PROCESS_FIXTURE)
+    // Version 8, the process image's: the selector word, then the boot volume's
+    // page address and byte length (process.md#handoff).
+    static constexpr std::size_t fixture_offset = 128;
+    static constexpr std::size_t volume_word = 136;
+    static constexpr std::size_t volume_bytes_word = 144;
+    static constexpr std::size_t header = 152;
+#elif defined(AURORA_LOADER_FIXTURE)
     // A loader fixture image appends one selector word; ordinary images have none.
     static constexpr std::size_t fixture_offset = 128;
     static constexpr std::size_t header = 136;
@@ -97,6 +105,29 @@ public:
     static constexpr std::uint64_t pool_offset = 0x50000;
     static constexpr std::uint64_t bar_record_offset = 0x81000;
     static constexpr std::uint64_t framebuffer_record_offset = 0xe0000;
+    static constexpr std::uint64_t volume_limit = 64ULL << 20;
+#ifdef AURORA_PROCESS_FIXTURE
+    // Version 8 is version 1 (no RSDP or record word) plus the boot volume: a
+    // nonzero page address and 1..64 MiB below the 52-bit physical limit. Only
+    // the final map, checked in Aurora by the kernel, grants those pages.
+    [[nodiscard]] static auto valid(std::span<const std::byte> bytes, std::uint64_t actual) -> bool {
+        if (bytes.size() != header)
+            return false;
+        const Bytes h{bytes};
+        const auto volume = h.get(volume_word), volume_bytes = h.get(volume_bytes_word);
+        return loader_fixture::admitted(h.get(fixture_offset)) && h.get(0) == magic && h.get(8, 4) == 8 &&
+               h.get(12, 4) == header && h.get(16) == arena_bytes && h.get(24) == actual && actual >= 0x100000 &&
+               actual % 4096 == 0 && actual <= 0x100000000ULL - arena_bytes && h.get(32) > 0 &&
+               h.get(32) <= MemoryMap::max_bytes && h.get(40) >= 40 && h.get(40) <= 256 && h.get(48, 4) == 1 &&
+               h.get(52, 4) >= 1 && h.get(52, 4) <= 3 && h.get(56) > 0 && h.get(56) <= payload_limit &&
+               h.get(56) <= h.get(80) && h.get(64) > 0 && h.get(64) % 4096 == 0 && h.get(72) % 4096 == 0 &&
+               h.get(80) % 4096 == 0 && h.get(64) <= h.get(72) && h.get(72) <= h.get(80) &&
+               h.get(80) <= payload_limit && h.get(88) == actual + tables_offset && h.get(96) > 0 &&
+               h.get(96) <= table_pages && h.get(104) == actual + payload_offset && h.get(112) == 0 &&
+               h.get(120) == 0 && volume && volume % 4096 == 0 && volume_bytes && volume_bytes <= volume_limit &&
+               volume < (1ULL << 52) - (2 * volume_limit);
+    }
+#else
     [[nodiscard]] static auto valid(std::span<const std::byte> bytes, std::uint64_t actual) -> bool {
         if (bytes.size() != header)
             return false;
@@ -133,6 +164,7 @@ public:
                                                          : h.get(120) == 0) &&
                ((h.get(8, 4) == 1 || h.get(8, 4) == 5) ? h.get(112) == 0 : h.get(112) > 0);
     }
+#endif
     // Versions carrying the protected runtime metadata at word 120.
     [[nodiscard]] static auto runtime(const Bytes &h) -> bool {
         return h.get(8, 4) == 3 || h.get(8, 4) == 7;

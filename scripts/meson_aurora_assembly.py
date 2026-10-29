@@ -120,6 +120,8 @@ def validate_native_abi(facts, source):
     def shape(source):
         if source in ("i64", "u64", "u8", "bool"):
             return dict(bytes=8, kind=source)
+        if source == "span":
+            return dict(bytes=56, kind="span")
         if source in ("builtin::CallSession", "builtin::ConsoleSession"):
             return dict(bytes=16, kind="service")
         if source == "builtin::ServeSession":
@@ -133,6 +135,9 @@ def validate_native_abi(facts, source):
                 "console::NamespaceOperation",
                 "console::NamespaceInputAction",
                 "console::NamespaceResponseKind",
+                "kernel::MapVerdict",
+                "kernel::GrantVerdict",
+                "kernel::VolumeVerdict",
             )
             else "records"
         )
@@ -340,6 +345,28 @@ def validate_native_abi(facts, source):
                 ["console::ProtectedFiles", "console::FileSelection", "std::BinaryBuffer64", "i64"],
                 "FileMutation",
             )
+
+    if "# PROCESS_POLICY_ABI:" in source:
+        for name, names in (
+            ("kernel::MapVerdict", "valid version stride length alignment range overlap"),
+            ("kernel::GrantVerdict", "granted map bounds arena uncovered"),
+            (
+                "kernel::VolumeVerdict",
+                "valid truncated limit magic version header count layout reserved checksum padding flags name path "
+                "order data nesting",
+            ),
+        ):
+            enum(name, names)
+        record("kernel::FrameRange", 24, [("_status", "u64", 0), ("_first", "u64", 0), ("_pages", "u64", 0)])
+        record("kernel::VolumeEntry", 24, [("_found", "u64", 0), ("_offset", "u64", 0), ("_size", "u64", 0)])
+        entry("process_map_admit", ["span", "u64", "u64"], "kernel::MapVerdict")
+        entry("process_volume_grant", ["span", "u64", "u64", "u64", "u64"], "kernel::GrantVerdict")
+        entry("process_frame_range", ["span", "u64", "u64", "u64", "u64", "u64"], "kernel::FrameRange")
+        entry("process_volume_admit", ["span"], "kernel::VolumeVerdict")
+        entry("process_volume_find", ["span", "span"], "u64")
+        entry("process_volume_entry", ["span", "u64"], "kernel::VolumeEntry")
+        entry("process_base64_group", ["span", "u64"], "u64")
+        entry("aurora_kernel_frame_transition", ["u64", "u64", "u64", "u64", "u64"], "u64")
 
 
 def render_bridge(source, facts):

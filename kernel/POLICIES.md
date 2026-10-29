@@ -407,3 +407,11 @@ See [console services](../docs/native-console-service.md#bios-transport) for the
 partial migration boundary, generated scripted-port coverage and pending gates.
 This source policy is not an ordinary pure copied decision: each successful
 Com1UartGrant primitive has exactly one device effect; a timeout never retries output.
+
+## Process image policies
+
+`kernel.memory_map`, `kernel.frames`, `kernel.boot_volume` and `kernel.export_text`
+admit the final memory map and boot volume, decide frame-record transitions and
+encode export records over copied scalars and readonly spans the supervisor
+builds over its own mapped bytes. The contract, encodings and tests are in
+[the process image](uefi/process.md).
