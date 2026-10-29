@@ -217,7 +217,8 @@ auto process_drain() -> void asm("uefi_process_drain") __attribute__((visibility
 // Processes (process.md#processes). One process runs at a time; the dispatcher
 // below reaches it through these words, which only the kernel writes.
 namespace {
-constexpr U64 tick_count = U64{1} << 24;
+// A watchdog tick: 2^24 LAPIC counts, or 2^31 for a run with flag 8.
+constexpr U64 tick_count = U64{1} << 24, long_tick_count = U64{1} << 31;
 // The interrupt frame: 15 saved registers (R15 first, RAX last), the vector and
 // error code, then the CPU's RIP, CS, RFLAGS, RSP and SS.
 constexpr std::size_t frame_words = BootstrapLayout::fault_frame_words, frame_rax = 14, frame_rdi = 8, frame_rsi = 9,
@@ -225,7 +226,10 @@ constexpr std::size_t frame_words = BootstrapLayout::fault_frame_words, frame_ra
 class Running final {
 public:
     ProcessSpace *space = nullptr;
-    U64 run = 0, flags = 0, initial = 0, remaining = 0, used = 0, calls = 0, memory_calls = 0, commits = 0;
+    U64 run = 0, flags = 0, initial = 0, remaining = 0, used = 0, calls = 0, memory_calls = 0, commits = 0, peak = 0;
+    [[nodiscard]] auto tick() const -> U64 {
+        return flags & 8 ? long_tick_count : tick_count;
+    }
 };
 // How the process ended, copied from its last kernel entry.
 class Outcome final {
@@ -427,7 +431,7 @@ auto charge_tick(U64 vector, U64 error, U64 rip, U64 cs) -> U64 {
     running.remaining = next->remaining();
     running.used = next->used();
     if (next->resume()) {
-        if (!Timer::arm(tick_count))
+        if (!Timer::arm(running.tick()))
             fail("watchdog rearm");
         return 0;
     }
@@ -585,6 +589,9 @@ auto kernel_call(volatile U64 *frame) -> U64 {
         process::call(frame[frame_rax], frame[frame_rdi], frame[frame_rsi], frame[frame_rdx], frame[frame_r10]);
     if (!decoded)
         fail("Aurora kernel call decision");
+    // The largest charge the run reached, as of each call.
+    if (running.space->charged() > running.peak)
+        running.peak = running.space->charged();
     // Fixture: fault in the kernel during the run's first call (process.md#guest-rows).
     if ((running.flags & 1) && running.calls++ == 0)
         static_cast<void>(*reinterpret_cast<volatile U64 *>(KernelSpace::window_base + frames::page));
@@ -889,7 +896,7 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
     file_store.process = &process_space;
     if (!files.begin(view, file_store))
         fail("file service start");
-    if (!Timer::arm(tick_count))
+    if (!Timer::arm(running.tick()))
         fail("watchdog arm");
     if (process_enter(context) != 1 || root() != kernel_root || !Timer::stop())
         fail("process exit");
@@ -910,6 +917,7 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
         fail("file service finish");
     file_store.process = nullptr;
     const auto memory = process_space.memory();
+    const auto peak = process_space.charged() > running.peak ? process_space.charged() : running.peak;
     const auto released = process_space.release();
     const auto audit = table.audit();
     if (!released || !audit.consistent || audit.allocated)
@@ -920,6 +928,7 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
     field("memory", memory);
     field("calls", running.memory_calls);
     field("commits", running.commits);
+    field("peak", peak);
     Serial::text("\r\n");
 }
 

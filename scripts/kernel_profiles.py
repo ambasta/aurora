@@ -48,11 +48,13 @@ FIXTURE_MODES = {
 }
 # Process-image rows that run a run list: the valid volume's selector plus a
 # case word (fw_cfg opt/aurora/case) naming runs/<case> in that volume (the
-# compiler volume for COMPILER_CASES). Each run is (watchdog ticks, flags,
-# memory quota in frames or 0 for all, volume path, arguments as shell words);
-# flag 1 faults the kernel during the run's first kernel call, flag 2 checks
-# that the load walk rejects edited tables and flag 4 walks the whole space
-# after every memory call, commit and kernel access (kernel/uefi/process.md#run-lists).
+# compiler volume for COMPILER_CASES, the self-host volume for
+# SELF_HOST_CASES). Each run is (watchdog ticks, flags, memory quota in frames
+# or 0 for all, volume path, arguments as shell words); flag 1 faults the
+# kernel during the run's first kernel call, flag 2 checks that the load walk
+# rejects edited tables, flag 4 walks the whole space after every memory call,
+# commit and kernel access and flag 8 makes each tick 128 times longer
+# (kernel/uefi/process.md#run-lists).
 ROOT = Path(__file__).resolve().parents[1]
 # One process per hosted memory-runtime case (tests/host-files/memory.golden),
 # each walked after every memory call unless it churns, then the compiler with
@@ -99,6 +101,21 @@ COMPILE_RUNS = ((128, 0, 0, "bin/aurorac", COMPILE_FLAGS + " examples/host-sort.
     (32, 0, 0, "bin/aurorac", f"{COMPILE_FLAGS} rejections/case-{index:04d}.au -o case-{index:04d}.o")
     for index, _ in enumerate((ROOT / COMPILE_GOLDEN).read_text().splitlines())
 )
+# The compiler compiling itself in the guest (release suite): the --target
+# aurora compiler, given the configured driver and the module tree its own
+# build stages, emits the object C1 emits of the compiler (aurorac-stage2.o,
+# the hosted build's stage-2 object) with C1's flags. Flag 8: ticks of 2^31
+# counts (about 34 s under QEMU), so the budget is about 9 minutes.
+SELF_HOST_RUNS = (
+    (
+        16,
+        8,
+        0,
+        "bin/aurorac",
+        "aurorac --emit-object --local-symbols --referenced-reflection-only --target linux "
+        "--runtime-root /runtime/linux --module-root /modules aurorac.au -o aurorac-stage2.o",
+    ),
+)
 PROCESS_CASES = {
     "process-run": (
         1,
@@ -125,6 +142,8 @@ PROCESS_CASES = {
             (8, 0, 0, "bin/isolation-16", "write-gap"),
             (8, 0, 0, "bin/isolation-17", "forged-ids"),
             (32, 0, 0, "bin/probe", "probe print 'two words' exit success"),
+            # A long-tick run (flag 8) ends within its first tick.
+            (1, 8, 0, "bin/probe", "probe print 'two words' exit success"),
         ),
     ),
     "process-hostile": (
@@ -150,13 +169,17 @@ PROCESS_CASES = {
     ),
     "process-files": (4, FILES_RUNS),
     "process-compile": (5, COMPILE_RUNS),
+    "process-self-host": (6, SELF_HOST_RUNS),
 }
-# The run lists of the compiler volume (\\aurora\\compiler, kernel/uefi/loader-fixture.hpp).
+# The run lists of the compiler volume (\\aurora\\compiler, kernel/uefi/loader-fixture.hpp)
+# and of the self-host volume (\\aurora\\selfhost).
 COMPILER_CASES = frozenset({3, 5})
+SELF_HOST_CASES = frozenset({6})
 # Guest memory of the rows that need more than the UEFI default: one memory
 # case keeps 4 GiB mapped (committed on first touch, but charged in full).
 # The files row holds a 64 MiB output beside the probe's 8 MiB stack.
-PROCESS_MEMORY = {"process-memory": "5G", "process-files": "256M"}
+# The self-host row's compiler charges about 600 MiB at its peak.
+PROCESS_MEMORY = {"process-memory": "5G", "process-files": "256M", "process-self-host": "1G"}
 FIXTURE_MODES.update({mode: FIXTURE_MODES["process-volume"] for mode in PROCESS_CASES})
 # These images read their selector from a QEMU fw_cfg file instead of a serial
 # byte. The loader fixture images read it at loader entry, echo it and hand it
@@ -1062,7 +1085,8 @@ PROCESS_VOLUME_FILES = ("examples/core_math.au", "examples/host-sort.au")
 # compiler volume carries the compiler and the memory probe for cases 3 and 5.
 PROCESS_COMPILER_PROGRAMS = {"bin/aurorac": "aurora:aurorac", "bin/memory": "aurora:host-memory-probe"}
 # It also holds what the compile row reads: the Linux runtime root and the program.
-PROCESS_COMPILER_FILES = ("examples/host-sort.au", "runtime/linux/aurora/host.au", "runtime/linux/aurora/memory.au")
+PROCESS_RUNTIME_FILES = ("runtime/linux/aurora/host.au", "runtime/linux/aurora/memory.au")
+PROCESS_COMPILER_FILES = ("examples/host-sort.au", *PROCESS_RUNTIME_FILES)
 PROCESS_PROGRAMS = {
     "bin/probe": "aurora:host-files-probe",
     "bin/hostile": "aurora:process-hostile",
@@ -1102,7 +1126,7 @@ PROCESS_ESP = {
     + [
         word
         for case, runs in PROCESS_CASES.values()
-        if case not in COMPILER_CASES
+        if case not in COMPILER_CASES | SELF_HOST_CASES
         for ticks, flags, quota, path, arguments in runs
         for word in ("--run", f"{case}:{ticks}:{flags}:{quota}:{path}:{arguments}")
     ],
@@ -1115,6 +1139,18 @@ PROCESS_ESP = {
         word
         for case, runs in PROCESS_CASES.values()
         if case in COMPILER_CASES
+        for ticks, flags, quota, path, arguments in runs
+        for word in ("--run", f"{case}:{ticks}:{flags}:{quota}:{path}:{arguments}")
+    ],
+    # The configured compiler driver (source:aurorac) and the compiler modules
+    # (--compiler-modules, kernel-images/meson.build) as the build stages them.
+    "selfhost": ["--program", "bin/aurorac=aurora:aurorac", "--program", "aurorac.au=source:aurorac"]
+    + [word for path in PROCESS_RUNTIME_FILES for word in ("--file", path)]
+    + ["--compiler-modules", "modules"]
+    + [
+        word
+        for case, runs in PROCESS_CASES.values()
+        if case in SELF_HOST_CASES
         for ticks, flags, quota, path, arguments in runs
         for word in ("--run", f"{case}:{ticks}:{flags}:{quota}:{path}:{arguments}")
     ],
@@ -1148,7 +1184,11 @@ GUEST_FAMILIES = {
     "pins": "runtime-pin-cancel runtime-pin-fault runtime-pin-stale runtime-pin-exhaust",
     "process": "process-volume process-volume-corrupt process-volume-empty process-volume-map process-run "
     "process-hostile process-memory process-files process-compile",
+    # The release suite's row (tests/native/meson.build), minutes under TCG.
+    "self-host": "process-self-host",
 }
+# The QEMU limit of a guest row in seconds (scripts/kernel-uefi-smoke.sh), 60 unless listed.
+GUEST_TIMEOUTS = {"process-self-host": 900}
 
 
 # Machine variants boot their baseline mode's image and selector on other QEMU hardware.
@@ -1269,8 +1309,11 @@ if __name__ == "__main__":
     action.add_argument("--canonical", nargs=2, metavar=("PLATFORM", "PROFILE"))
     action.add_argument("--fixture-byte")
     action.add_argument("--bios-fixture-byte")
+    action.add_argument("--guest-timeout")
     args = parser.parse_args()
-    if args.bios_fixture_byte:
+    if args.guest_timeout:
+        print(GUEST_TIMEOUTS.get(args.guest_timeout, 60))
+    elif args.bios_fixture_byte:
         print(BIOS_FIXTURE_MODES.get(BIOS_VARIANTS.get(args.bios_fixture_byte, args.bios_fixture_byte), ("", ""))[1])
     elif args.fixture_byte:
         print(serial_fixture_byte(args.fixture_byte))
@@ -1289,6 +1332,7 @@ if __name__ == "__main__":
         rows = list(keyval_rows("profiles", profiles()))
         rows += keyval_rows("layout", layout_metadata())
         rows += keyval_rows("guests", {name: modes.split() for name, modes in GUEST_FAMILIES.items()})
+        rows += keyval_rows("guest_timeouts", GUEST_TIMEOUTS)
         rows += keyval_rows("image_policies", {name: list(values) for name, values in IMAGE_POLICIES.items()})
         rows += keyval_rows(
             "aliases",

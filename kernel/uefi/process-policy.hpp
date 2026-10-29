@@ -619,7 +619,7 @@ frame_range(std::span<const std::byte> map, U64 stride, U64 index, U64 arena, U6
                        result.argument_bytes
                    ? std::nullopt
                    : std::optional<RunEntry>{result};
-    if (result.found != 1 || result.ticks == 0 || result.ticks > 128 || result.flags > 7 || result.path_bytes == 0 ||
+    if (result.found != 1 || result.ticks == 0 || result.ticks > 128 || result.flags > 15 || result.path_bytes == 0 ||
         result.path_bytes > 255 || result.argument_bytes == 0 || result.argument_bytes > 65536 ||
         result.path > runs.size() || result.path_bytes > runs.size() - result.path ||
         result.arguments != result.path + result.path_bytes || result.argument_bytes > runs.size() - result.arguments)

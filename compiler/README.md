@@ -394,6 +394,10 @@ type/lifetime analysis run in Aurora. Production lowers the resolved Session
 directly to typed IR, without a resolved C++ AST round trip. The compiler
 builds itself from source through the [seed](#the-seed); that is not yet a
 self-hosting toolchain (assembler, linker and runtime remain GNU and Linux).
+Its `--target aurora` build also compiles itself inside the Aurora kernel's
+process image to C1's object of the compiler, byte for byte (the
+[self-host row](../kernel/uefi/process.md#tests), release suite); that object
+is still linked by the host `ld`.
 
 CFG joins require exact source lifetime, provenance and operand-stack agreement
 before weakening the retained current value. An already unknown current stays

@@ -108,7 +108,7 @@ layout-arguments-largest: valid
 runs-valid: valid
   runs runs/1 -> valid
     run 1 ticks=4 flags=0 quota=0 path=bin/a arguments=a\0b\0c d\0
-    run 2 ticks=128 flags=7 quota=4096 path=x arguments=y\0
+    run 2 ticks=128 flags=15 quota=4096 path=x arguments=y\0
 runs-one: valid
   runs runs/1 -> valid
     run 1 ticks=4 flags=0 quota=0 path=a arguments=a\0

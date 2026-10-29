@@ -188,8 +188,10 @@ if get_option('kernel_images')
 endif
 # The build products a guest row's exports must equal (tests/kernel-process-smoke.py
 # reads them from the build root).
-process_references = {'process-compile': [hosted_objects['host-sort']]}
-process_reference_objects = [hosted_objects['host-sort']]
+process_references = {'process-compile': [hosted_objects['host-sort']], 'process-self-host': [aurorac_stage2_object]}
+process_reference_objects = [hosted_objects['host-sort'], aurorac_stage2_object]
+# Sources a volume holds as configured (the compiler's driver, which C1 compiles).
+process_sources = {'source:aurorac': compiler_driver}
 
 # Preserve the configured compiler command (including wrappers and quoted paths)
 # for the existing Python native observer. This does not build or run a test.

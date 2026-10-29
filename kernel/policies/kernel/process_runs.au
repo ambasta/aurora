@@ -6,13 +6,14 @@ import std.binary;
 // watchdog budget and frame quota. One canonical little-endian layout: a
 // 16-byte header (magic "AURORUNS", version 2, count 1..64), then per run a
 // 24-byte record (ticks 1..128, path bytes 1..255, argument bytes 1..65536,
-// flags 0..7, then the memory quota in frames, 0 for every free frame), the
+// flags 0..15, then the memory quota in frames, 0 for every free frame), the
 // path, the arguments (NUL-terminated words, so the last byte is zero) and
-// zero padding to 8 bytes, ending exactly at the end of the entry. The flags
-// are process-image fixtures: 1 faults the kernel during the run's first
-// kernel call, 2 checks that the load walk rejects edited tables, 4 walks the
-// whole space after every memory call and commit. Admission returns the
-// first violated rule.
+// zero padding to 8 bytes, ending exactly at the end of the entry. Flag 8
+// makes each of the run's ticks 128 times longer, for runs of minutes; the
+// others are process-image fixtures: 1 faults the kernel during the run's
+// first kernel call, 2 checks that the load walk rejects edited tables, 4
+// walks the whole space after every memory call and commit. Admission
+// returns the first violated rule.
 export namespace kernel {
     enum class RunsVerdict {
         valid,
@@ -78,7 +79,7 @@ export namespace kernel {
         if (arguments == 0u64 || arguments > 65536u64) {
             return RunsVerdict::arguments;
         }
-        if (flags > 7u64) {
+        if (flags > 15u64) {
             return RunsVerdict::flags;
         }
         if (i64(path) + i64(arguments) > runs.size() - offset - 24) {

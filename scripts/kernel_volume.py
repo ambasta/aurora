@@ -10,8 +10,10 @@ Entries: --file PATH (the repository file PATH under --root, stored as PATH),
 edits), --host-files-tree (the regular files of the HostFiles cases' fixture,
 tests/host_files.py, under tree/), --rejections DIR=GOLDEN (each source of
 the rejection golden GOLDEN, tests/golden.py --reject, as DIR/case-NNNN.au
-in line order) and --run CASE:TICKS:FLAGS:QUOTA:PATH:ARGUMENTS (appends one run to
-the run list runs/CASE; ARGUMENTS are shell words), and --entries N adds
+in line order), --module DIR=FILE (the compiler module FILE staged beneath
+DIR as the compiler's build stages it, scripts/bootstrap_frontend.py) and
+--run CASE:TICKS:FLAGS:QUOTA:PATH:ARGUMENTS (appends one run to the run list
+runs/CASE; ARGUMENTS are shell words), and --entries N adds
 entry/0000.. each holding its number. Entries are sorted unless --raw-order
 keeps their order.
 --set OFFSET:WIDTH:VALUE edits a little-endian field before the checksum is
@@ -152,6 +154,7 @@ def parser():
     result.add_argument("--run", action="append", default=[], dest="runs")
     result.add_argument("--host-files-tree", action="store_true")
     result.add_argument("--rejections", action="append", default=[])
+    result.add_argument("--module", action="append", default=[], dest="modules")
     result.add_argument("--entries", type=number, default=0)
     result.add_argument("--raw-order", action="store_true")
     result.add_argument("--set", action="append", default=[], dest="sets")
@@ -182,6 +185,14 @@ def build(args, root):
             (f"{directory}/case-{index:04d}.au".encode(), json.loads(line.split("\t", 1)[0]).encode())
             for index, line in enumerate(lines)
         ]
+    if args.modules:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from bootstrap_frontend import staged_module
+
+        for item in args.modules:
+            directory, _, source = item.partition("=")
+            path, content = staged_module(Path(source))
+            entries.append(((Path(directory) / path).as_posix().encode(), content))
     lists = {}
     for item in args.runs:
         case, ticks, flags, quota, path, arguments = item.split(":", 5)

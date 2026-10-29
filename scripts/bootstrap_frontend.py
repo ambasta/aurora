@@ -851,19 +851,26 @@ def frontend_bridge(bridge, facts):
     return bridge
 
 
+def staged_module(source):
+    """A module's path beneath the module root and its bytes: the source's, but
+    for the explicit frontend scaffold, which is expanded."""
+    declaration = re.search(r"^export module ([A-Za-z_][A-Za-z0-9_.]*);", source.read_text(), re.MULTILINE)
+    if declaration is None:
+        raise ValueError("frontend input requires a named exported module: " + str(source))
+    parts = declaration.group(1).split(".")
+    content = source.read_bytes()
+    if b"// @generated-forwarders" in content:
+        content = render(content.decode()).encode()
+    return Path(*parts[:-1], parts[-1] + ".au"), content
+
+
 def stage_modules(module_root, modules):
     """Copy modules byte-for-byte, expanding only the explicit frontend scaffold."""
     for source in modules:
-        declaration = re.search(r"^export module ([A-Za-z_][A-Za-z0-9_.]*);", source.read_text(), re.MULTILINE)
-        if declaration is None:
-            raise ValueError("frontend input requires a named exported module: " + str(source))
-        parts = declaration.group(1).split(".")
-        destination = module_root.joinpath(*parts[:-1])
-        destination.mkdir(parents=True, exist_ok=True)
-        content = source.read_bytes()
-        if b"// @generated-forwarders" in content:
-            content = render(content.decode()).encode()
-        (destination / (parts[-1] + ".au")).write_bytes(content)
+        path, content = staged_module(source)
+        destination = module_root / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
 
 
 def emit(compiler, source, output, module_root):

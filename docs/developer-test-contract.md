@@ -21,8 +21,10 @@ Guest smokes run QEMU through `scripts/kernel-uefi-smoke.sh MODE`,
 the rows of `kernel/uefi/runtime-fixtures.inc`. The UEFI guest families are Meson
 tests outside `full`: `meson test --suite guest` runs all of them and
 `--suite guest-<family>` one family (`uefi`, `acpi`, `pci`, `runtime`, `ipc`,
-`budget`, `dispatch`, `user-phases`, `tables`, `pins`, `process`; listed in
-`scripts/kernel_profiles.py`). `scripts/kernel-run.sh bar|ivrs` boots the BAR and
+`budget`, `dispatch`, `user-phases`, `tables`, `pins`, `process`, `self-host`;
+listed in `scripts/kernel_profiles.py`). `self-host`, the compiler compiling
+itself inside the process image for a few minutes, is also in the release
+suite. `scripts/kernel-run.sh bar|ivrs` boots the BAR and
 IVRS device families.
 
 ## Kernel image checks
@@ -65,8 +67,9 @@ concurrency, next to the previous main. Missing tools or skipped gates are repor
 
 ## Where tests live
 
-The release suite holds IR mutation testing (`ir-exhaustive`) and the complete
-borrowed-objects sweep; everything else is in merge. Tests do not pin inventories
+The release suite holds IR mutation testing (`ir-exhaustive`), the complete
+borrowed-objects sweep and the in-guest self-host row; everything else is in
+merge. Tests do not pin inventories
 of other tests or of the source tree, do not test their own oracles, and check no
 digests, including the cached first compiler's; the stage compares check it.
 
