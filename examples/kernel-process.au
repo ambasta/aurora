@@ -5,6 +5,7 @@ import kernel.export_text;
 import kernel.frames;
 import kernel.memory_map;
 import kernel.process_events;
+import kernel.process_files;
 import kernel.process_memory;
 import kernel.process_runs;
 import kernel.process_space;
@@ -108,8 +109,8 @@ auto process_trap(kernel::ProcessTrap trap) -> kernel::TrapClass {
     return kernel::process_trap(trap);
 }
 
-auto process_call(u64 operation, u64 first, u64 second, u64 third) -> kernel::KernelCall {
-    const kernel::KernelCall call = kernel::process_call(operation, first, second, third);
+auto process_call(u64 operation, u64 first, u64 second, u64 third, u64 fourth) -> kernel::KernelCall {
+    const kernel::KernelCall call = kernel::process_call(operation, first, second, third, fourth);
     return call;
 }
 
@@ -159,4 +160,67 @@ auto process_memory_budget(builtin::span<const u8> image, u64 arguments, u64 slo
     u64 free) -> kernel::MemoryBudget {
     const kernel::MemoryBudget budget = kernel::memory_budget(image, arguments, slots, requested, free);
     return budget;
+}
+
+// The file service (kernel/uefi/process.md#files): each HostFiles operation's
+// decision over the volume, the overlay records and the handle table the
+// supervisor keeps, and the kernel's copy of the path.
+auto process_file_open(builtin::span<const u8> volume, builtin::span<const u8> overlay, builtin::span<const u8> table,
+    builtin::span<const u8> path, u64 operation, u64 directory) -> kernel::FileOpen {
+    const kernel::FileOpen opened = kernel::file_open(volume, overlay, table, path, operation, directory);
+    return opened;
+}
+
+auto process_file_create(builtin::span<const u8> volume, builtin::span<const u8> overlay, builtin::span<const u8> table,
+    builtin::span<const u8> path) -> kernel::FileCreate {
+    const kernel::FileCreate created = kernel::file_create(volume, overlay, table, path);
+    return created;
+}
+
+auto process_file_read(builtin::span<const u8> table, u64 id, u64 offset) -> kernel::FileRead {
+    const kernel::FileRead read = kernel::file_read(table, id, offset);
+    return read;
+}
+
+auto process_file_close(builtin::span<const u8> overlay, builtin::span<const u8> table, u64 id) -> kernel::FileChange {
+    const kernel::FileChange closed = kernel::file_close(overlay, table, id);
+    return closed;
+}
+
+auto process_file_write(builtin::span<const u8> table, u64 id, u64 bytes, u64 charged,
+    u64 quota) -> kernel::FileChange {
+    const kernel::FileChange written = kernel::file_write(table, id, bytes, charged, quota);
+    return written;
+}
+
+auto process_file_commit(builtin::span<const u8> volume, builtin::span<const u8> overlay, builtin::span<const u8> table,
+    u64 id) -> kernel::FileChange {
+    const kernel::FileChange committed = kernel::file_commit(volume, overlay, table, id);
+    return committed;
+}
+
+auto process_file_discard(builtin::span<const u8> table, u64 id) -> kernel::FileChange {
+    const kernel::FileChange discarded = kernel::file_discard(table, id);
+    return discarded;
+}
+
+// One byte of an exported overlay path as text.
+auto process_path_text(u64 value) -> u64 {
+    if (value > 255u64) {
+        return 0u64;
+    }
+    return kernel::path_text(u8(value));
+}
+
+// The bytes of directory (first, depth)'s path in its first entry's name,
+// + 1, or 0 when that name is not that deep (an exported path's directory).
+auto process_directory_prefix(builtin::span<const u8> volume, u64 first, u64 depth) -> u64 {
+    if (first > 4096u64 || depth > 255u64) {
+        return 0u64;
+    }
+    const i64 prefix = kernel::directory_prefix(volume, first, depth);
+    if (prefix < 0) {
+        return 0u64;
+    }
+    return u64(prefix) + 1u64;
 }

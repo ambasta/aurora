@@ -49,22 +49,33 @@ export namespace kernel {
         read,
         map,
         remap,
-        unmap
+        unmap,
+        open_directory,
+        open_beneath,
+        open_file,
+        close,
+        create_output,
+        write,
+        commit,
+        discard
     };
 
-    // A decoded kernel call: exit with value, print length bytes to stream
-    // value (1 stdout, 2 stderr), read, whose result word is value, or a
-    // memory call (kernel/uefi/process.md#memory): map length bytes, remap the
-    // mapping at base from value bytes to length bytes, unmap length bytes at
-    // base.
+    // A decoded kernel call: exit with value, print length bytes at base to
+    // stream value (1 stdout, 2 stderr), read file value at offset length
+    // into the 504 bytes at base, a memory call
+    // (kernel/uefi/process.md#memory): map length bytes, remap the mapping at
+    // base from value bytes to length bytes, unmap length bytes at base, or a
+    // file call (kernel/uefi/process.md#files) on handle value with length
+    // bytes (a path or data) at base and its 48-byte result record at record.
     class KernelCall {
         CallAction _action;
         u64 _value;
         u64 _length;
         u64 _base;
+        u64 _record;
     public:
-        KernelCall(CallAction action, u64 value, u64 length, u64 base) : _action(action), _value(value),
-            _length(length), _base(base) {
+        KernelCall(CallAction action, u64 value, u64 length, u64 base, u64 record) : _action(action), _value(value),
+            _length(length), _base(base), _record(record) {
         }
         auto action() const -> CallAction {
             return _action;
@@ -140,41 +151,75 @@ export namespace kernel {
     }
 
     // Operation 1 exit(status 0..255), 2 print(stream, buffer, length up to
-    // 64 KiB), 3 read(file, offset, chunk): with no file service yet every
-    // file id is invalid_handle (-1); 4 map(bytes), 5 remap(base, bytes, new
-    // bytes) and 6 unmap(base, bytes), with whole-page lengths up to 64 TiB
-    // and a base in the memory area. Anything else is invalid.
-    auto process_call(u64 operation, u64 first, u64 second, u64 third) -> KernelCall {
-        const KernelCall invalid = KernelCall(CallAction::invalid, 0u64, 0u64, 0u64);
+    // 64 KiB), 3 read(file, offset, chunk); 4 map(bytes), 5 remap(base,
+    // bytes, new bytes) and 6 unmap(base, bytes), with whole-page lengths up
+    // to 64 TiB and a base in the memory area; the file calls 7
+    // open_directory, 8 open_beneath, 9 open_file and 11 create_output
+    // (handle, path, length up to 64 KiB, record), 10 close(handle), 12
+    // write(output, buffer, length up to 64 KiB), 13 commit(output) and 14
+    // discard(output); arguments an operation does not use are ignored.
+    // Anything else is invalid.
+    auto process_call(u64 operation, u64 first, u64 second, u64 third, u64 fourth) -> KernelCall {
+        const KernelCall invalid = KernelCall(CallAction::invalid, 0u64, 0u64, 0u64, 0u64);
         if (operation == 1u64) {
             if (first > 255u64) {
                 return invalid;
             }
-            const KernelCall exit = KernelCall(CallAction::exit, first, 0u64, 0u64);
+            const KernelCall exit = KernelCall(CallAction::exit, first, 0u64, 0u64, 0u64);
             return exit;
         }
         if (operation == 2u64) {
             if ((first != 1u64 && first != 2u64) || third > arguments_limit()) {
                 return invalid;
             }
-            const KernelCall print = KernelCall(CallAction::print, first, third, 0u64);
+            const KernelCall print = KernelCall(CallAction::print, first, third, second, 0u64);
             return print;
         }
         if (operation == 3u64) {
-            const KernelCall read = KernelCall(CallAction::read, 18446744073709551615u64, 0u64, 0u64);
+            const KernelCall read = KernelCall(CallAction::read, first, second, third, 0u64);
             return read;
         }
         if (operation == 4u64 && memory_length(first)) {
-            const KernelCall map = KernelCall(CallAction::map, 0u64, first, 0u64);
+            const KernelCall map = KernelCall(CallAction::map, 0u64, first, 0u64, 0u64);
             return map;
         }
         if (operation == 5u64 && memory_base_address(first) && memory_length(second) && memory_length(third)) {
-            const KernelCall remap = KernelCall(CallAction::remap, second, third, first);
+            const KernelCall remap = KernelCall(CallAction::remap, second, third, first, 0u64);
             return remap;
         }
         if (operation == 6u64 && memory_base_address(first) && memory_length(second)) {
-            const KernelCall unmap = KernelCall(CallAction::unmap, 0u64, second, first);
+            const KernelCall unmap = KernelCall(CallAction::unmap, 0u64, second, first, 0u64);
             return unmap;
+        }
+        if ((operation == 7u64 || operation == 9u64 || operation == 11u64) && third <= arguments_limit()) {
+            CallAction action = CallAction::open_directory;
+            if (operation == 9u64) {
+                action = CallAction::open_file;
+            }
+            if (operation == 11u64) {
+                action = CallAction::create_output;
+            }
+            const KernelCall path = KernelCall(action, 0u64, third, second, fourth);
+            return path;
+        }
+        if (operation == 8u64 && third <= arguments_limit()) {
+            const KernelCall beneath = KernelCall(CallAction::open_beneath, first, third, second, fourth);
+            return beneath;
+        }
+        if (operation == 12u64 && third <= arguments_limit()) {
+            const KernelCall write = KernelCall(CallAction::write, first, third, second, 0u64);
+            return write;
+        }
+        if (operation == 10u64 || operation == 13u64 || operation == 14u64) {
+            CallAction action = CallAction::close;
+            if (operation == 13u64) {
+                action = CallAction::commit;
+            }
+            if (operation == 14u64) {
+                action = CallAction::discard;
+            }
+            const KernelCall handle = KernelCall(action, first, 0u64, 0u64, 0u64);
+            return handle;
         }
         return invalid;
     }

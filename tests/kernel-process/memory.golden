@@ -64,19 +64,19 @@ fault 0x400000000000 0x14 0x400000000000 0x4 0x3 0x400000005000 0x8 0x5 -> none
 fault 0x400000000000 0xe 0x400000000000 0x4 0x3 0x400000005000 0x8 0x5 -> none
 fault 0x400000000000 0x26 0x400000000000 0x4 0x3 0x400000005000 0x8 0x5 -> none
 fault 0x400000000000 0x6 -> none
-call 0x4 0x1000 0 0 -> map value=0 length=4096 base=0
-call 0x4 0x400000000000 0 0 -> map value=0 length=70368744177664 base=0
-call 0x4 0 0 0 -> invalid value=0 length=0 base=0
-call 0x4 0x1001 0 0 -> invalid value=0 length=0 base=0
-call 0x4 0x400000001000 0 0 -> invalid value=0 length=0 base=0
-call 0x5 0x400000000000 0x1000 0x2000 -> remap value=0x1000 length=8192 base=0x400000000000
-call 0x5 0x5ffffffff000 0x1000 0x1000 -> remap value=0x1000 length=4096 base=0x5ffffffff000
-call 0x5 0x400000000001 0x1000 0x2000 -> invalid value=0 length=0 base=0
-call 0x5 0x3ffffffff000 0x1000 0x2000 -> invalid value=0 length=0 base=0
-call 0x5 0x600000000000 0x1000 0x2000 -> invalid value=0 length=0 base=0
-call 0x5 0x400000000000 0 0x2000 -> invalid value=0 length=0 base=0
-call 0x5 0x400000000000 0x1000 0 -> invalid value=0 length=0 base=0
-call 0x6 0x400000000000 0x1000 0 -> unmap value=0 length=4096 base=0x400000000000
-call 0x6 0x400000000000 0 0 -> invalid value=0 length=0 base=0
-call 0x6 0x400000000000 0x64 0 -> invalid value=0 length=0 base=0
-call 0x7 0 0 0 -> invalid value=0 length=0 base=0
+call 0x4 0x1000 0 0 -> map value=0 length=4096 base=0 record=0
+call 0x4 0x400000000000 0 0 -> map value=0 length=70368744177664 base=0 record=0
+call 0x4 0 0 0 -> invalid value=0 length=0 base=0 record=0
+call 0x4 0x1001 0 0 -> invalid value=0 length=0 base=0 record=0
+call 0x4 0x400000001000 0 0 -> invalid value=0 length=0 base=0 record=0
+call 0x5 0x400000000000 0x1000 0x2000 -> remap value=0x1000 length=8192 base=0x400000000000 record=0
+call 0x5 0x5ffffffff000 0x1000 0x1000 -> remap value=0x1000 length=4096 base=0x5ffffffff000 record=0
+call 0x5 0x400000000001 0x1000 0x2000 -> invalid value=0 length=0 base=0 record=0
+call 0x5 0x3ffffffff000 0x1000 0x2000 -> invalid value=0 length=0 base=0 record=0
+call 0x5 0x600000000000 0x1000 0x2000 -> invalid value=0 length=0 base=0 record=0
+call 0x5 0x400000000000 0 0x2000 -> invalid value=0 length=0 base=0 record=0
+call 0x5 0x400000000000 0x1000 0 -> invalid value=0 length=0 base=0 record=0
+call 0x6 0x400000000000 0x1000 0 -> unmap value=0 length=4096 base=0x400000000000 record=0
+call 0x6 0x400000000000 0 0 -> invalid value=0 length=0 base=0 record=0
+call 0x6 0x400000000000 0x64 0 -> invalid value=0 length=0 base=0 record=0
+call 0xf 0 0 0 -> invalid value=0 length=0 base=0 record=0

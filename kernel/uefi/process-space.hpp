@@ -35,6 +35,8 @@ public:
     [[nodiscard]] static constexpr auto table_word(U64 prefix, unsigned level) -> U64 {
         return prefix | (8 + level);
     }
+    // A frame of the file service (process-files.hpp): mapped nowhere.
+    static constexpr U64 file_word = 2;
     // The kernel's shared entries, captured from the boot-verified root before
     // any process exists: root entries 256..511 and the page-directory
     // entries of the arena's slots that hold mapped arena pages. Every slot
@@ -72,7 +74,7 @@ private:
     std::span<U64> mappings_;
     const Shared &shared_;
     std::span<Record> records_;
-    U64 owner_ = 0, root_ = 0, tables_ = 0, leaves_ = 0, heap_ = 0, heap_tables_ = 0;
+    U64 owner_ = 0, root_ = 0, tables_ = 0, leaves_ = 0, heap_ = 0, heap_tables_ = 0, files_ = 0, file_charge_ = 0;
     process::MemoryState state_{};
     std::array<Region, max_regions> regions_{};
     std::size_t count_ = 0;
@@ -392,7 +394,8 @@ private:
     }
     // The frames the process holds never exceed its charge.
     [[nodiscard]] auto accounted() const -> bool {
-        return !failed_ && tables_ + leaves_ + heap_ <= state_.charged && state_.charged <= state_.quota;
+        return !failed_ && files_ <= file_charge_ && file_charge_ <= state_.charged &&
+               tables_ + leaves_ + heap_ + files_ <= state_.charged && state_.charged <= state_.quota;
     }
     auto remove(std::size_t index) -> void {
         for (auto at = index; at + 1 < state_.count; ++at)
@@ -660,8 +663,7 @@ public:
         }
         return Slot{current, (address >> shift(level)) & 511};
     }
-    // Whether [address, address + length) lies in one region (kernel calls
-    // read only regions, which are committed from the load).
+    // Whether [address, address + length) lies in one region.
     [[nodiscard]] auto contains(U64 address, U64 length) const -> bool {
         const auto *region = region_of(address);
         return region && length <= region->first + region->pages * frames::page - address;
@@ -669,6 +671,80 @@ public:
     [[nodiscard]] auto executable(U64 address, U64 length) const -> bool {
         const auto *region = region_of(address);
         return contains(address, length) && region->flags == process::leaf_execute;
+    }
+    // Kernel access to the process's bytes [address, address + length) under
+    // its root (process.md#user-memory): they must lie in one region (to
+    // write, a read-write one) or in one memory mapping's pages, whose absent
+    // pages the Aurora fault policy admits and commit() commits first, with
+    // frames the mapping's charge already holds. A refusal ends the process
+    // as an invalid call; broken means an invariant failed.
+    enum class Access {
+        granted,
+        refused,
+        broken
+    };
+    [[nodiscard]] auto access(U64 address, U64 length, bool write) -> Access {
+        if (const auto *region = region_of(address))
+            return length <= region->first + region->pages * frames::page - address &&
+                           (!write || region->flags == process::leaf_write)
+                       ? Access::granted
+                       : Access::refused;
+        const auto *record = heap(address) ? mapping_of(address) : nullptr;
+        if (!record || length > record->first + record->pages * frames::page - address)
+            return Access::refused;
+        for (auto page = address & ~(frames::page - 1); page < address + length; page += frames::page) {
+            const auto leaf = entry(page, 1);
+            const auto value = leaf ? read(leaf->table, leaf->slot) : std::optional<U64>{0};
+            if (!value)
+                return Access::broken;
+            if (*value)
+                continue;
+            const auto admitted = process::memory_fault(records(), page, write ? 6 : 4);
+            if (admitted.malformed || !admitted.index || !commit(page))
+                return Access::broken;
+        }
+        return accounted() ? Access::granted : Access::broken;
+    }
+    // The file service's frames (process-files.hpp), charged to the process's
+    // quota before they are taken: charge and uncharge move the charge, and
+    // a zeroed frame of the owner mapped nowhere is taken or given back.
+    [[nodiscard]] auto charge_files(U64 count) -> bool {
+        if (!root_ || !accounted() || count > state_.quota - state_.charged)
+            return false;
+        state_.charged += count;
+        file_charge_ += count;
+        return true;
+    }
+    [[nodiscard]] auto uncharge_files(U64 count) -> bool {
+        if (count > file_charge_ || file_charge_ - count < files_ || count > state_.charged)
+            return false;
+        state_.charged -= count;
+        file_charge_ -= count;
+        return accounted();
+    }
+    [[nodiscard]] auto file_frame() -> std::optional<U64> {
+        if (!root_ || files_ >= file_charge_)
+            return std::nullopt;
+        const auto made = frame(file_word, [](volatile std::uint8_t *) {
+        });
+        if (made)
+            ++files_;
+        return made;
+    }
+    [[nodiscard]] auto drop_file_frame(U64 physical) -> bool {
+        if (!files_ || !drop(physical, file_word))
+            return false;
+        --files_;
+        return true;
+    }
+    [[nodiscard]] auto charged() const -> U64 {
+        return state_.charged;
+    }
+    [[nodiscard]] auto quota() const -> U64 {
+        return state_.quota;
+    }
+    [[nodiscard]] auto file_charge() const -> U64 {
+        return file_charge_;
     }
     // The complete walk: every entry of every table reachable from the root
     // checked against the records, every region page mapped exactly once, every
@@ -728,14 +804,14 @@ public:
             pages += regions_[index].pages;
         return walk.tables == tables_ && walk.heap_tables == heap_tables_ && walk.leaves == leaves_ &&
                leaves_ == pages && walk.heap == heap_ && walk.shared == shared_.slots &&
-               frames_.allocated() == tables_ + leaves_ + heap_ && accounted();
+               frames_.allocated() == tables_ + leaves_ + heap_ + files_ && accounted();
     }
     // Release every frame after the process ended (its root no longer live),
     // walking its tables; returns the count, or nullopt when a release is
     // refused or a frame stays held.
     [[nodiscard]] auto release() -> std::optional<U64> {
         const auto held = tables_ + leaves_ + heap_;
-        if (!root_ ||
+        if (!root_ || files_ || file_charge_ ||
             !sweep(0,
                    user_limit,
                    true,

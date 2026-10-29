@@ -250,11 +250,11 @@ export namespace compiler_x86 {
         workspace.record_call(2, marker);
         return emit_interrupt(workspace, object, 131);
     }
-    // The bindings' HostFiles primitives (operations 9..30). The grant at the
+    // The bindings' HostFiles primitives (operations 9..31). The grant at the
     // spill is the session block's address; every offset and length is
     // checked against host_session_bytes() first. The Linux binding's system
     // calls (13..20) are emitted inline and return the raw kernel result
-    // (negative errno) in RAX; the Aurora binding's kernel calls (29, 30)
+    // (negative errno) in RAX; the Aurora binding's kernel calls (29..31)
     // return zero or a count, or a negative HostStatus. The memory primitives
     // (21..28) serve both targets; only map, remap and unmap enter the system.
     auto emit_host_operation(EmitWorkspace& workspace, ObjectWorkspace& object,
@@ -310,6 +310,26 @@ export namespace compiler_x86 {
             emit_alu_rr(workspace, object, AluOp::bit_and, Register::rcx, Register::rax);
             const i64 count = workspace.pack_address(0, result - 8);
             return emit_store(workspace, object, Register::rax, count, false);
+        }
+        if (operation == 31) { // file(operation, handle, buffer, length, record): kernel operations 7..14
+            emit_pop(workspace, object, Register::r10);
+            emit_pop(workspace, object, Register::rdx);
+            emit_pop(workspace, object, Register::rsi);
+            emit_pop(workspace, object, Register::rdi);
+            emit_pop(workspace, object, Register::r9);
+            // Only the file operations: open_directory, open_beneath,
+            // open_file, close, create_output, write, commit and discard.
+            host_bound(workspace, object, Register::r9, 7);
+            emit_load(workspace, object, grant, Register::r11, false);
+            host_buffer(workspace, object, Register::r11, Register::rsi, Register::rdx);
+            // The 48-byte result record of the opens and create_output.
+            host_bound(workspace, object, Register::r10, size - 48);
+            emit_indexed_lea(workspace, object, Register::r11, Register::r10, 0, Register::r10);
+            emit_mov_rr(workspace, object, Register::r9, Register::rax);
+            emit_alu_imm(workspace, object, AluOp::add, 7, Register::rax);
+            const i64 marker = workspace.intern_runtime("__au_kernel_service_call");
+            workspace.record_call(2, marker);
+            return emit_interrupt(workspace, object, 131);
         }
         if (operation == 9 || operation == 11) {
             i64 width = 8;

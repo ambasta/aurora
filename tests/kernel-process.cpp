@@ -10,11 +10,17 @@
 //                                 admits a run list
 //   kernel-process events CASES   trap frames, kernel calls and memory decisions
 //                                 (events.cases, memory.cases)
+//   kernel-process files VOLUME CASES  file-service scripts over a volume
+//                                 (files.cases), one fresh service per line
 // stdout is compared with the golden file beside the cases.
 #include "../kernel/uefi/frames.hpp"
 #include "../kernel/uefi/kernel-space.hpp"
+#include "../kernel/uefi/process-files.hpp"
+#include <algorithm>
+#include <cstring>
 #include <cstdio>
 #include <fstream>
+#include <iterator>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -66,7 +72,21 @@ constexpr const char *trap_names[] = {"kernel",
                                       "fpu",
                                       "alignment",
                                       "simd"};
-constexpr const char *call_names[] = {"invalid", "exit", "print", "read", "map", "remap", "unmap"};
+constexpr const char *call_names[] = {"invalid",
+                                      "exit",
+                                      "print",
+                                      "read",
+                                      "map",
+                                      "remap",
+                                      "unmap",
+                                      "open_directory",
+                                      "open_beneath",
+                                      "open_file",
+                                      "close",
+                                      "create_output",
+                                      "write",
+                                      "commit",
+                                      "discard"};
 constexpr const char *memory_names[] = {
     "mapped", "resized", "moved", "unmapped", "quota", "space", "records", "length", "malformed"};
 constexpr const char *runs_names[] = {
@@ -460,14 +480,15 @@ auto events_mode(const char *path) -> int {
                 values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8]};
             const auto kind = process::trap(trap);
             std::cout << text << " -> " << (kind ? trap_names[static_cast<U64>(*kind)] : "malformed") << "\n";
-        } else if (verb == "call" && values.size() == 4) {
-            const auto call = process::call(values[0], values[1], values[2], values[3]);
+        } else if (verb == "call" && (values.size() == 4 || values.size() == 5)) {
+            const auto call =
+                process::call(values[0], values[1], values[2], values[3], values.size() == 5 ? values[4] : 0);
             std::cout << text << " -> ";
             if (!call)
                 std::cout << "malformed\n";
             else
                 std::cout << call_names[call->action] << " value=" << hex(call->value) << " length=" << call->length
-                          << " base=" << hex(call->base) << "\n";
+                          << " base=" << hex(call->base) << " record=" << hex(call->record) << "\n";
         } else if ((verb == "map" && values.size() == 5) || (verb == "remap" && values.size() == 9) ||
                    (verb == "unmap" && values.size() == 8)) {
             const process::MemoryState state{values[0], values[1], values[2], values[3]};
@@ -496,6 +517,255 @@ auto events_mode(const char *path) -> int {
     }
     return 0;
 }
+// The file service over heap pages: frame handles are page numbers + 1, the
+// quota is a frame count each case may set.
+class HostedStore final {
+public:
+    std::vector<std::array<std::byte, 4096>> pages;
+    std::vector<bool> live;
+    U64 quota_frames = 1 << 20, charge_count = 0, files = 0;
+    [[nodiscard]] auto take() -> std::optional<U64> {
+        if (files >= charge_count)
+            return std::nullopt;
+        pages.emplace_back();
+        live.push_back(true);
+        ++files;
+        return pages.size();
+    }
+    [[nodiscard]] auto give(U64 frame) -> bool {
+        if (frame == 0 || frame > pages.size() || !live[frame - 1] || files == 0)
+            return false;
+        live[frame - 1] = false;
+        --files;
+        return true;
+    }
+    [[nodiscard]] auto charge(U64 count) -> bool {
+        if (count > quota_frames - charge_count)
+            return false;
+        charge_count += count;
+        return true;
+    }
+    [[nodiscard]] auto uncharge(U64 count) -> bool {
+        if (count > charge_count || charge_count - count < files)
+            return false;
+        charge_count -= count;
+        return true;
+    }
+    [[nodiscard]] auto charged() const -> U64 {
+        return charge_count;
+    }
+    [[nodiscard]] auto quota() const -> U64 {
+        return quota_frames;
+    }
+    [[nodiscard]] auto charged_files() const -> U64 {
+        return charge_count;
+    }
+    [[nodiscard]] auto page(U64 frame) -> std::array<std::byte, 4096> * {
+        return frame && frame <= pages.size() && live[frame - 1] ? &pages[frame - 1] : nullptr;
+    }
+    [[nodiscard]] auto read_word(U64 frame, U64 index) -> U64 {
+        auto *held = index < 512 ? page(frame) : nullptr;
+        U64 value = 0;
+        if (held)
+            std::memcpy(&value, held->data() + 8 * index, 8);
+        return value;
+    }
+    [[nodiscard]] auto write_word(U64 frame, U64 index, U64 value) -> bool {
+        auto *held = index < 512 ? page(frame) : nullptr;
+        if (held)
+            std::memcpy(held->data() + 8 * index, &value, 8);
+        return held;
+    }
+    [[nodiscard]] auto copy_in(U64 frame, U64 offset, std::span<const std::byte> bytes) -> bool {
+        auto *held = offset <= 4096 && bytes.size() <= 4096 - offset ? page(frame) : nullptr;
+        if (held)
+            std::copy(bytes.begin(), bytes.end(), held->begin() + static_cast<std::ptrdiff_t>(offset));
+        return held;
+    }
+    [[nodiscard]] auto copy_out(U64 frame, U64 offset, std::span<std::byte> bytes) -> bool {
+        auto *held = offset <= 4096 && bytes.size() <= 4096 - offset ? page(frame) : nullptr;
+        if (held)
+            std::copy_n(held->begin() + static_cast<std::ptrdiff_t>(offset), bytes.size(), bytes.begin());
+        return held;
+    }
+};
+using HostedFiles = aurora::uefi::FileService<HostedStore>;
+constexpr const char *file_status_names[] = {"success",
+                                             "invalid_handle",
+                                             "not_found",
+                                             "denied",
+                                             "escape",
+                                             "not_regular",
+                                             "exhausted",
+                                             "too_large",
+                                             "invalid_path",
+                                             "failed"};
+auto status_name(U64 value) -> std::string {
+    const auto status = static_cast<std::int64_t>(value);
+    return status <= 0 && status >= -9 ? file_status_names[-status] : "count " + std::to_string(value);
+}
+// A path word: %XX is a byte, {N} repeats the byte before it to N in all.
+auto path_word(const std::string &word) -> std::string {
+    std::string bytes;
+    for (std::size_t at = 0; at < word.size(); ++at) {
+        if (word[at] == '%' && at + 2 < word.size()) {
+            bytes += static_cast<char>(std::stoi(word.substr(at + 1, 2), nullptr, 16));
+            at += 2;
+        } else if (word[at] == '{' && !bytes.empty() && word.find('}', at) != std::string::npos) {
+            const auto end = word.find('}', at);
+            const auto count = std::stoull(word.substr(at + 1, end - at - 1));
+            bytes.append(count - 1, bytes.back());
+            at = end;
+        } else {
+            bytes += word[at];
+        }
+    }
+    return bytes;
+}
+// One script per line (files.cases): operations as the HostFiles probe names
+// them, each printing its ordinal, status and raw result words. An id is @N
+// (the id operation N returned), @N+K or a literal.
+auto files_script(std::span<const std::byte> volume, const std::string &line) -> void {
+    std::istringstream words{line};
+    std::vector<std::string> script;
+    for (std::string word; words >> word;)
+        script.push_back(word == "''" ? std::string{} : word);
+    HostedStore store;
+    auto files = std::make_unique<HostedFiles>();
+    if (!files->begin(volume, store))
+        usage("file service start");
+    std::vector<U64> ids(1);
+    std::cout << line << "\n";
+    std::size_t at = 0;
+    const auto take = [&]() {
+        if (at >= script.size())
+            usage("missing operand: " + line);
+        return script[at++];
+    };
+    const auto id = [&]() {
+        const auto word = take();
+        if (word.starts_with("@")) {
+            const auto plus = word.find('+');
+            const auto ordinal = number(word.substr(1, plus == std::string::npos ? std::string::npos : plus - 1));
+            if (ordinal >= ids.size())
+                usage("forward reference: " + line);
+            return ids[ordinal] + (plus == std::string::npos ? 0 : number(word.substr(plus + 1)));
+        }
+        return number(word);
+    };
+    while (at < script.size()) {
+        const auto verb = take();
+        HostedFiles::Result result;
+        std::string text;
+        if (verb == "quota") {
+            store.quota_frames = number(take());
+            continue;
+        }
+        if (verb == "dir" || verb == "file") {
+            const auto path = path_word(take());
+            result = files->open(
+                verb == "dir" ? 0 : 2, 0, path.size() > 4095 ? std::span<const std::byte>{} : bytes_of(path));
+        } else if (verb == "open") {
+            const auto directory = id();
+            const auto path = path_word(take());
+            result = files->open(1, directory, path.size() > 4095 ? std::span<const std::byte>{} : bytes_of(path));
+        } else if (verb == "create") {
+            const auto path = path_word(take());
+            result = files->create(path.size() > 4095 ? std::span<const std::byte>{} : bytes_of(path));
+        } else if (verb == "close" || verb == "commit" || verb == "discard") {
+            const auto handle = id();
+            result = verb == "close"    ? files->close(handle)
+                     : verb == "commit" ? files->commit(handle)
+                                        : files->discard(handle);
+        } else if (verb == "read") {
+            const auto file = id();
+            const auto offset = number(take());
+            std::array<std::byte, process::file_chunk> chunk{};
+            result = files->read(file, offset, chunk);
+            if (!result.broken && static_cast<std::int64_t>(result.value) >= 0) {
+                text = " " + escaped(std::span{chunk}.first(std::min<U64>(result.value, 32)));
+            }
+        } else if (verb == "write") {
+            const auto output = id();
+            const auto bytes = path_word(take());
+            result = files->write(output, bytes_of(bytes));
+        } else if (verb == "fill") {
+            // BYTES bytes of 'x' in writes of at most 4096, to the first failure.
+            const auto output = id();
+            const auto total = number(take());
+            const std::string block(4096, 'x');
+            U64 done = 0;
+            while (done < total && !result.broken && result.value == 0) {
+                const auto count = std::min<U64>(4096, total - done);
+                result = files->write(output, bytes_of(block).first(count));
+                done += result.value == 0 ? count : 0;
+            }
+            text = " written=" + std::to_string(done);
+        } else if (verb == "frames") {
+            std::cout << "  " << ids.size() << " frames charged=" << store.charge_count << " held=" << store.files
+                      << "\n";
+            ids.push_back(0);
+            continue;
+        } else if (verb == "finish") {
+            const auto finished = files->finish([&](U64 record) {
+                std::string path;
+                if (!files->path(record, [&](std::uint8_t byte) {
+                        const auto encoded = process::path_text(byte);
+                        if (encoded)
+                            path.append(encoded->characters.data(), encoded->count);
+                    }))
+                    return false;
+                std::string bytes(files->record(record).size, '\0');
+                if (!files->bytes(record, 0, std::as_writable_bytes(std::span{bytes})))
+                    return false;
+                std::cout << "  export " << path << " bytes=" << bytes.size() << " "
+                          << escaped(bytes_of(bytes).first(std::min<std::size_t>(bytes.size(), 32))) << "\n";
+                return true;
+            });
+            std::cout << "  " << ids.size() << " finish " << (finished ? "clean" : "broken")
+                      << " charged=" << store.charge_count << " held=" << store.files << "\n";
+            return;
+        } else {
+            usage("unknown file operation: " + verb);
+        }
+        if (result.broken) {
+            std::cout << "  " << ids.size() << " " << verb << " broken\n";
+            return;
+        }
+        std::cout << "  " << ids.size() << " " << verb << " "
+                  << (verb == "read" && static_cast<std::int64_t>(result.value) >= 0
+                          ? "success " + std::to_string(result.value)
+                          : status_name(result.value))
+                  << text;
+        if (verb == "dir" || verb == "open" || verb == "file" || verb == "create") {
+            std::cout << " id=" << result.record[0];
+            if (verb != "dir" && verb != "create")
+                std::cout << " size=" << result.record[1];
+            std::cout << " identity=" << result.record[2] << ":" << result.record[3];
+            if (verb == "create")
+                std::cout << " directory=" << result.record[4] << ":" << result.record[5];
+        }
+        std::cout << "\n";
+        ids.push_back(result.record[0]);
+    }
+}
+
+auto files_mode(const char *volume_path, const char *cases) -> int {
+    std::ifstream image{volume_path, std::ios::binary};
+    const std::string raw{std::istreambuf_iterator<char>{image}, {}};
+    const auto volume = bytes_of(raw);
+    if (process::volume_admit(volume) != process::VolumeVerdict::valid)
+        usage("volume not admitted");
+    std::ifstream input{cases};
+    if (!input)
+        usage("cannot read cases");
+    for (std::string line; std::getline(input, line);) {
+        if (line.empty() || line.starts_with("#"))
+            continue;
+        files_script(volume, line);
+    }
+    return 0;
+}
 } // namespace
 
 auto main(int argc, char **argv) -> int {
@@ -505,5 +775,7 @@ auto main(int argc, char **argv) -> int {
         return volumes_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "events")
         return events_mode(argv[2]);
-    usage("usage: kernel-process frames CASES | volumes BUNDLE | events CASES");
+    if (argc == 4 && std::string{argv[1]} == "files")
+        return files_mode(argv[2], argv[3]);
+    usage("usage: kernel-process frames CASES | volumes BUNDLE | events CASES | files VOLUME CASES");
 }

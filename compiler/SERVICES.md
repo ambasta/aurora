@@ -311,13 +311,20 @@ system primitives 13..20 only for `linux`, the kernel primitives only for
 `aurora` and the memory primitives for both; a wrong pairing (for example
 `--target aurora --runtime-root runtime/linux`) fails closed. That binding,
 `runtime/aurora/aurora/host.au`, has the same ten functions over the session
-primitives and two kernel primitives emitted inline as `int $0x83`:
+primitives and three kernel primitives emitted inline as `int $0x83`:
 `kernel_print(stream, offset, length)` (kernel operation 2, stream 1 or 2,
-returning 0 or a negative HostStatus) and `kernel_chunk(file, offset)` (operation
+returning 0 or a negative HostStatus), `kernel_chunk(file, offset)` (operation
 3 into a cleared HostChunk, returning a count up to 504 or a negative HostStatus;
-anything else traps). The kernel has no file service yet, so every open is
-`denied`, every id `invalid_handle`, and print copies through the session
-block. Its `_start` takes the argument block from RDI and RSI and exits with
+anything else traps) and `kernel_file(operation, handle, offset, length,
+record)` (kernel operation 7 + `operation` for an `operation` up to 7, else a
+trap: open_directory, open_beneath, open_file, close, create_output, write,
+commit or discard on a handle, the session buffer `[offset, offset + length)`
+and the 48-byte session result record at `record`, returning 0 or a negative
+HostStatus). The kernel's [file service](../kernel/uefi/process.md#files) owns
+the handles, ids, path confinement and statuses with the Linux binding's
+semantics; the binding marshals paths through the session block and, as the
+Linux binding does, coalesces output bytes in one 4096-byte buffer with each
+output's count and state beside it. Its `_start` takes the argument block from RDI and RSI and exits with
 operation 1 (RDI the HostExit ordinal). A main with a region runs on the same
 memory runtime, mapping table and inline fast path as on Linux; only map,
 remap and unmap differ, emitted as kernel operations 4 map(bytes), 5

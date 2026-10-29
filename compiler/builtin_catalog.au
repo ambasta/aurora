@@ -54,7 +54,8 @@ export namespace compiler_catalog {
         MemoryStore8,
         MemoryAddress,
         KernelPrint,
-        KernelChunk
+        KernelChunk,
+        KernelFile
     };
     // Catalog extents for the host's loose resolution quota.
     class Summary {
@@ -450,7 +451,7 @@ export namespace compiler_catalog {
 
     // Sealed service operations, indexed by ServiceOperation.
     auto operation_count() -> i64 {
-        return 31;
+        return 32;
     }
     auto operation_kind(i64 operation) -> i64 {
         if (operation < 2) {
@@ -530,7 +531,7 @@ export namespace compiler_catalog {
         if (operation == 0 || operation == 3 || operation == 4 || operation == 20) {
             return 0;
         }
-        if (operation == 2 || operation == 16) {
+        if (operation == 2 || operation == 16 || operation == 31) {
             return 5;
         }
         if (operation == 13) {
@@ -558,7 +559,7 @@ export namespace compiler_catalog {
     }
     auto append_spelling(compiler_resolver::Session& session, i64 operation) -> i64 {
         if (operation > 28) {
-            return use_word(session, "kernel_print;kernel_chunk", operation - 29, -1, 0);
+            return use_word(session, "kernel_print;kernel_chunk;kernel_file", operation - 29, -1, 0);
         }
         if (operation > 20) {
             return use_word(session,
@@ -576,15 +577,16 @@ export namespace compiler_catalog {
         return use_word(session, "next;put;pixel;poll;acknowledge;call;read8;write8;exchange", operation, -1, 0);
     }
 
-    // HostFiles operations 9..30 are the bindings' private primitives,
+    // HostFiles operations 9..31 are the bindings' private primitives,
     // admitted only inside the designated runtime module aurora.host. The
     // byte offsets of 9..20 address the session block that the hosted entry
     // reserves; 21..28 map, unmap and access the memory runtime's mappings,
     // whose table follows the session block when the entry takes a region.
     // 9..12 and 21..28 serve every target; 13..20 exist only for --target
-    // linux and 29 (print) and 30 (read into a HostChunk) only for --target
-    // aurora, where they and map, remap and unmap enter the Aurora kernel
-    // through INT 0x83.
+    // linux and 29 (print), 30 (read into a HostChunk) and 31 (a file
+    // operation on a handle, a session buffer and a session result record)
+    // only for --target aurora, where they and map, remap and unmap enter the
+    // Aurora kernel through INT 0x83.
     // The ten public HostFiles operations are implemented by exported
     // functions of namespace host in module aurora.host; a call on the
     // capability forwards it to that function as its first argument.

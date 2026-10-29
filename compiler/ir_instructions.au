@@ -2215,7 +2215,7 @@ export namespace compiler_ir_instructions {
             return true;
         } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || operation > 30) {
+        if (operation < 0 || operation > 31) {
             return fail(store, InstructionError::service_operation);
         }
         i64 expected_kind = 0; // Console: Next, Put
@@ -2250,7 +2250,7 @@ export namespace compiler_ir_instructions {
         // only, whose native names are __au_<mode>_m2_6aurora4host_..., and the
         // memory primitives (21..28) to those of aurora.memory. The Linux
         // system primitives (13..20) exist only for the Linux target and the
-        // kernel primitives (29, 30) only for the Aurora one; the memory
+        // kernel primitives (29..31) only for the Aurora one; the memory
         // primitives serve both.
         if (((operation > 8 && operation < 21) || operation > 28) && !host_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);

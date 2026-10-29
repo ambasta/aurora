@@ -25,13 +25,13 @@ export namespace compiler_ir_verification {
         }
         return TypeKey(-1, -1);
     }
-    // An independent copy of the HostFiles primitive signatures (operations 9..30):
+    // An independent copy of the HostFiles primitive signatures (operations 9..31):
     // argument and result kinds in MetadataTypeKind ordinals (I64 0, U64 7, U8 10).
     auto host_argument_count(i64 operation) -> i64 {
         if (operation == 20) {
             return 0;
         }
-        if (operation == 16) {
+        if (operation == 16 || operation == 31) {
             return 5;
         }
         if (operation == 13) {
@@ -139,7 +139,7 @@ export namespace compiler_ir_verification {
                     VerificationErrorSecond::service_operation_requires_active_unsuspended_capability_provenance));
             }
             const i64 operation = transfer_value(s, id, 1);
-            if (operation > 8 && operation < 31) {
+            if (operation > 8 && operation < 32) {
                 return transfer_host(w, m, s, id, operation);
             }
             if (operation == 2) {

@@ -145,6 +145,7 @@ def validate_native_abi(facts, source):
                 "kernel::RunsVerdict",
                 "kernel::MemoryVerdict",
                 "kernel::BudgetVerdict",
+                "kernel::FileStatus",
             )
             else "records"
         )
@@ -386,7 +387,11 @@ def validate_native_abi(facts, source):
                 "kernel timer call system_call invalid_opcode stack_guard page_fault protection divide debug "
                 "breakpoint overflow bound fpu alignment simd",
             ),
-            ("kernel::CallAction", "invalid exit print read map remap unmap"),
+            (
+                "kernel::CallAction",
+                "invalid exit print read map remap unmap open_directory open_beneath open_file close create_output "
+                "write commit discard",
+            ),
             ("kernel::MemoryVerdict", "mapped resized moved unmapped quota space records length malformed"),
             ("kernel::BudgetVerdict", "valid quota"),
             (
@@ -399,11 +404,8 @@ def validate_native_abi(facts, source):
         record("kernel::ProcessRegion", 56, [(name, "u64", 0) for name in region])
         trap = ("vector", "error", "rip", "cs", "flags", "rsp", "ss", "cr2", "opcode")
         record("kernel::ProcessTrap", 72, [(name, "u64", 0) for name in trap])
-        record(
-            "kernel::KernelCall",
-            32,
-            [("_action", "kernel::CallAction", 0), ("_value", "u64", 0), ("_length", "u64", 0), ("_base", "u64", 0)],
-        )
+        call = [("_value", "u64", 0), ("_length", "u64", 0), ("_base", "u64", 0), ("_record", "u64", 0)]
+        record("kernel::KernelCall", 40, [("_action", "kernel::CallAction", 0)] + call)
         run = ("found", "ticks", "flags", "quota", "path", "path_bytes", "arguments", "argument_bytes")
         record("kernel::RunEntry", 64, [(name, "u64", 0) for name in run])
         record("kernel::MemoryState", 32, [(name, "u64", 0) for name in ("next", "charged", "quota", "count")])
@@ -424,7 +426,7 @@ def validate_native_abi(facts, source):
         entry("process_region", ["span", "u64", "u64"], "kernel::ProcessRegion")
         entry("process_elf_entry", ["span"], "u64")
         entry("process_trap", ["kernel::ProcessTrap"], "kernel::TrapClass")
-        entry("process_call", ["u64", "u64", "u64", "u64"], "kernel::KernelCall")
+        entry("process_call", ["u64", "u64", "u64", "u64", "u64"], "kernel::KernelCall")
         entry("process_runs_admit", ["span"], "kernel::RunsVerdict")
         entry("process_run", ["span", "u64"], "kernel::RunEntry")
         entry("process_memory_map", ["kernel::MemoryState", "u64"], "kernel::MemoryDecision")
@@ -437,6 +439,28 @@ def validate_native_abi(facts, source):
         entry("process_memory_find", ["span", "u64", "u64"], "u64")
         entry("process_memory_fault", ["span", "u64", "u64", "u64"], "u64")
         entry("process_memory_budget", ["span", "u64", "u64", "u64", "u64"], "kernel::MemoryBudget")
+        enum(
+            "kernel::FileStatus",
+            "success invalid_handle not_found denied escape not_regular exhausted too_large invalid_path failed",
+        )
+        status = [("status", "kernel::FileStatus", 0)]
+        opened = ("slot", "generation", "id", "kind", "target", "extent", "size", "device", "inode")
+        record("kernel::FileOpen", 80, status + [(name, "u64", 0) for name in opened])
+        created = ("slot", "generation", "id", "file", "first", "depth", "leaf", "leaf_length", "device", "inode")
+        created += ("directory_device", "directory_inode")
+        record("kernel::FileCreate", 104, status + [(name, "u64", 0) for name in created])
+        record("kernel::FileRead", 40, status + [(name, "u64", 0) for name in ("kind", "target", "offset", "count")])
+        changed = ("slot", "file", "release", "state", "frames", "size", "replaced", "inode")
+        record("kernel::FileChange", 72, status + [(name, "u64", 0) for name in changed])
+        entry("process_file_open", ["span", "span", "span", "span", "u64", "u64"], "kernel::FileOpen")
+        entry("process_file_create", ["span", "span", "span", "span"], "kernel::FileCreate")
+        entry("process_file_read", ["span", "u64", "u64"], "kernel::FileRead")
+        entry("process_file_close", ["span", "span", "u64"], "kernel::FileChange")
+        entry("process_file_write", ["span", "u64", "u64", "u64", "u64"], "kernel::FileChange")
+        entry("process_file_commit", ["span", "span", "span", "u64"], "kernel::FileChange")
+        entry("process_file_discard", ["span", "u64"], "kernel::FileChange")
+        entry("process_path_text", ["u64"], "u64")
+        entry("process_directory_prefix", ["span", "u64", "u64"], "u64")
 
 
 def render_bridge(source, facts):

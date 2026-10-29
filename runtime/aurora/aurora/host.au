@@ -5,20 +5,51 @@ export module aurora.host;
 // below; these functions use the binding's private primitives, which only
 // this module may name: byte and word access to the zeroed 16384-byte session
 // block the hosted entry lends as the grant, and the kernel operations the
-// compiler emits inline through the INT 0x83 gate (kernel_print, print 2, and
-// kernel_chunk, read 3). Offsets and lengths are checked by the primitives
-// themselves; the kernel checks each address range against the process's own
-// mappings (kernel/uefi/process.md#processes).
+// compiler emits inline through the INT 0x83 gate: kernel_print (print, 2),
+// kernel_chunk (read, 3) and kernel_file (the file operations 7..14 on a
+// handle, a session buffer and the session's 48-byte result record).
+// Offsets and lengths are checked by the primitives themselves; the kernel
+// checks each address range against the process's own memory
+// (kernel/uefi/process.md#user-memory).
 //
-// The kernel has no file service yet: every open is denied, no handle exists
-// (so every id is invalid_handle) and only print reaches the kernel.
+// The kernel's file service (kernel/uefi/process.md#files) owns the handles,
+// outputs, ids, path confinement and every status; this binding marshals
+// paths through the session block and, like the Linux binding, coalesces
+// output bytes in one buffer with each output's byte count and state beside
+// it, so a write's status (too_large past 64 MiB, failed after a failed
+// flush) is the Linux binding's. The kernel enforces the same limit itself.
 namespace host_session {
-    // The print staging buffer at the start of the session block.
+    // Session layout, in bytes: the data buffer (print staging and the one
+    // output buffer), the path buffer, the result record, the buffer's owner
+    // (output slot + 1, 0 for none) and count, then four outputs (id, bytes
+    // written, state 1 open or 2 failed; id 0 for a free entry).
     auto data_buffer() -> u64 {
         return 0u64;
     }
-    auto data_bytes() -> i64 {
-        return 4096;
+    auto data_bytes() -> u64 {
+        return 4096u64;
+    }
+    auto path_buffer() -> u64 {
+        return 4096u64;
+    }
+    auto path_limit() -> i64 {
+        return 4095;
+    }
+    auto result_record() -> u64 {
+        return 8192u64;
+    }
+    auto counters() -> u64 {
+        return 8256u64;
+    }
+    auto output_table() -> u64 {
+        return 8320u64;
+    }
+    auto output_slots() -> u64 {
+        return 4u64;
+    }
+    // Each output may hold at most 64 MiB.
+    auto output_limit() -> u64 {
+        return 67108864u64;
     }
     // Kernel stream numbers.
     auto stdout_stream() -> u64 {
@@ -27,73 +58,303 @@ namespace host_session {
     auto stderr_stream() -> u64 {
         return 2u64;
     }
-    auto no_file(builtin::HostStatus status) -> builtin::HostFileResult {
-        const builtin::HostFileResult result = builtin::HostFileResult{
-            .status = status,
-            .id = 0u64,
-            .size = 0u64,
-            .device = 0u64,
-            .inode = 0u64
+    // kernel_file operations: kernel operation 7 + this.
+    auto open_directory_call() -> u64 {
+        return 0u64;
+    }
+    auto open_beneath_call() -> u64 {
+        return 1u64;
+    }
+    auto open_file_call() -> u64 {
+        return 2u64;
+    }
+    auto close_call() -> u64 {
+        return 3u64;
+    }
+    auto create_call() -> u64 {
+        return 4u64;
+    }
+    auto write_call() -> u64 {
+        return 5u64;
+    }
+    auto commit_call() -> u64 {
+        return 6u64;
+    }
+    auto discard_call() -> u64 {
+        return 7u64;
+    }
+    // A kernel result: 0, or a negative HostStatus ordinal.
+    auto status_of(i64 result) -> builtin::HostStatus {
+        if (result == 0) {
+            return builtin::HostStatus::success;
+        }
+        if (result == -1) {
+            return builtin::HostStatus::invalid_handle;
+        }
+        if (result == -2) {
+            return builtin::HostStatus::not_found;
+        }
+        if (result == -3) {
+            return builtin::HostStatus::denied;
+        }
+        if (result == -4) {
+            return builtin::HostStatus::escape;
+        }
+        if (result == -5) {
+            return builtin::HostStatus::not_regular;
+        }
+        if (result == -6) {
+            return builtin::HostStatus::exhausted;
+        }
+        if (result == -7) {
+            return builtin::HostStatus::too_large;
+        }
+        if (result == -8) {
+            return builtin::HostStatus::invalid_path;
+        }
+        return builtin::HostStatus::failed;
+    }
+    // Stores a path in the path buffer and returns its length; a path above
+    // the limit is passed as 4096 bytes the kernel refuses without reading.
+    auto store_path(builtin::HostFiles& files, builtin::span<const u8> path) -> u64 {
+        if (path.size() > path_limit()) {
+            return 4096u64;
+        }
+        i64 at = 0;
+        while (at < path.size()) {
+            files.store8(path_buffer() + u64(at), path.at(at));
+            at = at + 1;
+        }
+        return u64(path.size());
+    }
+    auto file_call(builtin::HostFiles& files, u64 operation, u64 handle, u64 buffer, u64 length) -> i64 {
+        return files.kernel_file(operation, handle, buffer, length, result_record());
+    }
+    // A path call: the kernel's result, with the record at result_record().
+    auto path_call(builtin::HostFiles& files, u64 operation, u64 handle, builtin::span<const u8> path) -> i64 {
+        const u64 length = store_path(files, path);
+        return file_call(files, operation, handle, path_buffer(), length);
+    }
+    auto result_word(builtin::HostFiles& files, u64 index) -> u64 {
+        return files.load(result_record() + index * 8u64);
+    }
+    auto file_result(builtin::HostFiles& files, i64 result) -> builtin::HostFileResult {
+        const builtin::HostFileResult file = builtin::HostFileResult{
+            .status = status_of(result),
+            .id = result_word(files, 0u64),
+            .size = result_word(files, 1u64),
+            .device = result_word(files, 2u64),
+            .inode = result_word(files, 3u64)
         };
-        return result;
+        return file;
+    }
+    // Output entries.
+    auto output_entry(u64 slot) -> u64 {
+        return output_table() + slot * 24u64;
+    }
+    // The entry of a live output id, or output_slots().
+    auto output_slot(builtin::HostFiles& files, u64 id) -> u64 {
+        u64 slot = 0u64;
+        while (slot < output_slots()) {
+            if (id != 0u64 && files.load(output_entry(slot)) == id) {
+                return slot;
+            }
+            slot = slot + 1u64;
+        }
+        return slot;
+    }
+    // The first free output entry, or output_slots() (each live output has
+    // one, and the kernel holds at most four).
+    auto free_output(builtin::HostFiles& files) -> u64 {
+        u64 slot = 0u64;
+        while (slot < output_slots() && files.load(output_entry(slot)) != 0u64) {
+            slot = slot + 1u64;
+        }
+        return slot;
+    }
+    // Writes the buffered bytes to their output; a failed write fails it.
+    auto flush(builtin::HostFiles& files) -> bool {
+        const u64 owner = files.load(counters());
+        const u64 count = files.load(counters() + 8u64);
+        files.store(counters(), 0u64);
+        files.store(counters() + 8u64, 0u64);
+        if (owner == 0u64 || count == 0u64) {
+            return true;
+        }
+        const u64 entry = output_entry(owner - 1u64);
+        const u64 id = files.load(entry);
+        if (file_call(files, write_call(), id, data_buffer(), count) != 0) {
+            files.store(entry + 16u64, 2u64);
+            return false;
+        }
+        return true;
+    }
+    // Drops the buffered bytes of an output that is ending.
+    auto drop_buffer(builtin::HostFiles& files, u64 slot) -> u64 {
+        if (files.load(counters()) == slot + 1u64) {
+            files.store(counters(), 0u64);
+            files.store(counters() + 8u64, 0u64);
+        }
+        return slot;
+    }
+    // Appends bytes to an output through the data buffer; false on failure.
+    auto buffer_bytes(builtin::HostFiles& files, u64 slot, builtin::span<const u8> bytes) -> bool {
+        if (files.load(counters()) != slot + 1u64) {
+            // A failed flush of another output already failed that output.
+            flush(files);
+            files.store(counters(), slot + 1u64);
+        }
+        u64 count = files.load(counters() + 8u64);
+        i64 at = 0;
+        while (at < bytes.size()) {
+            files.store8(data_buffer() + count, bytes.at(at));
+            count = count + 1u64;
+            at = at + 1;
+            if (count == data_bytes()) {
+                files.store(counters() + 8u64, count);
+                if (!flush(files)) {
+                    return false;
+                }
+                files.store(counters(), slot + 1u64);
+                count = 0u64;
+            }
+        }
+        files.store(counters() + 8u64, count);
+        return true;
+    }
+    // Ends an output's entry.
+    auto release_output(builtin::HostFiles& files, u64 slot) -> u64 {
+        drop_buffer(files, slot);
+        const u64 entry = output_entry(slot);
+        files.store(entry, 0u64);
+        files.store(entry + 8u64, 0u64);
+        files.store(entry + 16u64, 0u64);
+        return slot;
     }
 }
 export namespace host {
     auto files_open_directory(builtin::HostFiles& files, builtin::span<const u8> path) -> builtin::HostDirectoryResult {
-        const builtin::HostDirectoryResult result = builtin::HostDirectoryResult{
-            .status = builtin::HostStatus::denied,
-            .id = 0u64,
-            .device = 0u64,
-            .inode = 0u64
+        const i64 result = host_session::path_call(files, host_session::open_directory_call(), 0u64, path);
+        const builtin::HostDirectoryResult directory = builtin::HostDirectoryResult{
+            .status = host_session::status_of(result),
+            .id = host_session::result_word(files, 0u64),
+            .device = host_session::result_word(files, 2u64),
+            .inode = host_session::result_word(files, 3u64)
         };
-        return result;
+        return directory;
     }
     auto files_open_beneath(builtin::HostFiles& files, u64 directory,
         builtin::span<const u8> relative) -> builtin::HostFileResult {
-        const builtin::HostFileResult result = host_session::no_file(builtin::HostStatus::invalid_handle);
-        return result;
+        const i64 result = host_session::path_call(files, host_session::open_beneath_call(), directory, relative);
+        const builtin::HostFileResult file = host_session::file_result(files, result);
+        return file;
     }
     auto files_open_file(builtin::HostFiles& files, builtin::span<const u8> path) -> builtin::HostFileResult {
-        const builtin::HostFileResult result = host_session::no_file(builtin::HostStatus::denied);
-        return result;
+        const i64 result = host_session::path_call(files, host_session::open_file_call(), 0u64, path);
+        const builtin::HostFileResult file = host_session::file_result(files, result);
+        return file;
     }
-    // The kernel fills the chunk; with no file service every id is invalid.
+    // The kernel fills the chunk.
     auto files_read(builtin::HostFiles& files, u64 file, u64 offset) -> builtin::HostChunk {
         builtin::HostChunk chunk = files.kernel_chunk(file, offset);
         return chunk;
     }
     auto files_create_output(builtin::HostFiles& files, builtin::span<const u8> path) -> builtin::HostOutputResult {
-        const builtin::HostOutputResult result = builtin::HostOutputResult{
-            .status = builtin::HostStatus::denied,
-            .id = 0u64,
-            .device = 0u64,
-            .inode = 0u64,
-            .directory_device = 0u64,
-            .directory_inode = 0u64
+        const i64 result = host_session::path_call(files, host_session::create_call(), 0u64, path);
+        const builtin::HostOutputResult output = builtin::HostOutputResult{
+            .status = host_session::status_of(result),
+            .id = host_session::result_word(files, 0u64),
+            .device = host_session::result_word(files, 2u64),
+            .inode = host_session::result_word(files, 3u64),
+            .directory_device = host_session::result_word(files, 4u64),
+            .directory_inode = host_session::result_word(files, 5u64)
         };
-        return result;
+        if (result != 0) {
+            return output;
+        }
+        const u64 slot = host_session::free_output(files);
+        if (slot == host_session::output_slots()) {
+            // Never while the kernel caps outputs at four; fail closed anyway.
+            host_session::file_call(files, host_session::discard_call(), output.id, host_session::data_buffer(), 0u64);
+            const builtin::HostOutputResult refused = builtin::HostOutputResult{
+                .status = builtin::HostStatus::exhausted,
+                .id = 0u64,
+                .device = 0u64,
+                .inode = 0u64,
+                .directory_device = 0u64,
+                .directory_inode = 0u64
+            };
+            return refused;
+        }
+        const u64 entry = host_session::output_entry(slot);
+        files.store(entry, output.id);
+        files.store(entry + 8u64, 0u64);
+        files.store(entry + 16u64, 1u64);
+        return output;
     }
     auto files_write(builtin::HostFiles& files, u64 output, builtin::span<const u8> bytes) -> builtin::HostStatus {
-        return builtin::HostStatus::invalid_handle;
+        const u64 slot = host_session::output_slot(files, output);
+        if (slot == host_session::output_slots()) {
+            return builtin::HostStatus::invalid_handle;
+        }
+        const u64 entry = host_session::output_entry(slot);
+        if (files.load(entry + 16u64) != 1u64) {
+            return builtin::HostStatus::failed;
+        }
+        const u64 written = files.load(entry + 8u64);
+        if (u64(bytes.size()) > host_session::output_limit() - written) {
+            files.store(entry + 16u64, 2u64);
+            return builtin::HostStatus::too_large;
+        }
+        if (!host_session::buffer_bytes(files, slot, bytes)) {
+            files.store(entry + 16u64, 2u64);
+            return builtin::HostStatus::failed;
+        }
+        files.store(entry + 8u64, written + u64(bytes.size()));
+        return builtin::HostStatus::success;
     }
     auto files_commit(builtin::HostFiles& files, u64 output) -> builtin::HostStatus {
-        return builtin::HostStatus::invalid_handle;
+        const u64 slot = host_session::output_slot(files, output);
+        if (slot == host_session::output_slots()) {
+            return builtin::HostStatus::invalid_handle;
+        }
+        const u64 entry = host_session::output_entry(slot);
+        host_session::flush(files);
+        u64 operation = host_session::commit_call();
+        if (files.load(entry + 16u64) != 1u64) {
+            operation = host_session::discard_call();
+        }
+        const i64 result = host_session::file_call(files, operation, output, host_session::data_buffer(), 0u64);
+        host_session::release_output(files, slot);
+        if (operation == host_session::discard_call()) {
+            return builtin::HostStatus::failed;
+        }
+        return host_session::status_of(result);
     }
     auto files_discard(builtin::HostFiles& files, u64 output) -> builtin::HostStatus {
-        return builtin::HostStatus::invalid_handle;
+        const u64 slot = host_session::output_slot(files, output);
+        if (slot == host_session::output_slots()) {
+            return builtin::HostStatus::invalid_handle;
+        }
+        host_session::release_output(files, slot);
+        const i64 result = host_session::file_call(files, host_session::discard_call(), output,
+            host_session::data_buffer(), 0u64);
+        return host_session::status_of(result);
     }
-    // Copies the bytes through the session block, at most 4096 per kernel call.
+    // Copies the bytes through the session block, at most 4096 per kernel
+    // call, after the buffered output bytes (as the Linux binding flushes).
     auto files_print(builtin::HostFiles& files, builtin::HostStream stream,
         builtin::span<const u8> bytes) -> builtin::HostStatus {
         u64 target = host_session::stdout_stream();
         if (stream == builtin::HostStream::stderr) {
             target = host_session::stderr_stream();
         }
+        host_session::flush(files);
         i64 done = 0;
         while (done < bytes.size()) {
             i64 count = bytes.size() - done;
-            if (count > host_session::data_bytes()) {
-                count = host_session::data_bytes();
+            if (count > i64(host_session::data_bytes())) {
+                count = i64(host_session::data_bytes());
             }
             i64 at = 0;
             while (at < count) {
@@ -108,10 +369,13 @@ export namespace host {
         return builtin::HostStatus::success;
     }
     auto files_close(builtin::HostFiles& files, u64 handle) -> builtin::HostStatus {
-        return builtin::HostStatus::invalid_handle;
+        const i64 result = host_session::file_call(files, host_session::close_call(), handle,
+            host_session::data_buffer(), 0u64);
+        return host_session::status_of(result);
     }
-    // Called by the hosted entry before and after main; the kernel opens no
-    // streams or handles for a process, so there is nothing to set up or close.
+    // Called by the hosted entry before and after main: the kernel opens no
+    // streams for a process, and when it ends the kernel ends its outputs and
+    // closes its handles (the Linux binding's finish).
     auto start(builtin::HostFiles& files) -> u64 {
         return 0u64;
     }
