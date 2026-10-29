@@ -1,0 +1,123 @@
+ovmf-like: map=valid grant=granted ranges=2 frames=5888 tables=5 metadata=12
+  range 0x100000 pages=1792 index=0
+  range 0xa03000 pages=4096 index=1792
+  bound reserved=17 free=5871
+  allocate 16 -> frame 17 generation 0 at 0x111000
+  allocate 16 -> frame 18 generation 0 at 0x112000
+  allocate 16 -> frame 19 generation 0 at 0x113000
+  release 18 0 16 -> none
+  release 18 0 16 -> not_allocated
+  release 19 1 16 -> stale
+  release 19 0 17 -> wrong_owner
+  release 19 0 1 -> owner
+  release 0 0 16 -> kernel
+  release 16 0 16 -> kernel
+  release 5888 0 16 -> index
+  allocate 16 -> frame 18 generation 1 at 0x112000
+  allocate 20 -> frame 20 generation 0 at 0x114000
+  audit consistent=1 free=5867 allocated=4 kernel=17 retired=0 poisoned=0
+exhaust: map=valid grant=granted ranges=1 frames=9 tables=5 metadata=1
+  range 0xa01000 pages=9 index=0
+  bound reserved=6 free=3
+  allocate 16 -> frame 6 generation 0 at 0xa07000
+  allocate 16 -> frame 7 generation 0 at 0xa08000
+  allocate 16 -> frame 8 generation 0 at 0xa09000
+  allocate 16 -> none
+  allocate 16 -> none
+  audit consistent=1 free=0 allocated=3 kernel=6 retired=0 poisoned=0
+  release 5 0 16 -> kernel
+  release 6 0 16 -> none
+  release 7 0 16 -> none
+  release 8 0 16 -> none
+  audit consistent=1 free=3 allocated=0 kernel=6 retired=0 poisoned=0
+  allocate 16 -> frame 8 generation 1 at 0xa09000
+  allocate 16 -> frame 7 generation 1 at 0xa08000
+unsorted-fragments: map=valid grant=granted ranges=4 frames=10 tables=5 metadata=1
+  range 0x1000000 pages=3 index=0
+  range 0x2000000 pages=1 index=3
+  range 0x3000000 pages=2 index=4
+  range 0x4000000 pages=4 index=6
+  bound reserved=6 free=4
+  allocate 16 -> frame 6 generation 0 at 0x4000000
+  allocate 16 -> frame 7 generation 0 at 0x4001000
+  allocate 16 -> frame 8 generation 0 at 0x4002000
+  allocate 16 -> frame 9 generation 0 at 0x4003000
+  allocate 16 -> none
+  allocate 16 -> none
+  audit consistent=1 free=0 allocated=4 kernel=6 retired=0 poisoned=0
+large: map=valid grant=granted ranges=1 frames=16777216 tables=68 metadata=32768
+  range 0x100000000 pages=16777216 index=0
+  table=not-bound
+no-volume: map=valid grant=none ranges=1 frames=16 tables=3 metadata=1
+  range 0xa00000 pages=16 index=0
+  bound reserved=4 free=12
+  allocate 16 -> frame 4 generation 0 at 0xa04000
+  audit consistent=1 free=11 allocated=1 kernel=4 retired=0 poisoned=0
+too-small: map=valid grant=granted ranges=1 frames=3 plan=rejected
+low-only: map=valid grant=granted ranges=0 frames=0 inventory=rejected
+version: map=version grant=none ranges=0 frames=0 inventory=rejected
+stride-unaligned: map=stride grant=none ranges=0 frames=0 inventory=rejected
+stride-small: map=stride grant=none ranges=0 frames=0 inventory=rejected
+stride-wide: map=stride grant=none ranges=0 frames=0 inventory=rejected
+empty-map: map=length grant=none ranges=0 frames=0 inventory=rejected
+truncated: map=length grant=none ranges=0 frames=0 inventory=rejected
+firmware-types: map=valid grant=none ranges=1 frames=16 tables=3 metadata=1
+  range 0xe00000 pages=16 index=0
+  bound reserved=4 free=12
+straddle-1mib: map=valid grant=none ranges=1 frames=128 tables=3 metadata=1
+  range 0x100000 pages=128 index=0
+  bound reserved=4 free=124
+descriptors-512: map=valid grant=none ranges=511 frames=511 tables=3 metadata=1
+  range 0x1000000 pages=1 index=0
+  range 0x1002000 pages=1 index=1
+  ...
+  range 0x13fc000 pages=1 index=510
+  bound reserved=4 free=507
+descriptors-513: map=length grant=none ranges=0 frames=0 inventory=rejected
+unaligned: map=alignment grant=none ranges=0 frames=0 inventory=rejected
+zero-pages: map=range grant=none ranges=0 frames=0 inventory=rejected
+overflow: map=range grant=none ranges=0 frames=0 inventory=rejected
+beyond-52-bits: map=range grant=none ranges=0 frames=0 inventory=rejected
+overlap: map=overlap grant=none ranges=0 frames=0 inventory=rejected
+volume-in-conventional: map=valid grant=uncovered ranges=0 frames=0 inventory=rejected
+volume-runtime: map=valid grant=uncovered ranges=0 frames=0 inventory=rejected
+volume-arena: map=valid grant=arena ranges=0 frames=0 inventory=rejected
+volume-zero: map=valid grant=bounds ranges=0 frames=0 inventory=rejected
+volume-physical-limit: map=valid grant=granted ranges=1 frames=16 tables=5 metadata=1
+  range 0xb00000 pages=16 index=0
+  bound reserved=6 free=10
+volume-beyond-limit: map=valid grant=bounds ranges=0 frames=0 inventory=rejected
+volume-unaligned: map=valid grant=bounds ranges=0 frames=0 inventory=rejected
+volume-oversize: map=valid grant=bounds ranges=0 frames=0 inventory=rejected
+volume-partial: map=valid grant=uncovered ranges=0 frames=0 inventory=rejected
+arena-in-conventional: map=valid grant=granted ranges=0 frames=0 inventory=rejected
+policy: map=valid grant=none ranges=1 frames=16 tables=3 metadata=1
+  range 0xa00000 pages=16 index=0
+  bound reserved=4 free=12
+  transition 1 0 0 0 7 -> 0x700000001
+  transition 1 0 0 0 4294967296 -> link
+  transition 1 0x11 0 0 0 -> record
+  transition 2 0 1 0 0 -> 0x100000003
+  transition 2 0 16 0 0 -> owner
+  transition 3 0x1 16 0 0 -> 0x1000000002
+  transition 3 0x2a0000000001 16 0 0 -> 0x1000000002
+  transition 3 0x1 15 0 0 -> owner
+  transition 3 0x1 0 0 0 -> owner
+  transition 3 0x1 4294967296 0 0 -> owner
+  transition 3 0x1000000002 16 0 0 -> not_free
+  transition 3 0x1000000003 16 0 0 -> record
+  transition 3 0x4 16 0 0 -> retired
+  transition 4 0x1000000032 16 3 9 -> 0x900000041
+  transition 4 0x1000000032 16 2 9 -> stale
+  transition 4 0x1000000032 17 3 9 -> wrong_owner
+  transition 4 0x1000000032 16 3 4294967296 -> link
+  transition 4 0x1 16 0 0 -> not_allocated
+  transition 4 0xfffffff1 16 0 0 -> not_allocated
+  transition 3 0xfffffff1 16 0 0 -> 0x10fffffff2
+  transition 4 0x10fffffff2 16 268435455 5 -> 0xfffffff4
+  transition 0 0x1 16 0 0 -> operation
+  transition 5 0x1 16 0 0 -> operation
+  transition 3 0 16 0 0 -> record
+  transition 3 0x5 16 0 0 -> record
+  transition 3 0x1000000004 16 0 0 -> record
+  transition 3 0xf00000002 16 0 0 -> record

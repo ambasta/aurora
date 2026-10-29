@@ -1,0 +1,52 @@
+# Boot-volume cases for `kernel-process volumes`, built by scripts/kernel_volume.py
+# (`NAME ARGUMENT...`; --query PATH adds a lookup). Header fields: magic 0,
+# version 8, header bytes 12, count 16, entry bytes 20, names offset 24, names
+# bytes 32, data offset 40, data bytes 48, checksum 56, reserved 60; entry i at
+# 64 + 32i: name offset +0, name length +8, flags +12, data offset +16, size +24.
+# One entry "a" of one byte lays out names at 96, data at 104 and ends at 112.
+valid-repository --file examples/core_math.au --file examples/host-sort.au --text aurora/empty= --query examples/core_math.au --query aurora/empty --query examples --query examples/core_math.a --query examples/missing.au
+valid-padding --text a=x --text b=xy --text c=xyz --text d=xyzw --text ...=dots --query a --query b --query c --query d --query ... --query e
+valid-no-entries --query a
+empty --empty
+truncated --text a=x --truncate 60
+limit --text a=x --append 67108753
+magic --text a=x --set 0:1:0x42
+version --text a=x --set 8:4:2
+header-bytes --text a=x --set 12:4:72
+entry-bytes --text a=x --set 20:4:40
+count --text a=x --set 16:4:4097
+names-offset --text a=x --set 24:8:104
+names-bytes --text a=x --set 32:8:1000
+data-offset --text a=x --set 40:8:112
+data-bytes --text a=x --set 48:8:16
+trailing --text a=x --append 8
+reserved --text a=x --set 60:4:1
+checksum-data --text a=x --corrupt 104:0x79
+checksum-field --text a=x --corrupt 56:0
+padding-names --text a=x --set 100:1:1
+padding-data --text a=x --set 108:1:1
+flags --text a=x --set 76:4:1
+name-offset --text a=x --set 64:8:1
+name-empty --text a=x --set 72:4:0
+name-longest --text aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=x --query aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+name-long --text aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=x
+name-total --text a=x --text b=y --set 32:8:3
+path-parent --text ../a=x
+path-inner-parent --text a/../b=x
+path-dot --text ./a=x
+path-empty-component --text a//b=x
+path-absolute --text /a=x
+path-trailing-slash --text a/=x
+path-space --text 'a b=x'
+path-backslash --text 'a\b=x'
+path-byte --text a=x --set 96:1:0x80
+order-duplicate --text a=x --text a=y
+order-unsorted --raw-order --text b=x --text a=y
+order-prefix --raw-order --text ab=x --text a=y
+nesting --text a=x --text a/b=y
+nesting-gap --text a=x --text a-c=y --text a/b=z
+nesting-deep --text a/b=x --text a/b/c=y
+valid-siblings --text a/b=x --text ab=y --text a-b=z --query a/b --query ab --query a
+valid-4096 --entries 4096 --query entry/0000 --query entry/2048 --query entry/4095 --query entry/4096
+data-gap --text a=x --text b=y --set 112:8:16
+data-size --text a=x --set 88:8:9

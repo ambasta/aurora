@@ -450,6 +450,32 @@ graphical_terminal_host = executable('graphical-terminal-host', 'kernel-graphica
 test('graphical-terminal-native', python,
      args: ['-B', golden_runner, files('kernel-graphical-terminal.golden'), '--modes', '--', graphical_terminal_host],
      suite: ['full', 'merge', 'dev'], depends: record_host_targets, env: oracle_env, timeout: 60)
+# The process image's map admission, frame inventory and records, boot-volume
+# admission and export encoding: the generated policies and their bridge linked
+# once with the kernel's own storage; cases and verdicts are golden data.
+process_policy_object = custom_target('process-policy',
+    input: '../examples/kernel-process.au', output: 'process-policy.o', depfile: 'process-policy.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'kernel/policies',
+              '--module-root', meson.project_source_root() / 'library', '--local-symbols',
+              '--referenced-reflection-only', '--bridge', files('../kernel/uefi/process-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+kernel_process = executable('kernel-process', 'kernel-process.cpp', process_policy_object,
+    cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'],
+    native: true, override_options: fixture_options, install: false)
+process_volume_cases = custom_target('process-volume-cases', input: 'kernel-process/volumes.cases',
+    output: 'process-volumes.bin',
+    depend_files: files('../scripts/kernel_volume.py', '../examples/core_math.au', '../examples/host-sort.au'),
+    command: [python, '-B', files('../scripts/kernel_volume.py'), '--cases', '@INPUT@',
+              '--root', meson.project_source_root(), '--output', '@OUTPUT@'])
+test('kernel-process-frames', python,
+     args: ['-B', golden_runner, files('kernel-process/frames.golden'), '--', kernel_process, 'frames',
+            files('kernel-process/frames.cases')],
+     suite: ['full', 'merge', 'dev'], timeout: 60)
+test('kernel-process-volumes', python,
+     args: ['-B', golden_runner, files('kernel-process/volumes.golden'), '--', kernel_process, 'volumes',
+            process_volume_cases],
+     depends: process_volume_cases, suite: ['full', 'merge', 'dev'], timeout: 60)
 font_glyphs_object = custom_target('font-glyphs-module',
     input: 'kernel-programs/font-glyphs.au', output: 'font-glyphs.o', depfile: 'font-glyphs.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',

@@ -55,6 +55,7 @@ image_check = files('../scripts/kernel_image_check.py')
 stack_check = files('../scripts/kernel_stack_check.py')
 image_policy = files('image-policy.py')
 check_dependencies = files('../scripts/kernel_elf.py')
+volume_writer = files('../scripts/kernel_volume.py')
 stack_limit = profile_data['layout.stack_cap']
 foreach profile_id : profile_data['profiles'].split('|')
   key = 'profiles.' + profile_id
@@ -77,6 +78,7 @@ foreach profile_id : profile_data['profiles'].split('|')
   stack_facts = []
   language_objects = []
   user_stack_args = []
+  esp_files = []
 
   root_args = []
   foreach root : profile_data[key + '.roots'].split('|')
@@ -405,6 +407,25 @@ foreach profile_id : profile_data['profiles'].split('|')
     foreach object : link_objects
       image_args += ['--pic-object', object.full_path()]
     endforeach
+    # ESP boot volumes beside the loader (kernel/uefi/process.md#boot-volume),
+    # written from repository files by the volume writer.
+    esp_names = profile_data.get(key + '.esp', '')
+    if esp_names != ''
+      foreach name : esp_names.split('|')
+        volume_words = profile_data[key + '.esp.' + name].split('|')
+        volume_inputs = []
+        previous = ''
+        foreach word : volume_words
+          if previous == '--file'
+            volume_inputs += files('../' + word)
+          endif
+          previous = word
+        endforeach
+        esp_files += [custom_target(prefix + '-esp-' + name, output: name,
+          build_subdir: output_subdir / 'esp/aurora', depend_files: [volume_writer] + volume_inputs,
+          command: [python, '-B', volume_writer, '--root', kernel_source, '--output', '@OUTPUT@'] + volume_words)]
+      endforeach
+    endif
   endif
   foreach object : language_objects
     image_args += ['--language', object.full_path()]
@@ -430,8 +451,8 @@ foreach profile_id : profile_data['profiles'].split('|')
       command: [python, '-B', stack_check, '--profile', profile_id, '--policy', image_policy,
                 '--limit', stack_limit, '--output', '@OUTPUT@'] + stack_args + user_stack_args),
   ]
-  kernel_profile_images += {profile_id: [profile_image] + checks}
-  alias_target('kernel-' + prefix, [profile_image] + checks)
+  kernel_profile_images += {profile_id: [profile_image] + checks + esp_files}
+  alias_target('kernel-' + prefix, [profile_image] + checks + esp_files)
 endforeach
 
 # Guest-machine aliases share identical image bytes and native compilation.

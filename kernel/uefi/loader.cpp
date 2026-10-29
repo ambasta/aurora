@@ -23,6 +23,9 @@
 #include "bar-loader.hpp"
 #endif
 #include "../console.hpp"
+#ifdef AURORA_PROCESS_FIXTURE
+#include "volume-loader.hpp"
+#endif
 #include "uefi-payload.hpp"
 #include <span>
 using aurora::hardware::Serial;
@@ -114,6 +117,12 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         fail("owned arena allocation");
     for (auto &byte : span(arena, Handoff::arena_bytes))
         byte = std::byte{0};
+#ifdef AURORA_PROCESS_FIXTURE
+    const auto volume =
+        aurora::uefi::VolumeLoader::read(boot, image, aurora::uefi::loader_fixture::volume_path(*selected));
+    if (!volume)
+        fail("boot volume bounds");
+#endif
 #if defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IOMMU_EVENT)
 #ifdef AURORA_PLATFORM_FIXTURE
     // Only BAR and IVRS rows capture the firmware BAR resources (handoff v4).
@@ -278,6 +287,11 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     put(handoff, 8, 7, 4);
     put(handoff, Handoff::framebuffer_word, arena + Handoff::framebuffer_record_offset);
 #endif
+#ifdef AURORA_PROCESS_FIXTURE
+    put(handoff, 8, 8, 4);
+    put(handoff, Handoff::volume_word, volume->address);
+    put(handoff, Handoff::volume_bytes_word, volume->bytes);
+#endif
     put(handoff, 16, Handoff::arena_bytes);
     put(handoff, 24, arena);
     put(handoff, 56, payload_size);
@@ -295,6 +309,11 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
 #ifdef AURORA_PLATFORM_FIXTURE
     if (injected(Fixture::early_bad_table) && !tables.map(0x10000, 3 | aurora::uefi::PageTables::nx))
         fail("bad-table injection");
+#endif
+#ifdef AURORA_PROCESS_FIXTURE
+    // The kernel's frame window and dynamic table views (process.md#kernel-space).
+    if (!tables.prepare_window())
+        fail("kernel window tables");
 #endif
 #ifdef AURORA_UEFI_ACPI
     if (acpi && !tables.prepare_window())
@@ -441,6 +460,11 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     Serial::text("AURORA_UEFI_EXIT_OK: attempts=");
     Serial::number(Bytes{handoff}.get(52, 4));
     Serial::text("\r\n");
+#ifdef AURORA_PROCESS_FIXTURE
+    // A structurally valid volume word that the final map does not grant.
+    if (injected(Fixture::process_volume_map))
+        put(handoff, Handoff::volume_word, arena);
+#endif
 #ifdef AURORA_PLATFORM_FIXTURE
     // Swap the version between the RSDP-free and RSDP-bearing forms, so the
     // version no longer describes the copied handoff in either composition.

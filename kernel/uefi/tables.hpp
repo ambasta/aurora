@@ -474,7 +474,12 @@ inline auto expected_flags(std::uint64_t offset, const Bytes &h) -> std::uint64_
         if (flags)
             return flags;
     }
+#ifdef AURORA_PROCESS_FIXTURE
+    // Version 8 carries no ACPI snapshots.
+    if (h.get(8, 4) >= 2 && h.get(8, 4) != 8 && offset >= 0x60000 && offset < 0x81000)
+#else
     if (h.get(8, 4) >= 2 && offset >= 0x60000 && offset < 0x81000)
+#endif
         return 3 | PageTables::nx;
     if (offset == 0 || (offset >= Handoff::map_offset && offset < Handoff::tables_offset))
         return 1 | PageTables::nx;

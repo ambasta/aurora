@@ -7,13 +7,15 @@
 // device-fixture (the UEFI console, its service faults and owned bytes),
 // storage-fixture (RAM file, scratchpad and namespace), snapshot-call-fixture
 // (blocking Call and snapshot producer) and text-fixture (the protected file-call
-// console, owned text and the console region). Every later phase of those images
+// console, owned text and the console region) and process-fixture (the boot
+// volume, frame allocator and export). Every later phase of those images
 // branches on the copied row.
 #if defined(AURORA_PLATFORM_FIXTURE) + defined(AURORA_DISPLAY_FIXTURE) + defined(AURORA_DEVICE_FIXTURE) +              \
-        defined(AURORA_STORAGE_FIXTURE) + defined(AURORA_SNAPSHOT_FIXTURE) + defined(AURORA_TEXT_FIXTURE) !=           \
+        defined(AURORA_STORAGE_FIXTURE) + defined(AURORA_SNAPSHOT_FIXTURE) + defined(AURORA_TEXT_FIXTURE) +            \
+        defined(AURORA_PROCESS_FIXTURE) !=                                                                             \
     1
 #error                                                                                                                 \
-    "The fw_cfg loader selector belongs only to the platform, display, device, storage, snapshot-call and text fixture images"
+    "The fw_cfg loader selector belongs only to the platform, display, device, storage, snapshot-call, text and process fixture images"
 #endif
 #include "fw-cfg-fixture.hpp"
 #include <cstdint>
@@ -39,6 +41,9 @@ inline constexpr auto last = Fixture::snapshot_reply_reserved;
 #elif defined(AURORA_TEXT_FIXTURE)
 inline constexpr auto first = Fixture::text_baseline;
 inline constexpr auto last = Fixture::file_budget;
+#elif defined(AURORA_PROCESS_FIXTURE)
+inline constexpr auto first = Fixture::process_volume;
+inline constexpr auto last = Fixture::process_volume_map;
 #else
 inline constexpr auto first = Fixture::console_service_baseline;
 inline constexpr auto last = Fixture::owned_bytes_baseline;
@@ -89,6 +94,17 @@ static_assert(static_cast<unsigned>(Fixture::console_service_report) + 1 == stat
 }
 [[nodiscard]] constexpr auto acpi(Fixture fixture) -> bool {
     return console(fixture);
+}
+#elif defined(AURORA_PROCESS_FIXTURE)
+// Each row reads its own ESP volume; the map row reads the valid one and its
+// loader then names the arena as the volume in the copied handoff.
+[[nodiscard]] constexpr auto volume_path(Fixture fixture) -> const char16_t * {
+    return fixture == Fixture::process_volume_corrupt ? u"\\aurora\\corrupt"
+           : fixture == Fixture::process_volume_empty ? u"\\aurora\\empty"
+                                                      : u"\\aurora\\volume";
+}
+[[nodiscard]] constexpr auto acpi(Fixture) -> bool {
+    return false;
 }
 #else
 [[nodiscard]] constexpr auto acpi(Fixture) -> bool {

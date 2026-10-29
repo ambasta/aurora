@@ -209,6 +209,14 @@ row, are boot-selected rows of the one `service-fixture` test image
 ([fixture consolidation](../../docs/kernel-fixture-consolidation.md#service-fixture)).
 These emulator profiles do not establish physical hardware support or a general scheduler.
 
+## Process image
+
+The [process image](process.md) hands off version 8 with an ESP boot volume,
+builds a frame allocator over every usable conventional frame with dynamically
+allocated kernel table pages, and exports volume files over serial. Its map,
+frame, volume and export decisions are Aurora policies. Run
+`meson test -C build/meson --suite guest-process`.
+
 ## NVMe page preparation
 
 The [fixed five-page CPU preparation contract](NVME-QUEUE-PREPARATION.md)

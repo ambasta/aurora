@@ -1,0 +1,306 @@
+# Memory-map, inventory and frame-record cases for `kernel-process frames`.
+# desc TYPE START PAGES [ATTRIBUTE]: one final-map descriptor (stride bytes);
+# repeat COUNT TYPE START PAGES STEP: COUNT descriptors STEP bytes apart.
+# op allocate OWNER [COUNT] | release INDEX GENERATION OWNER | audit |
+#    transition OPERATION RECORD(hex) OWNER GENERATION LINK (the policy alone)
+
+# An OVMF-like map: legacy low memory, the arena, the volume, boot-services
+# and runtime-tagged memory, ACPI tables; the usable frames are the two
+# conventional ranges above 1 MiB.
+case ovmf-like
+arena 0x800000
+volume 0xa00000 9000
+desc 7 0x0 0xa0
+desc 0 0xa0000 0x60
+desc 7 0x100000 0x700
+desc 1 0x800000 0x200
+desc 2 0xa00000 0x3
+desc 7 0xa03000 0x1000
+desc 4 0x1a03000 0x100
+desc 7 0x1b03000 0x10 0x8000000000000000
+desc 9 0x1b13000 0x10
+op allocate 16 3
+op release 18 0 16
+op release 18 0 16
+op release 19 1 16
+op release 19 0 17
+op release 19 0 1
+op release 0 0 16
+op release 16 0 16
+op release 5888 0 16
+op allocate 16
+op allocate 20
+op audit
+end
+
+# Every frame allocated, then all released: no leak, generations advance.
+case exhaust
+arena 0x800000
+volume 0xa00000 4096
+desc 1 0x800000 0x200
+desc 2 0xa00000 0x1
+desc 7 0xa01000 0x9
+op allocate 16 5
+op audit
+op release 5 0 16
+op release 6 0 16
+op release 7 0 16
+op release 8 0 16
+op audit
+op allocate 16 2
+end
+
+# Ranges inventory in address order whatever the descriptor order; the kernel
+# tables and metadata are carved across range boundaries.
+case unsorted-fragments
+arena 0x800000
+volume 0xa00000 100
+desc 7 0x3000000 0x2
+desc 2 0xa00000 0x1
+desc 7 0x2000000 0x1
+desc 1 0x800000 0x200
+desc 7 0x1000000 0x3
+desc 7 0x4000000 0x4
+op allocate 16 6
+op audit
+end
+
+# 64 GiB of conventional memory: the plan scales; the hosted table is not bound.
+case large
+arena 0x800000
+volume 0xa00000 4096
+desc 1 0x800000 0x200
+desc 2 0xa00000 0x1
+desc 7 0x100000000 0x1000000
+end
+
+# A map without a volume (the hosted form of an image with no boot volume).
+case no-volume
+arena 0x800000
+desc 1 0x800000 0x200
+desc 7 0xa00000 0x10
+op allocate 16
+op audit
+end
+
+case too-small
+arena 0x800000
+volume 0xa00000 4096
+desc 1 0x800000 0x200
+desc 2 0xa00000 0x1
+desc 7 0xa01000 0x3
+end
+
+case low-only
+arena 0x800000
+volume 0xa00000 4096
+desc 7 0x1000 0x9f
+desc 1 0x800000 0x200
+desc 2 0xa00000 0x1
+end
+
+case version
+version 2
+arena 0x800000
+desc 7 0xa00000 0x10
+end
+
+case stride-unaligned
+stride 44
+arena 0x800000
+desc 7 0xa00000 0x10
+end
+
+case stride-small
+stride 32
+arena 0x800000
+desc 7 0xa00000 0x10
+end
+
+case stride-wide
+stride 264
+arena 0x800000
+desc 7 0xa00000 0x10
+end
+
+case empty-map
+arena 0x800000
+end
+
+case truncated
+arena 0x800000
+desc 7 0xa00000 0x10
+desc 7 0xb00000 0x10
+truncate 8
+end
+
+# Types above 15 (reserved, OEM 0x70000000.., OS 0x80000000..) are admitted
+# and never usable, as are specific-purpose (EFI_MEMORY_SP) conventional pages.
+case firmware-types
+arena 0x800000
+desc 1 0x800000 0x200
+desc 16 0xa00000 0x10
+desc 0x70000000 0xb00000 0x10
+desc 0x80000000 0xc00000 0x10
+desc 7 0xd00000 0x10 0x40000
+desc 7 0xe00000 0x10
+end
+
+# Conventional memory straddling 1 MiB keeps only its pages above it.
+case straddle-1mib
+arena 0x800000
+desc 1 0x800000 0x200
+desc 7 0x80000 0x100
+end
+
+# The 512-descriptor limit, at it and past it.
+case descriptors-512
+arena 0x800000
+desc 1 0x800000 0x200
+repeat 511 7 0x1000000 1 0x2000
+end
+
+case descriptors-513
+arena 0x800000
+desc 1 0x800000 0x200
+repeat 512 7 0x1000000 1 0x2000
+end
+
+case unaligned
+arena 0x800000
+desc 7 0xa00800 0x10
+end
+
+case zero-pages
+arena 0x800000
+desc 7 0xa00000 0x0
+end
+
+case overflow
+arena 0x800000
+desc 7 0xfffffffffffff000 0x2
+end
+
+case beyond-52-bits
+arena 0x800000
+desc 7 0x10000000000000 0x1
+end
+
+case overlap
+arena 0x800000
+desc 7 0xa00000 0x10
+desc 4 0xa0f000 0x10
+end
+
+case volume-in-conventional
+arena 0x800000
+volume 0xa00000 4096
+desc 1 0x800000 0x200
+desc 7 0xa00000 0x10
+end
+
+case volume-runtime
+arena 0x800000
+volume 0xa00000 4096
+desc 1 0x800000 0x200
+desc 2 0xa00000 0x1 0x8000000000000000
+desc 7 0xb00000 0x10
+end
+
+case volume-arena
+arena 0x800000
+volume 0x800000 4096
+desc 1 0x800000 0x200
+desc 7 0xb00000 0x10
+end
+
+case volume-zero
+arena 0x800000
+volume 0x0 4096
+desc 1 0x800000 0x200
+desc 2 0x0 0x1
+desc 7 0xb00000 0x10
+end
+
+# The highest volume page admitted (128 MiB below the 52-bit limit), then one above.
+case volume-physical-limit
+arena 0x800000
+volume 0xffffff8000000 4096
+desc 1 0x800000 0x200
+desc 2 0xffffff8000000 0x1
+desc 7 0xb00000 0x10
+end
+
+case volume-beyond-limit
+arena 0x800000
+volume 0xffffff8001000 4096
+desc 1 0x800000 0x200
+desc 2 0xffffff8001000 0x1
+desc 7 0xb00000 0x10
+end
+
+case volume-unaligned
+arena 0x800000
+volume 0xa00800 4096
+desc 1 0x800000 0x200
+desc 2 0xa00000 0x2
+desc 7 0xb00000 0x10
+end
+
+case volume-oversize
+arena 0x800000
+volume 0xa00000 0x4000001
+desc 1 0x800000 0x200
+desc 2 0xa00000 0x4001
+desc 7 0x5000000 0x10
+end
+
+case volume-partial
+arena 0x800000
+volume 0xa00000 16385
+desc 1 0x800000 0x200
+desc 2 0xa00000 0x4
+desc 7 0xb00000 0x10
+end
+
+case arena-in-conventional
+arena 0x800000
+volume 0xa00000 4096
+desc 7 0x100000 0x900
+desc 2 0xa00000 0x1
+end
+
+# The record policy alone: operations 1 initialize free, 2 initialize kernel,
+# 3 allocate, 4 release. Records are state | generation << 4 | word << 32.
+case policy
+arena 0x800000
+desc 1 0x800000 0x200
+desc 7 0xa00000 0x10
+op transition 1 0 0 0 7
+op transition 1 0 0 0 4294967296
+op transition 1 11 0 0 0
+op transition 2 0 1 0 0
+op transition 2 0 16 0 0
+op transition 3 1 16 0 0
+op transition 3 2a0000000001 16 0 0
+op transition 3 1 15 0 0
+op transition 3 1 0 0 0
+op transition 3 1 4294967296 0 0
+op transition 3 1000000002 16 0 0
+op transition 3 1000000003 16 0 0
+op transition 3 4 16 0 0
+op transition 4 1000000032 16 3 9
+op transition 4 1000000032 16 2 9
+op transition 4 1000000032 17 3 9
+op transition 4 1000000032 16 3 4294967296
+op transition 4 1 16 0 0
+op transition 4 fffffff1 16 0 0
+op transition 3 fffffff1 16 0 0
+op transition 4 10fffffff2 16 268435455 5
+op transition 0 1 16 0 0
+op transition 5 1 16 0 0
+op transition 3 0 16 0 0
+op transition 3 5 16 0 0
+op transition 3 1000000004 16 0 0
+op transition 3 f00000002 16 0 0
+end

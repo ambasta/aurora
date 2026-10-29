@@ -127,6 +127,8 @@ elif [[ "$mode" == runtime* ]]; then
     else
         python3 tests/kernel-uefi-runtime-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.images.json"
     fi
+elif [[ "$mode" == process-* ]]; then
+    python3 -B tests/kernel-process-smoke.py "$status" "$log" "$mode" "$image_dir"
 elif [[ "$mode" == bar-state ]]; then
     python3 tests/kernel-uefi-bar-state.py "$status" "$log"
 elif [[ "$mode" == pci* ]]; then

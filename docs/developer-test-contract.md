@@ -21,7 +21,7 @@ Guest smokes run QEMU through `scripts/kernel-uefi-smoke.sh MODE`,
 the rows of `kernel/uefi/runtime-fixtures.inc`. The UEFI guest families are Meson
 tests outside `full`: `meson test --suite guest` runs all of them and
 `--suite guest-<family>` one family (`uefi`, `acpi`, `pci`, `runtime`, `ipc`,
-`budget`, `dispatch`, `user-phases`, `tables`, `pins`; listed in
+`budget`, `dispatch`, `user-phases`, `tables`, `pins`, `process`; listed in
 `scripts/kernel_profiles.py`). `scripts/kernel-run.sh bar|ivrs` boots the BAR and
 IVRS device families.
 

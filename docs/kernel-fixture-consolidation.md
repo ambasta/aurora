@@ -26,7 +26,8 @@ to 14 (11 UEFI, 3 BIOS) by folding the RAM file, RAM scratchpad, blocking-call a
 snapshot images into `storage-fixture` and the file-call, owned-text and
 console-region images into `text-fixture`. The bounded capacity extraction now
 uses 15 (12 UEFI, 3 BIOS), separating Call/snapshot from storage without per-case
-builds or another production configuration. Every
+builds or another production configuration, and the process image makes 16
+(13 UEFI, 3 BIOS). Every
 fault mode keeps its own guest run and exact oracle. A source image count is not a
 measured build or execution saving; the PR records those.
 
@@ -47,7 +48,8 @@ measured build or execution saving; the PR records those.
   the value into one extra handoff word (offset 128, present only in these images)
   that the payload admits only within the image's interval, so every payload case
   shares the image (see below). `display-fixture`, `device-fixture`,
-  `storage-fixture`, `snapshot-call-fixture` and `text-fixture` use the same loader row
+  `storage-fixture`, `snapshot-call-fixture`, `text-fixture` and `process-fixture`
+  (whose row also names its ESP boot volume) use the same loader row
   (`loader-fixture.hpp`), because their subsystems differ from the loader onward
   and their interactive console sessions cannot take a serial byte. The
   `iommu-event` image reads the same file at Event entry, because its harness
