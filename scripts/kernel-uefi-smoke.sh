@@ -70,7 +70,8 @@ set +e
 if [[ "$mode" == runtime-console-region || "$mode" == runtime-console-region-fault || "$mode" == runtime-console-region-output || "$mode" == runtime-console-region-cancel-ready ]]; then
     python3 -B tests/kernel-uefi-runtime-smoke.py --console-region-run "$mode" "$log" -- "${qemu_argv[@]}"
 else
-    python3 -B scripts/qemu_transport.py run --timeout 60 --log "$log" "${startup_args[@]}" -- "${qemu_argv[@]}"
+    python3 -B scripts/qemu_transport.py run --timeout "$(python3 -B scripts/kernel_profiles.py --guest-timeout "$mode")" \
+        --log "$log" "${startup_args[@]}" -- "${qemu_argv[@]}"
 fi
 status=$?
 set -e

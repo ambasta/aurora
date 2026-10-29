@@ -57,8 +57,10 @@ image_check = files('../scripts/kernel_image_check.py')
 stack_check = files('../scripts/kernel_stack_check.py')
 image_policy = files('image-policy.py')
 check_dependencies = files('../scripts/kernel_elf.py')
-# The writer, and the HostFiles cases' tree it copies (--host-files-tree).
+# The writer, the HostFiles cases' tree it copies (--host-files-tree) and the
+# compiler's module staging (--module).
 volume_writer = files('../scripts/kernel_volume.py', '../tests/host_files.py')
+volume_staging = files('../scripts/bootstrap_frontend.py', '../scripts/frontend_bridge.py')
 stack_limit = profile_data['layout.stack_cap']
 foreach profile_id : profile_data['profiles'].split('|')
   key = 'profiles.' + profile_id
@@ -419,7 +421,9 @@ foreach profile_id : profile_data['profiles'].split('|')
         volume_inputs = []
         volume_programs = []
         previous = ''
-        # --program PATH=KIND:NAME names a build product (process_programs).
+        # --program PATH=KIND:NAME names a build product (process_programs) or
+        # a configured source (process_sources); --compiler-modules DIR stages
+        # the compiler modules beneath DIR.
         foreach word : profile_data[key + '.esp.' + name].split('|')
           if previous == '--file'
             volume_inputs += files('../' + word)
@@ -427,12 +431,23 @@ foreach profile_id : profile_data['profiles'].split('|')
           if previous == '--rejections'
             volume_inputs += files('../' + word.split('=')[1])
           endif
-          if previous == '--program'
+          if previous == '--program' and word.split('=')[1].startswith('source:')
+            source = process_sources[word.split('=')[1]]
+            volume_inputs += source
+            word = word.split('=')[0] + '=' + source.full_path()
+          elif previous == '--program'
             program = process_programs[word.split('=')[1]]
             volume_programs += program
             word = word.split('=')[0] + '=' + program.full_path()
           endif
-          volume_words += word
+          if previous == '--compiler-modules'
+            foreach module : frontend_modules
+              volume_words += ['--module', word + '=' + module.full_path()]
+            endforeach
+            volume_inputs += frontend_modules + volume_staging
+          elif word != '--compiler-modules'
+            volume_words += word
+          endif
           previous = word
         endforeach
         esp_files += [custom_target(prefix + '-esp-' + name, output: name,

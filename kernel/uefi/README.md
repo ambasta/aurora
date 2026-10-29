@@ -217,7 +217,8 @@ dynamically allocated kernel table pages, exports volume files over serial and
 runs static ELF programs from the volume as CPL 3 processes with memory and
 file services (the `--target aurora` compiler, the HostFiles cases,
 `host-files-cat` and `host-sort` run there, and the compiler compiles
-`host-sort` there to the hosted build's object). Its map, frame, volume, export,
+`host-sort` and, in the release suite's `process-self-host` row, itself there
+to the hosted build's objects). Its map, frame, volume, export,
 program, layout, trap, call, memory, file and run-list decisions are Aurora
 policies. Run
 `meson test -C build/meson --suite guest-process`.

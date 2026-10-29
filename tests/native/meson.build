@@ -334,6 +334,8 @@ if get_option('kernel_images')
 endif
 
 # UEFI guest families (QEMU), outside full: meson test --suite guest or guest-<family>.
+# The self-host family, the compiler compiling itself in the guest for minutes,
+# is also in the release suite.
 if get_option('kernel_images')
   uefi_smoke = files('../../scripts/kernel-uefi-smoke.sh')
   foreach family : profile_data['guests'].split('|')
@@ -342,8 +344,8 @@ if get_option('kernel_images')
       test('guest-uefi-' + mode, find_program('bash', native: true),
            args: [uefi_smoke, '--run-only', meson.project_build_root() / 'kernel-images' / canonical, mode],
            depends: kernel_profile_images[canonical] + process_references.get(mode, []),
-           suite: ['guest', 'guest-' + family],
-           workdir: native_root, timeout: 180)
+           suite: ['guest', 'guest-' + family] + (family == 'self-host' ? ['release'] : []),
+           workdir: native_root, timeout: profile_data.get('guest_timeouts.' + mode, '60').to_int() + 120)
     endforeach
   endforeach
   # The production image: its protected program console through the PTY oracle,

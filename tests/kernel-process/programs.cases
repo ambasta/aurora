@@ -53,7 +53,7 @@ layout-arguments-largest --elf p= --query program:65536:0x40000000:p
 # Run lists: one run "1:4:0:0:a:a" is the list at volume offset 104 (magic
 # 104, version 112, count 116; record 120: ticks, path bytes 124, argument
 # bytes 128, flags 132, quota 136; path 144, arguments 145, padding 147..151).
-runs-valid --run "1:4:0:0:bin/a:a b 'c d'" --run "1:128:7:4096:x:y" --query runs:runs/1
+runs-valid --run "1:4:0:0:bin/a:a b 'c d'" --run "1:128:15:4096:x:y" --query runs:runs/1
 runs-one --run 1:4:0:0:a:a --query runs:runs/1
 runs-magic --run 1:4:0:0:a:a --set 104:1:0x42 --query runs:runs/1
 runs-version --run 1:4:0:0:a:a --set 112:4:1 --query runs:runs/1
@@ -68,7 +68,7 @@ runs-path-long --run 1:4:0:0:a:a --set 124:4:256 --query runs:runs/1
 runs-arguments-empty --run 1:4:0:0:a:a --set 128:4:0 --query runs:runs/1
 runs-arguments-long --run 1:4:0:0:a:a --set 128:4:65537 --query runs:runs/1
 runs-arguments-beyond --run 1:4:0:0:a:a --set 128:4:1000 --query runs:runs/1
-runs-flags --run 1:4:0:0:a:a --set 132:4:8 --query runs:runs/1
+runs-flags --run 1:4:0:0:a:a --set 132:4:16 --query runs:runs/1
 runs-quota-any --run 1:4:0:0:a:a --set 136:8:0xffffffffffffffff --query runs:runs/1
 runs-terminator --run 1:4:0:0:a:a --set 146:1:0x78 --query runs:runs/1
 runs-padding --run 1:4:0:0:a:a --set 148:1:1 --query runs:runs/1

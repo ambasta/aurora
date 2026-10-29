@@ -44,8 +44,8 @@ leaves.
 
 The loader opens `\aurora\volume` on its own ESP through the loaded image's
 `EFI_SIMPLE_FILE_SYSTEM_PROTOCOL` (`\aurora\compiler` for case words 3
-and 5, whose run lists need the multi-MiB compiler image; every boot checksums its
-whole volume). It requires a regular file of 1 byte to
+and 5, whose run lists need the multi-MiB compiler image, `\aurora\selfhost`
+for 6; every boot checksums its whole volume). It requires a regular file of 1 byte to
 64 MiB and reads it into fresh EfiLoaderData pages. It zeroes the last page's
 tail and closes both handles before the final map. The format has one canonical
 layout, little-endian (`scripts/kernel_volume.py` writes it):
@@ -136,7 +136,7 @@ AURORA_PROCESS_END: run=<n> reason=exit status=<s> | reason=watchdog ticks=<t>
   | reason=call operation=<rax> rip=<a> | reason=<trap class> vector= error= rip= cr2=
 AURORA_EXPORT_BEGIN: path=<committed file> bytes=<n> ... (one record per committed file)
 AURORA_PROCESS_RELEASED: run=<n> frames=<all> memory=<memory pages + tables>
-  calls=<memory calls> commits=<committing faults>
+  calls=<memory calls> commits=<committing faults> peak=<largest charge in frames>
 AURORA_PROCESS_RUNS_OK: runs=<n> free=<frames>
 ```
 
@@ -327,7 +327,8 @@ record: id, size, device, inode, directory device and inode), 10 close(RDI),
 12 write(RDI output, RSI buffer, RDX length up to 64 KiB), 13 commit(RDI) and
 14 discard(RDI), returning 0 or a negative HostStatus; arguments a call does
 not use are ignored. Anything else ends the process with `call`. A page fault the memory service commits resumes the process. The watchdog arms the LAPIC one-shot
-timer (2^24 counts, divide by 16) per tick; each timer interrupt is charged by
+timer (2^24 counts, divide by 16, about 0.27 s under QEMU; 2^31 counts, about
+34 s, for a run with flag 8) per tick; each timer interrupt is charged by
 `kernel.interrupt_budget` and ends the process when its run's 1..128 ticks are
 spent. A timer interrupt pending when a process ends is taken in a kernel
 `sti; hlt` window before the next process starts.
@@ -336,10 +337,11 @@ spent. A timer interrupt pending when a process ends is taken in a kernel
 
 `kernel.process_runs` admits a run list: header `AURORUNS`, version 2, count
 1..64; per run a 24-byte record of ticks 1..128, path bytes 1..255, argument
-bytes 1..65536, flags 0..7 and the memory quota in frames (0 for all), then the
+bytes 1..65536, flags 0..15 and the memory quota in frames (0 for all), then the
 path, the NUL-terminated arguments and zero padding to 8
 bytes, ending at the entry's end (`truncated`, `magic`, `version`, `count`,
-`ticks`, `path`, `arguments`, `flags`, `padding`, `trailing`). The flags are
+`ticks`, `path`, `arguments`, `flags`, `padding`, `trailing`). Flag 8 makes
+each tick 128 times longer, for runs of minutes. The other flags are
 fixtures: 4 runs the complete walk after every memory call, commit and
 kernel access to the process's memory (it
 stops the machine if one fails), 1 faults the kernel during the run's first kernel call (the
@@ -396,7 +398,7 @@ each on TCG, 3 s for `process-run`, 7 s for `process-files` and
   opening a path at a kernel address, writing an output from an unmapped
   address, and stale, forged and mistyped ids, each `invalid_handle`) and the
   probe with `print 'two words' exit success`, which shows the kernel continues
-  after each;
+  after each, then once more with one long tick (flag 8);
 - `process-hostile` (case 2) rejects ELF images with a writable and executable
   segment, an interpreter, an entry outside code and overlapping segments and a
   missing path, runs `hostile` to exit 0, then faults in the kernel during the
@@ -431,6 +433,20 @@ each on TCG, 3 s for `process-run`, 7 s for `process-files` and
   `compile.golden`, which `kernel-process-compile` (merge suite) checks
   against the hosted compiler with `golden.py --reject`. Guest time is about
   2.7 s for the host-sort compile and up to 1 s per rejection.
+
+The `guest-self-host` family, also in the release suite, boots one row:
+
+- `process-self-host` (case 6, 1 GiB guest, the `\aurora\selfhost` volume:
+  the `--target aurora` compiler, the build's configured `aurorac.au`,
+  `runtime/linux` and the compiler modules beneath `modules/` as the build
+  stages them, `kernel_volume.py --module`) runs the compiler on itself with
+  C1's flags (`--emit-object --local-symbols --referenced-reflection-only
+  --target linux --runtime-root /runtime/linux --module-root /modules
+  aurorac.au -o aurorac-stage2.o`, 16 ticks of flag 8). The exported object
+  must equal the hosted build's `aurorac-stage2.o`, the object C1 emits of the
+  compiler, byte for byte. The compile takes about 3 minutes under TCG and
+  charges about the native peak RSS (575 MiB); file reads and writes are well
+  under a second of it. Linking the object is still the host `ld`'s job.
 
 `tests/kernel-process-smoke.py` reduces each run to one line compared with
 `tests/kernel-process/<row>.golden` (a fault keeps its vector and architectural
@@ -485,5 +501,6 @@ Limits:
 - the physical width comes from CPUID 0x80000008 alone. On Zen with memory
   encryption, CPUID 0x8000001F EBX[11:6] reduces it, which Zen qualification must
   add;
-- CRC32C in `std.checksum` is bitwise;
+- CRC32C in `std.checksum` is bitwise (about 1 s per boot for the 6 MiB
+  self-host volume);
 - no physical device is qualified.

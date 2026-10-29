@@ -20,3 +20,4 @@
 20 bin/isolation-16 write-gap	call operation=12
 21 bin/isolation-17 forged-ids	exit 0 | exported: tree/f.txt:0
 22 bin/probe probe print 'two words' exit success	exit 0 | stdout: two words1 print success
+23 bin/probe probe print 'two words' exit success	exit 0 | stdout: two words1 print success

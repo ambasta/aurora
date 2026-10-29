@@ -18,7 +18,8 @@ tests/host-files/cases.golden (or limits.golden) but for the tree entries the
 volume lacks by design (symlinks and a FIFO). In process-compile the first
 run's object must equal the hosted build's host-sort.o (in the build root
 above IMAGE_DIR) and each later run's diagnostics its line of
-tests/kernel-process/compile.golden.
+tests/kernel-process/compile.golden; in process-self-host the compiler's
+object of itself must equal aurorac-stage2.o.
 """
 
 import base64
@@ -206,17 +207,24 @@ def runs(text, mode):
     return lines
 
 
-def compiled(text, mode, image):
-    """The compile row: the guest's object is the hosted build's, its rejections the hosted compiler's."""
+def compiled(text, mode, image, name):
+    """A compile row: its first run's only export, `name`, is the hosted build's object of that name.
+
+    The meson build root holds it: IMAGE_DIR is kernel-images/uefi/process-fixture beneath it.
+    """
     lines, exported = runs(text, mode), run_exports(text)
-    _, expected = PROCESS_CASES[mode]
-    rejections = [line.split("\t", 1)[1] for line in (ROOT / COMPILE_GOLDEN).read_text().splitlines()]
-    need(len(lines) == len(expected) == 1 + len(rejections), "Compile runs")
-    # The meson build root holds the hosted object: IMAGE_DIR is kernel-images/uefi/process-fixture beneath it.
-    reference = (image.parents[2] / "host-sort.o").read_bytes()
+    reference = (image.parents[2] / name).read_bytes()
     need(lines and "AURORA_PROCESS_RUNS_OK:" in text, "Compile row incomplete")
-    need(lines[0].split("\t")[1] == f"exit 0 | exported: host-sort.o:{len(reference)}", "Compile run failed")
-    need(exported.get(1) == {"host-sort.o": reference}, "Guest object differs from the hosted host-sort.o")
+    need(lines[0].split("\t")[1] == f"exit 0 | exported: {name}:{len(reference)}", "Compile run failed")
+    need(exported.get(1) == {name: reference}, f"Guest object differs from the hosted {name}")
+    return lines, exported
+
+
+def rejected(text, mode, image):
+    """The compile row: host-sort.o is the hosted build's, its rejections the hosted compiler's."""
+    lines, exported = compiled(text, mode, image, "host-sort.o")
+    rejections = [line.split("\t", 1)[1] for line in (ROOT / COMPILE_GOLDEN).read_text().splitlines()]
+    need(len(lines) == len(PROCESS_CASES[mode][1]) == 1 + len(rejections), "Compile runs")
     for index, (line, diagnostic) in enumerate(zip(lines[1:], rejections)):
         source = f"rejections/case-{index:04d}.au"
         # Like golden.py --reject: exit 1, no stdout, no output, the diagnostic without the source path.
@@ -259,8 +267,12 @@ def validate(status, text, mode, image):
         runs(text, mode)
         need(status == 33 and "AURORA_PROCESS_FAIL" not in text, "Process row failed")
         return
-    if mode == "process-compile":
-        compiled(text, mode, image)
+    if mode in ("process-compile", "process-self-host"):
+        if mode == "process-compile":
+            rejected(text, mode, image)
+        else:
+            # The compiler's object of itself is the one C1 emits (aurorac-stage2.o).
+            need(len(compiled(text, mode, image, "aurorac-stage2.o")[0]) == 1, "Self-host runs")
         need(status == 33 and "AURORA_PROCESS_FAIL" not in text, "Process row failed")
         return
     if mode in PROCESS_CASES:
