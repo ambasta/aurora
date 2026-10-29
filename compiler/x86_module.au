@@ -707,11 +707,7 @@ export namespace compiler_x86 {
         if (memory && (memory_start < 0 || memory_finish < 0)) {
             return w.fail();
         }
-        // The Aurora kernel has no memory service yet (M3 of kernel/uefi/process.md).
         const bool kernel = w.kernel_target();
-        if (kernel && memory) {
-            return w.fail();
-        }
         const i64 name = w.intern_runtime("_start");
         if (!w.begin_function(2, name, -1)) {
             return false;

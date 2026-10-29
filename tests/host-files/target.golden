@@ -5,4 +5,4 @@
 --target aurora tests/host-files/probe.au	exit 0
 --target aurora --runtime-root runtime/linux tests/host-files/probe.au	exit 1 | stderr: aurorac: error AU3001: invalid typed IR: HostFiles primitive does not belong to the selected target
 --runtime-root runtime/aurora tests/host-files/probe.au	exit 1 | stderr: aurorac: error AU3001: invalid typed IR: HostFiles primitive does not belong to the selected target
---target aurora tests/host-files/memory.au	exit 1 | stderr: aurorac: error AU4001: module not found in the compiler's runtime root: aurora.memory
+--target aurora tests/host-files/memory.au	exit 0

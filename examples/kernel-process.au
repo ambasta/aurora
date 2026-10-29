@@ -5,6 +5,7 @@ import kernel.export_text;
 import kernel.frames;
 import kernel.memory_map;
 import kernel.process_events;
+import kernel.process_memory;
 import kernel.process_runs;
 import kernel.process_space;
 
@@ -124,4 +125,38 @@ auto process_run(builtin::span<const u8> runs, u64 index) -> kernel::RunEntry {
     }
     const kernel::RunEntry entry = kernel::run_entry(runs, i64(index));
     return entry;
+}
+
+// The memory service (kernel/uefi/process.md#memory): map, remap and unmap
+// decisions over the copied state and record, the record of a base or of a
+// committed fault in the supervisor's sorted records, and a loaded process's
+// quota.
+auto process_memory_map(kernel::MemoryState state, u64 bytes) -> kernel::MemoryDecision {
+    const kernel::MemoryDecision decision = kernel::memory_map(state, bytes);
+    return decision;
+}
+
+auto process_memory_remap(kernel::MemoryState state, kernel::MemoryRecord record, u64 bytes,
+    u64 target) -> kernel::MemoryDecision {
+    const kernel::MemoryDecision decision = kernel::memory_remap(state, record, bytes, target);
+    return decision;
+}
+
+auto process_memory_unmap(kernel::MemoryState state, kernel::MemoryRecord record, u64 bytes) -> kernel::MemoryDecision {
+    const kernel::MemoryDecision decision = kernel::memory_unmap(state, record, bytes);
+    return decision;
+}
+
+auto process_memory_find(builtin::span<const u8> records, u64 count, u64 base) -> u64 {
+    return kernel::memory_find(records, count, base);
+}
+
+auto process_memory_fault(builtin::span<const u8> records, u64 count, u64 address, u64 error) -> u64 {
+    return kernel::memory_fault(records, count, address, error);
+}
+
+auto process_memory_budget(builtin::span<const u8> image, u64 arguments, u64 slots, u64 requested,
+    u64 free) -> kernel::MemoryBudget {
+    const kernel::MemoryBudget budget = kernel::memory_budget(image, arguments, slots, requested, free);
+    return budget;
 }

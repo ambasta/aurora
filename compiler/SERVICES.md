@@ -303,10 +303,13 @@ helpers. The binding is trusted code of the compiler.
 
 `aurorac --target aurora` (default `--target linux`) compiles for the Aurora
 kernel's processes ([process image](../kernel/uefi/process.md#processes)): the
-configured runtime root is `runtime/aurora` instead of `runtime/linux`, and the
-typed IR admits the Linux primitives 13..28 only for `linux` and the kernel
-primitives only for `aurora`; a wrong pairing (for example `--target aurora
---runtime-root runtime/linux`) fails closed. That binding,
+configured runtime root is the build tree's `runtime/aurora` instead of
+`runtime/linux`: `runtime/aurora/aurora/host.au` beside the one
+`runtime/linux/aurora/memory.au` both targets compile, which
+`runtime/aurora/aurora/meson.build` copies there. The typed IR admits the Linux
+system primitives 13..20 only for `linux`, the kernel primitives only for
+`aurora` and the memory primitives for both; a wrong pairing (for example
+`--target aurora --runtime-root runtime/linux`) fails closed. That binding,
 `runtime/aurora/aurora/host.au`, has the same ten functions over the session
 primitives and two kernel primitives emitted inline as `int $0x83`:
 `kernel_print(stream, offset, length)` (kernel operation 2, stream 1 or 2,
@@ -315,8 +318,13 @@ returning 0 or a negative HostStatus) and `kernel_chunk(file, offset)` (operatio
 anything else traps). The kernel has no file service yet, so every open is
 `denied`, every id `invalid_handle`, and print copies through the session
 block. Its `_start` takes the argument block from RDI and RSI and exits with
-operation 1 (RDI the HostExit ordinal); a main with a region is rejected until
-the kernel has a memory service.
+operation 1 (RDI the HostExit ordinal). A main with a region runs on the same
+memory runtime, mapping table and inline fast path as on Linux; only map,
+remap and unmap differ, emitted as kernel operations 4 map(bytes), 5
+remap(base, bytes, new bytes) and 6 unmap(base, bytes) of the kernel's
+[memory service](../kernel/uefi/process.md#memory), which return the base (0
+for unmap) or a negative HostStatus where Linux returns a negative errno; the
+table changes only on success either way.
 
 For a hosted entry the backend emits a global `_start`: it reads argc/argv from
 the initial stack, requires the argument strings to be contiguous, reserves and

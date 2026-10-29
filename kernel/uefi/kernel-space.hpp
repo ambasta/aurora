@@ -24,17 +24,21 @@ public:
     // Frame count, pages and tables of one extension: PDPT, metadata PD and
     // PTs, then (with a volume) volume PD and PTs, at frame indices 0..tables-1.
     // The metadata is one 8-byte record per frame, then from the next page one
-    // 8-byte mapping word per frame (process-space.hpp).
+    // 8-byte mapping word per frame (process-space.hpp), then process pages:
+    // the running process's memory records when the image runs processes
+    // (process_pages, process::memory_records of them), none otherwise.
+    static constexpr U64 process_pages = process::memory_records * sizeof(process::MemoryRecord) / frames::page;
     class Plan final {
     public:
-        U64 metadata = 0, metadata_tables = 0, volume = 0, volume_tables = 0, tables = 0, records = 0;
+        U64 metadata = 0, metadata_tables = 0, volume = 0, volume_tables = 0, tables = 0, records = 0, process = 0;
     };
-    [[nodiscard]] static auto plan(U64 frames, U64 volume_pages) -> std::optional<Plan> {
+    [[nodiscard]] static auto plan(U64 frames, U64 volume_pages, U64 process) -> std::optional<Plan> {
         Plan result;
-        if (frames == 0 || frames > (U64{1} << 32) || volume_pages > 512 * 512)
+        if (frames == 0 || frames > (U64{1} << 32) || volume_pages > 512 * 512 || (process && process != process_pages))
             return std::nullopt;
         result.records = (frames * 8 + frames::page - 1) / frames::page;
-        result.metadata = 2 * result.records;
+        result.process = process;
+        result.metadata = 2 * result.records + process;
         result.metadata_tables = (result.metadata + 511) / 512;
         result.volume = volume_pages;
         result.volume_tables = (volume_pages + 511) / 512;
@@ -144,6 +148,13 @@ public:
         if (!built_ || frames * 8 > plan_.records * frames::page)
             return {};
         return {reinterpret_cast<U64 *>(metadata_base + plan_.records * frames::page), frames};
+    }
+    // The memory records of the one running process (process-space.hpp).
+    [[nodiscard]] auto process_records() const -> std::span<process::MemoryRecord> {
+        if (!built_ || plan_.process != process_pages)
+            return {};
+        return {reinterpret_cast<process::MemoryRecord *>(metadata_base + 2 * plan_.records * frames::page),
+                process::memory_records};
     }
     [[nodiscard]] auto volume(U64 bytes) const -> std::span<const std::byte> {
         if (!built_ || bytes > plan_.volume * frames::page)

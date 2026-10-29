@@ -416,5 +416,7 @@ encode export records over copied scalars and readonly spans the supervisor
 builds over its own mapped bytes. `kernel.elf`, `kernel.process_space`,
 `kernel.process_events` and `kernel.process_runs` admit program images and run
 lists, lay out a process's regions, classify its trap frames and decode its
-kernel calls; `kernel.interrupt_budget` charges its watchdog. The contract, encodings and tests are in
+kernel calls; `kernel.process_memory` decides its memory service's
+reservations, growth, moves, releases, committed faults and frame quota;
+`kernel.interrupt_budget` charges its watchdog. The contract, encodings and tests are in
 [the process image](uefi/process.md).

@@ -46,42 +46,69 @@ FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if not name.startswith("bios_")
 }
 # Process-image rows that run a run list: the valid volume's selector plus a
-# case word (fw_cfg opt/aurora/case) naming runs/<case> in that volume. Each run
-# is (watchdog ticks, flags, volume path, arguments as shell words); flag 1
-# faults the kernel during the run's first kernel call and flag 2 checks that
-# the load walk rejects edited tables (kernel/uefi/process.md#run-lists).
+# case word (fw_cfg opt/aurora/case) naming runs/<case> in that volume (from
+# case 3 on, the compiler volume). Each run is (watchdog ticks, flags, memory
+# quota in frames or 0 for all, volume path, arguments as shell words); flag 1
+# faults the kernel during the run's first kernel call, flag 2 checks that the
+# load walk rejects edited tables and flag 4 walks the whole space after every
+# memory call and commit (kernel/uefi/process.md#run-lists).
+ROOT = Path(__file__).resolve().parents[1]
+# One process per hosted memory-runtime case (tests/host-files/memory.golden),
+# each walked after every memory call unless it churns, then the compiler with
+# no arguments, and the failure path under small quotas: a probe whose first
+# owner does not fit and the compiler, whose memory runtime cannot start.
+MEMORY_GOLDEN = ROOT / "tests/host-files/memory.golden"
+MEMORY_RUNS = tuple(
+    (128, 4 if index in (0, 1, 3) else 0, 0, "bin/memory", key)
+    for index, key in enumerate(line.split("\t", 1)[0] for line in MEMORY_GOLDEN.read_text().splitlines())
+)
 PROCESS_CASES = {
     "process-run": (
         1,
         (
-            (32, 2, "bin/probe", "probe print hello eprint oops exit failure"),
-            (32, 0, "bin/probe-linux", "probe print hello"),
-            (32, 0, "bin/recurse", "recurse"),
-            (4, 0, "bin/hostile", "hostile spin"),
-            (8, 0, "bin/isolation-1", "write-code"),
-            (8, 0, "bin/isolation-2", "run-stack"),
-            (8, 0, "bin/isolation-3", "cli"),
-            (8, 0, "bin/isolation-4", "port-in"),
-            (8, 0, "bin/isolation-5", "kernel-read"),
-            (8, 0, "bin/isolation-6", "bad-call"),
-            (8, 0, "bin/isolation-7", "kernel-print"),
-            (8, 0, "bin/isolation-8", "raise-vector"),
-            (32, 0, "bin/probe", "probe print 'two words' exit success"),
+            (32, 2, 0, "bin/probe", "probe print hello eprint oops exit failure"),
+            (32, 0, 0, "bin/probe-linux", "probe print hello"),
+            (32, 0, 0, "bin/recurse", "recurse"),
+            (4, 0, 0, "bin/hostile", "hostile spin"),
+            (8, 0, 0, "bin/isolation-1", "write-code"),
+            (8, 0, 0, "bin/isolation-2", "run-stack"),
+            (8, 0, 0, "bin/isolation-3", "cli"),
+            (8, 0, 0, "bin/isolation-4", "port-in"),
+            (8, 0, 0, "bin/isolation-5", "kernel-read"),
+            (8, 0, 0, "bin/isolation-6", "bad-call"),
+            (8, 0, 0, "bin/isolation-7", "kernel-print"),
+            (8, 0, 0, "bin/isolation-8", "raise-vector"),
+            (8, 4, 0, "bin/isolation-9", "past-mapping"),
+            (8, 4, 0, "bin/isolation-10", "bad-unmap"),
+            (8, 4, 0, "bin/isolation-11", "moved-away"),
+            (32, 0, 0, "bin/probe", "probe print 'two words' exit success"),
         ),
     ),
     "process-hostile": (
         2,
         (
-            (8, 0, "bin/elf-wx", "elf"),
-            (8, 0, "bin/elf-interp", "elf"),
-            (8, 0, "bin/elf-entry", "elf"),
-            (8, 0, "bin/elf-overlap", "elf"),
-            (8, 0, "bin/missing", "elf"),
-            (8, 0, "bin/hostile", "hostile"),
-            (8, 1, "bin/probe", "probe print hello"),
+            (8, 0, 0, "bin/elf-wx", "elf"),
+            (8, 0, 0, "bin/elf-interp", "elf"),
+            (8, 0, 0, "bin/elf-entry", "elf"),
+            (8, 0, 0, "bin/elf-overlap", "elf"),
+            (8, 0, 0, "bin/missing", "elf"),
+            (8, 0, 0, "bin/hostile", "hostile"),
+            (8, 1, 0, "bin/probe", "probe print hello"),
+        ),
+    ),
+    "process-memory": (
+        3,
+        MEMORY_RUNS
+        + (
+            (128, 0, 0, "bin/aurorac", "aurorac"),
+            (32, 4, 140, "bin/memory", "memory 100000 10 0 ok A ok B"),
+            (32, 0, 1, "bin/aurorac", "aurorac"),
         ),
     ),
 }
+# Guest memory of the rows that need more than the UEFI default: one memory
+# case keeps 4 GiB mapped (committed on first touch, but charged in full).
+PROCESS_MEMORY = {"process-memory": "5G"}
 FIXTURE_MODES.update({mode: FIXTURE_MODES["process-volume"] for mode in PROCESS_CASES})
 # These images read their selector from a QEMU fw_cfg file instead of a serial
 # byte. The loader fixture images read it at loader entry, echo it and hand it
@@ -983,7 +1010,9 @@ def uefi_profile(profile_mode, flags):
 PROCESS_VOLUME_FILES = ("examples/core_math.au", "examples/host-sort.au")
 # Programs (--program PATH=KIND:NAME, a build product: aurora for --target
 # aurora, linux for the hosted Linux build, assembly for GNU as) and header-only ELF files (--elf
-# PATH=EDITS over the writer's admission image) the run lists name.
+# PATH=EDITS over the writer's admission image) the run lists name. The
+# compiler volume carries the compiler and the memory probe for cases 3 on.
+PROCESS_COMPILER_PROGRAMS = {"bin/aurorac": "aurora:aurorac", "bin/memory": "aurora:host-memory-probe"}
 PROCESS_PROGRAMS = {
     "bin/probe": "aurora:host-files-probe",
     "bin/hostile": "aurora:process-hostile",
@@ -996,6 +1025,9 @@ PROCESS_PROGRAMS = {
     "bin/isolation-6": "assembly:process-isolation-6",
     "bin/isolation-7": "assembly:process-isolation-7",
     "bin/isolation-8": "assembly:process-isolation-8",
+    "bin/isolation-9": "assembly:process-isolation-9",
+    "bin/isolation-10": "assembly:process-isolation-10",
+    "bin/isolation-11": "assembly:process-isolation-11",
     "bin/probe-linux": "linux:host-files-probe",
 }
 PROCESS_ELVES = {
@@ -1012,8 +1044,19 @@ PROCESS_ESP = {
     + [
         word
         for case, runs in PROCESS_CASES.values()
-        for ticks, flags, path, arguments in runs
-        for word in ("--run", f"{case}:{ticks}:{flags}:{path}:{arguments}")
+        if case < 3
+        for ticks, flags, quota, path, arguments in runs
+        for word in ("--run", f"{case}:{ticks}:{flags}:{quota}:{path}:{arguments}")
+    ],
+    "compiler": [
+        word for path, program in PROCESS_COMPILER_PROGRAMS.items() for word in ("--program", path + "=" + program)
+    ]
+    + [
+        word
+        for case, runs in PROCESS_CASES.values()
+        if case >= 3
+        for ticks, flags, quota, path, arguments in runs
+        for word in ("--run", f"{case}:{ticks}:{flags}:{quota}:{path}:{arguments}")
     ],
     "corrupt": ["--raw-order"] + [word for path in reversed(PROCESS_VOLUME_FILES) for word in ("--file", path)],
     "empty": ["--empty"],
@@ -1044,7 +1087,7 @@ GUEST_FAMILIES = {
     "tables": "runtime-table-readback runtime-table-reject runtime-table-exhaust runtime-table-quarantine",
     "pins": "runtime-pin-cancel runtime-pin-fault runtime-pin-stale runtime-pin-exhaust",
     "process": "process-volume process-volume-corrupt process-volume-empty process-volume-map process-run "
-    "process-hostile",
+    "process-hostile process-memory",
 }
 
 

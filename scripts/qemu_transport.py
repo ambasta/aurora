@@ -18,7 +18,7 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from kernel_profiles import fw_cfg_fixture  # noqa: E402
+from kernel_profiles import PROCESS_MEMORY, fw_cfg_fixture  # noqa: E402
 
 MAX_IO = 1024 * 1024
 
@@ -91,6 +91,7 @@ def command(
     debug_exit=True,
     diagnostics=(),
     extra=(),
+    memory=None,
 ):
     """The common BIOS/UEFI TCG profiles with explicit specialized devices.
 
@@ -100,8 +101,8 @@ def command(
     args = [str(qemu)]
     if data:
         args += ["-L", str(data)]
-    machine, memory = {"bios": ("pc", "32M"), "uefi": ("q35", "128M")}[platform]
-    args += [*prefix, "-machine", machine, "-accel", "tcg", "-cpu", cpu, "-smp", str(cpus), "-m", memory]
+    machine, default = {"bios": ("pc", "32M"), "uefi": ("q35", "128M")}[platform]
+    args += [*prefix, "-machine", machine, "-accel", "tcg", "-cpu", cpu, "-smp", str(cpus), "-m", memory or default]
     args += list(firmware) + list(boot) + list(peripherals)
     args += ["-nic", "none", "-display", "none", "-serial", serial, "-monitor", "none", "-no-reboot"]
     args += list(diagnostics)
@@ -179,7 +180,15 @@ def profile_command(
         if clock == "tcg-fixed0-noalign-nosleep":
             prefix += ["-icount", "shift=0,align=off,sleep=off"]
     return command(
-        qemu, data, platform=platform, cpu=cpu, cpus=cpus, prefix=prefix, firmware=firmware_options, boot=boot
+        qemu,
+        data,
+        platform=platform,
+        cpu=cpu,
+        cpus=cpus,
+        prefix=prefix,
+        firmware=firmware_options,
+        boot=boot,
+        memory=PROCESS_MEMORY.get(mode) if platform == "uefi" else None,
     )
 
 

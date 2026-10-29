@@ -224,7 +224,7 @@ constexpr std::size_t frame_words = BootstrapLayout::fault_frame_words, frame_ra
 class Running final {
 public:
     ProcessSpace *space = nullptr;
-    U64 run = 0, flags = 0, initial = 0, remaining = 0, used = 0, calls = 0;
+    U64 run = 0, flags = 0, initial = 0, remaining = 0, used = 0, calls = 0, memory_calls = 0, commits = 0;
 };
 // How the process ended, copied from its last kernel entry.
 class Outcome final {
@@ -457,6 +457,26 @@ auto kernel_call(volatile U64 *frame) -> U64 {
         frame[frame_rax] = decoded->value;
         return 0;
     }
+    // The memory service (process.md#memory); a call naming no mapping, or
+    // one whose length differs, ends the process like any invalid call.
+    if (action == process::CallAction::map || action == process::CallAction::remap ||
+        action == process::CallAction::unmap) {
+        auto &memory = *running.space;
+        const auto result = action == process::CallAction::map ? memory.map_memory(decoded->length)
+                            : action == process::CallAction::remap
+                                ? memory.remap_memory(decoded->base, decoded->value, decoded->length)
+                                : memory.unmap_memory(decoded->base, decoded->length);
+        if (result.outcome == ProcessSpace::Outcome::broken)
+            fail("memory service");
+        if (result.outcome == ProcessSpace::Outcome::resume) {
+            // Fixture: the whole space verifies after every memory call.
+            if ((running.flags & 4) && !memory.verify())
+                fail("memory walk");
+            ++running.memory_calls;
+            frame[frame_rax] = result.value;
+            return 0;
+        }
+    }
     outcome.invalid_call = true;
     outcome.operation = frame[frame_rax];
     outcome.rip = frame[frame_rip];
@@ -496,6 +516,21 @@ auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
         return charge_tick(vector, error, rip, cs);
     if (*kind == process::TrapClass::call)
         return kernel_call(words);
+    // A first touch of a mapping's absent page commits a zeroed, already
+    // charged frame (process.md#memory).
+    const auto committed = *kind == process::TrapClass::page_fault
+                               ? process::memory_fault(running.space->records(), trap.cr2, error)
+                               : process::MemoryLookup{};
+    if (committed.malformed)
+        fail("Aurora memory fault decision");
+    if (committed.index) {
+        if (!running.space->commit(trap.cr2))
+            fail("memory commit");
+        if ((running.flags & 4) && !running.space->verify())
+            fail("memory walk");
+        ++running.commits;
+        return 0;
+    }
     outcome.trap = *kind;
     outcome.vector = vector;
     outcome.error = error;
@@ -611,8 +646,19 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
         fail("Aurora process layout");
     if (*layout != process::LayoutVerdict::valid)
         return refuse(run, name(layout_names, static_cast<U64>(*layout)));
-    ProcessSpace process_space{
-        space, table, ranges, space.mappings(ranges.frames()), shared, frames::first_owner + run};
+    // The load and the memory service are charged against frames free now.
+    const auto budget = process::memory_budget(*image, arguments.size(), shared.slots, entry.quota, table.free());
+    if (!budget)
+        fail("Aurora memory budget");
+    if (budget->verdict != static_cast<U64>(process::BudgetVerdict::valid))
+        return refuse(run, "quota");
+    ProcessSpace process_space{space,
+                               table,
+                               ranges,
+                               space.mappings(ranges.frames()),
+                               shared,
+                               space.process_records(),
+                               frames::first_owner + run};
     if (!process_space.begin())
         fail("process root");
     U64 regions = 0, stack_top = 0, block = 0;
@@ -634,7 +680,8 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
             fail("process mapping");
     }
     const auto entry_point = process::elf_entry(*image);
-    if (!stack_top || !block || !process_space.executable(entry_point, 1) || !process_space.verify())
+    if (!process_space.budget(*budget) || !stack_top || !block || !process_space.executable(entry_point, 1) ||
+        !process_space.verify())
         fail("process load walk");
     if (entry.flags & 2)
         walk_cases(process_space, entry_point, block, run);
@@ -643,10 +690,11 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
     field("regions", regions);
     field("pages", process_space.leaves());
     field("tables", process_space.tables());
+    field("quota", budget->quota - budget->charged);
     Serial::text("\r\n");
     // The initial stack ends in a zero qword for programs that read one.
     const U64 context[] = {entry_point, stack_top - 16, block, arguments.size(), process_space.root()};
-    running = Running{&process_space, run, entry.flags, entry.ticks, entry.ticks, 0, 0};
+    running = Running{&process_space, run, entry.flags, entry.ticks, entry.ticks, 0, 0, 0, 0};
     outcome = Outcome{};
     if (!Timer::arm(tick_count))
         fail("watchdog arm");
@@ -662,6 +710,7 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
     end_record(run);
     if (!process_space.verify())
         fail("process exit walk");
+    const auto memory = process_space.memory();
     const auto released = process_space.release();
     const auto audit = table.audit();
     if (!released || !audit.consistent || audit.allocated)
@@ -669,6 +718,9 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
     Serial::text("AURORA_PROCESS_RELEASED:");
     field("run", run);
     field("frames", *released);
+    field("memory", memory);
+    field("calls", running.memory_calls);
+    field("commits", running.commits);
     Serial::text("\r\n");
 }
 
@@ -748,7 +800,7 @@ auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
     if (width < 32 || width > 52 || (last.first_page + last.pages) * frames::page > (U64{1} << width) ||
         volume + volume_pages * frames::page > (U64{1} << width))
         fail("frame inventory beyond the physical width");
-    const auto plan = KernelSpace::plan(ranges.frames(), volume_pages);
+    const auto plan = KernelSpace::plan(ranges.frames(), volume_pages, KernelSpace::process_pages);
     const PageTables tables{arena + Handoff::tables_offset, static_cast<std::size_t>(h.get(96))};
     if (!plan || !space.bind(arena + Handoff::tables_offset, tables.window_slot()) ||
         !space.build(ranges, *plan, volume))

@@ -914,17 +914,22 @@ def emit(compiler, source, output, module_root):
 def main():
     # COMPILER --output OUTPUT INPUT...: the bridged test graph of the compiler
     # modules, whose scaffold is frontend.au.
-    # COMPILER --program RUNTIME --output OUTPUT ROOT INPUT...: the hosted
-    # program ROOT over the compiler modules, as one object. With --seed after
-    # COMPILER, COMPILER is aurora-seed and runs ROOT itself as the compiler.
+    # COMPILER --program RUNTIME [--target TARGET] --output OUTPUT ROOT INPUT...:
+    # the hosted program ROOT over the compiler modules, as one object (for
+    # TARGET, linux by default). With --seed after COMPILER, COMPILER is
+    # aurora-seed and runs ROOT itself as the compiler.
     arguments = sys.argv[1:]
     runtime = None
+    target = []
     seed = len(arguments) > 1 and arguments[1] == "--seed"
     if seed:
         del arguments[1]
     if len(arguments) > 2 and arguments[1] == "--program":
         runtime = arguments[2]
         del arguments[1:3]
+        if len(arguments) > 2 and arguments[1] == "--target" and not seed:
+            target = ["--target", arguments[2]]
+            del arguments[1:3]
     if len(arguments) < 4 or arguments[1] != "--output":
         raise ValueError("expected COMPILER [--program RUNTIME] --output OUTPUT INPUT...")
     compiler, output = Path(arguments[0]), Path(arguments[2])
@@ -945,7 +950,7 @@ def main():
         emit(compiler, module_root / "aurora/compiler/frontend.au", output, module_root)
         return
     # A closed image: only _start is global and only queried reflection is kept.
-    command = ["--emit-object", "--local-symbols", "--referenced-reflection-only", "--runtime-root", runtime]
+    command = ["--emit-object", "--local-symbols", "--referenced-reflection-only", *target, "--runtime-root", runtime]
     command += ["--module-root", str(module_root.resolve())]
     program = [str(compiler.resolve())]
     if seed:

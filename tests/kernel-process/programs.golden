@@ -107,11 +107,11 @@ layout-arguments-largest: valid
     arguments first=0x7fffff001000 pages=16 read vaddr=0x7fffff001000 offset=0 bytes=65536
 runs-valid: valid
   runs runs/1 -> valid
-    run 1 ticks=4 flags=0 path=bin/a arguments=a\0b\0c d\0
-    run 2 ticks=128 flags=3 path=x arguments=y\0
+    run 1 ticks=4 flags=0 quota=0 path=bin/a arguments=a\0b\0c d\0
+    run 2 ticks=128 flags=7 quota=4096 path=x arguments=y\0
 runs-one: valid
   runs runs/1 -> valid
-    run 1 ticks=4 flags=0 path=a arguments=a\0
+    run 1 ticks=4 flags=0 quota=0 path=a arguments=a\0
 runs-magic: valid
   runs runs/1 -> magic
 runs-version: valid
@@ -140,9 +140,20 @@ runs-arguments-beyond: valid
   runs runs/1 -> truncated
 runs-flags: valid
   runs runs/1 -> flags
+runs-quota-any: valid
+  runs runs/1 -> valid
+    run 1 ticks=4 flags=0 quota=18446744073709551615 path=a arguments=a\0
 runs-terminator: valid
   runs runs/1 -> arguments
 runs-padding: valid
   runs runs/1 -> padding
 runs-short: valid
   runs runs/1 -> truncated
+budget: valid
+  budget p -> valid quota=100000 charged=2074
+budget-requested: valid
+  budget p -> valid quota=2574 charged=2074
+budget-more: valid
+  budget p -> valid quota=100000 charged=2074
+budget-short: valid
+  budget p -> quota

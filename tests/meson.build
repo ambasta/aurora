@@ -120,6 +120,11 @@ test('host-files-impostor', python,
             '--module-root', 'tests/host-files/impostor'],
      depends: [aurorac], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
      timeout: 120)
+# The compiler with no arguments: its usage, exit 2 (the process image runs the
+# --target aurora build the same way, kernel/uefi/process.md#guest-rows).
+test('host-files-usage', python,
+     args: ['-B', golden_runner, files('host-files/usage.golden'), '--modes', '--', aurorac.full_path()],
+     depends: [aurorac], suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 60)
 # --target selects the runtime root and the HostFiles primitives the typed IR admits.
 test('host-files-target', python,
      args: ['-B', golden_runner, files('host-files/target.golden'), '--modes', '--', aurorac.full_path(), '--check'],
@@ -493,6 +498,10 @@ test('kernel-process-programs', python,
 test('kernel-process-events', python,
      args: ['-B', golden_runner, files('kernel-process/events.golden'), '--', kernel_process, 'events',
             files('kernel-process/events.cases')],
+     suite: ['full', 'merge', 'dev'], timeout: 60)
+test('kernel-process-memory', python,
+     args: ['-B', golden_runner, files('kernel-process/memory.golden'), '--', kernel_process, 'events',
+            files('kernel-process/memory.cases')],
      suite: ['full', 'merge', 'dev'], timeout: 60)
 font_glyphs_object = custom_target('font-glyphs-module',
     input: 'kernel-programs/font-glyphs.au', output: 'font-glyphs.o', depfile: 'font-glyphs.d',

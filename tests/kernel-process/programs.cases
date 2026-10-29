@@ -50,25 +50,32 @@ layout-kernel-misaligned --elf p= --query program:6:0x40001000:p
 layout-arguments-empty --elf p= --query program:0:0x40000000:p
 layout-arguments-large --elf p= --query program:65537:0x40000000:p
 layout-arguments-largest --elf p= --query program:65536:0x40000000:p
-# Run lists: one run "1:4:0:a:a" is the list at volume offset 104 (magic 104,
-# version 112, count 116; record 120: ticks, path bytes 124, argument bytes
-# 128, flags 132; path 136, arguments 137, padding 139..143).
-runs-valid --run "1:4:0:bin/a:a b 'c d'" --run "1:128:3:x:y" --query runs:runs/1
-runs-one --run 1:4:0:a:a --query runs:runs/1
-runs-magic --run 1:4:0:a:a --set 104:1:0x42 --query runs:runs/1
-runs-version --run 1:4:0:a:a --set 112:4:2 --query runs:runs/1
-runs-count-zero --run 1:4:0:a:a --set 116:4:0 --query runs:runs/1
-runs-count-high --run 1:4:0:a:a --set 116:4:65 --query runs:runs/1
-runs-count-more --run 1:4:0:a:a --set 116:4:2 --query runs:runs/1
-runs-count-fewer --run 1:4:0:a:a --run 1:4:0:a:a --set 116:4:1 --query runs:runs/1
-runs-ticks-zero --run 1:4:0:a:a --set 120:4:0 --query runs:runs/1
-runs-ticks-high --run 1:4:0:a:a --set 120:4:129 --query runs:runs/1
-runs-path-empty --run 1:4:0:a:a --set 124:4:0 --query runs:runs/1
-runs-path-long --run 1:4:0:a:a --set 124:4:256 --query runs:runs/1
-runs-arguments-empty --run 1:4:0:a:a --set 128:4:0 --query runs:runs/1
-runs-arguments-long --run 1:4:0:a:a --set 128:4:65537 --query runs:runs/1
-runs-arguments-beyond --run 1:4:0:a:a --set 128:4:1000 --query runs:runs/1
-runs-flags --run 1:4:0:a:a --set 132:4:4 --query runs:runs/1
-runs-terminator --run 1:4:0:a:a --set 138:1:0x78 --query runs:runs/1
-runs-padding --run 1:4:0:a:a --set 140:1:1 --query runs:runs/1
+# Run lists: one run "1:4:0:0:a:a" is the list at volume offset 104 (magic
+# 104, version 112, count 116; record 120: ticks, path bytes 124, argument
+# bytes 128, flags 132, quota 136; path 144, arguments 145, padding 147..151).
+runs-valid --run "1:4:0:0:bin/a:a b 'c d'" --run "1:128:7:4096:x:y" --query runs:runs/1
+runs-one --run 1:4:0:0:a:a --query runs:runs/1
+runs-magic --run 1:4:0:0:a:a --set 104:1:0x42 --query runs:runs/1
+runs-version --run 1:4:0:0:a:a --set 112:4:1 --query runs:runs/1
+runs-count-zero --run 1:4:0:0:a:a --set 116:4:0 --query runs:runs/1
+runs-count-high --run 1:4:0:0:a:a --set 116:4:65 --query runs:runs/1
+runs-count-more --run 1:4:0:0:a:a --set 116:4:2 --query runs:runs/1
+runs-count-fewer --run 1:4:0:0:a:a --run 1:4:0:0:a:a --set 116:4:1 --query runs:runs/1
+runs-ticks-zero --run 1:4:0:0:a:a --set 120:4:0 --query runs:runs/1
+runs-ticks-high --run 1:4:0:0:a:a --set 120:4:129 --query runs:runs/1
+runs-path-empty --run 1:4:0:0:a:a --set 124:4:0 --query runs:runs/1
+runs-path-long --run 1:4:0:0:a:a --set 124:4:256 --query runs:runs/1
+runs-arguments-empty --run 1:4:0:0:a:a --set 128:4:0 --query runs:runs/1
+runs-arguments-long --run 1:4:0:0:a:a --set 128:4:65537 --query runs:runs/1
+runs-arguments-beyond --run 1:4:0:0:a:a --set 128:4:1000 --query runs:runs/1
+runs-flags --run 1:4:0:0:a:a --set 132:4:8 --query runs:runs/1
+runs-quota-any --run 1:4:0:0:a:a --set 136:8:0xffffffffffffffff --query runs:runs/1
+runs-terminator --run 1:4:0:0:a:a --set 146:1:0x78 --query runs:runs/1
+runs-padding --run 1:4:0:0:a:a --set 148:1:1 --query runs:runs/1
 runs-short --text runs/1=AURORUNS --query runs:runs/1
+# Load charges: the root, two tables per shared kernel slot, then each region's
+# pages and tables; the memory service may charge the rest (or the request).
+budget --elf p= --query budget:6:0:100000:p
+budget-requested --elf p= --query budget:6:500:100000:p
+budget-more --elf p= --query budget:6:200000:100000:p
+budget-short --elf p= --query budget:6:0:2000:p
