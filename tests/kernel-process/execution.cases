@@ -1,26 +1,26 @@
 # Named synchronous observations, consumed by the real source command loop.
 # finish includes the required disposition, so wrong or duplicate cleanup fails.
-exit prepare:loaded:exited:1 advance:retired:exited:0 finish:complete:success
-exit_value prepare:loaded:exited:1 advance:retired:exited:42 finish:complete:success
-fault prepare:loaded:exited:1 advance:retired:fault:14 finish:complete:success
-watchdog prepare:loaded:exited:1 advance:retired:watchdog:0 finish:complete:success
-park_resume prepare:loaded:exited:1 advance:parked:unavailable:0 advance:retired:exited:7 finish:complete:success
-output_resume prepare:loaded:exited:1 advance:output:unavailable:0 output:success advance:retired:exited:8 finish:complete:success
-output_failure prepare:loaded:exited:1 advance:output:unavailable:0 output:failed finish:output_failed:success
-request_resume prepare:loaded:exited:1 advance:request:unavailable:0 request:ready advance:retired:exited:9 finish:complete:success
-request_cancelled prepare:loaded:exited:1 advance:request:unavailable:0 request:cancelled finish:cancelled:success
-service_lost prepare:loaded:exited:1 advance:request:unavailable:0 request:service_lost finish:service_lost:success
-multiple_effects prepare:loaded:exited:1 advance:output:unavailable:0 output:success advance:request:unavailable:0 request:ready advance:parked:unavailable:0 advance:retired:exited:13 finish:complete:success
-missing prepare:refused:missing:1 finish:complete:success
-malformed prepare:refused:malformed:1 finish:complete:success
-quota prepare:refused:quota:1 finish:complete:success
-prepare_service_lost prepare:service_lost:unavailable:0
-identity_exhausted prepare:refused:unavailable:0
-exit_close_failure prepare:loaded:exited:1 advance:retired:exited:42 finish:complete:failed
-fault_close_failure prepare:loaded:exited:1 advance:retired:fault:14 finish:complete:failed
-output_close_failure prepare:loaded:exited:1 advance:output:unavailable:0 output:failed finish:output_failed:failed
-cancel_close_failure prepare:loaded:exited:1 advance:request:unavailable:0 request:cancelled finish:cancelled:failed
-missing_close_failure prepare:refused:missing:1 finish:complete:failed
+exit prepare:loaded:exited advance:retired:exited:0 finish:complete:success
+exit_value prepare:loaded:exited advance:retired:exited:42 finish:complete:success
+fault prepare:loaded:exited advance:retired:fault:14 finish:complete:success
+watchdog prepare:loaded:exited advance:retired:watchdog:0 finish:complete:success
+park_resume prepare:loaded:exited advance:parked:unavailable:0 advance:retired:exited:7 finish:complete:success
+output_resume prepare:loaded:exited advance:output:unavailable:0 output:success advance:retired:exited:8 finish:complete:success
+output_failure prepare:loaded:exited advance:output:unavailable:0 output:failed cancel:settled finish:output_failed:success
+request_resume prepare:loaded:exited advance:request:unavailable:0 request:ready advance:retired:exited:9 finish:complete:success
+request_cancelled prepare:loaded:exited advance:request:unavailable:0 request:cancelled finish:cancelled:success
+service_lost prepare:loaded:exited advance:request:unavailable:0 request:service_lost finish:service_lost:success
+multiple_effects prepare:loaded:exited advance:output:unavailable:0 output:success advance:request:unavailable:0 request:ready advance:parked:unavailable:0 advance:retired:exited:13 finish:complete:success
+missing prepare:refused:missing finish:complete:success
+malformed prepare:refused:malformed finish:complete:success
+quota prepare:refused:quota finish:complete:success
+prepare_service_lost prepare:service_lost:unavailable finish:complete:success
+identity_exhausted prepare:refused:unavailable finish:complete:success
+exit_close_failure prepare:loaded:exited advance:retired:exited:42 finish:complete:failed
+fault_close_failure prepare:loaded:exited advance:retired:fault:14 finish:complete:failed
+output_close_failure prepare:loaded:exited advance:output:unavailable:0 output:failed cancel:settled finish:output_failed:failed
+cancel_close_failure prepare:loaded:exited advance:request:unavailable:0 request:cancelled finish:cancelled:failed
+missing_close_failure prepare:refused:missing finish:complete:failed
 stale deny:stale
 forged deny:forged
 zero_generation deny:zero_generation
@@ -31,9 +31,34 @@ invalid_finish deny:invalid_finish
 reenter deny:reenter
 release_inside deny:release_inside
 # Pending service observations retain the request phase; no client advance intervenes.
-request_pending_twice prepare:loaded:exited:1 advance:request:unavailable:0 request:pending request:pending request:ready advance:retired:exited:17 finish:complete:success
-request_pending_cancelled prepare:loaded:exited:1 advance:request:unavailable:0 request:pending request:cancelled finish:cancelled:success
-request_pending_lost prepare:loaded:exited:1 advance:request:unavailable:0 request:pending request:service_lost finish:service_lost:success
-request_pending_output prepare:loaded:exited:1 advance:request:unavailable:0 request:pending request:ready advance:output:unavailable:0 output:success advance:retired:exited:18 finish:complete:success
-two_requests_pending prepare:loaded:exited:1 advance:request:unavailable:0 request:ready advance:request:unavailable:0 request:pending request:ready advance:retired:exited:19 finish:complete:success
-pending_cancel_close_failure prepare:loaded:exited:1 advance:request:unavailable:0 request:pending request:cancelled finish:cancelled:failed
+request_pending_twice prepare:loaded:exited advance:request:unavailable:0 request:pending request:pending request:ready advance:retired:exited:17 finish:complete:success
+request_pending_cancelled prepare:loaded:exited advance:request:unavailable:0 request:pending request:cancelled finish:cancelled:success
+request_pending_lost prepare:loaded:exited advance:request:unavailable:0 request:pending request:service_lost finish:service_lost:success
+request_pending_output prepare:loaded:exited advance:request:unavailable:0 request:pending request:ready advance:output:unavailable:0 output:success advance:retired:exited:18 finish:complete:success
+two_requests_pending prepare:loaded:exited advance:request:unavailable:0 request:ready advance:request:unavailable:0 request:pending request:ready advance:retired:exited:19 finish:complete:success
+pending_cancel_close_failure prepare:loaded:exited advance:request:unavailable:0 request:pending request:cancelled finish:cancelled:failed
+
+# Explicit cancellation is selected only by the component source entry.
+cancel_before_run point:0 prepare:loaded:exited cancel:settled finish:cancel_requested:success
+cancel_inert_missing point:0 prepare:refused:missing cancel:settled finish:complete:success
+cancel_inert_service_loss point:0 prepare:service_lost:unavailable cancel:settled finish:complete:success
+cancel_staged_request point:1 prepare:loaded:exited advance:request:unavailable:0 cancel:settled finish:cancel_requested:success
+cancel_dispatched_request point:1 prepare:loaded:exited advance:request:unavailable:0 cancel:draining request:pending request:cancel_requested finish:cancel_requested:success
+cancel_after_pending point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:draining request:pending request:cancel_requested finish:cancel_requested:success
+expiry_before_explicit_cancel point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:draining request:cancelled finish:cancelled:success
+cancel_owner_lost point:1 prepare:loaded:exited advance:request:unavailable:0 cancel:service_lost finish:service_lost:success
+cancel_drain_owner_lost point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:draining request:service_lost finish:service_lost:success
+cancel_retired_value point:3 prepare:loaded:exited advance:retired:exited:42 cancel:settled finish:complete:success
+cancel_pending_output point:4 prepare:loaded:exited advance:output:unavailable:0 cancel:settled finish:cancel_requested:success
+explicit_cancel_close_failed point:0 prepare:loaded:exited cancel:settled finish:cancel_requested:failed
+issuer_as_owner deny:issuer_as_owner
+forged_owner deny:forged_owner
+stale_owner deny:stale_owner
+release_live deny:release_live
+second_prepare deny:second_prepare
+owner_reentry deny:owner_reentry
+double_finish deny:double_finish
+use_after_finish deny:use_after_finish
+reissue_after_finish deny:reissue_after_finish
+unsettled_finish deny:unsettled_finish
+release_during_finish deny:release_during_finish

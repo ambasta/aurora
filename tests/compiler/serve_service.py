@@ -189,7 +189,7 @@ __au_runtime_group_entry:
                 )
 
         # One compiled execution-effects consumer retains an ordinary private
-        # ledger across all five synchronous methods. Hostile reports are data.
+        # ledger across the linear lease methods. Hostile reports are data.
         assembly, execution_abi = work / "execution.s", work / "execution-abi.json"
         result = run(
             [compiler, "--abi-facts", execution_abi, ROOT / "tests/compiler/execution_effects.au", "-o", assembly]
@@ -206,8 +206,8 @@ __au_runtime_group_entry:
         )
         need(
             execution_facts["enums"]["__au_exec_request"]["cases"]
-            == {"ready": 0, "cancelled": 1, "service_lost": 2, "pending": 3},
-            "ExecRequest preserves terminal cases and appends pending",
+            == {"ready": 0, "cancelled": 1, "service_lost": 2, "pending": 3, "cancel_requested": 4},
+            "ExecRequest preserves expiry and pending cases, appending explicit cancellation",
         )
         emitted = assembly.read_text()
         symbol = next(
@@ -249,10 +249,10 @@ __au_runtime_group_entry:
             ]
         )
         need(result.returncode == 0, result.stderr.decode())
-        for mode in range(18):
+        for mode in range(25):
             result = run([binary, mode])
             need(
-                result.returncode == (0 if mode in (0, 17) else -signal.SIGILL),
+                result.returncode == (0 if mode == 0 or 17 <= mode <= 22 else -signal.SIGILL),
                 f"execution mode {mode}: {result.returncode}",
             )
 
@@ -766,6 +766,54 @@ __au_runtime_group_entry:
         )
         invalid["execution-main"] = f"auto main({execution})->u64{{return 0u64;}}"
         invalid["execution-region"] = f"auto f({execution},builtin::ByteRegion r)->u64{{return 0u64;}}"
+        lease = "builtin::ExecutionLease"
+        finish = "lease.finish(builtin::ExecFinish::complete);"
+        lease_bodies = {
+            "live-return": f"{lease} lease=e.prepare();return 0u64;",
+            "live-scope-exit": f"{{{lease} lease=e.prepare();}}return 0u64;",
+            "ignored-issue": "e.prepare();return 0u64;",
+            "const-owner": f"const {lease} lease=e.prepare();{finish}return 0u64;",
+            "copy": f"{lease} lease=e.prepare();{lease} copy=lease;{finish}return 0u64;",
+            "double-finish": f"{lease} lease=e.prepare();{finish}{finish}return 0u64;",
+            "cancel-does-not-consume": f"{lease} lease=e.prepare();lease.cancel();return 0u64;",
+            "use-after-move": (
+                f"{lease} lease=e.prepare();{lease} moved=move(lease);lease.output();"
+                "moved.finish(builtin::ExecFinish::complete);return 0u64;"
+            ),
+            "reassign": f"{lease} lease=e.prepare();lease=move(lease);{finish}return 0u64;",
+            "second-issue": f"{lease} lease=e.prepare();{finish}{lease} next=e.prepare();return 0u64;",
+            "pinned-issue": f"{lease} lease=e.prepare();{lease} next=e.prepare();return 0u64;",
+            "wrong-finish-enum": f"{lease} lease=e.prepare();lease.finish(builtin::ExecEffect::success);return 0u64;",
+            "wrong-finish-integer": f"{lease} lease=e.prepare();lease.finish(0u64);return 0u64;",
+            "divergent-owner": f"{lease} lease=e.prepare();if(echo==0u64){{{finish}}}return 0u64;",
+            "reflection": f"{lease} lease=e.prepare();const i64 size=size_of({lease});{finish}return u64(size);",
+            "cast": f"{lease} lease=e.prepare();const u64 value=u64(lease);{finish}return value;",
+        }
+        for label, body in lease_bodies.items():
+            invalid["lease-" + label] = f"auto f({execution},u64 echo)->u64{{{body}}}"
+        for form in (lease, lease + "&", "const " + lease + "&"):
+            invalid["lease-parameter-" + form] = f"auto f({form} value)->u64{{return 0u64;}}"
+        invalid["lease-field"] = f"class Box{{{lease} value;}};auto f()->u64{{return 0u64;}}"
+        invalid["lease-return"] = f"auto f({execution})->{lease}{{{lease} lease=e.prepare();return move(lease);}}"
+        invalid["lease-constructor"] = f"auto f()->u64{{{lease} lease={lease}();return 0u64;}}"
+        noop = f"auto h({execution})->u64{{return 0u64;}}"
+        invalid["lease-pinned-forward"] = (
+            noop + f"auto f({execution})->u64{{{lease} lease=e.prepare();h(e);{finish}return 0u64;}}"
+        )
+        invalid["lease-spent-forward"] = (
+            noop + f"auto f({execution})->u64{{{lease} lease=e.prepare();{finish}return h(e);}}"
+        )
+        invalid["lease-forward-then-issue"] = (
+            noop + f"auto f({execution})->u64{{h(e);{lease} lease=e.prepare();{finish}return 0u64;}}"
+        )
+        invalid["lease-nested-forward-twice"] = (
+            noop + f"auto g({execution})->u64{{return h(e);}}auto f({execution})->u64{{g(e);return h(e);}}"
+        )
+        invalid["lease-loop-condition-spends-issuer"] = (
+            f"auto probe({execution})->bool{{return false;}}"
+            f"auto f({execution})->u64{{while(probe(e)){{return 0u64;}}"
+            f"{lease} lease=e.prepare();{finish}return 0u64;}}"
+        )
         for label, code in invalid.items():
             source.write_text("module rejected;" + code)
             target = ["--target", "aurora"] if label.startswith(("writer-", "readonly-")) else []
@@ -778,7 +826,7 @@ __au_runtime_group_entry:
                     f"{label}: expected method arity diagnostic, got {result.stderr!r}",
                 )
         print(
-            "PASS Serve: source/IR, endpoint, block, writer and execution effects, 74 hostile runtime traps, "
+            "PASS Serve: source/IR, endpoint, block, writer and execution effects, 76 hostile runtime traps, "
             f"eight catalogues, {len(invalid)} rejections"
         )
 

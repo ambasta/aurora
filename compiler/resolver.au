@@ -148,7 +148,7 @@ export namespace compiler_resolver {
     }
     auto resource_kind(ResolvedTypeKind kind) -> bool {
         return kind == ResolvedTypeKind::byte_region || kind == ResolvedTypeKind::owned_bytes || kind
-            == ResolvedTypeKind::owned_values;
+            == ResolvedTypeKind::owned_values || kind == ResolvedTypeKind::service_resource;
     }
     // These numbers are index ordering only. They are never exported as type
     // kinds, native signature components, or a foreign enum representation.
@@ -221,6 +221,9 @@ export namespace compiler_resolver {
         }
         if (kind == ResolvedTypeKind::host_files) {
             return 23;
+        }
+        if (kind == ResolvedTypeKind::service_resource) {
+            return 27;
         }
         if (kind == ResolvedTypeKind::execution_effects) {
             return 26;

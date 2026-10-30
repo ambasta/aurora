@@ -115,7 +115,7 @@ export namespace compiler_ir_listing {
         return 0;
     }
     auto form_count() -> i64 {
-        return 85;
+        return 88;
     }
     // Instruction form spellings in compiler_lowering::InstructionForm order,
     // then type kind spellings in compiler_ir_metadata::MetadataTypeKind order.
@@ -134,6 +134,7 @@ export namespace compiler_ir_listing {
             && out.word("BytesLoad BytesStore BytesResize EndBytes BindRegionParameter BindBytesParameter ")
             && out.word("ResourceCall ReturnBytes InitializeBytesField MoveObject BindOwnedObjectParameter ")
             && out.word("ReturnOwnedObject AcquireObjectLoan ReleaseObjectLoan BorrowedCall SpanValuesLoad ")
+            && out.word("IssueServiceResource MoveServiceResource ServiceResourceOperation ")
             && out.word("i64 bool own ref mutref class array u64 param enum u8 span region bytes console display ")
             && out.word("iommu values call uart serve spanof");
     }
@@ -419,6 +420,9 @@ export namespace compiler_ir_listing {
         if (kind == 17) {
             written = out.word("values ");
         }
+        if (kind == 28) {
+            written = out.word("service_resource ");
+        }
         if (kind == 27) {
             written = out.word("spanvalues ");
         }
@@ -443,6 +447,9 @@ export namespace compiler_ir_listing {
             }
         }
         if (kind == 12 && (!out.byte(' ') || !out.number(row.length()))) {
+            return false;
+        }
+        if (kind == 28 && !out.word(" 0 mutable")) {
             return false;
         }
         if ((kind == 11 || kind == 16) && row.mutable_value() != 0 && !out.word(" mutable")) {

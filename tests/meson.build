@@ -485,6 +485,14 @@ process_execution_object = custom_target('process-execution-policy',
               '--module-root', meson.project_source_root() / 'library', '--local-symbols',
               '--referenced-reflection-only', '--bridge', files('../kernel/uefi/execution-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+process_execution_cancel_object = custom_target('process-execution-cancel-policy',
+    input: 'kernel-process-execution.au', output: 'process-execution-cancel-policy.o',
+    depfile: 'process-execution-cancel-policy.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'kernel/policies',
+              '--module-root', meson.project_source_root() / 'library', '--local-symbols',
+              '--referenced-reflection-only', '--bridge', files('kernel-process-execution-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 process_budget_object = custom_target('process-budget-root',
     input: '../examples/kernel-budget-root.au', output: 'budget-root.o', depfile: 'budget-root.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
@@ -511,6 +519,7 @@ process_files_policy_object = custom_target('process-files-policy-reference',
               '--referenced-reflection-only', '--bridge', files('kernel-process-files-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 kernel_process = executable('kernel-process', 'kernel-process.cpp', process_policy_object, process_execution_object,
+    process_execution_cancel_object,
     process_files_policy_object, process_budget_object, process_service_object, process_service_saturation_object,
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DAURORA_PROCESS_FIXTURE', '-DAURORA_UEFI_NVME'], link_args: ['-no-pie'],
     native: true, override_options: fixture_options, install: false)

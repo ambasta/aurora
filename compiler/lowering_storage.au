@@ -118,10 +118,12 @@ export namespace compiler_lowering {
         bool exclusiveValue;
         bool resourceActiveValue;
         bool objectExclusiveValue;
+        bool issuerUsedValue;
     public:
         SnapshotRow(i64 shared, i64 object_shared, bool live, bool exclusive, bool resource_active,
             bool object_exclusive) : sharedCount(shared), objectSharedCount(object_shared), liveValue(live),
-            exclusiveValue(exclusive), resourceActiveValue(resource_active), objectExclusiveValue(object_exclusive) {
+            exclusiveValue(exclusive), resourceActiveValue(resource_active), objectExclusiveValue(object_exclusive),
+            issuerUsedValue(false) {
         }
         auto shared_count() const -> i64 {
             return sharedCount;
@@ -141,10 +143,17 @@ export namespace compiler_lowering {
         auto object_exclusive() const -> bool {
             return objectExclusiveValue;
         }
+        auto issuer_used() const -> bool {
+            return issuerUsedValue;
+        }
+        auto set_issuer_used(bool value) -> bool {
+            issuerUsedValue = value;
+            return true;
+        }
     };
 
-    // Nine identity/scope/lint, five frozen origin, six mutable state fields:
-    // twenty eight-byte leaves, 160 bytes. Configure fresh copies before append.
+    // Nine identity/scope/lint, five frozen origin, seven mutable state fields:
+    // twenty-one eight-byte leaves, 168 bytes. Configure fresh copies before append.
     class LocalRow {
         i64 nameSourceId;
         i64 concreteTypeId;
@@ -166,13 +175,14 @@ export namespace compiler_lowering {
         bool exclusiveValue;
         bool resourceActiveValue;
         bool objectExclusiveValue;
+        bool issuerUsedValue;
     public:
         LocalRow(i64 name, i64 type, i64 offset, i64 scope, i64 previous, bool mutable_value) : nameSourceId(name),
             concreteTypeId(type), storageOffset(offset), scopeId(scope), previousBinding(previous),
             mutableValue(mutable_value), borrowedObject(false), lintEligible(false), readValue(false), ownerId(-1),
             spanOriginKind(SpanOriginKind::none), originLocalId(-1), spanFieldIndex(-1), temporaryParent(false),
             sharedCount(0), objectSharedCount(0), liveValue(true), exclusiveValue(false), resourceActiveValue(false),
-            objectExclusiveValue(false) {
+            objectExclusiveValue(false), issuerUsedValue(false) {
         }
         auto name_source_id() const -> i64 {
             return nameSourceId;
@@ -234,8 +244,10 @@ export namespace compiler_lowering {
             return true;
         }
         auto state() const -> SnapshotRow {
-            return SnapshotRow(sharedCount, objectSharedCount, liveValue, exclusiveValue, resourceActiveValue,
-                objectExclusiveValue);
+            SnapshotRow result = SnapshotRow(sharedCount, objectSharedCount, liveValue, exclusiveValue,
+                resourceActiveValue, objectExclusiveValue);
+            result.set_issuer_used(issuerUsedValue);
+            return result;
         }
         auto set_state(SnapshotRow value) -> bool {
             sharedCount = value.shared_count();
@@ -244,6 +256,7 @@ export namespace compiler_lowering {
             exclusiveValue = value.exclusive();
             resourceActiveValue = value.resource_active();
             objectExclusiveValue = value.object_exclusive();
+            issuerUsedValue = value.issuer_used();
             return true;
         }
     };

@@ -718,41 +718,66 @@ compiler support alone does not enable writes in existing production modes.
 `builtin::ExecutionEffects&` is a singleton sealed synchronous grant to one
 supervisor command invocation. It has no process `main`/`_start` form, mixed
 service group or region prefix. A trusted private entry binds its boot-volume,
-path, arguments and authenticated incarnation; source cannot select a process
-slot, forge a grant or retain the service reference after return. Ordinary named
-free functions can forward its exclusive loan. A local private copied class can
-retain orchestration facts across effects; that class is not an affine child
-capability. Authority remains in the sealed loan and checked native grant.
+path, arguments and incarnation. Source cannot select a process slot or forge
+its grant. Its sole method is `prepare() -> builtin::ExecutionLease`.
 
-The five named methods are:
+ExecutionLease is a compiler-owned linear resource, not a copied report or a
+ByteRegion allocation. The first surface permits mutable standalone locals and
+local moves only: no fields, parameters, return values, reference helpers,
+reflection, scalar conversion or user constructor. Every prepare result,
+including an inert refusal, must be explicitly finalized. Normal return or scope
+exit with a live lease rejects; there is no implicit destructor or hidden cleanup
+pump. Moves transfer the exact issuer binding and leave the source unusable.
 
-- `prepare() -> ExecutionPrep`: `state: ExecPrepared` is `loaded`, `refused` or
-  `service_lost`; `status: ExecStatus` is `exited`, `fault`, `watchdog`, `missing`,
-  `malformed`, `quota`, `unavailable` or `output_failed`; `finish_required: bool`
-  records a cleanup obligation, not necessarily a live client. `loaded` is not
-  evidence that the program exited.
-- `advance() -> ExecutionStep`: `state: ExecStep` is `retired`, `output`,
-  `request` or `parked`; `status: ExecStatus` and `value: u64` are frozen copied
-  observations. `retired` means native retirement already occurred.
-- `output() -> ExecEffect`, whose cases are `success` and `failed`.
-- `request() -> ExecRequest`, whose cases are `ready` (0), `cancelled` (1),
-  `service_lost` (2) and `pending` (3). One effect advances at most one native
-  server step. `pending` returns control to the source request-progress loop;
-  it does not complete the client request or create an asynchronous loan.
-- `finish(ExecFinish) -> ExecEffect`: the exact nominal disposition is
-  `complete`, `output_failed`, `cancelled` or `service_lost`. A copied disposition
-  requests an effect; it does not authenticate its cause or confer authority.
+A live lease pins its issuer. The issuer's preparation opportunity is spent for
+the entire invocation, even after finish. Forwarding ExecutionEffects to a helper
+also transfers that opportunity once: the caller cannot prepare or forward it
+again, even if the helper never prepares. A helper may forward onward or prepare,
+but must finalize every lease before returning. Source and independent IR check
+these states across joins and loop backedges.
 
-The source command policy chooses ordering and terminal disposition. Native
-adapters validate the live grant and physical preconditions independently.
-Resident scheduling/accounting, persistent file-owner state and hardware effects
-remain native in this bounded increment; a suspended source loan is never lent
-back through a trap callback. Service reports carry no escaping views or owners.
+The lease methods are:
 
-Permanent service kind 9 and operations 46–50 append to the existing identities.
-Private calls use grant/generation in RDI/RSI; `prepare` and `advance` fill a
-fresh 24-byte record through RDX (state at 0, status at 8, boolean/value at 16).
-`finish` takes its enum in RDX; scalar results use RAX. Every enum and boolean
-raw channel is checked at full qword width before becoming a typed source value.
-The nominal record, enum and service entry layouts are emitted as compiler ABI
-facts. No target startup adapter is synthesized for this authority.
+- `preparation() -> ExecutionPrep`: two copied fields, `state: ExecPrepared`
+  (`loaded`, `refused`, `service_lost`) and `status: ExecStatus`. Status cases are
+  `exited`, `fault`, `watchdog`, `missing`, `malformed`, `quota`, `unavailable`,
+  `output_failed`, `cancelled`. Loaded does not mean exited.
+- `advance() -> ExecutionStep`: copied `state` (`retired`, `output`, `request`,
+  `parked`), `status` and `value: u64`. Retired means native retirement occurred.
+- `output() -> ExecEffect`: `success` or `failed`.
+- `request() -> ExecRequest`: `ready` (0), `cancelled` (1), `service_lost` (2),
+  `pending` (3), `cancel_requested` (4). Each call advances at most one server
+  step. Source owns draining; no request is replayed. Resuming a pending message
+  renews neither its server allowance nor the cumulative caller budget; a distinct
+  second raw-write message retains its existing per-message server allowance.
+- `cancel() -> ExecCancel`: `settled`, `draining`, `service_lost`. Cancellation
+  authenticates intent but does not consume the lease. Delivered work must drain;
+  undispatched work can be withdrawn. Durable writes can remain indeterminate.
+- consuming `finish(ExecFinish) -> ExecEffect`: dispositions `complete`,
+  `output_failed`, `cancelled`, `service_lost`, `cancel_requested`. Every normal
+  return consumes, including close failure; unsafe unreclaimable state fail-stops.
+  The old cancelled disposition means authenticated expiry, not explicit intent.
+
+Copied observations/dispositions carry no authority. Native adapters validate
+lease identity and physical preconditions. The native opaque descriptor contains
+a distinct private LeaseBinding address and issuer epoch, occupies 16 bytes and
+is aligned to 16. It is not interchangeable with the issuer's descriptor.
+Preparation returns the descriptor through an output pointer. Lease operations
+receive binding/epoch in RDI/RSI; preparation/advance fill fresh 16/24-byte reports
+through RDX, and finish takes its enum in RDX. Scalar results use RAX, checked at
+full qword width before exposure. Issuer kind9/operation46 retain their identities;
+old issuer operations47–50 are reserved and rejected, not alternate authority.
+
+The resource catalogue records issuer, opaque extent and consuming method effect.
+Distinct service-origin IR facts track live/dead storage and the spent issuer;
+no allocator ownership is invented. Artifact ABI facts remain canonical. This is
+bounded command ownership, not asynchronous references, a general process API or
+an all-Aurora supervisor.
+
+Verifier service-resource tags use the existing neutral fact key/site fields:
+active/dead owner facts name their immutable issuer slot, and a retained
+issuer-used fact names the issuance instruction. Every owner use checks that
+relation against the nominal resource slot and immutable entry binding. Allocator
+tokens, spans and object-loan payloads remain empty for these tags. This preserves
+the existing 192-byte FactRow and 200-byte ActiveFact instead of imposing a new
+payload cost on unrelated resources; no extra workspace pool or limit is needed.

@@ -364,7 +364,7 @@ export namespace compiler_ir_verification {
         const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(id);
         const i64 form = row.form();
-        if (form >= 0 && form <= 4) {
+        if ((form >= 0 && form <= 4) || (form >= 85 && form <= 87)) {
             return transfer_services(w, m, s, id);
         }
         if ((form >= 5 && form <= 19) || (form >= 39 && form <= 42) || form == 45) {

@@ -86,6 +86,9 @@ shape 81 AcquireObjectLoan 4 38 39 23
 shape 82 ReleaseObjectLoan 4
 shape 83 BorrowedCall 7 102 21 6 8
 shape 84 SpanValuesLoad 2 6
+shape 85 IssueServiceResource 2 5 6 105
+shape 86 MoveServiceResource 22 6 105
+shape 87 ServiceResourceOperation 19 106 6 105
 accept source-lifetime lifetime
 accept unsigned-high-bit unsigned
 accept synthetic-prefix synthetic

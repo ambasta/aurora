@@ -395,9 +395,9 @@ export namespace compiler_ir_metadata {
             while (slot_index < slots.count()) {
                 const SlotRow slot = store.slot_at(slots.begin() + slot_index);
                 const i64 kind = slot.kind();
-                if ((kind < 10 || kind > 17) && kind != 27 || (kind != 12 && slot.length() != 0) || (kind != 11 && kind
-                    != 16 && slot.mutable_value() != 0) || ((kind == 11 || kind == 16) && slot.mutable_value() != 0
-                    && slot.mutable_value() != 1)) {
+                if ((kind < 10 || kind > 17) && kind != 27 && kind != 28 || (kind != 12 && slot.length() != 0) || (kind
+                    != 11 && kind != 16 && kind != 28 && slot.mutable_value() != 0) || ((kind == 11 || kind == 16
+                    || kind == 28) && slot.mutable_value() != 0 && slot.mutable_value() != 1)) {
                     return fail(store, MetadataError::integrity);
                 }
                 if (slot_index > 0) {
@@ -406,7 +406,7 @@ export namespace compiler_ir_metadata {
                         return fail(store, MetadataError::integrity);
                     }
                 }
-                if (kind == 10 || kind == 11 || kind == 17 || kind == 27) {
+                if (kind == 10 || kind == 11 || kind == 17 || kind == 27 || kind == 28) {
                     if (next_type >= declarations || slot.type() != next_type) {
                         return fail(store, MetadataError::integrity);
                     }
@@ -1015,11 +1015,15 @@ export namespace compiler_ir_metadata {
         const IndexRange leaves = row.leaves();
         const ClassResultRow result = store.result_at(class_index);
         const IndexRange fields = result.fields();
-        if (leaves.count() != 3 || fields.count() != 3) {
+        i64 count = 3;
+        if (preparation) {
+            count = 2;
+        }
+        if (leaves.count() != count || fields.count() != count) {
             return fail(store, MetadataError::execution_layout);
         }
         i64 at = 0;
-        while (at < 3) {
+        while (at < count) {
             const RawTypeRow type = store.type_at(leaves.begin() + at);
             bool valid = canonical_tail(type);
             if (at == 0) {
@@ -1162,9 +1166,10 @@ export namespace compiler_ir_metadata {
             2, false) && sealed_enum(store, "__au_port_write_result", 1, false) && sealed_enum(store, "__au_host_exit",
             3, false) && sealed_enum(store, "__au_host_status", 10, false) && sealed_enum(store, "__au_host_stream", 2,
             false) && sealed_host_results(store) && sealed_execution_results(store) && sealed_enum(store,
-            "__au_exec_prepared", 3, false) && sealed_enum(store, "__au_exec_status", 8, false) && sealed_enum(store,
+            "__au_exec_prepared", 3, false) && sealed_enum(store, "__au_exec_status", 9, false) && sealed_enum(store,
             "__au_exec_step", 4, false) && sealed_enum(store, "__au_exec_effect", 2, false) && sealed_enum(store,
-            "__au_exec_request", 4, false) && sealed_enum(store, "__au_exec_finish", 4, false);
+            "__au_exec_request", 5, false) && sealed_enum(store, "__au_exec_finish", 5, false) && sealed_enum(store,
+            "__au_exec_cancel", 3, false);
     }
 
     // Children are complete before this computation starts. Offsets come only
@@ -2149,7 +2154,7 @@ export namespace compiler_ir_metadata {
         if (slot.kind() == 13) {
             return 56;
         }
-        if (slot.kind() == 14) {
+        if (slot.kind() == 14 || slot.kind() == 28) {
             return 16;
         }
         if (slot.kind() == 15) {
@@ -2559,6 +2564,19 @@ export namespace compiler_ir_metadata {
         }
         return true;
     }
+    auto verify_service_resource_slots(MetadataStore& store, CallableRow row) -> bool {
+        const IndexRange slots = slot_group(store, row, 28);
+        i64 at = 0;
+        while (at < slots.count()) {
+            const SlotRow slot = store.slot_at(slots.begin() + at);
+            const RawTypeRow type = store.type_at(slot.type());
+            if (!plain_type(type, 26) || slot.mutable_value() != 1 || slot.offset() % 16 != 0) {
+                return fail(store, MetadataError::service_resource_slot);
+            }
+            at = at + 1;
+        }
+        return verify_spill_group(store, row, 28);
+    }
     auto verify_callable_frames(MetadataStore& store) -> bool {
         i64 at = 0;
         while (at < store.callable_count()) {
@@ -2583,6 +2601,9 @@ export namespace compiler_ir_metadata {
                     return false;
                 }
                 kind = kind + 1;
+            }
+            if (!verify_service_resource_slots(store, row)) {
+                return false;
             }
             at = at + 1;
         }

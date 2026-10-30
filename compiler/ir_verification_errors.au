@@ -330,6 +330,13 @@ export namespace compiler_ir_verification {
         unreachable_semantic_instruction,
         callable_body_count_mismatch,
         callable_body_id_does_not_match_declaration_order,
+        service_resource_requires_live_owner,
+        service_resource_requires_fresh_storage,
+        service_resource_issuer_already_used,
+        service_resource_issuer_is_pinned,
+        service_resource_provenance_mismatch,
+        return_with_live_service_resource,
+        incompatible_service_resource_at_join
     };
     // Copied transport record, not two independent failure states. Enum range
     // validity is checked by the native boundary before typed construction.

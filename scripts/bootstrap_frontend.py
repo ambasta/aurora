@@ -278,7 +278,7 @@ def verification_abi(facts):
         _, status = abi_declaration(facts, "enums", namespace + name)
         if status["cases"] != dict(pending=0, success=1, allocation=2, invalid=3):
             raise ValueError("private verification status changed: " + name)
-    for suffix, count in (("First", 200), ("Second", 117)):
+    for suffix, count in (("First", 200), ("Second", 124)):
         _, errors = abi_declaration(facts, "enums", namespace + "VerificationError" + suffix)
         prefix = ["none", "internal", "allocation"] if suffix == "First" else ["none"]
         if (

@@ -534,8 +534,8 @@ namespace compiler_parser {
         const array<u8, 28> names7 = "ReadOnlyBlock;WritableBlock;";
         const builtin::span<const u8> words7 = borrow_bytes(names7);
         const array<u8,
-            112> names8 =
-            "ExecutionEffects;ExecutionPrep;ExecutionStep;ExecPrepared;ExecStatus;ExecStep;ExecEffect;ExecRequest;ExecFinish;";
+            138> names8 =
+            "ExecutionEffects;ExecutionPrep;ExecutionStep;ExecPrepared;ExecStatus;ExecStep;ExecEffect;ExecRequest;ExecFinish;ExecutionLease;ExecCancel;";
         const builtin::span<const u8> words8 = borrow_bytes(names8);
         return word_list_matches(source, token, words8) || word_list_matches(source, token, words7)
             || word_list_matches(source, token, words0) || word_list_matches(source, token, words1)
@@ -3159,7 +3159,8 @@ namespace compiler_parser {
         if (word_matches(source, token, block_word, 0, 13)) {
             return AdmissionType(AdmissionKind::service, configuration.service_mask(7), token);
         }
-        const array<u8, 67> execution_enums = "ExecPrepared;ExecStatus;ExecStep;ExecEffect;ExecRequest;ExecFinish;";
+        const array<u8,
+            78> execution_enums = "ExecPrepared;ExecStatus;ExecStep;ExecEffect;ExecRequest;ExecFinish;ExecCancel;";
         const builtin::span<const u8> execution_enum_words = borrow_bytes(execution_enums);
         if (word_list_matches(source, token, execution_enum_words)) {
             return AdmissionType(AdmissionKind::copied, 0, token);

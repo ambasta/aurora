@@ -13,3 +13,6 @@
 13 bin/isolation-6 forge-service	call operation=15
 14 bin/file-service file-service unauthorized	invalid_opcode vector=6 error=0
 15 bin/probe probe file tree/shared read @1 0	exit 0 | stdout: 1 file success 2 #1  / 2 read success 2 v2
+16 bin/isolation-6 raw-cancel-initial	cancelled
+17 bin/isolation-6 raw-cancel-tail	cancelled
+18 bin/probe probe file tree/shared read @1 0	exit 0 | stdout: 1 file success 2 #1  / 2 read success 2 v2

@@ -6,6 +6,7 @@ import aurora.compiler.lowering_storage;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.lowering_kinds;
 import aurora.compiler.resolver;
+import aurora.compiler.builtin_catalog;
 import aurora.compiler.resolution_arena;
 import aurora.compiler.resolution_rows;
 import aurora.compiler.resolution_names;
@@ -130,6 +131,29 @@ export namespace compiler_lowering {
         const i64 begin = session.operand_count();
         put(session, OperandRole::Offset, a0);
         return emit(session, InstructionForm::EndObject, begin);
+    }
+    auto emit_IssueServiceResource(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2, i64 a3) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::ServiceOperationId, a1);
+        put(session, OperandRole::ResultOffset, a2);
+        put(session, OperandRole::ResourceKindId, a3);
+        return emit(session, InstructionForm::IssueServiceResource, begin);
+    }
+    auto emit_MoveServiceResource(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::SourceOffset, a0);
+        put(session, OperandRole::ResultOffset, a1);
+        put(session, OperandRole::ResourceKindId, a2);
+        return emit(session, InstructionForm::MoveServiceResource, begin);
+    }
+    auto emit_ServiceResourceOperation(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2, i64 a3) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::OwnerOffset, a0);
+        put(session, OperandRole::ResourceMethodId, a1);
+        put(session, OperandRole::ResultOffset, a2);
+        put(session, OperandRole::ResourceKindId, a3);
+        return emit(session, InstructionForm::ServiceResourceOperation, begin);
     }
     auto emit_CopyObject(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
         const i64 begin = session.operand_count();
@@ -504,8 +528,11 @@ export namespace compiler_lowering {
         const i64 staged_type_2 = compiler_resolver::mw(session, type, 2);
         return value_kind(session, staged_type_2) == compiler_resolver::ResolvedTypeKind::u8_value;
     }
+    auto is_service_resource(compiler_resolver::Session& session, i64 type) -> bool {
+        return value_kind(session, type) == compiler_resolver::ResolvedTypeKind::service_resource;
+    }
     auto is_resource_owner(compiler_resolver::Session& session, i64 type) -> bool {
-        return is_owner_storage(session, type) || owning_type(session, type);
+        return is_owner_storage(session, type) || is_service_resource(session, type) || owning_type(session, type);
     }
     auto scalar_width(compiler_resolver::Session& session, i64 type) -> i64 {
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
@@ -666,25 +693,37 @@ export namespace compiler_lowering {
         const LocalRow row = session.local(id);
         return row.concrete_type_id();
     }
+    auto spend_issuer(compiler_resolver::Session& session, i64 id, i64 source) -> bool {
+        const LocalRow local = session.local(id);
+        SnapshotRow state = local.state();
+        if (state.issuer_used() || state.exclusive()) {
+            return fail(session, LoweringError::service_authority_suspended, source);
+        }
+        state.set_issuer_used(true);
+        return session.set_local_state(id, state);
+    }
     auto set_live(compiler_resolver::Session& session, i64 id, bool live, bool active) -> bool {
         const LocalRow row = session.local(id);
         const SnapshotRow old = row.state();
-        const SnapshotRow changed = SnapshotRow(old.shared_count(), old.object_shared_count(), live, old.exclusive(),
-            active, old.object_exclusive());
+        SnapshotRow changed = SnapshotRow(old.shared_count(), old.object_shared_count(), live, old.exclusive(), active,
+            old.object_exclusive());
+        changed.set_issuer_used(old.issuer_used());
         return session.set_local_state(id, changed);
     }
     auto change_shared(compiler_resolver::Session& session, i64 id, i64 difference) -> bool {
         const LocalRow row = session.local(id);
         const SnapshotRow old = row.state();
-        const SnapshotRow changed = SnapshotRow(old.shared_count() + difference, old.object_shared_count(), old.live(),
+        SnapshotRow changed = SnapshotRow(old.shared_count() + difference, old.object_shared_count(), old.live(),
             old.exclusive(), old.resource_active(), old.object_exclusive());
+        changed.set_issuer_used(old.issuer_used());
         return session.set_local_state(id, changed);
     }
     auto set_exclusive(compiler_resolver::Session& session, i64 id, bool exclusive) -> bool {
         const LocalRow row = session.local(id);
         const SnapshotRow old = row.state();
-        const SnapshotRow changed = SnapshotRow(old.shared_count(), old.object_shared_count(), old.live(), exclusive,
+        SnapshotRow changed = SnapshotRow(old.shared_count(), old.object_shared_count(), old.live(), exclusive,
             old.resource_active(), old.object_exclusive());
+        changed.set_issuer_used(old.issuer_used());
         return session.set_local_state(id, changed);
     }
     // Implicit receivers retain their emitted root selector 0 and source sentinel
@@ -718,8 +757,9 @@ export namespace compiler_lowering {
         const i64 id = object_loan_local(session, root);
         const LocalRow row = session.local(id);
         const SnapshotRow old = row.state();
-        const SnapshotRow changed = SnapshotRow(old.shared_count(), old.object_shared_count() + shared, old.live(),
+        SnapshotRow changed = SnapshotRow(old.shared_count(), old.object_shared_count() + shared, old.live(),
             old.exclusive(), old.resource_active(), exclusive);
+        changed.set_issuer_used(old.issuer_used());
         return session.set_local_state(id, changed);
     }
     auto no_object_loan(compiler_resolver::Session& session, i64 root, i64 source) -> bool {
@@ -865,7 +905,7 @@ export namespace compiler_lowering {
         if (request.borrowed()) {
             words = 0;
         } else {
-            if (compiler_resolver::service_kind(kind)) {
+            if (compiler_resolver::service_kind(kind) || is_service_resource(session, type)) {
                 words = 2;
             } else {
                 if (is_owner_storage(session, type)) {
@@ -890,7 +930,11 @@ export namespace compiler_lowering {
         if (words > 8192 || root.local_prefix_length() > 8192 - words) {
             return error(session, LoweringError::function_frame_limit, request.source());
         }
-        const i64 frame_words = root.local_prefix_length() + words;
+        i64 prefix = root.local_prefix_length();
+        if (is_service_resource(session, type) && prefix % 2 != 0) {
+            prefix = prefix + 1;
+        }
+        const i64 frame_words = prefix + words;
         root.set_scope(root.scope_head(), frame_words);
         session.set_continuation(0, root);
         i64 offset = frame_words * 8;
@@ -917,103 +961,111 @@ export namespace compiler_lowering {
         const SnapshotRow state = SnapshotRow(0, 0, true, false, active, false);
         local.set_state(state);
         if (!request.borrowed()) {
-            if (compiler_resolver::service_kind(kind)) {
-                local_slot(session, RecordKind::ServiceSlot, offset);
+            if (is_service_resource(session, type)) {
+                const i64 begin = session.operand_count();
+                put(session, OperandRole::Offset, offset);
+                put(session, OperandRole::ResourceKindId, compiler_catalog::resource_kind(kind));
+                put(session, OperandRole::MutableValue, 1);
+                emit_record(session, RecordKind::ServiceResourceSlot, begin);
             } else {
-                if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
-                    local_slot(session, RecordKind::RegionSlot, offset);
+                if (compiler_resolver::service_kind(kind)) {
+                    local_slot(session, RecordKind::ServiceSlot, offset);
                 } else {
-                    if (is_owner_storage(session, type)) {
-                        const i64 begin = session.operand_count();
-                        put(session, OperandRole::Offset, offset);
-                        i64 mutable_value = 0;
-                        if (request.mutable_value()) {
-                            mutable_value = 1;
-                        }
-                        put(session, OperandRole::MutableValue, mutable_value);
-                        emit_record(session, RecordKind::ByteSlot, begin);
-                        if (kind == compiler_resolver::ResolvedTypeKind::owned_values) {
-                            owned_element(session, type, request.source());
-                            const i64 element = compiler_resolver::mw(session, type, 2);
-                            const i64 owned_begin = session.operand_count();
-                            put(session, OperandRole::Offset, offset);
-                            const i64 staged_value_5 = compiler_resolver::mw(session, element, 1);
-                            put(session, OperandRole::ClassNominalId, staged_value_5);
-                            emit_record(session, RecordKind::OwnedValueType, owned_begin);
-                        }
-                        if (request.begin()) {
-                            emit_BeginBytes(session, offset);
-                        }
+                    if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
+                        local_slot(session, RecordKind::RegionSlot, offset);
                     } else {
-                        if (is_span(session, type)) {
-                            local_slot(session, RecordKind::SpanSlot, offset);
-                            if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
+                        if (is_owner_storage(session, type)) {
+                            const i64 begin = session.operand_count();
+                            put(session, OperandRole::Offset, offset);
+                            i64 mutable_value = 0;
+                            if (request.mutable_value()) {
+                                mutable_value = 1;
+                            }
+                            put(session, OperandRole::MutableValue, mutable_value);
+                            emit_record(session, RecordKind::ByteSlot, begin);
+                            if (kind == compiler_resolver::ResolvedTypeKind::owned_values) {
                                 owned_element(session, type, request.source());
                                 const i64 element = compiler_resolver::mw(session, type, 2);
-                                const i64 span_begin = session.operand_count();
+                                const i64 owned_begin = session.operand_count();
                                 put(session, OperandRole::Offset, offset);
-                                const i64 span_nominal = compiler_resolver::mw(session, element, 1);
-                                put(session, OperandRole::ClassNominalId, span_nominal);
-                                emit_record(session, RecordKind::SpanValueType, span_begin);
+                                const i64 staged_value_5 = compiler_resolver::mw(session, element, 1);
+                                put(session, OperandRole::ClassNominalId, staged_value_5);
+                                emit_record(session, RecordKind::OwnedValueType, owned_begin);
+                            }
+                            if (request.begin()) {
+                                emit_BeginBytes(session, offset);
                             }
                         } else {
-                            if (kind == compiler_resolver::ResolvedTypeKind::class_value || is_class_array(session,
-                                type)) {
-                                i64 layout = -1;
-                                i64 carrier = -1;
-                                if (is_class_array(session, type)) {
-                                    carrier = class_carrier(session, type, request.source());
-                                    layout = carrier_class_row(session, carrier);
-                                } else {
-                                    layout = class_row(session, type);
-                                }
-                                const i64 begin = session.operand_count();
-                                put(session, OperandRole::Offset, offset);
-                                if (carrier >= 0) {
-                                    put(session, OperandRole::CarrierId, carrier);
-                                } else {
-                                    const i64 staged_value_6 = compiler_resolver::mw(session, type, 1);
-                                    put(session, OperandRole::ClassNominalId, staged_value_6);
-                                }
-                                i64 mutable_value = 0;
-                                if (request.mutable_value()) {
-                                    mutable_value = 1;
-                                }
-                                put(session, OperandRole::MutableValue, mutable_value);
-                                emit_record(session, RecordKind::ObjectSlot, begin);
-                                if (request.begin()) {
-                                    emit_BeginObject(session, offset);
-                                }
-                                const OperandRow leaves = record_slice(session, layout, OperandRole::LeafTypes);
-                                const i64 storage = record_signed(session, layout, OperandRole::StorageRef);
-                                const OperandRow offsets = record_slice(session, storage, OperandRole::LeafOffsets);
-                                i64 at = 0;
-                                while (at < leaves.count() && session.good()) {
-                                    const OperandRow leaf = session.view_operand(leaves.begin() + at);
-                                    const OperandRow displacement = session.view_operand(offsets.begin() + at);
-                                    scalar_slot(session, offset - displacement.signed_value(), leaf.signed_value());
-                                    at = at + 1;
+                            if (is_span(session, type)) {
+                                local_slot(session, RecordKind::SpanSlot, offset);
+                                if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
+                                    owned_element(session, type, request.source());
+                                    const i64 element = compiler_resolver::mw(session, type, 2);
+                                    const i64 span_begin = session.operand_count();
+                                    put(session, OperandRole::Offset, offset);
+                                    const i64 span_nominal = compiler_resolver::mw(session, element, 1);
+                                    put(session, OperandRole::ClassNominalId, span_nominal);
+                                    emit_record(session, RecordKind::SpanValueType, span_begin);
                                 }
                             } else {
-                                if (kind == compiler_resolver::ResolvedTypeKind::array_value) {
-                                    const i64 element = compiler_resolver::mw(session, type, 2);
-                                    const i64 length = compiler_resolver::mw(session, type, 3);
-                                    if (is_byte_array(session, type)) {
-                                        const i64 begin = session.operand_count();
-                                        put(session, OperandRole::Offset, offset);
-                                        put(session, OperandRole::Length, length);
-                                        emit_record(session, RecordKind::ArraySlot, begin);
-                                        emit_BeginArray(session, offset);
+                                if (kind == compiler_resolver::ResolvedTypeKind::class_value || is_class_array(session,
+                                    type)) {
+                                    i64 layout = -1;
+                                    i64 carrier = -1;
+                                    if (is_class_array(session, type)) {
+                                        carrier = class_carrier(session, type, request.source());
+                                        layout = carrier_class_row(session, carrier);
+                                    } else {
+                                        layout = class_row(session, type);
                                     }
+                                    const i64 begin = session.operand_count();
+                                    put(session, OperandRole::Offset, offset);
+                                    if (carrier >= 0) {
+                                        put(session, OperandRole::CarrierId, carrier);
+                                    } else {
+                                        const i64 staged_value_6 = compiler_resolver::mw(session, type, 1);
+                                        put(session, OperandRole::ClassNominalId, staged_value_6);
+                                    }
+                                    i64 mutable_value = 0;
+                                    if (request.mutable_value()) {
+                                        mutable_value = 1;
+                                    }
+                                    put(session, OperandRole::MutableValue, mutable_value);
+                                    emit_record(session, RecordKind::ObjectSlot, begin);
+                                    if (request.begin()) {
+                                        emit_BeginObject(session, offset);
+                                    }
+                                    const OperandRow leaves = record_slice(session, layout, OperandRole::LeafTypes);
+                                    const i64 storage = record_signed(session, layout, OperandRole::StorageRef);
+                                    const OperandRow offsets = record_slice(session, storage, OperandRole::LeafOffsets);
                                     i64 at = 0;
-                                    while (at < length && session.good()) {
-                                        const i64 staged_offset_7 = offset - at * scalar_width(session, element);
-                                        scalar_slot(session, staged_offset_7, element);
+                                    while (at < leaves.count() && session.good()) {
+                                        const OperandRow leaf = session.view_operand(leaves.begin() + at);
+                                        const OperandRow displacement = session.view_operand(offsets.begin() + at);
+                                        scalar_slot(session, offset - displacement.signed_value(), leaf.signed_value());
                                         at = at + 1;
                                     }
                                 } else {
-                                    const i64 staged_type_8 = payload_type(session, type);
-                                    scalar_slot(session, offset, staged_type_8);
+                                    if (kind == compiler_resolver::ResolvedTypeKind::array_value) {
+                                        const i64 element = compiler_resolver::mw(session, type, 2);
+                                        const i64 length = compiler_resolver::mw(session, type, 3);
+                                        if (is_byte_array(session, type)) {
+                                            const i64 begin = session.operand_count();
+                                            put(session, OperandRole::Offset, offset);
+                                            put(session, OperandRole::Length, length);
+                                            emit_record(session, RecordKind::ArraySlot, begin);
+                                            emit_BeginArray(session, offset);
+                                        }
+                                        i64 at = 0;
+                                        while (at < length && session.good()) {
+                                            const i64 staged_offset_7 = offset - at * scalar_width(session, element);
+                                            scalar_slot(session, staged_offset_7, element);
+                                            at = at + 1;
+                                        }
+                                    } else {
+                                        const i64 staged_type_8 = payload_type(session, type);
+                                        scalar_slot(session, offset, staged_type_8);
+                                    }
                                 }
                             }
                         }
@@ -1032,6 +1084,13 @@ export namespace compiler_lowering {
     }
     auto end_owner(compiler_resolver::Session& session, i64 id) -> bool {
         const LocalRow local = session.local(id);
+        if (is_service_resource(session, local.concrete_type_id())) {
+            const SnapshotRow state = local.state();
+            if (state.live()) {
+                return fail(session, LoweringError::ownership_constructor_type, local.name_source_id());
+            }
+            return true;
+        }
         if (local.borrowed_object()) {
             return fail(session, LoweringError::borrowed_object_ownership_transfer, local.name_source_id());
         }
@@ -1134,7 +1193,7 @@ export namespace compiler_lowering {
     auto same_borrows(SnapshotRow first, SnapshotRow second) -> bool {
         return first.shared_count() == second.shared_count() && first.object_shared_count()
             == second.object_shared_count() && first.exclusive() == second.exclusive() && first.object_exclusive()
-            == second.object_exclusive();
+            == second.object_exclusive() && first.issuer_used() == second.issuer_used();
     }
     auto join_prefix(compiler_resolver::Session& session, i64 base, i64 count, i64 source, bool logical) -> bool {
         i64 at = 0;
@@ -1169,7 +1228,7 @@ export namespace compiler_lowering {
             const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
             if (!local.borrowed_object()) {
                 if (is_resource_owner(session, type)) {
-                    if (!terminal) {
+                    if (!terminal || is_service_resource(session, type)) {
                         end_owner(session, at);
                     }
                     set_live(session, at, false, false);

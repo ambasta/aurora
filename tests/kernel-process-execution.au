@@ -1,0 +1,59 @@
+module kernel_process_execution;
+import kernel.execution_session;
+
+// Component-only cancellation selection. The lease and ledger use the real
+// resource contract; no owner parameter or production cancellation hook exists.
+auto process_cancel_command(builtin::ExecutionEffects& effects, u64 point) -> kernel::ExecutionResult {
+    builtin::ExecutionLease lease = effects.prepare();
+    const builtin::ExecutionPrep prepared = lease.preparation();
+    kernel::ExecutionSession session = kernel::ExecutionSession(prepared);
+    bool cancellation_sent = false;
+    if (point == 0u64) {
+        const builtin::ExecCancel cancelled = lease.cancel();
+        session.cancelled(cancelled);
+        cancellation_sent = true;
+    }
+    while (session.active()) {
+        bool should_cancel = false;
+        if (session.awaiting_request()) {
+            const builtin::ExecRequest requested = lease.request();
+            session.requested(requested);
+            should_cancel = point == 2u64 && requested == builtin::ExecRequest::pending && !cancellation_sent;
+        } else {
+            const builtin::ExecutionStep step = lease.advance();
+            if (step.state == builtin::ExecStep::retired) {
+                session.retired(step);
+                should_cancel = point == 3u64 && !cancellation_sent;
+            }
+            if (step.state == builtin::ExecStep::output) {
+                if (point == 4u64 && !cancellation_sent) {
+                    should_cancel = true;
+                } else {
+                    const builtin::ExecEffect output = lease.output();
+                    if (output == builtin::ExecEffect::failed) {
+                        session.output_failed();
+                        should_cancel = true;
+                    }
+                }
+            }
+            if (step.state == builtin::ExecStep::request) {
+                session.begin_request();
+                should_cancel = point == 1u64 && !cancellation_sent;
+            }
+        }
+        if (should_cancel) {
+            const builtin::ExecCancel cancelled = lease.cancel();
+            session.cancelled(cancelled);
+            cancellation_sent = true;
+        }
+    }
+    if (point == 3u64 && !cancellation_sent) {
+        const builtin::ExecCancel cancelled = lease.cancel();
+        session.cancelled(cancelled);
+    }
+    const builtin::ExecFinish disposition = session.finish_kind();
+    const builtin::ExecEffect finished = lease.finish(disposition);
+    session.finished(finished);
+    const kernel::ExecutionResult result = session.result();
+    return result;
+}

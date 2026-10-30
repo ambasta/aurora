@@ -88,7 +88,10 @@ export namespace compiler_lowering {
         AcquireObjectLoan,
         ReleaseObjectLoan,
         BorrowedCall,
-        SpanValuesLoad
+        SpanValuesLoad,
+        IssueServiceResource,
+        MoveServiceResource,
+        ServiceResourceOperation
     };
     enum class Unary {
         CheckedNegate,
@@ -119,7 +122,7 @@ export namespace compiler_lowering {
         Size,
         PublicFieldCount
     };
-    // Fill rows are invalid records; InstructionForm has exactly the 85 IR forms.
+    // Fill rows are invalid records; InstructionForm has exactly the 88 IR forms.
     enum class RecordKind {
         invalid,
         Instruction,
@@ -148,7 +151,8 @@ export namespace compiler_lowering {
         DescriptorView,
         EnumCases,
         UnreadLocal,
-        SpanValueType
+        SpanValueType,
+        ServiceResourceSlot
     };
     // A role selects one signed, unsigned, slice, or explicitly absent payload.
     // Flat lists use their declared scalar-entry role, never raw field numbers.
@@ -259,7 +263,9 @@ export namespace compiler_lowering {
         ClassName,
         BorrowedRoots,
         BorrowedRootCount,
-        BorrowedRootMutability
+        BorrowedRootMutability,
+        ResourceKindId,
+        ResourceMethodId
     };
     // Origin identity is frozen before a Local is published.
     enum class SpanOriginKind {

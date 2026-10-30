@@ -1622,6 +1622,13 @@ export namespace compiler_ir_verification {
         return publish_array_borrow(w, 0, ordinal, result, 0);
     }
     auto closed_owned_objects(VerificationWorkspace& w) -> bool {
+        const i64 first_resource = w.first_fact(FactKind::service_resource);
+        if (first_resource >= 0) {
+            const FactRow resource = w.fact_at(first_resource);
+            if (resource.kind() == FactKind::service_resource) {
+                return w.fail(second_error(VerificationErrorSecond::return_with_live_service_resource));
+            }
+        }
         const bool condition_1095 = w.service_loans_closed() == 1;
         if (!require(w, condition_1095,
             first_error(VerificationErrorFirst::return_with_active_synchronous_service_loan))) {

@@ -637,7 +637,7 @@ export namespace compiler_lowering {
             return say(session, "conflicting borrow");
         }
         if (reason == LoweringError::ownership_constructor_type) {
-            return say(session, "constructor does not match ownership type");
+            return say(session, "resource initialization or finalization violates its ownership contract");
         }
         if (reason == LoweringError::const_method_writes_receiver_array) {
             return say(session, "const method cannot write receiver arrays");

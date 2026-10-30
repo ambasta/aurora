@@ -137,7 +137,10 @@ export namespace compiler_ir_verification {
         owned_object,
         owned_field,
         object_loan,
-        bound_plain_root
+        bound_plain_root,
+        service_resource,
+        service_issuer_used,
+        service_resource_dead
     };
     enum class ByteDisposition {
         pristine,
@@ -1168,6 +1171,15 @@ export namespace compiler_ir_verification {
         if (kind == FactKind::bound_plain_root) {
             return 9;
         }
+        if (kind == FactKind::service_resource) {
+            return 10;
+        }
+        if (kind == FactKind::service_issuer_used) {
+            return 11;
+        }
+        if (kind == FactKind::service_resource_dead) {
+            return 12;
+        }
         return -1;
     }
     auto compare_fact_key(FactKind kind, i64 key, i64 field, FactKind other_kind, i64 other_key,
@@ -1268,6 +1280,15 @@ export namespace compiler_ir_verification {
         if (fact.kind() == FactKind::bound_plain_root && (fact.key() != 0 || fact.site() != 0 || fact.disposition()
             != ByteDisposition::pristine || !token.same(empty_token()))) {
             return false;
+        }
+        // Tagged service facts reuse only the neutral key/site columns. Their
+        // allocation token, span and object-loan payloads stay canonically empty.
+        if (fact.kind() == FactKind::service_resource || fact.kind() == FactKind::service_issuer_used || fact.kind()
+            == FactKind::service_resource_dead) {
+            if (fact.key() <= 0 || fact.site() <= 0 || fact.disposition() != ByteDisposition::pristine
+                || !token.same(empty_token())) {
+                return false;
+            }
         }
         if (kind <= 0 || !canonical_token(token)) {
             return false;

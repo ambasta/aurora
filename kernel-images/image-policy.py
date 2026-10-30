@@ -240,9 +240,11 @@ RULES = [
         "callbacks": ["deliver_output(=production_output("],
         "imports:execution": [
             "__au_runtime_execution_prepare",
+            "__au_runtime_execution_preparation",
             "__au_runtime_execution_advance",
             "__au_runtime_execution_output",
             "__au_runtime_execution_request",
+            "__au_runtime_execution_cancel",
             "__au_runtime_execution_finish",
         ],
         "forbidden": [
