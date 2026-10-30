@@ -656,10 +656,12 @@ endforeach
 # Storage and filesystem libraries: one compiled driver per family over data cases,
 # compared with the golden file beside it (tests/compiler/storage).
 foreach family : ['byte_storage', 'storage_binary', 'block_io', 'xfs_geometry', 'xfs_root', 'xfs_file', 'xfs_core_redo', 'xfs_recovery_ag', 'xfs_core_log', 'xfs_recovery', 'xfs_mount', 'xfs_service']
+    # Start the full-image witnesses early rather than leave them as a serial tail.
+    priority = family in ['xfs_recovery', 'xfs_service'] ? 1 : 0
     test(family.replace('_', '-'), python,
          args: ['-B', files('compiler/storage/' + family + '.py'), aurorac.full_path()],
          depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
-         env: oracle_env, workdir: meson.current_build_dir(), timeout: 120)
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 120, priority: priority)
 endforeach
 test('xfs-offline-native', python,
      args: ['-B', '-O', files('../fixtures/xfs-offline/verify_native.py'),
