@@ -49,8 +49,9 @@ milestone with its own consumer:
   budget, service-incarnation and frame-allocation roots now exist, while physical
   mapping descriptors and run state still live in C++;
 - broader checked mutable memory views and data copies: boot-admitted OwnedWords
-  now provides fixed-extent scalar access for the frame ledger, not general
-  allocation, resizing, pointer adoption or escaping views;
+  provides fixed-extent scalar access and lexical readonly u64 borrowing for the
+  frame ledger, not general allocation, mutable views, resizing, pointer adoption
+  or escaping views;
 - a privileged-instruction and physical-address capability (page-table writes,
   CR3, INVLPG, MSRs, LAPIC, GDT/IDT loads, IRETQ);
 - a trap-entry form for interrupt and kernel-call entry;

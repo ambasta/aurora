@@ -301,6 +301,19 @@ def validate_native_abi(facts, source):
         ):
             borrowed_entry(nominal, "process_service_" + name, tail, result, mutable)
 
+    if "# WORD_VIEW_TEST_ABI:" in source:
+        nominal = retained_root("kernel_word_test::WordViewFixture")
+        record("kernel_word_test::WordViewFixture", 16, [("words", "__au_owned_words", 0)], alignment=16)
+        entry(
+            "kernel_word_test::WordViewFixture",
+            ["__au_owned_words"],
+            "i64",
+            receiver=nominal,
+            mode="complete_constructor",
+        )
+        borrowed_entry(nominal, "process_word_view_read", ["i64"], "u64", False)
+        entry("kernel_word_test::finish", [], "bool", receiver=nominal, mode="receiver_consuming")
+
     if "# FRAME_ALLOCATOR_ABI:" in source:
         nominal = retained_root("kernel::FrameAllocator")
         record(

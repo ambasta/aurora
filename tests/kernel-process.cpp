@@ -35,6 +35,7 @@
 #include <string>
 #include <vector>
 #include <sys/wait.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 namespace aurora::words {
@@ -47,6 +48,14 @@ auto accessible() -> bool {
 }
 } // namespace aurora::words
 extern "C" {
+void __au_runtime_word_view_construct(void *, aurora::words::Descriptor *);
+auto __au_runtime_word_view_read(const void *, std::int64_t) -> std::uint64_t;
+auto __au_runtime_word_view_finish(void *) -> bool;
+auto __au_runtime_owned_words_borrow_span(const void *binding,
+                                          std::uint64_t epoch,
+                                          aurora::hosted::bytes::NativeSpan *output) -> void {
+    *output = aurora::words::Binding::borrow_span(binding, epoch);
+}
 auto __au_runtime_owned_words_size(const void *binding, std::uint64_t epoch) -> std::uint64_t {
     return aurora::words::Binding::size(binding, epoch);
 }
@@ -387,6 +396,130 @@ auto grant_case(const std::string &name) -> void {
     std::cout << "grant " << name << " -> " << (success ? "passed" : "denied") << "\n";
 }
 
+// The descriptor output is shared only by this hostile adapter fixture. A
+// rejected borrow must abort without publishing even one backing-address byte.
+auto word_borrow_case(const std::string &name) -> void {
+    using aurora::hosted::bytes::NativeSpan;
+    using aurora::words::Access;
+    using aurora::words::Binding;
+    using aurora::words::Descriptor;
+    const NativeSpan sentinel{1234, {1234, 1234, 1234, 1234}, 1234, 1234};
+    void *shared = mmap(nullptr, sizeof(NativeSpan), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (shared == MAP_FAILED)
+        usage("word borrow fixture mapping");
+    auto *output = std::construct_at(static_cast<NativeSpan *>(shared), sentinel);
+    std::cout.flush();
+    const auto child = fork();
+    if (child < 0)
+        usage("word borrow fixture fork");
+    if (!child) {
+        std::array<U64, 4> words{};
+        alignas(16) Descriptor root{};
+        Binding binding;
+        root = binding.bind(words, &root, sizeof(root));
+        const auto epoch = root.epoch;
+        if (name == "no-scope") {
+            __au_runtime_owned_words_borrow_span(root.binding, epoch, output);
+            _exit(3);
+        }
+        if (name == "detached")
+            binding.suspend();
+        if (name == "revoked") {
+            Binding::Scope scope(binding, Access::consume);
+            static_cast<void>(Binding::finish(root.binding, epoch));
+        }
+        if (name == "roundtrip") {
+            {
+                Binding::Scope scope(binding, Access::write);
+                static_cast<void>(Binding::set(root.binding, epoch, 0, U64{1} << 63));
+                static_cast<void>(Binding::set(root.binding, epoch, 3, ~U64{0}));
+            }
+            binding.suspend();
+            binding.resume(words.data(), words.size());
+        }
+        Binding::Scope scope(binding, Access::read);
+        if (name == "reentrant") {
+            Binding::Scope nested(binding, Access::read);
+        }
+        if (name == "wrong-root")
+            ++root.epoch;
+        if (name == "unreachable")
+            aurora::words::hosted_reachable = false;
+        const void *actual = name == "foreign" ? reinterpret_cast<const void *>(1) : root.binding;
+        __au_runtime_owned_words_borrow_span(actual, name == "stale" ? epoch + 1 : epoch, output);
+        if (name != "roundtrip")
+            _exit(3);
+        const auto *values = reinterpret_cast<const U64 *>(output->payload[0]);
+        const bool valid = output->kind == 0 && output->payload[1] == 0 && output->payload[2] == 0 &&
+                           output->payload[3] == 0 && output->start == 0 && output->length == 4 &&
+                           root.epoch == epoch && values == words.data() && values[0] == (U64{1} << 63) &&
+                           values[3] == ~U64{0};
+        _exit(valid ? 0 : 3);
+    }
+    int status = 0;
+    if (waitpid(child, &status, 0) != child)
+        usage("word borrow fixture wait");
+    const bool success = name == "roundtrip";
+    const bool unchanged = std::memcmp(output, &sentinel, sizeof(sentinel)) == 0;
+    std::destroy_at(output);
+    if (munmap(shared, sizeof(NativeSpan)))
+        usage("word borrow fixture unmap");
+    if (success ? (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+                : (!WIFSIGNALED(status) || WTERMSIG(status) != SIGABRT || !unchanged))
+        usage("word borrow fixture published invalid authority: " + name);
+    std::cout << "word-borrow " << name << " -> " << (success ? "passed" : "denied before publication") << "\n";
+}
+
+auto source_word_case(const std::string &name, U64 count, std::int64_t index, U64 expected) -> void {
+    using aurora::words::Access;
+    using aurora::words::Binding;
+    if (count == 0 || count > 16)
+        usage("source word fixture extent");
+    const bool bounded = index >= 0 && static_cast<U64>(index) < count;
+    std::cout.flush();
+    const auto child = fork();
+    if (child < 0)
+        usage("source word fixture fork");
+    if (!child) {
+        std::vector<U64> backing(count);
+        alignas(16) std::array<std::byte, 16> root{};
+        Binding binding;
+        auto input = binding.bind(backing, root.data(), root.size());
+        __au_runtime_word_view_construct(root.data(), &input);
+        if (input.binding || input.epoch)
+            _exit(3);
+        const auto descriptor = std::bit_cast<aurora::words::Descriptor>(root);
+        if (bounded) {
+            Binding::Scope scope(binding, Access::write);
+            static_cast<void>(Binding::set(descriptor.binding, descriptor.epoch, static_cast<U64>(index), expected));
+        }
+        {
+            Binding::Scope scope(binding, Access::read);
+            if (__au_runtime_word_view_read(root.data(), index) != expected || !bounded)
+                _exit(3);
+        }
+        {
+            Binding::Scope scope(binding, Access::consume);
+            if (!__au_runtime_word_view_finish(root.data()))
+                _exit(3);
+        }
+        _exit(!binding.live() && std::all_of(root.begin(),
+                                             root.end(),
+                                             [](std::byte b) {
+                                                 return b == std::byte{0};
+                                             })
+                  ? 0
+                  : 3);
+    }
+    int status = 0;
+    if (waitpid(child, &status, 0) != child)
+        usage("source word fixture wait");
+    if (bounded ? (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+                : (!WIFSIGNALED(status) || WTERMSIG(status) != SIGILL))
+        usage("source word fixture value or bounds: " + name);
+    std::cout << "source-word " << name << " -> " << (bounded ? hex(expected) : "bounds trap") << "\n";
+}
+
 auto frames_mode(const char *path) -> int {
     std::ifstream input{path};
     if (!input)
@@ -403,7 +536,11 @@ auto frames_mode(const char *path) -> int {
         std::vector<std::string> rest;
         for (std::string word; words >> word;)
             rest.push_back(word);
-        if (verb == "grant-case" && !current && rest.size() == 1) {
+        if (verb == "source-word-case" && !current && rest.size() == 4) {
+            source_word_case(rest[0], number(rest[1]), std::stoll(rest[2], nullptr, 0), number(rest[3]));
+        } else if (verb == "word-borrow-case" && !current && rest.size() == 1) {
+            word_borrow_case(rest[0]);
+        } else if (verb == "grant-case" && !current && rest.size() == 1) {
             grant_case(rest[0]);
         } else if (verb == "case") {
             if (current || rest.size() != 1)

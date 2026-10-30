@@ -336,7 +336,22 @@ export namespace compiler_lowering_projection {
                 return false;
             }
         }
-        if (kind == 11 || kind == 17 || kind == 27) {
+        bool scalar_span = false;
+        if (kind == 27) {
+            const compiler_lowering::OperandRow span_type = item(session, id, 1);
+            scalar_span = span_type.role() == compiler_lowering::OperandRole::TypeId;
+        }
+        if (scalar_span) {
+            type = workspace.count(1);
+            if (!resolve_type(session, workspace, scalar(session, id, 1))) {
+                return false;
+            }
+            const compiler_ir_metadata::RawTypeRow word = workspace.type_result();
+            if (word.kind() != 28 || !emit_raw_type(workspace, metadata, type, fill)) {
+                return workspace.fail();
+            }
+        }
+        if (kind == 11 || kind == 17 || (kind == 27 && !scalar_span)) {
             const compiler_lowering::OperandRow nominal = item(session, id, 1);
             if ((kind != 11 && nominal.role() != compiler_lowering::OperandRole::ClassNominalId) || !name_for(session,
                 workspace, id, 1)) {

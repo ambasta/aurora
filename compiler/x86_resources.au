@@ -168,6 +168,36 @@ export namespace compiler_x86 {
             emit_store_imm(w, object, length, address_token10, false);
             return true;
         }
+        if (form == 92) {
+            const i64 offset = operand_value(s, instruction, 0);
+            const i64 field = operand_value(s, instruction, 1);
+            const i64 result = operand_value(s, instruction, 2);
+            emit_push(w, object);
+            const i64 owner = bytes_owner_address(w, object, m, offset, field, 0);
+            const i64 epoch = w.advance_address(owner, 8);
+            emit_load(w, object, owner, Register::rdi, false);
+            emit_load(w, object, epoch, Register::rsi, false);
+            const i64 output = w.pack_address(0, result);
+            emit_lea(w, object, output, Register::rdx);
+            const i64 symbol = w.intern_runtime("__au_runtime_owned_words_borrow_span");
+            emit_call_runtime(w, object, symbol);
+            emit_pop(w, object, Register::rax);
+            return true;
+        }
+        if (form == 93) {
+            const i64 offset = operand_value(s, instruction, 0);
+            // Unsigned comparison also rejects negative signed indices. The
+            // admitted element extent and checked subspan bound base + index*8.
+            const i64 length = w.pack_address(0, offset - 48);
+            emit_alu_load(w, object, AluOp::compare, length, Register::rax);
+            emit_branch(w, object, 3, 4, 0);
+            const i64 start = w.pack_address(0, offset - 40);
+            emit_alu_load(w, object, AluOp::add, start, Register::rax);
+            const i64 base = w.pack_address(0, offset - 8);
+            emit_load(w, object, base, Register::rcx, false);
+            emit_indexed_load(w, object, Register::rcx, Register::rax, indexed_address(8, 0), false);
+            return true;
+        }
         if (form == 52) {
             const i64 offset = operand_value(s, instruction, 0);
             const i64 field = operand_value(s, instruction, 1);

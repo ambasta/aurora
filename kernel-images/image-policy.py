@@ -164,6 +164,7 @@ RULES = [
     {
         "profiles": ["uefi/process-fixture", "uefi/production"],
         "imports:frame-allocator": [
+            "__au_runtime_owned_words_borrow_span",
             "__au_runtime_owned_words_size",
             "__au_runtime_owned_words_at",
             "__au_runtime_owned_words_set",

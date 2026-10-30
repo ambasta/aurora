@@ -95,7 +95,9 @@ export namespace compiler_lowering {
         BindRetainedResourceParameter,
         RetainedFieldOperation,
         ResourceObjectCall,
-        Require
+        Require,
+        BorrowWordsSpan,
+        SpanWordLoad
     };
     enum class Unary {
         CheckedNegate,

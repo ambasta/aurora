@@ -409,3 +409,21 @@ grant-case stale
 grant-case bounds
 grant-case root-overlap
 grant-case root-overflow
+
+# Readonly word loans publish a view only after exact scope authentication.
+word-borrow-case roundtrip
+word-borrow-case no-scope
+word-borrow-case detached
+word-borrow-case revoked
+word-borrow-case reentrant
+word-borrow-case wrong-root
+word-borrow-case unreachable
+word-borrow-case foreign
+word-borrow-case stale
+
+# The same emitted source owner executes every scalar/extent/bounds row.
+source-word-case high-bit 1 0 0x8000000000000000
+source-word-case maximum 4 3 0xffffffffffffffff
+source-word-case zero 4 0 0
+source-word-case negative 4 -1 0
+source-word-case equal-count 4 4 0

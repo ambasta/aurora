@@ -336,7 +336,8 @@ export namespace compiler_ir_verification {
         service_resource_issuer_is_pinned,
         service_resource_provenance_mismatch,
         return_with_live_service_resource,
-        incompatible_service_resource_at_join
+        incompatible_service_resource_at_join,
+        word_borrow_call_requires_closed_readonly_graph
     };
     // Copied transport record, not two independent failure states. Enum range
     // validity is checked by the native boundary before typed construction.

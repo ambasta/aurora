@@ -1,0 +1,22 @@
+module kernel_process_word_view;
+
+// Component-only owner exercises emitted scalar word loads, not native reads.
+namespace kernel_word_test {
+    class WordViewFixture {
+        builtin::OwnedWords words;
+    public:
+        WordViewFixture(builtin::OwnedWords input) : words(move(input)) {
+        }
+        auto observe(i64 index) const -> u64 {
+            const builtin::span<const u64> view = borrow_words(words);
+            return view.at(index);
+        }
+        auto finish() && -> bool {
+            return words.finish();
+        }
+    };
+}
+
+auto process_word_view_read(const kernel_word_test::WordViewFixture& owner, i64 index) -> u64 {
+    return owner.observe(index);
+}

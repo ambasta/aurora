@@ -97,7 +97,7 @@ export namespace compiler_ir_instructions {
         i64 instruction = 0;
         while (instruction < store.instruction_count()) {
             const RawInstructionRow row = store.instruction_at(instruction + 1);
-            if (row.kind() != 1 || row.form() < 0 || row.form() > 91 || !bounded_range(row.operand_begin(),
+            if (row.kind() != 1 || row.form() < 0 || row.form() > 93 || !bounded_range(row.operand_begin(),
                 row.operand_count(), store.operand_count()) || (row.operand_count() != 0 && row.operand_begin()
                 != next_operand)) {
                 return fail(store, InstructionError::integrity);
@@ -297,7 +297,7 @@ export namespace compiler_ir_instructions {
         if (expected.kind() == 11) {
             return element < 0;
         }
-        if (expected.kind() != 21 || element < 0) {
+        if ((expected.kind() != 21 && expected.kind() != 28) || element < 0) {
             return false;
         }
         const compiler_ir_metadata::RawTypeRow actual = metadata.type_at(element);
@@ -913,7 +913,8 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::aggregate_resource);
         }
         const compiler_ir_metadata::RawTypeRow result = call_type(metadata, target, 0);
-        const bool spans = call_has_parameter(metadata, target, 11) || call_has_parameter(metadata, target, 21);
+        const bool spans = call_has_parameter(metadata, target, 11) || call_has_parameter(metadata, target, 21)
+            || call_has_parameter(metadata, target, 28);
         if (result.kind() != 5 && !call_has_parameter(metadata, target, 5) && !spans) {
             return fail(store, InstructionError::aggregate_signature);
         }
@@ -1532,7 +1533,8 @@ export namespace compiler_ir_instructions {
             }
             at = at + 1;
         }
-        const bool spans = call_has_parameter(metadata, target, 11) || call_has_parameter(metadata, target, 21);
+        const bool spans = call_has_parameter(metadata, target, 11) || call_has_parameter(metadata, target, 21)
+            || call_has_parameter(metadata, target, 28);
         const bool aggregate = spans || call_has_parameter(metadata, target, 5);
         const i64 count = declaration.value_parameter_count();
         const i64 objects = call_objects_field(row.form());
@@ -1959,7 +1961,22 @@ export namespace compiler_ir_instructions {
         i64 instruction) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
-        if (form == 50 || form == 51) {
+        if (form == 92 || form == 93) {
+            i64 offset = call_value(store, instruction, 0);
+            if (form == 92) {
+                offset = call_value(store, instruction, 2);
+                if (call_value(store, instruction, 0) != 0 || call_value(store, instruction, 1) < 0) {
+                    return fail(store, InstructionError::storage_span_type);
+                }
+            }
+            const i64 element = span_element_type(metadata, callable, offset);
+            if (entry_slot(metadata, callable, 13, offset) < 0 || element < 0) {
+                return fail(store, InstructionError::storage_span_type);
+            }
+            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(element);
+            return compiler_ir_metadata::plain_type(type, 28) || fail(store, InstructionError::storage_span_type);
+        }
+        if (form == 49 || form == 50 || form == 51) {
             if (span_element_type(metadata, callable, call_value(store, instruction, 1)) >= 0) {
                 return fail(store, InstructionError::storage_span_type);
             }
@@ -1977,7 +1994,8 @@ export namespace compiler_ir_instructions {
             }
             const compiler_ir_metadata::RawTypeRow owned = metadata.type_at(owner);
             const compiler_ir_metadata::RawTypeRow viewed = metadata.type_at(element);
-            if (owned.kind() != 17 || compiler_ir_metadata::compare_names(metadata, owned.name(), viewed.name()) != 0) {
+            if (viewed.kind() != 21 || owned.kind() != 17 || compiler_ir_metadata::compare_names(metadata, owned.name(),
+                viewed.name()) != 0) {
                 return fail(store, InstructionError::storage_span_type);
             }
             return true;
@@ -2004,8 +2022,8 @@ export namespace compiler_ir_instructions {
             const compiler_ir_metadata::SlotRow slot = metadata.slot_at(index);
             const compiler_ir_metadata::RawTypeRow object = metadata.type_at(slot.type());
             const compiler_ir_metadata::RawTypeRow viewed = metadata.type_at(element);
-            if (object.kind() != 5 || compiler_ir_metadata::compare_names(metadata, object.name(), viewed.name())
-                != 0) {
+            if (viewed.kind() != 21 || object.kind() != 5 || compiler_ir_metadata::compare_names(metadata,
+                object.name(), viewed.name()) != 0) {
                 return fail(store, InstructionError::storage_span_values);
             }
             return true;

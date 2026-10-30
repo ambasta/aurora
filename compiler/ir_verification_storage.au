@@ -125,7 +125,8 @@ export namespace compiler_ir_verification {
         parameter,
         owned,
         literal,
-        array_field
+        array_field,
+        words
     };
     enum class FactKind {
         none,
@@ -1344,25 +1345,33 @@ export namespace compiler_ir_verification {
             if (span.parent() < 0 || (span.parent() == 0 && span.parent_site() != 0)) {
                 return false;
             }
-            if (span.origin_kind() == SpanOrigin::owned) {
-                if (token.kind() == TokenKind::none || span.array_field() != -1) {
+            if (span.origin_kind() == SpanOrigin::words) {
+                if (!token.same(empty_token()) || span.origin() != 0 || span.owned_field() < 0 || span.array_field()
+                    != -1) {
                     return false;
                 }
-            } else {
-                if (!token.same(empty_token()) || span.owned_field() != -1) {
-                    return false;
-                }
-                if (span.origin_kind() == SpanOrigin::array_field) {
-                    if (span.array_field() < 0) {
+            }
+            if (span.origin_kind() != SpanOrigin::words) {
+                if (span.origin_kind() == SpanOrigin::owned) {
+                    if (token.kind() == TokenKind::none || span.array_field() != -1) {
                         return false;
                     }
                 } else {
-                    if (span.array_field() != -1) {
+                    if (!token.same(empty_token()) || span.owned_field() != -1) {
                         return false;
                     }
-                    if (span.origin_kind() != SpanOrigin::local_array && span.origin_kind() != SpanOrigin::parameter
-                        && span.origin_kind() != SpanOrigin::literal) {
-                        return false;
+                    if (span.origin_kind() == SpanOrigin::array_field) {
+                        if (span.array_field() < 0) {
+                            return false;
+                        }
+                    } else {
+                        if (span.array_field() != -1) {
+                            return false;
+                        }
+                        if (span.origin_kind() != SpanOrigin::local_array && span.origin_kind() != SpanOrigin::parameter
+                            && span.origin_kind() != SpanOrigin::literal) {
+                            return false;
+                        }
                     }
                 }
             }
@@ -1778,6 +1787,53 @@ export namespace compiler_ir_verification {
             serviceCapacity(0), factCount(0), wordCount(0), retainedCount(0), retainedCapacity(0), currentMust(0),
             currentMay(0), statusValue(InitializationStatus::pending), verificationStatus(VerificationStatus::pending),
             verificationError(error) {
+        }
+        // Append private DFS scratch after the complete CFG queue allocation.
+        // No queue entry or ControlRow head/tail changes. Three checked dense
+        // partitions hold marks, target IDs and next instruction positions.
+        auto word_calls_prepare(i64 count) -> i64 {
+            const i64 base = pendingQueue.size();
+            if (count <= 0) {
+                allocation_failure();
+                return -1;
+            }
+            if (base < 0) {
+                allocation_failure();
+                return -1;
+            }
+            if (count > (9223372036854775807 - base) / 3) {
+                allocation_failure();
+                return -1;
+            }
+            const IndexRow zero = IndexRow(0);
+            if (!pendingQueue.try_resize(base + count * 3, zero)) {
+                allocation_failure();
+                return -1;
+            }
+            return base;
+        }
+        auto word_call_mark(i64 base, i64 at) const -> i64 {
+            const IndexRow row = pendingQueue.at(base + at);
+            return row.value();
+        }
+        auto word_call_mark_set(i64 base, i64 at, i64 value) -> bool {
+            const IndexRow row = IndexRow(value);
+            return pendingQueue.set(base + at, row) || allocation_failure();
+        }
+        auto word_call_frame(i64 base, i64 count, i64 at) const -> CountPair {
+            const IndexRow target = pendingQueue.at(base + count + at);
+            const IndexRow position = pendingQueue.at(base + count * 2 + at);
+            return CountPair(target.value(), position.value());
+        }
+        auto word_call_frame_set(i64 base, i64 count, i64 at, i64 target, i64 position) -> bool {
+            const IndexRow next_target = IndexRow(target);
+            const IndexRow next_position = IndexRow(position);
+            return (pendingQueue.set(base + count + at, next_target) && pendingQueue.set(base + count * 2 + at,
+                next_position)) || allocation_failure();
+        }
+        auto word_calls_finish(i64 base) -> bool {
+            const IndexRow zero = IndexRow(0);
+            return pendingQueue.try_resize(base, zero) || allocation_failure();
         }
         auto good() const -> bool {
             return verificationStatus == VerificationStatus::pending || verificationStatus

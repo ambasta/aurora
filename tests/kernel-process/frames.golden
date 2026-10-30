@@ -202,3 +202,17 @@ grant stale -> denied
 grant bounds -> denied
 grant root-overlap -> denied
 grant root-overflow -> denied
+word-borrow roundtrip -> passed
+word-borrow no-scope -> denied before publication
+word-borrow detached -> denied before publication
+word-borrow revoked -> denied before publication
+word-borrow reentrant -> denied before publication
+word-borrow wrong-root -> denied before publication
+word-borrow unreachable -> denied before publication
+word-borrow foreign -> denied before publication
+word-borrow stale -> denied before publication
+source-word high-bit -> 0x8000000000000000
+source-word maximum -> 0xffffffffffffffff
+source-word zero -> 0
+source-word negative -> bounds trap
+source-word equal-count -> bounds trap

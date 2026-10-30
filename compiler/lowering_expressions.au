@@ -506,6 +506,9 @@ export namespace compiler_lowering {
         if (session.source_equal(source, "borrow_bytes")) {
             return fail(session, LoweringError::borrow_bytes_requires_span_binding_or_argument, source);
         }
+        if (session.source_equal(source, "borrow_words")) {
+            return fail(session, LoweringError::invalid_span_initializer, source);
+        }
         if (session.source_equal(source, "borrow_values")) {
             return fail(session, LoweringError::borrow_values_requires_span_binding_or_argument, source);
         }

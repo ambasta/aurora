@@ -164,7 +164,12 @@ The retained Aurora `FrameAllocator` owns every record, free-list head, free and
 allocated count, the two owner counters, poison state and the complete audit.
 The native `Table` is an opaque forwarding facade, not a second allocator.
 Allocation and release validate transitions and arithmetic before the committing
-record store; ordinary rejection leaves the ledger unchanged. Full audit walks
+record store; ordinary rejection leaves the ledger unchanged. The full audit
+borrows the private word bank once as a lexical readonly u64 span. It retains
+inline bounds checks while avoiding a native authentication call per word; the
+loan cannot outlive the admitted synchronous mapping scope or coexist with
+mutation. This does not remove independent native physical mapping checks or
+make the retained owner continuously mapped. Full audit walks
 every record and free-list link, detects cycles and checks owner and total counts.
 
 A private `builtin::OwnedWords` field holds exclusive access to the fixed metadata
