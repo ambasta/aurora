@@ -15,22 +15,42 @@ export namespace kernel {
         }
     };
 
+    enum class ExecutionPhase {
+        client,
+        request,
+        terminal
+    };
+
+    auto prepared_phase(builtin::ExecPrepared prepared) -> ExecutionPhase {
+        if (prepared == builtin::ExecPrepared::loaded) {
+            return ExecutionPhase::client;
+        }
+        return ExecutionPhase::terminal;
+    }
+
     // Command sequencing only. This ordinary local value is not an affine
     // child handle: execution authority stays in the exclusive effects loan.
     // Resident budgets, trap frames and the persistent service stay native.
     class ExecutionSession {
-        bool running;
+        ExecutionPhase phase;
         bool close_owed;
         builtin::ExecStatus outcome;
         u64 result_value;
         builtin::ExecFinish disposition;
     public:
-        ExecutionSession(builtin::ExecutionPrep prepared) : running(prepared.state == builtin::ExecPrepared::loaded),
+        ExecutionSession(builtin::ExecutionPrep prepared) : phase(prepared_phase(prepared.state)),
             close_owed(prepared.finish_required), outcome(prepared.status), result_value(0u64),
             disposition(builtin::ExecFinish::complete) {
         }
         auto active() const -> bool {
-            return running;
+            return phase != ExecutionPhase::terminal;
+        }
+        auto awaiting_request() const -> bool {
+            return phase == ExecutionPhase::request;
+        }
+        auto begin_request() -> bool {
+            phase = ExecutionPhase::request;
+            return true;
         }
         auto finish_required() const -> bool {
             return close_owed;
@@ -41,28 +61,33 @@ export namespace kernel {
         auto retired(builtin::ExecutionStep step) -> bool {
             outcome = step.status;
             result_value = step.value;
-            running = false;
+            phase = ExecutionPhase::terminal;
             return true;
         }
         auto output_failed() -> bool {
             outcome = builtin::ExecStatus::output_failed;
             result_value = 0u64;
             disposition = builtin::ExecFinish::output_failed;
-            running = false;
+            phase = ExecutionPhase::terminal;
             return true;
         }
         auto requested(builtin::ExecRequest result) -> bool {
+            if (result == builtin::ExecRequest::ready) {
+                phase = ExecutionPhase::client;
+            }
+            // A pending observation preserves the request phase. Only the
+            // source loop chooses another bounded service progress effect.
             if (result == builtin::ExecRequest::cancelled) {
                 outcome = builtin::ExecStatus::watchdog;
                 result_value = 0u64;
                 disposition = builtin::ExecFinish::cancelled;
-                running = false;
+                phase = ExecutionPhase::terminal;
             }
             if (result == builtin::ExecRequest::service_lost) {
                 outcome = builtin::ExecStatus::unavailable;
                 result_value = 0u64;
                 disposition = builtin::ExecFinish::service_lost;
-                running = false;
+                phase = ExecutionPhase::terminal;
             }
             return true;
         }
@@ -86,19 +111,23 @@ export namespace kernel {
         const builtin::ExecutionPrep prepared = effects.prepare();
         ExecutionSession session = ExecutionSession(prepared);
         while (session.active()) {
-            const builtin::ExecutionStep step = effects.advance();
-            if (step.state == builtin::ExecStep::retired) {
-                session.retired(step);
-            }
-            if (step.state == builtin::ExecStep::output) {
-                const builtin::ExecEffect output = effects.output();
-                if (output == builtin::ExecEffect::failed) {
-                    session.output_failed();
-                }
-            }
-            if (step.state == builtin::ExecStep::request) {
+            if (session.awaiting_request()) {
                 const builtin::ExecRequest requested = effects.request();
                 session.requested(requested);
+            } else {
+                const builtin::ExecutionStep step = effects.advance();
+                if (step.state == builtin::ExecStep::retired) {
+                    session.retired(step);
+                }
+                if (step.state == builtin::ExecStep::output) {
+                    const builtin::ExecEffect output = effects.output();
+                    if (output == builtin::ExecEffect::failed) {
+                        session.output_failed();
+                    }
+                }
+                if (step.state == builtin::ExecStep::request) {
+                    session.begin_request();
+                }
             }
         }
         if (session.finish_required()) {

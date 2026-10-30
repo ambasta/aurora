@@ -735,8 +735,10 @@ The five named methods are:
   `request` or `parked`; `status: ExecStatus` and `value: u64` are frozen copied
   observations. `retired` means native retirement already occurred.
 - `output() -> ExecEffect`, whose cases are `success` and `failed`.
-- `request() -> ExecRequest`, whose cases are `ready`, `cancelled` and
-  `service_lost`.
+- `request() -> ExecRequest`, whose cases are `ready` (0), `cancelled` (1),
+  `service_lost` (2) and `pending` (3). One effect advances at most one native
+  server step. `pending` returns control to the source request-progress loop;
+  it does not complete the client request or create an asynchronous loan.
 - `finish(ExecFinish) -> ExecEffect`: the exact nominal disposition is
   `complete`, `output_failed`, `cancelled` or `service_lost`. A copied disposition
   requests an effect; it does not authenticate its cause or confer authority.

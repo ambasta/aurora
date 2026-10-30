@@ -34,7 +34,8 @@ enum class Effect : U64 {
 enum class Request : U64 {
     ready,
     cancelled,
-    service_lost
+    service_lost,
+    pending
 };
 enum class Finish : U64 {
     complete,

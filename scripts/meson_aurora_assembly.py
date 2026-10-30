@@ -369,7 +369,7 @@ def validate_native_abi(facts, source):
         enum("__au_exec_prepared", "loaded refused service_lost")
         enum("__au_exec_step", "retired output request parked")
         enum("__au_exec_effect", "success failed")
-        enum("__au_exec_request", "ready cancelled service_lost")
+        enum("__au_exec_request", "ready cancelled service_lost pending")
         enum("__au_exec_finish", "complete output_failed cancelled service_lost")
         record(
             "__au_execution_prep",

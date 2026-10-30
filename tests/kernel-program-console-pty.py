@@ -1270,6 +1270,7 @@ def production_case_volume(source, programs, directory, service_case=None):
         ("lifecycle", "process-lifecycle-aurora"),
         ("probe", "host-files-probe-aurora"),
         ("privileged", "process-isolation-3"),
+        ("raw-write", "process-isolation-6"),
     ):
         entries.append((name.encode(), (programs / binary).read_bytes()))
     for name, edits in (
@@ -2124,6 +2125,9 @@ def main():
                         "run probe file input.txt close @1 read @1 0", "exited status=0", b"3 read invalid_handle 0 "
                     )
                     run_command("run probe read 65 0", "exited status=0", b"1 read invalid_handle 0 ")
+                    # One raw 64 KiB call crosses two authenticated service messages.
+                    # The existing client reopens and checks every committed byte.
+                    run_command("run raw-write", "exited status=0")
                     run_command("run lifecycle rpc", "watchdog")
                     run_command("run probe file tree/rpc-pending", "exited status=0", b"1 file not_found 0 ")
                     run_command("run bin/sort / final.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")

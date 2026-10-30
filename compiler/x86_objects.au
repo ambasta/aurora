@@ -979,7 +979,7 @@ export namespace compiler_x86 {
         i64 maximum = 1;
         if (operation == 49) {
             symbol = w.intern_runtime("__au_runtime_execution_request");
-            maximum = 2;
+            maximum = 3;
         }
         if (operation == 50) {
             symbol = w.intern_runtime("__au_runtime_execution_finish");

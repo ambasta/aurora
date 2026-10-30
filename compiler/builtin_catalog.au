@@ -270,13 +270,13 @@ export namespace compiler_catalog {
     }
     // Field or case count of a nominal type.
     auto member_count(i64 type) -> i64 {
-        if (type == 37 || type == 39 || type == 41 || type == 43) {
+        if (type == 37 || type == 39 || type == 41) {
             return 3;
         }
         if (type == 38) {
             return 8;
         }
-        if (type == 40 || type == 44) {
+        if (type == 40 || type == 43 || type == 44) {
             return 4;
         }
         if (type == 12 || type == 19) {
@@ -476,8 +476,8 @@ export namespace compiler_catalog {
             return use_word(session, "builtin::ExecEffect;__au_exec_effect;success;failed", part, begin, end);
         }
         if (type == 43) {
-            return use_word(session, "builtin::ExecRequest;__au_exec_request;ready;cancelled;service_lost", part, begin,
-                end);
+            return use_word(session, "builtin::ExecRequest;__au_exec_request;ready;cancelled;service_lost;pending",
+                part, begin, end);
         }
         return use_word(session, "builtin::ExecFinish;__au_exec_finish;complete;output_failed;cancelled;service_lost",
             part, begin, end);

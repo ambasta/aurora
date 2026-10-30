@@ -1660,7 +1660,7 @@ auto run_resident(std::size_t slot) -> bool {
 
 // One bounded request/reply round trip. The service budget is per operation,
 // not renewed by its own timer parks. Bootstrap and teardown use the same cap.
-auto exchange_request(U64 source) -> bool {
+auto begin_exchange(U64 source) -> bool {
     if (!residents[0].space || !endpoint.waiting || endpoint.delivery || endpoint.count > Endpoint::capacity ||
         endpoint.next == ~U64{0})
         return false;
@@ -1672,9 +1672,35 @@ auto exchange_request(U64 source) -> bool {
     server.remaining = server.initial;
     server.used = 0;
     server.quantum = server.tick();
-    while (residents[0].space && !endpoint.replied)
-        static_cast<void>(run_resident(0));
-    return residents[0].space && endpoint.waiting && endpoint.replied;
+    return true;
+}
+enum class ExchangeProgress {
+    pending,
+    replied,
+    failed
+};
+// A single authenticated server entry. Timer parks retain the same transaction
+// and remaining allowance; only begin_exchange renews a new message's cap.
+auto advance_exchange() -> ExchangeProgress {
+    if (!residents[0].space || !endpoint.transaction || endpoint.replied || (endpoint.waiting && !endpoint.delivery))
+        return ExchangeProgress::failed;
+    static_cast<void>(run_resident(0));
+    if (!residents[0].space)
+        return ExchangeProgress::failed;
+    if (!endpoint.replied)
+        return ExchangeProgress::pending;
+    return endpoint.waiting ? ExchangeProgress::replied : ExchangeProgress::failed;
+}
+// Loader/control consumers still synchronously pump these same primitives.
+// Production caller requests instead return each pending observation to Aurora.
+auto exchange_request(U64 source) -> bool {
+    if (!begin_exchange(source))
+        return false;
+    ExchangeProgress progress;
+    do {
+        progress = advance_exchange();
+    } while (progress == ExchangeProgress::pending);
+    return progress == ExchangeProgress::replied;
 }
 auto control_request(U64 operation, U64 id = 0, U64 offset = 0, std::span<const std::byte> payload = {}) -> bool {
     if (endpoint.caller || (loading_image && endpoint.caller_cancelled) || payload.size() > Endpoint::capacity - 64)
@@ -1741,19 +1767,38 @@ auto admit_file_reply() -> bool {
         endpoint.invalid_reply_operation = endpoint.request_operation;
     return false;
 }
-auto client_request() -> bool {
+// The client stays parked across every pending result, retaining the original
+// copied call and its validated source pages. No source-supplied token chooses
+// the transaction or its destination.
+enum class ClientProgress {
+    pending,
+    complete,
+    failed
+};
+auto advance_client_request() -> ClientProgress {
+    if (!residents[1].space || endpoint.caller != std::optional<std::size_t>{1})
+        return ClientProgress::failed;
     const U64 client = residents[1].state.run;
-    for (;;) {
-        if (!exchange_request(client) || !admit_file_reply())
-            return false;
-        if (endpoint.caller_cancelled)
-            break;
-        const Bytes reply{endpoint.bytes};
-        if (reply.get(0) || endpoint.call.action != static_cast<U64>(process::CallAction::write) ||
-            endpoint.written == endpoint.call.length)
-            break;
-        // A raw 64 KiB write needs two bounded messages. The client remains
-        // parked and cannot mutate this already-validated source between them.
+    if (endpoint.waiting && !endpoint.replied) {
+        if (!begin_exchange(client))
+            return ClientProgress::failed;
+    } else if (endpoint.source != client) {
+        return ClientProgress::failed;
+    }
+    const auto progress = advance_exchange();
+    if (progress == ExchangeProgress::failed)
+        return ClientProgress::failed;
+    if (progress == ExchangeProgress::pending)
+        return ClientProgress::pending;
+    if (!admit_file_reply())
+        return ClientProgress::failed;
+    const Bytes reply{endpoint.bytes};
+    if (!endpoint.caller_cancelled && !reply.get(0) &&
+        endpoint.call.action == static_cast<U64>(process::CallAction::write) &&
+        endpoint.written != endpoint.call.length) {
+        // A raw 64 KiB write needs two bounded messages. Stage the final bytes
+        // only after the first authenticated successful reply. The next source
+        // turn begins that distinct transaction; this turn never runs twice.
         const U64 remaining = endpoint.call.length - endpoint.written;
         if (remaining > 64 || root() != kernel_root)
             fail("file write continuation");
@@ -1768,12 +1813,27 @@ auto client_request() -> bool {
             endpoint.bytes[64 + at] = source[at];
         asm volatile("mov %0, %%cr3" : : "r"(kernel_root) : "memory");
         endpoint.written += remaining;
+        endpoint.replied = false;
+        return ClientProgress::pending;
     }
+    // Caller expiry does not abort an already delivered operation: the server
+    // reached a reply or terminal state under its own bounded allowance first.
     endpoint.replied = false;
     endpoint.caller.reset();
     endpoint.completion = !endpoint.caller_cancelled;
-    return true;
+    return ClientProgress::complete;
 }
+#ifndef AURORA_PRODUCTION
+// Existing fixture dispatcher; production's request phase is owned by Aurora.
+auto client_request() -> bool {
+    ClientProgress progress;
+    do {
+        progress = advance_client_request();
+    } while (progress == ClientProgress::pending);
+    return progress == ClientProgress::complete;
+}
+#endif
+
 enum class ServiceFailure {
     observe,
     invalid_reply,
@@ -2786,7 +2846,10 @@ public:
     static auto request() -> aurora::execution::Request {
         using namespace aurora::execution;
         require(client_ && residents[1].space && request_pending_ && !output_pending_);
-        request_failed_ = !client_request();
+        const auto progress = advance_client_request();
+        if (progress == ClientProgress::pending)
+            return Request::pending;
+        request_failed_ = progress == ClientProgress::failed;
         request_pending_ = false;
         if (request_failed_)
             return Request::service_lost;

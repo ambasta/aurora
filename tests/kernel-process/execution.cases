@@ -30,3 +30,10 @@ not_quiet deny:not_quiet
 invalid_finish deny:invalid_finish
 reenter deny:reenter
 release_inside deny:release_inside
+# Pending service observations retain the request phase; no client advance intervenes.
+request_pending_twice prepare:loaded:exited:1 advance:request:unavailable:0 request:pending request:pending request:ready advance:retired:exited:17 finish:complete:success
+request_pending_cancelled prepare:loaded:exited:1 advance:request:unavailable:0 request:pending request:cancelled finish:cancelled:success
+request_pending_lost prepare:loaded:exited:1 advance:request:unavailable:0 request:pending request:service_lost finish:service_lost:success
+request_pending_output prepare:loaded:exited:1 advance:request:unavailable:0 request:pending request:ready advance:output:unavailable:0 output:success advance:retired:exited:18 finish:complete:success
+two_requests_pending prepare:loaded:exited:1 advance:request:unavailable:0 request:ready advance:request:unavailable:0 request:pending request:ready advance:retired:exited:19 finish:complete:success
+pending_cancel_close_failure prepare:loaded:exited:1 advance:request:unavailable:0 request:pending request:cancelled finish:cancelled:failed

@@ -42,6 +42,18 @@ specific retirement, checked against the actual native effect state. Service
 loss follows the existing abandonment path. A failed final close overrides the
 command result to unavailable. No failed request is replayed.
 
+During a caller's file request, the session retains a separate request phase.
+Each `request` effect enters the server at most once and may report `pending`;
+Aurora repeats that effect without advancing the parked client. Timer parks do
+not renew the transport transaction or server allowance. A full 64 KiB write
+still uses two bounded messages, with a fresh per-message server allowance but
+one cumulative caller budget. The second message is staged only after a valid
+successful first reply and is not dispatched after caller expiry. An already
+delivered operation drains to reply or server termination even after expiry;
+no client completion or rollback promise is manufactured. Native code retains
+the endpoint identity, copied bytes and physical accounting. Loader/control and
+fixture consumers still pump the same transport primitives natively.
+
 This removes the native production command loop, not the resident scheduler,
 accounting or persistent owner policy. Native effect receipts authenticate the
 live grant/generation, prevent reentry and duplicate physical effects, and keep

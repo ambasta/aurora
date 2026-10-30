@@ -11,7 +11,7 @@ class Report {
 public:
     Word state, status, value;
 };
-unsigned mode = 0, calls = 0;
+unsigned mode = 0, calls = 0, requests = 0;
 void authenticate(Word identity, Word generation, unsigned expected) {
     if (identity != 0x45584543555445ULL || generation != 91 || calls++ != expected)
         std::abort();
@@ -65,11 +65,14 @@ extern "C" Word __au_runtime_execution_output(Word identity, Word generation) {
     return mode == 11 ? 2 : mode == 12 ? Word{1} << 32 : 0;
 }
 extern "C" Word __au_runtime_execution_request(Word identity, Word generation) {
-    authenticate(identity, generation, 3);
-    return mode == 13 ? 3 : mode == 14 ? Word{1} << 32 : 0;
+    authenticate(identity, generation, 3 + requests);
+    ++requests;
+    if (mode == 17 && requests < 3)
+        return 3;
+    return mode == 13 ? 4 : mode == 14 ? Word{1} << 32 : 0;
 }
 extern "C" Word __au_runtime_execution_finish(Word identity, Word generation, Word reason) {
-    authenticate(identity, generation, 4);
+    authenticate(identity, generation, 3 + requests);
     if (reason != 0)
         std::abort();
     return mode == 15 ? 2 : mode == 16 ? Word{1} << 32 : 0;
@@ -77,5 +80,5 @@ extern "C" Word __au_runtime_execution_finish(Word identity, Word generation, Wo
 int main(int argc, char **argv) {
     mode = argc == 2 ? std::atoi(argv[1]) : 0;
     const Grant grant{0x45584543555445ULL, 91};
-    return checked_group_entry(&grant) == 42 && calls == 5 ? 0 : 1;
+    return checked_group_entry(&grant) == 42 && calls == (mode == 17 ? 7u : 5u) ? 0 : 1;
 }

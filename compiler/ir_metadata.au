@@ -1164,7 +1164,7 @@ export namespace compiler_ir_metadata {
             false) && sealed_host_results(store) && sealed_execution_results(store) && sealed_enum(store,
             "__au_exec_prepared", 3, false) && sealed_enum(store, "__au_exec_status", 8, false) && sealed_enum(store,
             "__au_exec_step", 4, false) && sealed_enum(store, "__au_exec_effect", 2, false) && sealed_enum(store,
-            "__au_exec_request", 3, false) && sealed_enum(store, "__au_exec_finish", 4, false);
+            "__au_exec_request", 4, false) && sealed_enum(store, "__au_exec_finish", 4, false);
     }
 
     // Children are complete before this computation starts. Offsets come only
