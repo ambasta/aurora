@@ -6,14 +6,15 @@
 namespace aurora::program {
 // Retention, grant authentication and one-shot publication only. Aurora owns the
 // four-record store, names, revision checks and atomic replacement policy.
-class Files final {
+template <bool RetainNamespace> class FileCommand final {
 public:
     using Value = std::array<std::byte, 272>;
+    static constexpr std::size_t namespace_bytes = RetainNamespace ? 272 : 0;
     using Selection = std::array<std::byte, 160>;
-    using UpdateInput = std::array<std::byte, 352>;
-    using Update = std::array<std::byte, 520>;
-    using ReplaceInput = std::array<std::byte, 504>;
-    using Mutation = std::array<std::byte, 352>;
+    using UpdateInput = std::array<std::byte, namespace_bytes + 80>;
+    using Update = std::array<std::byte, namespace_bytes + 248>;
+    using ReplaceInput = std::array<std::byte, namespace_bytes + 232>;
+    using Mutation = std::array<std::byte, namespace_bytes + 80>;
 
 private:
     enum class State {
@@ -28,7 +29,8 @@ private:
         publishing,
         settled
     };
-    Value saved_{};
+    // Production retains no namespace bytes; only the reference fixture owns this value.
+    [[no_unique_address]] std::array<std::byte, namespace_bytes> saved_{};
     Selection selection_{};
     Note::Value projection_{};
     user::DomainHandle client_{}, service_{};
@@ -40,6 +42,11 @@ private:
     Stream *completed_stream_{};
     AppendCall *completed_append_{};
     std::uint64_t stream_run_{};
+
+    template <std::size_t Count> static auto scrub(std::array<std::byte, Count> &bytes) -> void {
+        for (auto &byte : bytes)
+            *static_cast<volatile std::byte *>(&byte) = std::byte{0};
+    }
 
     static auto word(std::span<const std::byte> bytes, std::size_t offset) -> std::uint64_t {
         std::uint64_t value = 0;
@@ -89,12 +96,15 @@ public:
     [[nodiscard]] static constexpr auto read_reply_valid(std::uint64_t value) -> bool {
         return (value >= 2 && value <= 4) || ((value & 255) == 1 && (value >> 8) <= 255);
     }
-    constexpr Files() {
-        put(saved_, 264, 1);
+    constexpr FileCommand() {
+        if constexpr (RetainNamespace)
+            put(saved_, 264, 1);
     }
-    Files(const Files &) = delete;
-    auto operator=(const Files &) -> Files & = delete;
-    [[nodiscard]] auto saved() const -> const Value & {
+    FileCommand(const FileCommand &) = delete;
+    auto operator=(const FileCommand &) -> FileCommand & = delete;
+    [[nodiscard]] auto saved() const -> const Value &
+        requires(RetainNamespace)
+    {
         return saved_;
     }
     [[nodiscard]] auto projection() const -> const Note::Value & {
@@ -124,43 +134,48 @@ public:
     [[nodiscard]] auto update(const Update &result) -> std::optional<std::uint64_t> {
         if (state_ != State::idle)
             return std::nullopt;
-        const auto action = word(result, 352);
-        if (action > 7 || word(result, 336) > 64 || word(result, 344) > 8)
+        const auto action = word(result, namespace_bytes + 80);
+        if (action > 7 || word(result, namespace_bytes + 64) > 64 || word(result, namespace_bytes + 72) > 8)
             return std::nullopt;
-        if (action != 1 && !std::equal(saved_.begin(), saved_.end(), result.begin()))
-            return std::nullopt;
+        if constexpr (RetainNamespace)
+            if (action != 1 && !std::equal(saved_.begin(), saved_.end(), result.begin()))
+                return std::nullopt;
         if (action >= 2) {
-            const auto event = word(result, 344);
-            const auto length = word(result, 336);
+            const auto event = word(result, namespace_bytes + 72);
+            const auto length = word(result, namespace_bytes + 64);
             if ((event != 2 && event != 5) || (event == 2 && length > 49))
                 return std::nullopt;
-            if (word(result, 432) == 0 || word(result, 440) != (action == 7 ? 2u : action == 3 ? 1u : 0u))
+            if (word(result, namespace_bytes + 160) == 0 || word(result, namespace_bytes + 168) != (action == 7   ? 2u
+                                                                                                    : action == 3 ? 1u
+                                                                                                                  : 0u))
                 return std::nullopt;
         }
         if (action >= 2) {
-            const auto suffix_length = word(result, 512);
+            const auto suffix_length = word(result, namespace_bytes + 240);
             if (suffix_length > 49 || (action != 7 && suffix_length != 0) ||
-                (action == 7 && (word(result, 344) != 2 || suffix_length > 49 - word(result, 336))))
+                (action == 7 &&
+                 (word(result, namespace_bytes + 72) != 2 || suffix_length > 49 - word(result, namespace_bytes + 64))))
                 return std::nullopt;
             for (std::size_t index = 0; index < 64; ++index) {
-                const auto byte = std::to_integer<unsigned>(result[448 + index]);
+                const auto byte = std::to_integer<unsigned>(result[namespace_bytes + 176 + index]);
                 if (index < suffix_length ? byte < 32 || byte > 126 : byte != 0)
                     return std::nullopt;
-                if (word(result, 344) == 2) {
-                    const auto prefix = std::to_integer<unsigned>(result[272 + index]);
-                    if (index < word(result, 336) ? prefix < 32 || prefix > 126 : prefix != 0)
+                if (word(result, namespace_bytes + 72) == 2) {
+                    const auto prefix = std::to_integer<unsigned>(result[namespace_bytes + index]);
+                    if (index < word(result, namespace_bytes + 64) ? prefix < 32 || prefix > 126 : prefix != 0)
                         return std::nullopt;
                 }
             }
         }
-        std::copy_n(result.begin(), saved_.size(), saved_.begin());
+        if constexpr (RetainNamespace)
+            std::copy_n(result.begin(), saved_.size(), saved_.begin());
         if (action >= 2) {
-            std::copy_n(result.begin() + 360, selection_.size(), selection_.begin());
+            std::copy_n(result.begin() + namespace_bytes + 88, selection_.size(), selection_.begin());
             projection_ = {};
-            const bool present = word(result, 344) == 2;
+            const bool present = word(result, namespace_bytes + 72) == 2;
             if (present)
-                std::copy_n(result.begin() + 272, 64, projection_.begin());
-            put(projection_, 64, present ? word(result, 336) : UINT64_MAX);
+                std::copy_n(result.begin() + namespace_bytes, 64, projection_.begin());
+            put(projection_, 64, present ? word(result, namespace_bytes + 64) : UINT64_MAX);
             writable_ = action == 3 || action == 7;
             appending_ = action == 7;
             state_ = State::selected;
@@ -272,7 +287,7 @@ public:
         client_ = {};
         service_ = {};
         generation_ = 0;
-        projection_ = {};
+        scrub(projection_);
         registry_ = nullptr;
         mailbox_ = nullptr;
         state_ = State::retired;
@@ -289,11 +304,12 @@ public:
             return false;
         }
         ReplaceInput next{};
-        std::copy(saved_.begin(), saved_.end(), next.begin());
-        std::copy(selection_.begin(), selection_.end(), next.begin() + 272);
+        if constexpr (RetainNamespace)
+            std::copy(saved_.begin(), saved_.end(), next.begin());
+        std::copy(selection_.begin(), selection_.end(), next.begin() + namespace_bytes);
         for (std::size_t i = 0; i < output->length(); ++i)
-            next[432 + i] = std::byte(*output->byte(i));
-        put(next, 496, output->length());
+            next[namespace_bytes + 160 + i] = std::byte(*output->byte(i));
+        put(next, namespace_bytes + 224, output->length());
         output->scrub();
         input = next;
         return true;
@@ -304,19 +320,20 @@ public:
         // The fixed copied record already has the exact bytes/length layout
         // of the replacement's trailing field; no second stack-sized copy.
         state_ = State::publishing;
-        if (!call.finish(std::span<std::byte, 72>{input.data() + 432, 72})) {
+        if (!call.finish(std::span<std::byte, 72>{input.data() + namespace_bytes + 160, 72})) {
             abort();
             return false;
         }
-        std::copy(saved_.begin(), saved_.end(), input.begin());
-        std::copy(selection_.begin(), selection_.end(), input.begin() + 272);
+        if constexpr (RetainNamespace)
+            std::copy(saved_.begin(), saved_.end(), input.begin());
+        std::copy(selection_.begin(), selection_.end(), input.begin() + namespace_bytes);
         return true;
     }
     [[nodiscard]] auto publish(const Mutation &result) -> bool {
         if (state_ != State::publishing)
             return false;
-        const auto event = word(result, 344);
-        if (word(result, 336) > 64 || event > 8) {
+        const auto event = word(result, namespace_bytes + 72);
+        if (word(result, namespace_bytes + 64) > 64 || event > 8) {
             abort();
             return false;
         }
@@ -325,7 +342,8 @@ public:
             abort();
             return false;
         }
-        std::copy_n(result.begin(), saved_.size(), saved_.begin());
+        if constexpr (RetainNamespace)
+            std::copy_n(result.begin(), saved_.size(), saved_.begin());
         // Publication settles this exact private run before presentation. Keep
         // its selected revision/name/request until that response turn ends.
         state_ = State::settled;
@@ -344,8 +362,8 @@ public:
     [[gnu::noinline]] auto abort() -> void {
         if (state_ == State::settled)
             return;
-        selection_ = {};
-        projection_ = {};
+        scrub(selection_);
+        scrub(projection_);
         client_ = {};
         service_ = {};
         generation_ = 0;
@@ -362,7 +380,12 @@ public:
         state_ = State::idle;
         abort();
         saved_ = {};
-        put(saved_, 264, 1);
+        if constexpr (RetainNamespace)
+            put(saved_, 264, 1);
     }
 };
+using Files = FileCommand<true>;          // Existing bounded reference and protected fixture.
+using ExternalFiles = FileCommand<false>; // Production: transient selection/retirement only.
+static_assert(sizeof(ExternalFiles::Update) == 248 && sizeof(ExternalFiles::ReplaceInput) == 232 &&
+              sizeof(ExternalFiles::Mutation) == 80);
 } // namespace aurora::program

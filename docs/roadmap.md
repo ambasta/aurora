@@ -29,18 +29,20 @@ phase, CR carry and terminal outcome. Native effect execution and authenticated
 lifecycle remain migration dependencies. The BIOS console uses the same Aurora
 editor and sealed ConsoleSession for its bounded three-command session and
 presentation; trusted native code retains interrupt transport and shutdown.
-General terminal sessions and file services remain open. The shared typed named-file
-core is separate from parsing/presentation and serves both console paths and the
-opt-in protected volatile namespace described below.
+General terminal sessions remain open. The shared typed named-file core remains
+separate from parsing/presentation; production now retains its private note and
+named-file state in the same external Aurora owner as process files.
 
 The kernel is to become entirely Aurora. The [process image](../kernel/uefi/process.md)
-already decides in Aurora (memory map, frames, ELF admission, address-space
-regions, faults, kernel calls, memory and file services) while C++ keeps only
-glue. Retiring that glue needs these language and bridge capabilities, each a
+already uses Aurora policies for memory-map/frame admission, ELF and address-space
+layout, faults, kernel calls and memory quotas. A separate Aurora program owns
+file state. Native code still owns privileged execution, frame/mapping records,
+page-table effects and process/IPC transport; this is not an all-Aurora kernel.
+Retiring those components needs these language and bridge capabilities, each a
 milestone with its own consumer:
 
 - kernel-side Aurora state that persists across bridge calls (frame records,
-  mapping records, handle tables and run state live in C++ today);
+  mapping records and run state still live in C++);
 - mutable spans over kernel-supplied memory (record insertion, data copies);
 - a privileged-instruction and physical-address capability (page-table writes,
   CR3, INVLPG, MSRs, LAPIC, GDT/IDT loads, IRETQ);
@@ -51,65 +53,64 @@ milestone with its own consumer:
   convention for scalar-only bridge functions;
 - recursion reachable from a hosted `main` (fixtures use GNU as today).
 
-Linking guest-built objects still needs host `ld`.
+The bounded native linker now links supported guest-built objects without host
+`ld`; general linking, assembly and complete native system rebuilding remain open.
 
 ## 1. Protected programs and file services
 
-Build from the existing protected-domain fixtures, bounded scheduling, copied
-request/reply IPC, cancellation/restart and Aurora policy functions. These are
-working bounded mechanisms, not a general process or runtime API. The
-[protected command console](program-console-contract.md) demonstrates one embedded
-compiled application with scoped recovery and authority-failure qualification.
-The file-call path now implements a reusable bounded read-service incarnation
-for `wc` and `crc`, with fresh per-command caller/grant authority and full cleanup
-after failure. The bounded retained source-owned mutable RAM-file service is also
-implemented with bounded local qualification in [#234](https://github.com/ambasta/aurora/pull/234);
-it is separate from that reusable read service and is not a general filesystem
-or scheduler. The opt-in interactive scratchpad supplies real protected command
-input/output and explicit user-facing
-lifecycle outcomes, originally qualified in
-[#235](https://github.com/ambasta/aurora/pull/235), and now includes explicit atomic append
-to the existing volatile file and a read-only caller-computed CRC32C command.
-Production named-file append pairs one live compiled Call-only caller with one
-live Serve-only producer per command. The producer constructs the frozen
-prefix-plus-suffix candidate once and retains its sequential cursor across
-requests; the caller retains reply validation and accumulation. Terminal EOF parks
-the producer permanently. Only clean caller return and both original domain
-retirements allow the independent supervisor to publish once. This bounded
-lifetime step preserves the four-file session namespace but does not make either
-worker its surviving owner; the separate scratchpad still loses its service-local
-contents on reset. Final-source qualification remains required.
+The [process runtime](../kernel/uefi/process.md) now runs static ELF programs with
+private address spaces, demand-backed quotas, owner-counted frame audits and
+bounded timer-parked continuations. Production `run PATH [args]` loads committed
+executables through a retained external file owner, then restores the console's
+exact architecture and mapping boundary. Same-boot compile/link/run is the native
+toolchain consumer; it does not require serial artifact export and a host link.
 
-The opt-in [protected namespace console](native-console-service.md#protected-volatile-namespace)
-keeps four named files in one retained CPL3 Aurora owner across fresh bounded
-callers. Copied `write`/`cat` operations retain explicit precommit abort,
-committed-but-response-lost and owner-reset outcomes without replay. Owner failure
-or reset deliberately loses the volatile namespace; it does not recover a
-checkpoint or move production-console storage. Qualification remains specific to
-the final image, native cases and observed guest lifecycle traces.
+The Serve-authorized Aurora service owns boot-volume copies, namespace/handle
+state and retained mutable RAM files. The kernel authenticates incarnations and
+copies bounded requests/replies; the legacy kernel file store is removed.
+Production's bounded note/named-file policy also lives in that owner, while the
+existing protected workers and native ledger retain only frozen projections and
+authenticated completion state. File publication follows the established policy
+and worker-retirement gates, not possession of a copied payload.
 
-Extend this capability-scoped blocking request/reply foundation toward protected
-program startup/lifecycle and file services with explicit resource limits,
-cancellation, partial I/O and reclamation. General program lifetimes, restart-safe
-protected storage and mounted durable storage remain separate dependencies.
-Use RAM-backed service tests before claiming durable device-backed operation.
-Gate: real compiled programs exercise allowed operations; foreign/stale authority,
-exhaustion, restart and interrupted operations fail safely without cross-domain
-access. Trusted C++/assembly ownership and commit boundaries remain explicit.
+Preserve cumulative caller budgets across RPCs, independent server request caps,
+immutable in-flight client identity and exactly one terminal cleanup. A delivered
+operation may commit after caller expiry; an uncertain/lost reply is never replayed
+or described as rollback. Service loss invalidates grants and visibly loses
+volatile contents; a later command may start a new incarnation, not resume the
+failed request. Mounted read-only data is separate from those RAM commits.
+
+Next: general program/service lifetimes and scheduling, restart-safe storage,
+partial I/O/backpressure and durable mounted writes. Gate each step with actual
+compiled consumers, stale/foreign authority, exhaustion, cancellation, owner death
+and complete frame reclamation. Preserve writable/sealed executable-snapshot
+cleanup and real committed-but-reply-lost cases at the production boundary.
+Existing fixture contracts remain useful bounded
+references, not substitutes for production integration or a general scheduler.
 
 ## 2. DMA-safe transport and persistent storage
 
-Actual DMA conformance is blocked. Discovery, CPU-only table/queue preparation,
-pin ownership and [test-only event/completion references](iommu-models.md)
-are prerequisites, not observed hardware isolation or completion.
-A permissible independently reviewed conformance path must establish default-deny
-translation, invalidation completion, fault containment and safe reclamation
-before active device authority. No physical disk access follows from this plan.
+The closed emulator profiles now exercise default-deny AMD-Vi admission,
+requester invalidation with fresh completion and real NVMe DMA. The raw transport
+has exercised Identify/read/write/Flush and cold-boot persistence on disposable
+images. Backing remains pinned for the boot; errors quarantine rather than reset,
+reuse or reclaim it. These observations do not establish physical-device isolation,
+drain, recovery or safe DMA-page reclamation.
 
-Gate: separately qualify transport and recovery before advancing the
-[native filesystem and XFS roadmap](../storage/design/roadmap.md) to mounted file
-services, transactions, durability, recovery/GC and XFS read-write. Offline XFS
-parsing and RAM-sector correctness do not establish those outcomes.
+A sealed read-only block capability connects the retained source file owner to
+NVMe. Its strict fresh-format XFS gate reads the complete supported log and checks
+root/inode metadata before exposing `/disk`; actual process guests exercise this
+path and whole-image immutability. Production NVMe/GOP guests also exercise eager
+readiness, unsupported-log refusal and continued RAM-file/console operation.
+Preserve those combined gates and the unchanged RAM-only composition as the
+transport and mount profile evolve.
+
+Next: qualify broader clean-log histories before extending XFS admission, then
+follow the [native filesystem and XFS roadmap](../storage/design/roadmap.md) for
+transactions, durability, recovery/GC and XFS read-write. Gate transport, filesystem
+recovery and mounted service behavior separately; offline parsing and synthetic
+sectors alone do not establish device provenance or clean-unmount history. No
+physical disk access follows from emulator qualification.
 
 ## 3. Display, input, terminal and desktop
 
@@ -165,8 +166,9 @@ register-move/tail-jump wrappers directly from the same table/ABI-derived recipe
 used by predecessor/reference text; console/UART/painter wrappers still use GNU as.
 The painter emits its source object directly and retains its existing Display-only
 import and private entry ABI; production UART, diagnostics and timer policy stay native.
-General assembler/linker and host runtime/file/process services remain
-separate self-hosting dependencies.
+The checked single-object linker closes the supported guest object-to-executable
+path. General assembler/linker support, complete native rebuilding and broader
+runtime/file/process services remain separate self-hosting dependencies.
 
 Gate: positive, rejection, adversarial, resource and ABI tests with independent
 review; no unchecked assertion, visibility bypass or resource duplication. Then

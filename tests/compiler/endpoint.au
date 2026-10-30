@@ -1,0 +1,26 @@
+module endpoint_native_probe;
+import aurora.endpoint;
+
+auto endpoint_entry(builtin::ServeSession& session, builtin::span<const u8> reply) -> u64 {
+    const endpoint::Message message = endpoint::exchange(session, reply);
+    if (message.status() == builtin::ServeStatus::cancelled) {
+        if (message.source() != 0u64 || message.transaction() != 0u64 || message.count() != 0u64) {
+            return 1u64;
+        }
+        return 42u64;
+    }
+    if (message.source() == 12u64) {
+        return u64(endpoint::byte(session, message.count()));
+    }
+    if (message.source() == 13u64) {
+        return u64(endpoint::byte(session, 65536u64));
+    }
+    if (message.source() == 14u64) {
+        return u64(endpoint::byte(session, 18446744073709551615u64));
+    }
+    if (message.source() != 7u64 || message.transaction() != 91u64 || message.count() != 3u64 || endpoint::byte(session,
+        0u64) != 'x' || endpoint::byte(session, 2u64) != 'z') {
+        return 2u64;
+    }
+    return 42u64;
+}

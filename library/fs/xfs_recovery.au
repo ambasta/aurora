@@ -1,0 +1,1118 @@
+export module fs.xfs_recovery;
+import std.binary;
+import std.binary_buffer;
+import std.checksum;
+import storage.block_io;
+import storage.sector;
+import fs.xfs_geometry;
+import fs.xfs_probe;
+import fs.xfs_root;
+import fs.xfs_file;
+import fs.xfs_log;
+import fs.xfs_core_log;
+import fs.xfs_core_redo;
+import fs.xfs_recovery_ag;
+import fs.xfs_commit_log;
+
+namespace fs {
+    auto xp32(builtin::span<const u8> bytes, i64 at) -> u64 {
+        const std::ByteReadResult value = std::read_be32(bytes, at);
+        return value.value_or(0u64);
+    }
+    auto xp64(builtin::span<const u8> bytes, i64 at) -> u64 {
+        const std::ByteReadResult value = std::read_be64(bytes, at);
+        return value.value_or(0u64);
+    }
+    auto xp_sector_crc(storage::Sector512 sector, i64 count, u64 seed) -> u64 {
+        u64 checksum = seed;
+        i64 at = 0;
+        while (at < count) {
+            i64 length = count - at;
+            if (length > 64) {
+                length = 64;
+            }
+            const storage::RecordReadResult record = sector.read_record(at);
+            const std::BinaryBuffer64 bytes = record.record_or_zero();
+            const std::ChecksumResult next = std::crc32c_extend(checksum, bytes.bytes(0, length), 0, length);
+            if (record.status() != std::ByteReadStatus::success || next.status() != std::ChecksumStatus::success) {
+                return 4294967296u64;
+            }
+            checksum = next.value_or(4294967296u64);
+            at = at + length;
+        }
+        return checksum;
+    }
+    auto xp_completion_body(u64 cycle) -> storage::Sector512 {
+        std::BinaryBuffer64 operation = std::BinaryBuffer64();
+        operation.write_be32(0, cycle);
+        operation.write_u8(8, 170u8);
+        operation.write_u8(9, 32u8);
+        operation.write_le16(12, 21870u64);
+        storage::Sector512 body = storage::Sector512();
+        i64 at = 0;
+        while (at < 64) {
+            const std::ByteReadResult byte = operation.read_u8(at);
+            body.write_byte(at, u8(byte.value_or(0u64)));
+            at = at + 1;
+        }
+        return body;
+    }
+    auto xp_completion_matches(builtin::span<const u8> bytes, u64 cycle) -> bool {
+        if (bytes.size() != 512) {
+            return false;
+        }
+        const storage::Sector512 expected = xp_completion_body(cycle);
+        i64 at = 0;
+        while (at < 512) {
+            const std::ByteReadResult byte = expected.read_byte(at);
+            if (byte.value_or(256u64) != u64(bytes.at(at))) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+}
+
+export namespace fs {
+    enum class XfsRecoveryProfile {
+        linux_6_12_x86_64_core
+    };
+    enum class XfsRecoveryStatus {
+        superblock,
+        topology,
+        completion_header,
+        completion_body,
+        root,
+        home,
+        agf,
+        agi,
+        inobt,
+        record_header,
+        record_body,
+        ready,
+        invalid_request,
+        protocol_error,
+        io_error,
+        unsupported,
+        invalid_metadata,
+        invalid_log,
+        clean_marker,
+        already_clean
+    };
+    class XfsRecoveryConfig {
+        u64 _capacity;
+        XfsRecoveryProfile _profile;
+    public:
+        XfsRecoveryConfig(u64 capacity, XfsRecoveryProfile profile) : _capacity(capacity), _profile(profile) {
+        }
+        auto capacity() const -> u64 {
+            return _capacity;
+        }
+        auto profile() const -> XfsRecoveryProfile {
+            return _profile;
+        }
+    };
+    class XfsRecoveryWrite {
+        u64 _lba;
+        storage::Sector512 _sector;
+    public:
+        XfsRecoveryWrite(u64 lba, storage::Sector512 sector) : _lba(lba), _sector(sector) {
+        }
+        auto valid() const -> bool {
+            return _lba != 0u64;
+        }
+        auto lba() const -> u64 {
+            if (_lba != 0u64) {
+                return _lba;
+            }
+            return 0u64;
+        }
+        auto sector_or_zero() const -> storage::Sector512 {
+            if (_lba != 0u64) {
+                const storage::Sector512 result = _sector;
+                return result;
+            }
+            const storage::Sector512 zero = storage::Sector512();
+            return zero;
+        }
+    };
+
+    // A copied-byte plan, not permission to write. Its caller must hold the same
+    // exclusively stable volume until publication, and separately reserve the
+    // finite command budget. Unsupported or torn states have no output.
+    // Cache: SB/root/header, 32KiB record, AGF/AGI, 4KiB INOBT,
+    // sixteen homes and sixteen 32-byte metadata rows. The final 1536 bytes
+    // hold one pending body and copied validation scratch. Exactly 48 KiB.
+    class XfsCoreRecoveryPlan {
+        builtin::OwnedBytes _cache;
+        XfsLogTopology _topology;
+        u64 _capacity;
+        u64 _expected;
+        u64 _log_begin;
+        u64 _log_count;
+        u64 _head;
+        u64 _tail;
+        u64 _latest;
+        u64 _cursor;
+        u64 _previous;
+        u64 _records;
+        u64 _payload_bytes;
+        u64 _record_bytes;
+        u64 _record_seen;
+        u64 _root_count;
+        u64 _home_index;
+        u64 _ag;
+        u64 _ag_count;
+        u64 _ag_blocks;
+        u64 _inobt_root;
+        u64 _inobt_seen;
+        u64 _icount;
+        u64 _ifree;
+        u64 _fdblocks;
+        u64 _reads;
+        u64 _scan_cycle;
+        u64 _boundary;
+        bool _boundary_stale;
+        bool _orphan;
+        bool _orphan_successor;
+        u64 _append_kind;
+        bool _initial;
+        bool _clean;
+        bool _root_changed;
+        XfsRecoveryStatus _status;
+
+        auto view(i64 at, i64 count) const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(_cache);
+            return all.subspan(at, count);
+        }
+        auto meta(u64 index, i64 field) const -> u64 {
+            const std::ByteReadResult value = std::read_le64(view(47104 + i64(index) * 32, 32), field);
+            return value.value_or(0u64);
+        }
+        auto set_meta(u64 index, i64 field, u64 value) -> bool {
+            i64 at = 0;
+            while (at < 8) {
+                _cache.set(47104 + i64(index) * 32 + field + at, u8((value >> (at * 8)) & 255u64));
+                at = at + 1;
+            }
+            return true;
+        }
+        auto save(i64 offset, builtin::span<const u8> bytes) -> bool {
+            i64 at = 0;
+            while (at < bytes.size()) {
+                _cache.set(offset + at, bytes.at(at));
+                at = at + 1;
+            }
+            return true;
+        }
+        auto copied_sector(i64 offset) const -> storage::Sector512 {
+            storage::Sector512 sector = storage::Sector512();
+            i64 at = 0;
+            while (at < 512) {
+                sector.write_byte(at, _cache.at(offset + at));
+                at = at + 1;
+            }
+            return sector;
+        }
+        auto fail(XfsRecoveryStatus status) -> XfsRecoveryStatus {
+            _status = status;
+            return _status;
+        }
+        auto lsn_valid(u64 value) const -> bool {
+            return value == 0u64 || (xfs_log_lsn_valid(value, _log_count) && value <= _latest);
+        }
+        auto inode_ag(u64 inode) const -> u64 {
+            return inode >> (i64(_cache.at(124)) + 3);
+        }
+        auto equal_sector(i64 offset, storage::Sector512 sector) const -> bool {
+            i64 at = 0;
+            while (at < 512) {
+                const std::ByteReadResult byte = sector.read_byte(at);
+                if (byte.value_or(256u64) != u64(_cache.at(offset + at))) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto canonical_pending_body(i64 body_offset, i64 home_offset, u64 inode, u64 lsn, bool root) -> bool {
+            const storage::Sector512 core = encode_xfs_core(view(home_offset, 512));
+            i64 at = 0;
+            while (at < 176) {
+                const std::ByteReadResult byte = core.read_byte(at);
+                _cache.set(48640 + at, u8(byte.value_or(0u64)));
+                at = at + 1;
+            }
+            u64 ticket = 1096110897u64;
+            u64 operations = 5u64;
+            i64 local = 0;
+            if (root) {
+                ticket = 1096110641u64;
+                operations = 6u64;
+                local = 40;
+                if (xp64(view(home_offset, 512), 56) != 40u64) {
+                    return false;
+                }
+            }
+            const XfsCommitRecord facts = XfsCommitRecord(lsn, lsn, 0u64, ticket, operations);
+            const storage::Sector512 canonical = xfs_commit_body(view(48640, 176), view(home_offset + 176, local),
+                inode, inode, facts);
+            return equal_sector(body_offset, canonical);
+        }
+        auto pending_stage_index() const -> u64 {
+            const XfsRootReport target = lookup_xfs_v5_512_root(view(0, 512), view(512, 512), "hello");
+            const XfsRootReport staging = lookup_xfs_v5_512_root(view(0, 512), view(512, 512), ".aurora-stage");
+            const XfsRootFacts facts = target.facts();
+            const XfsRootMatch destination = target.match();
+            const XfsRootMatch stage = staging.match();
+            if (!target.found() || !staging.found() || facts.root_inode() != 96u64 || _root_count != 2u64
+                || xp64(view(512, 512), 56) != 40u64 || destination.file_type() != 1u64 || stage.file_type() != 1u64
+                || destination.inode_number() == stage.inode_number()) {
+                return 16u64;
+            }
+            u64 selected = 16u64;
+            u64 index = 0u64;
+            while (index < 2u64) {
+                const u64 inode = meta(index, 0);
+                if (inode != 99u64 && inode != 100u64) {
+                    return 16u64;
+                }
+                const i64 home = 38912 + i64(index) * 512;
+                const storage::SectorGeometry source = storage::SectorGeometry(_capacity, false);
+                const XfsFileRequest request = XfsFileRequest(inode, 0);
+                const XfsFileReport file = plan_xfs_v5_512_file_sector(source, view(0, 512), view(home, 512), request);
+                const XfsFileFacts info = file.facts();
+                const XfsFileSector data = file.sector();
+                u64 expected = 72u64;
+                if (inode == 100u64) {
+                    expected = 160u64;
+                }
+                if (file.status() != XfsFileStatus::ready || info.size_bytes() == 0u64 || info.size_bytes() > 4096u64
+                    || info.extent_count() != 1u64 || info.allocated_blocks() != 1u64 || data.kind()
+                    != XfsFileSectorKind::written || data.source_lba() != expected || xp32(view(home, 512), 16)
+                    != 1u64) {
+                    return 16u64;
+                }
+                if (inode == stage.inode_number()) {
+                    selected = index;
+                }
+                index = index + 1u64;
+            }
+            return selected;
+        }
+        auto validate_pending_append() -> bool {
+            if (_append_kind == 0u64) {
+                return true;
+            }
+            const u64 index = pending_stage_index();
+            if (index == 16u64) {
+                return false;
+            }
+            const u64 inode = meta(index, 0);
+            const i64 home = 38912 + i64(index) * 512;
+            u64 ticket = 1096110897u64;
+            u64 operations = 5u64;
+            if (_append_kind == 2u64) {
+                ticket = 1096110641u64;
+                operations = 6u64;
+                // The sole committed prefix must be the authored stage item,
+                // bound to the current private name, not an arbitrary CORE.
+                if (_clean || _records != 1u64 || _tail + 2u64 != _head || _latest != _tail || _record_bytes != 512u64
+                    || xp32(view(1024, 512), 44) != 1096110897u64 || xp32(view(1024, 512), 40) != 5u64 || (_tail
+                    & 4294967295u64) < 2u64) {
+                    return false;
+                }
+                const XfsCoreLogResult stage = decode_xfs_core_log(view(1024, 512), view(1536, 512), 0);
+                if (stage.status() != XfsCoreLogStatus::ready || stage.item_count() != 1u64 || stage.inode_number()
+                    != inode || !canonical_pending_body(1536, home, inode, _tail, false)) {
+                    return false;
+                }
+                const XfsCommitRecord prior = XfsCommitRecord(_tail, _tail, _tail - 2u64, 1096110897u64, 5u64);
+                const storage::Sector512 prior_header = xfs_commit_header(view(0, 512), copied_sector(1536), prior);
+                if (!equal_sector(1024, prior_header)) {
+                    return false;
+                }
+            } else {
+                if (!_clean) {
+                    return false;
+                }
+            }
+            const XfsCommitRecord facts = XfsCommitRecord(_head, _tail, _latest, ticket, operations);
+            // This synthesized header is parser framing, NOT an integrity
+            // checksum for a header absent on disk. Canonical equality below
+            // and full candidate semantics are the actual admission evidence.
+            const storage::Sector512 header = xfs_commit_header(view(0, 512), copied_sector(47616), facts);
+            i64 at = 0;
+            while (at < 512) {
+                const std::ByteReadResult byte = header.read_byte(at);
+                _cache.set(33792 + at, u8(byte.value_or(0u64)));
+                at = at + 1;
+            }
+            if (_append_kind == 1u64) {
+                const XfsCoreLogResult decoded = decode_xfs_core_log(view(33792, 512), view(47616, 512), 0);
+                if (decoded.status() != XfsCoreLogStatus::ready || decoded.item_count() != 1u64
+                    || decoded.inode_number() != inode || decoded.buffer_lba() != 96u64 || decoded.buffer_sectors()
+                    != 32u64 || decoded.inode_offset() != (inode - 96u64) * 512u64) {
+                    return false;
+                }
+                const XfsCoreRedoRequest request = XfsCoreRedoRequest(inode, _head, _capacity);
+                const XfsCoreRedoResult result = convert_xfs_core_redo(view(0, 512), view(home, 512), view(47736, 176),
+                    request);
+                if (result.status() != XfsCoreRedoStatus::converted) {
+                    return false;
+                }
+                const storage::Sector512 candidate = result.sector_or_zero();
+                at = 0;
+                while (at < 512) {
+                    const std::ByteReadResult byte = candidate.read_byte(at);
+                    _cache.set(48128 + at, u8(byte.value_or(0u64)));
+                    at = at + 1;
+                }
+                return canonical_pending_body(47616, 48128, inode, _head, false);
+            }
+            const XfsRootLogResult decoded = decode_xfs_root_log(view(33792, 512), view(47616, 512));
+            const XfsCoreLogFacts root_facts = decoded.facts();
+            if (decoded.status() != XfsCoreLogStatus::ready || root_facts.inode_number() != 96u64
+                || root_facts.buffer_lba() != 96u64 || root_facts.buffer_sectors() != 32u64 || root_facts.inode_offset()
+                != 0u64 || decoded.size() != 216u64) {
+                return false;
+            }
+            at = 0;
+            while (at < 216) {
+                const u8 byte = decoded.byte_at(view(33792, 512), view(47616, 512), at);
+                _cache.set(34304 + at, byte);
+                at = at + 1;
+            }
+            const XfsCoreRedoRequest request = XfsCoreRedoRequest(96u64, _head, _capacity);
+            const XfsCoreRedoResult result = convert_xfs_root_redo(view(0, 512), view(512, 512), view(34304, 216),
+                request);
+            if (result.status() != XfsCoreRedoStatus::converted) {
+                return false;
+            }
+            const storage::Sector512 candidate = result.sector_or_zero();
+            at = 0;
+            while (at < 512) {
+                const std::ByteReadResult byte = candidate.read_byte(at);
+                _cache.set(48128 + at, u8(byte.value_or(0u64)));
+                at = at + 1;
+            }
+            const XfsRootReport after = lookup_xfs_v5_512_root(view(0, 512), view(48128, 512), "hello");
+            const XfsRootMatch target = after.match();
+            return after.found() && target.inode_number() == inode && canonical_pending_body(47616, 48128, 96u64, _head,
+                true);
+        }
+        auto begin_records() -> XfsRecoveryStatus {
+            if (_icount != xp64(view(0, 512), 128) || _ifree != xp64(view(0, 512), 136) || _fdblocks != xp64(view(0,
+                512), 144)) {
+                return fail(XfsRecoveryStatus::unsupported);
+            }
+            if (_clean) {
+                // A clean-prefix recovery can itself stop after its completion
+                // body. Finish that exact orphan too, without replaying homes.
+                if (_orphan) {
+                    if (!validate_pending_append()) {
+                        return fail(XfsRecoveryStatus::invalid_log);
+                    }
+                    _status = XfsRecoveryStatus::ready;
+                    return _status;
+                }
+                _status = XfsRecoveryStatus::already_clean;
+                return _status;
+            }
+            _cursor = _tail & 4294967295u64;
+            _expected = _log_begin + _cursor;
+            _status = XfsRecoveryStatus::record_header;
+            return _status;
+        }
+        auto next_ag() -> XfsRecoveryStatus {
+            _ag = _ag + 1u64;
+            if (_ag == _ag_count) {
+                return begin_records();
+            }
+            _expected = _ag * _ag_blocks * 8u64 + 1u64;
+            _status = XfsRecoveryStatus::agf;
+            return _status;
+        }
+        auto finish_root_record() -> XfsRecoveryStatus {
+            // A root permutation is optional, but must be the final complete
+            // transaction. Earlier regular CORE items are preflighted first.
+            const u64 record_lsn = xp64(view(1024, 512), 16);
+            if (_append_kind != 0u64 || _root_changed || _latest != record_lsn || _cursor + 1u64 + _record_bytes
+                / 512u64 != (_head & 4294967295u64)) {
+                return fail(XfsRecoveryStatus::invalid_log);
+            }
+            const XfsRootLogResult decoded = decode_xfs_root_log(view(1024, 512), view(1536, i64(_record_bytes)));
+            const XfsCoreLogFacts facts = decoded.facts();
+            const u64 inode = xp64(view(0, 512), 56);
+            const u64 root_lba = xfs_v5_512_inode_lba(view(0, 512), inode);
+            if (decoded.status() != XfsCoreLogStatus::ready || facts.inode_number() != inode || facts.buffer_lba()
+                > _capacity || facts.buffer_sectors() > _capacity - facts.buffer_lba() || facts.buffer_lba()
+                + facts.inode_offset() / 512u64 != root_lba) {
+                return fail(XfsRecoveryStatus::invalid_log);
+            }
+            i64 at = 0;
+            while (at < i64(decoded.size())) {
+                const u8 byte = decoded.byte_at(view(1024, 512), view(1536, i64(_record_bytes)), at);
+                _cache.set(33792 + at, byte);
+                at = at + 1;
+            }
+            const XfsCoreRedoRequest request = XfsCoreRedoRequest(inode, record_lsn, _capacity);
+            const XfsCoreRedoResult converted = convert_xfs_root_redo(view(0, 512), view(512, 512), view(33792,
+                i64(decoded.size())), request);
+            if (converted.status() == XfsCoreRedoStatus::converted) {
+                const storage::Sector512 sector = converted.sector_or_zero();
+                at = 0;
+                while (at < 512) {
+                    const std::ByteReadResult byte = sector.read_byte(at);
+                    _cache.set(512 + at, u8(byte.value_or(0u64)));
+                    at = at + 1;
+                }
+                // The proposed directory is admitted again through the same
+                // parser as the original, after full conversion and CRC.
+                const XfsRootEntryReport admitted = entry_at_xfs_v5_512_root(view(0, 512), view(512, 512), 0);
+                if (admitted.status() != XfsRootEntryStatus::found) {
+                    return fail(XfsRecoveryStatus::unsupported);
+                }
+                _root_changed = true;
+            } else {
+                if (converted.status() != XfsCoreRedoStatus::already_newer) {
+                    return fail(XfsRecoveryStatus::unsupported);
+                }
+            }
+            u64 count = 0u64;
+            u64 index = 0u64;
+            while (index < _root_count) {
+                count = count + meta(index, 16);
+                index = index + 1u64;
+            }
+            // The root shares the existing home-output budget; it does not
+            // create a seventeenth home or expand the writer grant.
+            if (_root_changed && count >= 16u64) {
+                return fail(XfsRecoveryStatus::unsupported);
+            }
+            _status = XfsRecoveryStatus::ready;
+            return _status;
+        }
+        auto finish_record() -> XfsRecoveryStatus {
+            const XfsCoreLogResult first = decode_xfs_core_log(view(1024, 512), view(1536, i64(_record_bytes)), 0);
+            if (first.status() != XfsCoreLogStatus::ready) {
+                return finish_root_record();
+            }
+            u64 item = 0u64;
+            while (item < first.item_count()) {
+                const XfsCoreLogResult decoded = decode_xfs_core_log(view(1024, 512), view(1536, i64(_record_bytes)),
+                    i64(item));
+                if (decoded.status() != XfsCoreLogStatus::ready) {
+                    return fail(XfsRecoveryStatus::invalid_log);
+                }
+                u64 index = 0u64;
+                while (index < _root_count && meta(index, 0) != decoded.inode_number()) {
+                    index = index + 1u64;
+                }
+                if (index == _root_count || decoded.buffer_sectors() == 0u64 || decoded.buffer_sectors() > 128u64
+                    || decoded.inode_offset() % 512u64 != 0u64 || decoded.inode_offset() / 512u64
+                    >= decoded.buffer_sectors() || decoded.buffer_lba() > _capacity || decoded.buffer_sectors()
+                    > _capacity - decoded.buffer_lba() || decoded.buffer_lba() + decoded.inode_offset() / 512u64
+                    != meta(index, 8)) {
+                    return fail(XfsRecoveryStatus::invalid_log);
+                }
+                const storage::Sector512 core = decoded.core_or_zero();
+                // Copy the selected 176 bytes into the no-longer-needed AG buffer
+                // so the pure converter receives one checked contiguous span.
+                i64 at = 0;
+                while (at < 176) {
+                    const std::ByteReadResult byte = core.read_byte(at);
+                    _cache.set(33792 + at, u8(byte.value_or(0u64)));
+                    at = at + 1;
+                }
+                const XfsCoreRedoRequest request = XfsCoreRedoRequest(decoded.inode_number(), xp64(view(1024, 512), 16),
+                    _capacity);
+                const XfsCoreRedoResult converted = convert_xfs_core_redo(view(0, 512), view(38912 + i64(index) * 512,
+                    512), view(33792, 176), request);
+                if (converted.status() == XfsCoreRedoStatus::converted) {
+                    const storage::Sector512 sector = converted.sector_or_zero();
+                    at = 0;
+                    while (at < 512) {
+                        const std::ByteReadResult byte = sector.read_byte(at);
+                        _cache.set(38912 + i64(index) * 512 + at, u8(byte.value_or(0u64)));
+                        at = at + 1;
+                    }
+                    set_meta(index, 16, 1u64);
+                } else {
+                    if (converted.status() != XfsCoreRedoStatus::already_newer) {
+                        return fail(XfsRecoveryStatus::unsupported);
+                    }
+                }
+                item = item + 1u64;
+            }
+            _previous = _cursor;
+            _cursor = _cursor + 1u64 + _record_bytes / 512u64;
+            if (_cursor == (_head & 4294967295u64)) {
+                if (((_head & 18446744069414584320u64) | _previous) != _latest) {
+                    return fail(XfsRecoveryStatus::invalid_log);
+                }
+                if (!validate_pending_append()) {
+                    return fail(XfsRecoveryStatus::invalid_log);
+                }
+                _status = XfsRecoveryStatus::ready;
+                return _status;
+            }
+            _expected = _log_begin + _cursor;
+            _status = XfsRecoveryStatus::record_header;
+            return _status;
+        }
+    public:
+        XfsCoreRecoveryPlan(builtin::ByteRegion region, builtin::OwnedBytes cache, XfsRecoveryConfig config,
+            XfsLogTopology topology) : _cache(move(cache)), _topology(topology), _capacity(config.capacity()),
+            _expected(0u64), _log_begin(0u64), _log_count(0u64), _head(0u64), _tail(0u64), _latest(0u64), _cursor(0u64),
+            _previous(0u64), _records(0u64), _payload_bytes(0u64), _record_bytes(0u64), _record_seen(0u64),
+            _root_count(0u64), _home_index(0u64), _ag(0u64), _ag_count(0u64), _ag_blocks(0u64), _inobt_root(0u64),
+            _inobt_seen(0u64), _icount(0u64), _ifree(0u64), _fdblocks(0u64), _reads(0u64), _scan_cycle(0u64),
+            _boundary(18446744073709551615u64), _boundary_stale(false), _orphan(false), _orphan_successor(false),
+            _append_kind(0u64), _initial(topology.pristine() && config.profile()
+            == XfsRecoveryProfile::linux_6_12_x86_64_core), _clean(false), _root_changed(false),
+            _status(XfsRecoveryStatus::superblock) {
+        }
+        auto status() const -> XfsRecoveryStatus {
+            if (!_cache.ok() || _cache.size() != 49152 || !_initial || _capacity == 0u64 || _capacity > 268435456u64) {
+                return XfsRecoveryStatus::invalid_request;
+            }
+            return _status;
+        }
+        // A mounted writer may prepare only from a complete clean preflight.
+        // Copies expose neither cache storage nor arbitrary inode addresses.
+        auto clean_superblock() const -> storage::Sector512 {
+            if (status() == XfsRecoveryStatus::already_clean) {
+                return copied_sector(0);
+            }
+            const storage::Sector512 zero = storage::Sector512();
+            return zero;
+        }
+        auto clean_root() const -> storage::Sector512 {
+            if (status() == XfsRecoveryStatus::already_clean) {
+                return copied_sector(512);
+            }
+            const storage::Sector512 zero = storage::Sector512();
+            return zero;
+        }
+        auto clean_inode(u64 inode) const -> storage::Sector512 {
+            if (status() == XfsRecoveryStatus::already_clean) {
+                u64 index = 0u64;
+                while (index < _root_count) {
+                    if (meta(index, 0) == inode) {
+                        return copied_sector(38912 + i64(index) * 512);
+                    }
+                    index = index + 1u64;
+                }
+            }
+            const storage::Sector512 zero = storage::Sector512();
+            return zero;
+        }
+        auto clean_head_lsn() const -> u64 {
+            if (status() == XfsRecoveryStatus::already_clean) {
+                return _head;
+            }
+            return 0u64;
+        }
+        auto clean_latest_lsn() const -> u64 {
+            if (status() == XfsRecoveryStatus::already_clean) {
+                return _latest;
+            }
+            return 0u64;
+        }
+        auto clean_capacity() const -> u64 {
+            if (status() == XfsRecoveryStatus::already_clean) {
+                return _capacity;
+            }
+            return 0u64;
+        }
+        auto needs_read() const -> bool {
+            if (status() == XfsRecoveryStatus::invalid_request) {
+                return false;
+            }
+            return _status == XfsRecoveryStatus::superblock || _status == XfsRecoveryStatus::topology || _status
+                == XfsRecoveryStatus::completion_header || _status == XfsRecoveryStatus::completion_body || _status
+                == XfsRecoveryStatus::root || _status == XfsRecoveryStatus::home || _status == XfsRecoveryStatus::agf
+                || _status == XfsRecoveryStatus::agi || _status == XfsRecoveryStatus::inobt || _status
+                == XfsRecoveryStatus::record_header || _status == XfsRecoveryStatus::record_body || _status
+                == XfsRecoveryStatus::clean_marker;
+        }
+        auto requested_lba() const -> u64 {
+            if (needs_read()) {
+                return _expected;
+            }
+            return 0u64;
+        }
+        auto write_count() const -> u64 {
+            if (_status != XfsRecoveryStatus::ready) {
+                return 0u64;
+            }
+            u64 count = 0u64;
+            if (_root_changed) {
+                count = 1u64;
+            }
+            u64 index = 0u64;
+            while (index < _root_count) {
+                count = count + meta(index, 16);
+                index = index + 1u64;
+            }
+            return count;
+        }
+        // Conservative broker reservation after read-only preflight: 32768
+        // commands for independent final RO admission, at most18 sector writes
+        // and three Flush commands. The broker also checks its actual CID count.
+        auto required_remaining_commands() const -> u64 {
+            if (_status == XfsRecoveryStatus::already_clean) {
+                return 32769u64;
+            }
+            if (_status != XfsRecoveryStatus::ready) {
+                return 0u64;
+            }
+            return 32789u64;
+        }
+        auto accepted_sector_reads() const -> u64 {
+            return _reads;
+        }
+        auto write_at(u64 ordinal) const -> XfsRecoveryWrite {
+            if (_status == XfsRecoveryStatus::ready) {
+                u64 count = 0u64;
+                u64 index = 0u64;
+                while (index < _root_count) {
+                    if (meta(index, 16) != 0u64) {
+                        if (count == ordinal) {
+                            storage::Sector512 sector = storage::Sector512();
+                            i64 at = 0;
+                            while (at < 512) {
+                                sector.write_byte(at, _cache.at(38912 + i64(index) * 512 + at));
+                                at = at + 1;
+                            }
+                            const XfsRecoveryWrite result = XfsRecoveryWrite(meta(index, 8), sector);
+                            return result;
+                        }
+                        count = count + 1u64;
+                    }
+                    index = index + 1u64;
+                }
+                if (_root_changed && ordinal == count) {
+                    storage::Sector512 sector = storage::Sector512();
+                    i64 at = 0;
+                    while (at < 512) {
+                        sector.write_byte(at, _cache.at(512 + at));
+                        at = at + 1;
+                    }
+                    const u64 lba = xfs_v5_512_inode_lba(view(0, 512), xp64(view(0, 512), 56));
+                    const XfsRecoveryWrite result = XfsRecoveryWrite(lba, sector);
+                    return result;
+                }
+            }
+            const storage::Sector512 zero = storage::Sector512();
+            const XfsRecoveryWrite result = XfsRecoveryWrite(0u64, zero);
+            return result;
+        }
+        // Completion order is part of the caller's publication protocol:
+        // all planned home writes, Flush; ordinal0(body), Flush;
+        // ordinal1(header), Flush; retire write authority; independent RO mount.
+        // Merely obtaining these copied bytes never marks a volume clean.
+        auto completion_at(u64 ordinal) const -> XfsRecoveryWrite {
+            if (_status != XfsRecoveryStatus::ready || ordinal > 1u64) {
+                const storage::Sector512 zero = storage::Sector512();
+                const XfsRecoveryWrite absent = XfsRecoveryWrite(0u64, zero);
+                return absent;
+            }
+            const storage::Sector512 body = xp_completion_body(_head >> 32);
+            i64 at = 0;
+            if (ordinal == 0u64) {
+                const XfsRecoveryWrite result = XfsRecoveryWrite(_log_begin + (_head & 4294967295u64) + 1u64, body);
+                return result;
+            }
+            std::BinaryBuffer64 prefix = std::BinaryBuffer64();
+            prefix.write_be32(0, 4276992702u64);
+            prefix.write_be32(4, _head >> 32);
+            prefix.write_be32(8, 2u64);
+            prefix.write_be32(12, 512u64);
+            prefix.write_be64(16, _head);
+            prefix.write_be64(24, _head);
+            prefix.write_be32(36, _latest & 4294967295u64);
+            prefix.write_be32(40, 1u64);
+            // Fixed deterministic ticket ID, restored from h_cycle_data[0].
+            prefix.write_be32(44, 1096110657u64);
+            std::BinaryBuffer64 identity = std::BinaryBuffer64();
+            identity.write_be32(12, 1u64);
+            at = 0;
+            while (at < 16) {
+                identity.write_u8(16 + at, _cache.at(32 + at));
+                at = at + 1;
+            }
+            identity.write_be32(32, 32768u64);
+            storage::Sector512 header = storage::Sector512();
+            at = 0;
+            while (at < 64) {
+                const std::ByteReadResult a = prefix.read_u8(at);
+                const std::ByteReadResult b = identity.read_u8(at);
+                header.write_byte(at, u8(a.value_or(0u64)));
+                header.write_byte(288 + at, u8(b.value_or(0u64)));
+                at = at + 1;
+            }
+            const u64 checksum = xp_sector_crc(body, 512, xp_sector_crc(header, 328, 0u64));
+            if (checksum > 4294967295u64) {
+                const storage::Sector512 zero = storage::Sector512();
+                const XfsRecoveryWrite absent = XfsRecoveryWrite(0u64, zero);
+                return absent;
+            }
+            at = 0;
+            while (at < 4) {
+                header.write_byte(32 + at, u8((checksum >> (at * 8)) & 255u64));
+                at = at + 1;
+            }
+            const XfsRecoveryWrite result = XfsRecoveryWrite(_log_begin + (_head & 4294967295u64), header);
+            return result;
+        }
+        auto accept(u64 lba, storage::SectorIoStatus io, builtin::span<const u8> bytes) -> XfsRecoveryStatus {
+            if (!needs_read()) {
+                return status();
+            }
+            if (lba != _expected || bytes.size() != 512) {
+                return fail(XfsRecoveryStatus::protocol_error);
+            }
+            if (io != storage::SectorIoStatus::success) {
+                return fail(XfsRecoveryStatus::io_error);
+            }
+            _reads = _reads + 1u64;
+            if (_reads > 134000u64) {
+                return fail(XfsRecoveryStatus::unsupported);
+            }
+            if (_status == XfsRecoveryStatus::superblock) {
+                const XfsGeometryReport admitted = inspect_xfs_v5_512_geometry(bytes);
+                if (admitted.status() != XfsGeometryStatus::header_geometry_consistent
+                    || !xfs_bounded_namespace_profile(bytes)) {
+                    return fail(XfsRecoveryStatus::unsupported);
+                }
+                const XfsGeometryFacts facts = admitted.facts();
+                const XfsDataFacts data = facts.data();
+                const XfsLogFacts log = facts.log();
+                const XfsAgFacts ags = facts.ags();
+                if (data.claimed_data_sectors() > _capacity || log.log_bytes() < 32768u64 || ags.ag_count() > 16u64) {
+                    return fail(XfsRecoveryStatus::unsupported);
+                }
+                _log_begin = log.log_start_bytes() / 512u64;
+                _log_count = log.log_bytes() / 512u64;
+                _ag_count = ags.ag_count();
+                _ag_blocks = ags.ag_blocks();
+                save(0, bytes);
+                if (!_topology.begin(_log_count)) {
+                    return fail(XfsRecoveryStatus::invalid_request);
+                }
+                _expected = _log_begin;
+                _status = XfsRecoveryStatus::topology;
+                return _status;
+            }
+            if (_status == XfsRecoveryStatus::topology) {
+                const u64 position = lba - _log_begin;
+                u64 cycle = xp32(bytes, 0);
+                if (cycle == 4276992702u64) {
+                    cycle = xp32(bytes, 4);
+                }
+                if (position == 0u64) {
+                    _scan_cycle = cycle;
+                }
+                if (_boundary == 18446744073709551615u64 && cycle + 1u64 == _scan_cycle) {
+                    _boundary = position;
+                    _boundary_stale = xfs_log_header_kind(view(0, 512), bytes, position, _log_count)
+                        == XfsLogSectorKind::stale_clear;
+                }
+                bool overlay = false;
+                if (_boundary_stale && position == _boundary + 1u64 && cycle == _scan_cycle) {
+                    if (xp_completion_matches(bytes, _scan_cycle)) {
+                        _orphan = true;
+                        overlay = true;
+                    } else {
+                        // A ticket only identifies a candidate. Full canonical
+                        // and semantic checks run after every metadata read.
+                        const u64 ticket = xp32(bytes, 12);
+                        if (ticket == 1096110897u64 || ticket == 1096110641u64) {
+                            _append_kind = 1u64;
+                            if (ticket == 1096110641u64) {
+                                _append_kind = 2u64;
+                            }
+                            save(47616, bytes);
+                            _orphan = true;
+                            overlay = true;
+                        }
+                    }
+                }
+                if (_orphan && position == _boundary + 2u64) {
+                    if (cycle + 1u64 != _scan_cycle || xfs_log_header_kind(view(0, 512), bytes, position, _log_count)
+                        != XfsLogSectorKind::stale_clear) {
+                        return fail(XfsRecoveryStatus::invalid_log);
+                    }
+                    _orphan_successor = true;
+                }
+                XfsLogTopology next = _topology;
+                bool accepted = false;
+                if (overlay) {
+                    // Recovery-only overlay outside the live interval. The
+                    // shared RO topology is unchanged and still rejects this
+                    // sector on disk until a complete header is published.
+                    i64 at = 0;
+                    while (at < 512) {
+                        _cache.set(33792 + at, 0u8);
+                        at = at + 1;
+                    }
+                    at = 0;
+                    while (at < 4) {
+                        _cache.set(33792 + at, u8(((_scan_cycle - 1u64) >> ((3 - at) * 8)) & 255u64));
+                        at = at + 1;
+                    }
+                    accepted = next.accept(view(0, 512), view(33792, 512));
+                } else {
+                    accepted = next.accept(view(0, 512), bytes);
+                }
+                _topology = next;
+                if (!accepted) {
+                    return fail(XfsRecoveryStatus::invalid_log);
+                }
+                if (_topology.selected_header()) {
+                    save(1024, bytes);
+                }
+                if (!_topology.complete()) {
+                    _expected = _expected + 1u64;
+                    return _status;
+                }
+                _head = _topology.head_lsn();
+                _latest = _topology.newest_lsn();
+                _tail = xp64(view(1024, 512), 24);
+                if (_orphan && (!_orphan_successor || _head != ((_scan_cycle << 32) | _boundary))) {
+                    return fail(XfsRecoveryStatus::invalid_log);
+                }
+                const u64 head = _head & 4294967295u64;
+                const u64 tail = _tail & 4294967295u64;
+                if (_orphan && head + 2u64 >= _log_count) {
+                    return fail(XfsRecoveryStatus::unsupported);
+                }
+                if (!lsn_valid(xp64(view(0, 512), 240))) {
+                    return fail(XfsRecoveryStatus::invalid_metadata);
+                }
+                u64 clean_end = (_latest & 4294967295u64) + 2u64;
+                u64 clean_cycle = _latest >> 32;
+                if (clean_end >= _log_count) {
+                    clean_end = clean_end - _log_count;
+                    clean_cycle = clean_cycle + 1u64;
+                }
+                if (_append_kind != 2u64 && xp32(view(1024, 512), 12) == 512u64 && xp32(view(1024, 512), 40) == 1u64
+                    && ((clean_cycle << 32) | clean_end) == _head) {
+                    _expected = _log_begin + ((_latest & 4294967295u64) + 1u64) % _log_count;
+                    _status = XfsRecoveryStatus::clean_marker;
+                    return _status;
+                }
+
+                if (_append_kind == 1u64) {
+                    return fail(XfsRecoveryStatus::invalid_log);
+                }
+                if ((_head >> 32) != (_tail >> 32) || tail >= head || head + 2u64 >= _log_count || head - tail > 2048u64
+                    || _latest < _tail || !lsn_valid(xp64(view(0, 512), 240))) {
+                    return fail(XfsRecoveryStatus::unsupported);
+                }
+                _expected = _log_begin + head;
+                _status = XfsRecoveryStatus::completion_header;
+                return _status;
+            }
+            if (_status == XfsRecoveryStatus::clean_marker) {
+                u64 cycle = _latest >> 32;
+                if ((_latest & 4294967295u64) == _log_count - 1u64) {
+                    cycle = cycle + 1u64;
+                }
+                if (!xfs_log_unmount(view(1024, 512), bytes, cycle)) {
+                    return fail(XfsRecoveryStatus::invalid_log);
+                }
+                _clean = true;
+                _expected = xfs_v5_512_inode_lba(view(0, 512), xp64(view(0, 512), 56));
+                if (_expected == 0u64) {
+                    return fail(XfsRecoveryStatus::invalid_metadata);
+                }
+                _status = XfsRecoveryStatus::root;
+                return _status;
+            }
+            if (_status == XfsRecoveryStatus::completion_header || _status == XfsRecoveryStatus::completion_body) {
+                const XfsLogSectorKind kind = xfs_log_header_kind(view(0, 512), bytes, lba - _log_begin, _log_count);
+                if (_status == XfsRecoveryStatus::completion_body && _orphan) {
+                    if (_append_kind != 0u64) {
+                        i64 at = 0;
+                        while (at < 512) {
+                            if (bytes.at(at) != _cache.at(47616 + at)) {
+                                return fail(XfsRecoveryStatus::invalid_log);
+                            }
+                            at = at + 1;
+                        }
+                    } else {
+                        if (!xp_completion_matches(bytes, _head >> 32)) {
+                            return fail(XfsRecoveryStatus::invalid_log);
+                        }
+                    }
+                } else {
+                    if (kind != XfsLogSectorKind::stale_clear || xp32(bytes, 4) + 1u64 != (_head >> 32)) {
+                        return fail(XfsRecoveryStatus::unsupported);
+                    }
+                }
+                if (_status == XfsRecoveryStatus::completion_header) {
+                    _expected = _expected + 1u64;
+                    _status = XfsRecoveryStatus::completion_body;
+                    return _status;
+                }
+                _expected = xfs_v5_512_inode_lba(view(0, 512), xp64(view(0, 512), 56));
+                if (_expected == 0u64) {
+                    return fail(XfsRecoveryStatus::invalid_metadata);
+                }
+                _status = XfsRecoveryStatus::root;
+                return _status;
+            }
+            if (_status == XfsRecoveryStatus::root) {
+                const XfsRootEntryReport first = entry_at_xfs_v5_512_root(view(0, 512), bytes, 0);
+                if (first.status() != XfsRootEntryStatus::found || !lsn_valid(xp64(bytes, 112))) {
+                    return fail(XfsRecoveryStatus::invalid_metadata);
+                }
+                const XfsRootFacts facts = first.facts();
+                _root_count = facts.entry_count();
+                if (_root_count == 0u64 || _root_count > 16u64) {
+                    return fail(XfsRecoveryStatus::unsupported);
+                }
+                save(512, bytes);
+                u64 index = 0u64;
+                while (index < _root_count) {
+                    const XfsRootEntryReport entry = entry_at_xfs_v5_512_root(view(0, 512), view(512, 512), i64(index));
+                    const XfsRootEntry item = entry.entry();
+                    if (entry.status() != XfsRootEntryStatus::found || item.file_type() != 1u64) {
+                        return fail(XfsRecoveryStatus::unsupported);
+                    }
+                    const u64 inode_lba = xfs_v5_512_inode_lba(view(0, 512), item.inode_number());
+                    if (inode_lba == 0u64) {
+                        return fail(XfsRecoveryStatus::invalid_metadata);
+                    }
+                    u64 previous = 0u64;
+                    while (previous < index) {
+                        if (meta(previous, 0) == item.inode_number()) {
+                            return fail(XfsRecoveryStatus::unsupported);
+                        }
+                        previous = previous + 1u64;
+                    }
+                    set_meta(index, 0, item.inode_number());
+                    set_meta(index, 8, inode_lba);
+                    set_meta(index, 16, 0u64);
+                    index = index + 1u64;
+                }
+                _expected = meta(0u64, 8);
+                _status = XfsRecoveryStatus::home;
+                return _status;
+            }
+            if (_status == XfsRecoveryStatus::home) {
+                const storage::SectorGeometry source = storage::SectorGeometry(_capacity, true);
+                const XfsFileRequest request = XfsFileRequest(meta(_home_index, 0), 0);
+                const XfsFileReport admitted = plan_xfs_v5_512_file_sector(source, view(0, 512), bytes, request);
+                if (admitted.status() != XfsFileStatus::ready || !lsn_valid(xp64(bytes, 112))) {
+                    return fail(XfsRecoveryStatus::invalid_metadata);
+                }
+                save(38912 + i64(_home_index) * 512, bytes);
+                _home_index = _home_index + 1u64;
+                if (_home_index < _root_count) {
+                    _expected = meta(_home_index, 8);
+                    return _status;
+                }
+                _expected = 1u64;
+                _status = XfsRecoveryStatus::agf;
+                return _status;
+            }
+            if (_status == XfsRecoveryStatus::agf) {
+                save(33792, bytes);
+                _expected = _expected + 1u64;
+                _status = XfsRecoveryStatus::agi;
+                return _status;
+            }
+            if (_status == XfsRecoveryStatus::agi) {
+                const XfsRecoveryAgRequest request = XfsRecoveryAgRequest(_ag, _head);
+                const XfsRecoveryAgReport admitted = inspect_xfs_recovery_ag(view(0, 512), view(33792, 512), bytes,
+                    request);
+                if (!admitted.valid()) {
+                    return fail(XfsRecoveryStatus::invalid_metadata);
+                }
+                if (admitted.inobt_level() != 1u64) {
+                    return fail(XfsRecoveryStatus::unsupported);
+                }
+                _icount = _icount + admitted.inode_count();
+                _ifree = _ifree + admitted.free_inodes();
+                _fdblocks = _fdblocks + admitted.free_blocks();
+                _inobt_root = admitted.inobt_root();
+                _inobt_seen = 0u64;
+                save(34304, bytes);
+                _expected = (_ag * _ag_blocks + _inobt_root) * 8u64;
+                if (_expected < _log_begin + _log_count && _expected + 8u64 > _log_begin) {
+                    return fail(XfsRecoveryStatus::invalid_metadata);
+                }
+                _status = XfsRecoveryStatus::inobt;
+                return _status;
+            }
+            if (_status == XfsRecoveryStatus::inobt) {
+                save(34816 + i64(_inobt_seen) * 512, bytes);
+                _inobt_seen = _inobt_seen + 1u64;
+                if (_inobt_seen != 8u64) {
+                    _expected = _expected + 1u64;
+                    return _status;
+                }
+                // Every leaf is checked, even AGs without a referenced target.
+                // Request zero selects structural validation without allocation.
+                const XfsRecoveryInodeRequest empty = XfsRecoveryInodeRequest(_ag, _head, 0u64);
+                const XfsRecoveryInodeReport tree = inspect_xfs_recovery_inode(view(0, 512), view(34304, 512),
+                    view(34816, 4096), empty);
+                if (!tree.valid()) {
+                    return fail(XfsRecoveryStatus::invalid_metadata);
+                }
+                u64 index = 0u64;
+                while (index <= _root_count) {
+                    u64 inode = xp64(view(0, 512), 56);
+                    if (index < _root_count) {
+                        inode = meta(index, 0);
+                    }
+                    if (inode_ag(inode) == _ag) {
+                        const u64 mask = (1u64 << (i64(_cache.at(124)) + 3)) - 1u64;
+                        const XfsRecoveryInodeRequest request = XfsRecoveryInodeRequest(_ag, _head, inode & mask);
+                        const XfsRecoveryInodeReport allocated = inspect_xfs_recovery_inode(view(0, 512), view(34304,
+                            512), view(34816, 4096), request);
+                        if (!allocated.valid() || !allocated.allocated()) {
+                            return fail(XfsRecoveryStatus::invalid_metadata);
+                        }
+                    }
+                    index = index + 1u64;
+                }
+                return next_ag();
+            }
+            if (_status == XfsRecoveryStatus::record_header) {
+                const XfsLogSectorKind kind = xfs_log_header_kind(view(0, 512), bytes, _cursor, _log_count);
+                if (kind != XfsLogSectorKind::record || xp64(bytes, 16) != ((_head & 18446744069414584320u64) | _cursor)
+                    || xp64(bytes, 24) != _tail || (_records != 0u64 && xp32(bytes, 36) != _previous)) {
+                    return fail(XfsRecoveryStatus::invalid_log);
+                }
+                _records = _records + 1u64;
+                _record_bytes = xp32(bytes, 12);
+                _record_seen = 0u64;
+                _payload_bytes = _payload_bytes + _record_bytes;
+                if (_records > 16u64 || _payload_bytes > 1048576u64 || _cursor + 1u64 + _record_bytes / 512u64 > (_head
+                    & 4294967295u64)) {
+                    return fail(XfsRecoveryStatus::unsupported);
+                }
+                save(1024, bytes);
+                _expected = _expected + 1u64;
+                _status = XfsRecoveryStatus::record_body;
+                return _status;
+            }
+            if (_status == XfsRecoveryStatus::record_body) {
+                save(1536 + i64(_record_seen), bytes);
+                _record_seen = _record_seen + 512u64;
+                if (_record_seen < _record_bytes) {
+                    _expected = _expected + 1u64;
+                    return _status;
+                }
+                return finish_record();
+            }
+            return fail(XfsRecoveryStatus::protocol_error);
+        }
+    };
+}

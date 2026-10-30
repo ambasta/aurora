@@ -1,0 +1,29 @@
+short truncate 0 0 63	aurorac: error AU0000: unsupported or malformed static-link object
+magic header 0 1 0	aurorac: error AU0000: unsupported or malformed static-link object
+machine header 18 2 3	aurorac: error AU0000: unsupported or malformed static-link object
+type header 16 2 2	aurorac: error AU0000: unsupported or malformed static-link object
+sections header 60 2 9	aurorac: error AU0000: unsupported or malformed static-link object
+section-table header 40 8 0xffffffffffffffff	aurorac: error AU0000: unsupported or malformed static-link object
+writable-text text-header 8 8 7	aurorac: error AU0000: unsupported or malformed static-link object
+overlap rodata-header 24 8 text-offset	aurorac: error AU0000: unsupported or malformed static-link object
+symbol-binding start-symbol 4 1 34	aurorac: error AU0000: static link requires unique defined object symbols
+symbol-visibility start-symbol 5 1 3	aurorac: error AU0000: static link requires unique defined object symbols
+undefined start-symbol 6 2 0	aurorac: error AU0000: static link requires unique defined object symbols
+symbol-value start-symbol 8 8 0xffffffffffffffff	aurorac: error AU0000: static link requires unique defined object symbols
+function-at-end start-symbol 8 8 text-size	aurorac: error AU0000: static link requires unique defined object symbols
+empty-function start-symbol 16 8 0	aurorac: error AU0000: static link requires unique defined object symbols
+repeated-name second-symbol 0 4 first-name	aurorac: error AU0000: static link requires unique defined object symbols
+bad-name first-symbol 0 4 0	aurorac: error AU0000: static link requires unique defined object symbols
+unterminated string-end 0 1 65	aurorac: error AU0000: unsupported or malformed static-link object
+missing-entry start-name 0 1 65	aurorac: error AU0000: static link requires one global _start function
+nonfunction-entry start-symbol 4 1 16	aurorac: error AU0000: static link requires one global _start function
+relocation-type rela 8 4 1	aurorac: error AU0000: unsupported or malformed static-link relocation
+relocation-zero-symbol rela 12 4 0	aurorac: error AU0000: unsupported or malformed static-link relocation
+relocation-symbol rela 12 4 symbols	aurorac: error AU0000: unsupported or malformed static-link relocation
+relocation-offset rela 0 8 text-size	aurorac: error AU0000: unsupported or malformed static-link relocation
+relocation-addend rela 16 8 0	aurorac: error AU0000: unsupported or malformed static-link relocation
+relocation-negative rela 16 8 0x8000000000000000	aurorac: error AU0000: unsupported or malformed static-link relocation
+relocation-positive rela 16 8 0x7fffffffffffffff	aurorac: error AU0000: unsupported or malformed static-link relocation
+relocation-overlap next-rela 0 8 first-site	aurorac: error AU0000: unsupported or malformed static-link relocation
+placeholder placeholder 0 1 1	aurorac: error AU0000: unsupported or malformed static-link relocation
+call-as-literal call-relocation 8 4 2	aurorac: error AU0000: unsupported or malformed static-link relocation

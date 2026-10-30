@@ -39,7 +39,8 @@ public:
         file_reply,
         abort_file,
         exited,
-        failed
+        failed,
+        run
     };
 
 private:
@@ -66,7 +67,7 @@ public:
         const Argument argument{state_, static_cast<std::uint64_t>(event), value, carry};
         Result result{};
         __au_runtime_program_session(&argument, &result);
-        if (result.effect == 0 || result.effect > static_cast<std::uint64_t>(Effect::failed) || result.carry > 1 ||
+        if (result.effect == 0 || result.effect > static_cast<std::uint64_t>(Effect::run) || result.carry > 1 ||
             result.outcome > 2)
             return Effect::invalid;
         state_ = result.state;
@@ -96,7 +97,8 @@ public:
         command = 0,
         upper_payload = 1,
         requested_exit = 2,
-        output_failure = 3
+        output_failure = 3,
+        run = 4
     };
     class Record final {
     public:
@@ -125,9 +127,10 @@ public:
         return record_.after_cr;
     }
     [[nodiscard]] auto valid() const -> bool {
-        if (record_.count < 0 || record_.count > 64 || record_.action > 3 || record_.after_cr > 1)
+        if (record_.count < 0 || record_.count > 64 || record_.action > 4 || record_.after_cr > 1)
             return false;
-        if ((action() == Action::command && record_.count == 0) || (record_.action >= 2 && record_.count != 0))
+        if (((action() == Action::command || action() == Action::run) && record_.count == 0) ||
+            ((record_.action == 2 || record_.action == 3) && record_.count != 0))
             return false;
         for (std::size_t index = 0; index < record_.bytes.size(); ++index) {
             const auto byte = record_.bytes[index];
@@ -140,6 +143,56 @@ public:
         auto *bytes = reinterpret_cast<volatile std::byte *>(&record_);
         for (std::size_t index = 0; index < sizeof(record_); ++index)
             bytes[index] = std::byte{0};
+    }
+};
+
+// Transport-only tokenization of an Aurora-selected run command. The initial
+// console remains a bounded ASCII command surface, not a shell: space separates
+// nonempty arguments, and quoting/escaping deliberately rejects. argv[0] is the
+// selected path. No token or copied bytes confer file or process authority.
+class RunArguments final {
+    std::array<std::byte, 65> bytes_{};
+    std::size_t path_bytes_{}, argument_bytes_{};
+
+public:
+    [[nodiscard]] auto parse(const Submission &input) -> bool {
+        bytes_.fill(std::byte{0});
+        path_bytes_ = argument_bytes_ = 0;
+        if (!input.valid() || input.action() != Submission::Action::run || input.length() < 5 ||
+            input.bytes()[0] != 'r' || input.bytes()[1] != 'u' || input.bytes()[2] != 'n' || input.bytes()[3] != ' ')
+            return false;
+        std::size_t words = 0;
+        bool word = false;
+        for (std::size_t i = 4; i < input.length(); ++i) {
+            const auto byte = input.bytes()[i];
+            if (byte == '\'' || byte == '"' || byte == '\\')
+                return false;
+            if (byte == ' ') {
+                if (word) {
+                    if (words == 1)
+                        path_bytes_ = argument_bytes_;
+                    ++argument_bytes_;
+                    word = false;
+                }
+            } else {
+                if (!word && ++words > 16)
+                    return false;
+                word = true;
+                bytes_[argument_bytes_++] = std::byte{byte};
+            }
+        }
+        if (word) {
+            if (words == 1)
+                path_bytes_ = argument_bytes_;
+            ++argument_bytes_;
+        }
+        return words != 0 && path_bytes_ != 0 && argument_bytes_ <= bytes_.size();
+    }
+    [[nodiscard]] auto path() const -> std::span<const std::byte> {
+        return std::span<const std::byte>{bytes_}.first(path_bytes_);
+    }
+    [[nodiscard]] auto arguments() const -> std::span<const std::byte> {
+        return std::span<const std::byte>{bytes_}.first(argument_bytes_);
     }
 };
 

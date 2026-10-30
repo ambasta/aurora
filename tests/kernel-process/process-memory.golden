@@ -23,6 +23,6 @@
 23 bin/memory memory 1 2 3 exit failure	exit 1 | stdout: 1 exit
 24 bin/memory memory 0 0	exit 2 | stderr: usage: host-memory-probe FIRST SECOND COUNT OPERATION...
 25 bin/memory memory 0 0 3 tat 3	invalid_opcode vector=6 error=0 | stdout: 1 tat
-26 bin/aurorac aurorac	exit 2 | stderr: aurorac: error AU5001: usage: aurorac [--emit-object] [--local-symbols] [--referenced-reflection-only] [--target linux|aurora] [--module-root DIR] [--runtime-root DIR] INPUT.au -o OUTPUT [--stack-facts OUTPUT.json] [--abi-facts OUTPUT.json] /        aurorac --check [--diagnostics=text|json] [--target linux|aurora] [--module-root DIR] [--runtime-root DIR] INPUT.au
+26 bin/aurorac aurorac	exit 2 | stderr: aurorac: error AU5001: usage: aurorac [--emit-object|--emit-executable] [--local-symbols] [--referenced-reflection-only] [--target linux|aurora] [--module-root DIR] [--runtime-root DIR] INPUT.au -o OUTPUT [--stack-facts OUTPUT.json] [--abi-facts OUTPUT.json] /        aurorac --check [--diagnostics=text|json] [--target linux|aurora] [--module-root DIR] [--runtime-root DIR] INPUT.au
 27 bin/memory memory 100000 10 0 ok A ok B	exit 0 | stdout: 1 ok false 0  / 2 ok true 10
 28 bin/aurorac aurorac	exit 1

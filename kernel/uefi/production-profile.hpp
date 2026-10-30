@@ -1,5 +1,5 @@
 #pragma once
-// The production UEFI image ships only running mechanisms: no boot selector,
+// The production UEFI image ships only running mechanisms: no fixture selector,
 // injected fault, conformance capture or diagnostic probe is compiled into its
 // loader or payload. Test images keep those cases (see runtime-fixtures.inc).
 #ifdef AURORA_PRODUCTION
@@ -15,8 +15,12 @@
     defined(AURORA_KERNEL_BYTES_TESTING) || defined(AURORA_NVME_QUEUE_TESTING) ||                                      \
     defined(AURORA_NVME_QUEUE_GENERATION_LIMIT) || defined(AURORA_RUNTIME_IMAGE_BANK) ||                               \
     defined(AURORA_RUNTIME_MULTIPAGE) || defined(AURORA_SERVICE_FIXTURE) || defined(AURORA_STORAGE_FIXTURE) ||         \
-    defined(AURORA_TEXT_FIXTURE) || defined(AURORA_RUNTIME_BANK_PAGES) || defined(AURORA_RUNTIME_ROW_POLICY)
+    defined(AURORA_TEXT_FIXTURE) || defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_RUNTIME_BANK_PAGES) ||           \
+    defined(AURORA_RUNTIME_ROW_POLICY)
 #error "The production image rejects fixture selectors, test hooks and capture handshakes"
+#endif
+#if defined(AURORA_UEFI_NVME) && (!defined(AURORA_UEFI_ACPI) || !defined(AURORA_UEFI_PCI))
+#error "Production NVMe requires closed ACPI and PCI admission"
 #endif
 #if !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_UEFI_PROGRAM_CONSOLE) || !defined(AURORA_UEFI_GRAPHICAL_TERMINAL)
 #error "The production image carries the protected runtime, the program console and its graphical terminal"

@@ -24,6 +24,15 @@ def case(label, selector, quota=512, length=1, allocations=1, peak=1, fail_after
 
 
 def cases():
+    yield case("mount rejects started topology", 46, 1536, 6)
+    for mode, label in enumerate(("zero size", "oversized", "accept before begin", "second begin", "short sector")):
+        yield case("log topology sticky rejection " + label, 47, 0, mode, 0, 0)
+    yield case("mount cache allocation failure", 46, 1535, 4, 0, 0)
+    yield case("mount cache wrong length", 46, 1536, 5)
+    for mode, label in enumerate(
+        ("read before admission", "wrong reply LBA", "backend short/failed read", "short successful reply")
+    ):
+        yield case("mount protocol " + label, 46, 1536, mode)
     yield case("exact geometry, zero initialization and canonical layouts", 0)
     for code, count in enumerate((0, 1, 1 << 63, (1 << 64) - 1)):
         yield case(f"geometry retains full-width count {count}", 1 + code, allocations=0, peak=0)

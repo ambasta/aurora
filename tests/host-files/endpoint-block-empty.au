@@ -1,0 +1,6 @@
+module block_empty_probe;
+import aurora.memory;
+auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    return builtin::HostExit::success;
+}

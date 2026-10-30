@@ -60,9 +60,12 @@ def validate(status, text, mode, metadata):
         context = re.search(r"AURORA_EXCEPTION_CONTEXT: cpl=(\d+) frame=(\d+) cr2=(\d+)", text)
         need(fault and context, "Missing fatal context")
         need((int(fault[1]), int(fault[2]), int(context[1])) == expected, "Wrong injected fault")
+        # A real timer may let another task finish before the injected access.
+        # Authenticate that prefix with the same lifecycle checks as normal runs.
+        validate_schedule_events(text[: fault.start()], metadata, fatal_prefix=True)
         need(
-            "AURORA_SCHEDULE_RETIRED:" not in text and "AURORA_SCHEDULE_TICK:" not in text[fault.end() :],
-            "Rejected authority changed scheduler lifecycle",
+            "AURORA_SCHEDULE_" not in text[fault.end() :] and "AURORA_TIMER_" not in text[fault.end() :],
+            "Rejected authority changed scheduler lifecycle after the fatal fault",
         )
         if mode in ("--schedule-forged", "--schedule-context", "--schedule-root"):
             need("AURORA_SCHEDULE_TICK:" not in text, "Rejected timer was charged")
@@ -85,6 +88,10 @@ def validate(status, text, mode, metadata):
         "Aurora language result: 42",
     ):
         need(text.count(marker) == 1, f"Missing/duplicate {marker}")
+    validate_schedule_events(text, metadata)
+
+
+def validate_schedule_events(text, metadata, *, fatal_prefix=False):
     roots = {}
     kernel = None
     active = None
@@ -176,6 +183,20 @@ def validate(status, text, mode, metadata):
             need(kind != "CANCEL" or ticks[task] == 24, "Premature budget cancellation")
             need(task not in finished, "Duplicate completion")
             finished.add(task)
+    if fatal_prefix:
+        need(
+            active == 0
+            and event is None
+            and not slice_frame
+            and not slice_terminal
+            and 0 not in finished
+            and 0 not in retired,
+            "Fatal fault lacks the active uncompleted task",
+        )
+        need(finished == retired, "Pre-fault peer completion lacks retirement")
+        need(len(set(roots.values())) == len(roots), "Pre-fault domain roots alias")
+        need(enters[:3] == list(range(min(3, len(enters)))), "Initial round-robin prefix missing")
+        return
     need(
         active is None and retired == {0, 1, 2, 3} and len(set(roots.values())) == 3 and roots[3] == roots[0],
         "Incomplete lifecycle/root isolation",

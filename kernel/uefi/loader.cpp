@@ -19,11 +19,14 @@
 #endif
 #endif
 #include "acpi-policy.hpp"
-#if defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_BAR_CAPTURE) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
 #include "bar-loader.hpp"
+#if defined(AURORA_PRODUCTION) && defined(AURORA_UEFI_NVME)
+#include "fw-cfg-fixture.hpp"
+#endif
 #endif
 #include "../console.hpp"
-#ifdef AURORA_PROCESS_FIXTURE
+#if defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_PRODUCTION)
 #include "volume-loader.hpp"
 #endif
 #include "uefi-payload.hpp"
@@ -131,11 +134,25 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         boot, image, aurora::uefi::loader_fixture::volume_path(*selected, *selected_case));
     if (!volume)
         fail("boot volume bounds");
+#elif defined(AURORA_PRODUCTION)
+    const auto volume = aurora::uefi::VolumeLoader::read(boot, image, u"\\aurora\\system");
+    if (!volume)
+        fail("boot volume bounds");
 #endif
-#if defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_BAR_CAPTURE) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
 #ifdef AURORA_PLATFORM_FIXTURE
     // Only BAR and IVRS rows capture the firmware BAR resources (handoff v4).
     const bool capture = aurora::uefi::platform::capture(*selected);
+#elif defined(AURORA_PROCESS_FIXTURE)
+    const bool capture = (*selected_case >= 10 && *selected_case <= 41) && *selected == Fixture::process_volume;
+#elif defined(AURORA_PRODUCTION)
+    const auto storage = aurora::uefi::fw_cfg::FwCfg::read_storage();
+    if (!storage)
+        fail("production storage selector");
+    const bool capture = *storage == aurora::uefi::fw_cfg::Storage::nvme ||
+                         *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_clean ||
+                         *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_recover ||
+                         *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_write;
 #else
     constexpr bool capture = true;
 #endif
@@ -144,7 +161,11 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         asm volatile("cpuid"
                      : "=a"(capture_a), "=b"(capture_b), "=c"(capture_c), "=d"(capture_d)
                      : "a"(0x80000008U), "c"(0));
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_NVME) && defined(AURORA_PRODUCTION)
+        if (!aurora::uefi::BarLoader{boot, arena, capture_a & 255}.capture_nvme_graphics())
+#elif defined(AURORA_UEFI_NVME)
+        if (!aurora::uefi::BarLoader{boot, arena, capture_a & 255}.capture_nvme())
+#elif defined(AURORA_UEFI_IOMMU_EVENT)
         if (!aurora::uefi::BarLoader{boot, arena, capture_a & 255}.capture_event())
 #else
         if (!aurora::uefi::BarLoader{boot, arena, capture_a & 255}.capture())
@@ -276,10 +297,16 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
 #endif
 #endif
 #endif
-#if defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_BAR_CAPTURE) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
     if (capture) {
+#ifdef AURORA_PRODUCTION
+        put(handoff, Handoff::bar_record_word, arena + Handoff::production_bar_record_offset);
+#elif defined(AURORA_PROCESS_FIXTURE)
+        put(handoff, Handoff::bar_record_word, arena + Handoff::bar_record_offset);
+#else
         put(handoff, 8, 4, 4);
         put(handoff, 120, arena + Handoff::bar_record_offset);
+#endif
     }
 #endif
 #if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
@@ -293,11 +320,31 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
 #endif
 #ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
     // Word 120 keeps the runtime metadata written above; the record has its own word.
-    put(handoff, 8, 7, 4);
+    put(handoff, 8, Handoff::terminal_version, 4);
     put(handoff, Handoff::framebuffer_word, arena + Handoff::framebuffer_record_offset);
 #endif
+#ifdef AURORA_PRODUCTION
+#ifdef AURORA_UEFI_NVME
+    put(handoff, Handoff::composition_word, capture ? 4 : 1);
+    put(handoff,
+        Handoff::readonly_profile_word,
+        *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_write     ? 3
+        : *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_recover ? 2
+        : *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_clean   ? 1
+                                                                             : 0);
+#else
+    put(handoff, Handoff::composition_word, 1);
+#endif
+    put(handoff, Handoff::volume_word, volume->address);
+    put(handoff, Handoff::volume_bytes_word, volume->bytes);
+#endif
 #ifdef AURORA_PROCESS_FIXTURE
-    put(handoff, 8, 9, 4);
+    put(handoff, 8, 10, 4);
+#ifdef AURORA_UEFI_NVME
+    put(handoff, Handoff::composition_word, capture ? 3 : 2);
+#else
+    put(handoff, Handoff::composition_word, 2);
+#endif
     put(handoff, Handoff::volume_word, volume->address);
     put(handoff, Handoff::volume_bytes_word, volume->bytes);
     put(handoff, Handoff::case_word, *selected_case);

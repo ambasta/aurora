@@ -1,0 +1,45 @@
+# name composition offset:width=value ...
+ram 2
+nvme 3
+nvme-clean 3 152:8=11
+nvme-recovery 3 152:8=12
+nvme-mounted 3 152:8=17
+nvme-recovered-pair 3 152:8=41
+production-in-process 1
+future-production-nvme 4
+unknown 0
+ram-runtime 2 120:8=1
+ram-framebuffer 2 128:8=0x10e0000
+ram-bar 2 160:8=0x1081000
+ram-selector 2 168:8=251
+ram-selector-limit 2 168:8=256
+ram-case-limit 2 152:8=256
+ram-volume-null 2 136:8=0
+ram-volume-misaligned 2 136:8=1
+ram-volume-size 2 144:8=0x4000001
+ram-volume-empty 2 144:8=0
+nvme-no-bar 3 160:8=0
+nvme-wrong-bar 3 160:8=0x1082000
+nvme-payload-overflow 3 80:8=0x81000
+legacy-version 2 8:4=9
+legacy-header 2 12:4=160
+wrong-header 2 12:4=152
+ram-storage-case 2 152:8=10
+ram-clean-storage-case 2 152:8=11
+nvme-wrong-case 3 152:8=0
+# Storage selectors 10..41 are admitted; exercise the first unsupported selector.
+nvme-unknown-case 3 152:8=42
+nvme-wrong-selector 3 168:8=253
+nvme-clean-wrong-selector 3 152:8=11 168:8=253
+nvme-clean-no-bar 3 152:8=11 160:8=0
+ram-recovery-storage-case 2 152:8=12
+nvme-recovery-wrong-selector 3 152:8=12 168:8=253
+nvme-recovery-no-bar 3 152:8=12 160:8=0
+nvme-recovery-cut-13 3 152:8=13
+ram-recovery-cut-13 2 152:8=13
+nvme-recovery-cut-14 3 152:8=14
+ram-recovery-cut-14 2 152:8=14
+nvme-recovery-cut-15 3 152:8=15
+ram-recovery-cut-15 2 152:8=15
+nvme-recovery-cut-16 3 152:8=16
+ram-recovery-cut-16 2 152:8=16

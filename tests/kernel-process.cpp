@@ -15,7 +15,7 @@
 // stdout is compared with the golden file beside the cases.
 #include "../kernel/uefi/frames.hpp"
 #include "../kernel/uefi/kernel-space.hpp"
-#include "../kernel/uefi/process-files.hpp"
+#include "kernel-process-files.hpp"
 #include <algorithm>
 #include <cstring>
 #include <cstdio>
@@ -143,7 +143,7 @@ public:
     }
 };
 
-auto run_operations(const MapCase &item, frames::Table &table) -> void {
+auto run_operations(const MapCase &item, frames::Table &table, std::span<U64> records) -> void {
     for (const auto &line : item.operations) {
         std::istringstream words{line};
         std::string verb;
@@ -165,6 +165,17 @@ auto run_operations(const MapCase &item, frames::Table &table) -> void {
             words >> index >> generation >> owner;
             std::cout << "  release " << index << " " << generation << " " << owner << " -> "
                       << rejection(table.release({index, generation}, owner)) << "\n";
+        } else if (verb == "owner") {
+            U64 owner = 0;
+            words >> owner;
+            std::cout << "  owner " << owner << " frames=" << table.allocated(owner) << "\n";
+        } else if (verb == "corrupt-owner") {
+            U64 index = 0, owner = 0;
+            words >> index >> owner;
+            if (index >= records.size())
+                usage("corrupt-owner index");
+            records[index] = (records[index] & 0xffffffffULL) | (owner << 32);
+            std::cout << "  corrupt-owner " << index << " " << owner << "\n";
         } else if (verb == "audit") {
             const auto audit = table.audit();
             std::cout << "  audit consistent=" << audit.consistent << " free=" << audit.free
@@ -225,7 +236,7 @@ auto run_map(const MapCase &item) -> void {
         return;
     }
     std::cout << "  bound reserved=" << table.reserved() << " free=" << table.free() << "\n";
-    run_operations(item, table);
+    run_operations(item, table, records);
 }
 
 auto number(const std::string &text) -> U64 {
@@ -766,9 +777,69 @@ auto files_mode(const char *volume_path, const char *cases) -> int {
     }
     return 0;
 }
+// The same process driver checks the closed handoff rows before any machine
+// access. Cases only edit copied words; expected acceptance is reviewed data.
+auto handoff_mode(const char *cases) -> int {
+    using aurora::uefi::Handoff;
+    using aurora::uefi::put;
+    constexpr U64 arena = 0x1000000;
+    std::ifstream input{cases};
+    if (!input)
+        usage("cannot read cases");
+    for (std::string line; std::getline(input, line);) {
+        if (line.empty() || line.starts_with("#"))
+            continue;
+        std::istringstream row{line};
+        std::string name, tag;
+        row >> name >> tag;
+        std::array<std::byte, Handoff::header> h{};
+        for (const auto &[offset, value] :
+             std::initializer_list<std::pair<std::size_t, U64>>{{0, Handoff::magic},
+                                                                {16, Handoff::arena_bytes},
+                                                                {24, arena},
+                                                                {32, 4800},
+                                                                {40, 48},
+                                                                {56, 8192},
+                                                                {64, 4096},
+                                                                {72, 8192},
+                                                                {80, 12288},
+                                                                {88, arena + Handoff::tables_offset},
+                                                                {96, 9},
+                                                                {104, arena + Handoff::payload_offset},
+                                                                {112, 0xf5e10},
+                                                                {136, 0x20000000},
+                                                                {144, 8192},
+                                                                {168, 252},
+                                                                {176, number(tag)}})
+            put(h, offset, value);
+        put(h, 8, 10, 4);
+        put(h, 12, Handoff::header, 4);
+        put(h, 48, 1, 4);
+        put(h, 52, 1, 4);
+        if (number(tag) == 3) {
+            put(h, Handoff::case_word, 10);
+            put(h, Handoff::bar_record_word, arena + Handoff::bar_record_offset);
+        }
+        for (std::string edit; row >> edit;) {
+            const auto colon = edit.find(':');
+            const auto equals = edit.find('=');
+            if (colon == std::string::npos || equals == std::string::npos || colon >= equals)
+                usage("bad handoff edit");
+            const auto offset = number(edit.substr(0, colon));
+            const auto width = number(edit.substr(colon + 1, equals - colon - 1));
+            if (!width || width > 8 || offset > h.size() || width > h.size() - offset)
+                usage("handoff edit bounds");
+            put(h, offset, number(edit.substr(equals + 1)), static_cast<unsigned>(width));
+        }
+        std::cout << name << " " << (Handoff::valid(h, arena) ? "accepted" : "rejected") << "\n";
+    }
+    return 0;
+}
 } // namespace
 
 auto main(int argc, char **argv) -> int {
+    if (argc == 3 && std::string{argv[1]} == "handoff")
+        return handoff_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "frames")
         return frames_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "volumes")

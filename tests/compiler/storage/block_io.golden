@@ -1,3 +1,15 @@
+mount rejects started topology	result=42 allocations=1 releases=1 peak=1 order=permutation
+log topology sticky rejection zero size	result=42 allocations=0 releases=0 peak=0 order=permutation
+log topology sticky rejection oversized	result=42 allocations=0 releases=0 peak=0 order=permutation
+log topology sticky rejection accept before begin	result=42 allocations=0 releases=0 peak=0 order=permutation
+log topology sticky rejection second begin	result=42 allocations=0 releases=0 peak=0 order=permutation
+log topology sticky rejection short sector	result=42 allocations=0 releases=0 peak=0 order=permutation
+mount cache allocation failure	result=42 allocations=0 releases=0 peak=0 order=permutation
+mount cache wrong length	result=42 allocations=1 releases=1 peak=1 order=permutation
+mount protocol read before admission	result=42 allocations=1 releases=1 peak=1 order=permutation
+mount protocol wrong reply LBA	result=42 allocations=1 releases=1 peak=1 order=permutation
+mount protocol backend short/failed read	result=42 allocations=1 releases=1 peak=1 order=permutation
+mount protocol short successful reply	result=42 allocations=1 releases=1 peak=1 order=permutation
 exact geometry, zero initialization and canonical layouts	result=42 allocations=1 releases=1 peak=1 order=permutation
 geometry retains full-width count 0	result=0 allocations=0 releases=0 peak=0 order=permutation
 geometry retains full-width count 1	result=1 allocations=0 releases=0 peak=0 order=permutation

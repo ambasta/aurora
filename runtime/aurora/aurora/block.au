@@ -1,0 +1,36 @@
+export module aurora.block;
+import storage.block_io;
+import std.binary_buffer;
+import std.binary;
+import storage.sector;
+
+// A separate sealed read-only volume grant, never derived from Serve or memory.
+// Descriptor values are observations; kernel read admission uses its live grant,
+// incarnation, immutable-volume lease and extent rather than these copied words.
+export namespace block {
+    auto sector_count(builtin::ReadOnlyBlock& blocks) -> u64 {
+        return blocks.descriptor(0u64);
+    }
+    auto volume_generation(builtin::ReadOnlyBlock& blocks) -> u64 {
+        return blocks.descriptor(1u64);
+    }
+    auto read_sector(builtin::ReadOnlyBlock& blocks, u64 lba) -> storage::SectorReadResult {
+        const u64 raw = blocks.read_sector(lba);
+        storage::Sector512 sector = storage::Sector512();
+        storage::SectorIoStatus status = storage::SectorIoStatus::invalid_source;
+        if (raw == 0u64) {
+            status = storage::SectorIoStatus::success;
+            i64 index = 0;
+            while (index < 512) {
+                const u8 byte = blocks.sector_byte(u64(index));
+                sector.write_byte(index, byte);
+                index = index + 1;
+            }
+        }
+        if (raw == 1u64) {
+            status = storage::SectorIoStatus::out_of_range;
+        }
+        const storage::SectorReadResult result = storage::SectorReadResult(status, sector);
+        return result;
+    }
+}

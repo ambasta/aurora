@@ -1,9 +1,9 @@
 # Process entry and exit for the process image (kernel/uefi/process.md#entries).
 # uefi_process_enter(context) saves the kernel's callee-saved registers and
-# stack, loads the process root and IRETQs to CPL 3 with only RDI and RSI set:
-# context words are RIP, RSP, RDI, RSI, root. Every trap of the process enters
+# stack, loads the process root and IRETQs to CPL 3 with RDI/RSI arguments and the sealed RDX endpoint generation:
+# context words are RIP, RSP, RDI, RSI, root, endpoint generation, block generation, block sectors. Every trap of the process enters
 # kernel/exceptions.S on TSS.RSP0 under the process root; a dispatch result of 1
-# jumps here to aurora_leave_user, which restores the kernel root, the kernel
+# jumps here to uefi_process_leave_user, which restores the kernel root, the kernel
 # selectors and the saved stack and returns 1 from uefi_process_enter.
 # uefi_process_handler(vector) returns a vector's handler address without
 # absolute relocations.
@@ -25,6 +25,9 @@ uefi_process_enter:
     pushq $0x202
     pushq $0x1b
     pushq 0(%rdi)
+    mov 56(%rdi), %r9
+    mov 48(%rdi), %r8
+    mov 40(%rdi), %rdx
     mov 32(%rdi), %rax
     mov 24(%rdi), %rsi
     mov 16(%rdi), %rdi
@@ -37,10 +40,7 @@ uefi_process_enter:
     mov %ax, %gs
     xor %ebx, %ebx
     xor %ecx, %ecx
-    xor %edx, %edx
     xor %ebp, %ebp
-    xor %r8d, %r8d
-    xor %r9d, %r9d
     xor %r10d, %r10d
     xor %r11d, %r11d
     xor %r12d, %r12d
@@ -49,10 +49,48 @@ uefi_process_enter:
     xor %r15d, %r15d
     iretq
 .size uefi_process_enter,.-uefi_process_enter
-.global aurora_leave_user
-.hidden aurora_leave_user
-.type aurora_leave_user,@function
-aurora_leave_user:
+# Resume only a kernel-owned, previously authenticated full user frame. The
+# supervisor has returned from the preceding process before making this call;
+# no nested entry may overwrite uefi_process_saved_rsp. The frame lives in the
+# shared supervisor-only arena, not in either process's user mappings.
+.global uefi_process_resume
+.hidden uefi_process_resume
+.type uefi_process_resume,@function
+uefi_process_resume:
+    push %rbx
+    push %rbp
+    push %r12
+    push %r13
+    push %r14
+    push %r15
+    mov %rsp, uefi_process_saved_rsp(%rip)
+    mov %rsi, %cr3
+    mov $0x23, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %rdi, %rsp
+    pop %r15
+    pop %r14
+    pop %r13
+    pop %r12
+    pop %r11
+    pop %r10
+    pop %r9
+    pop %r8
+    pop %rdi
+    pop %rsi
+    pop %rbp
+    pop %rdx
+    pop %rcx
+    pop %rbx
+    pop %rax
+    add $16, %rsp
+    iretq
+.size uefi_process_resume,.-uefi_process_resume
+.global uefi_process_leave_user
+.hidden uefi_process_leave_user
+.type uefi_process_leave_user,@function
+uefi_process_leave_user:
     mov uefi_process_kernel_root(%rip), %rax
     mov %rax, %cr3
     mov $0x10, %eax
@@ -71,18 +109,18 @@ aurora_leave_user:
     pop %rbx
     mov $1, %eax
     ret
-.size aurora_leave_user,.-aurora_leave_user
+.size uefi_process_leave_user,.-uefi_process_leave_user
 .global uefi_process_handler
 .hidden uefi_process_handler
 .type uefi_process_handler,@function
 uefi_process_handler:
     cmp $64, %edi
     jne 1f
-    lea aurora_timer_interrupt(%rip), %rax
+    lea uefi_process_timer_interrupt(%rip), %rax
     ret
 1:  cmp $131, %edi
     jne 2f
-    lea aurora_process_call(%rip), %rax
+    lea uefi_process_process_call(%rip), %rax
     ret
 2:  cmp $31, %edi
     ja 3f
@@ -90,7 +128,7 @@ uefi_process_handler:
     movslq (%rax,%rdi,4), %rdx
     add %rdx, %rax
     ret
-3:  lea aurora_unexpected_interrupt(%rip), %rax
+3:  lea uefi_process_unexpected_interrupt(%rip), %rax
     ret
 .size uefi_process_handler,.-uefi_process_handler
 # The kernel stack waits here for a timer interrupt already pending when a
@@ -113,38 +151,38 @@ uefi_process_drain_end:
 .section .rodata
 .balign 4
 process_handler_offsets:
-    .long aurora_exception_0-process_handler_offsets
-    .long aurora_exception_1-process_handler_offsets
-    .long aurora_exception_2-process_handler_offsets
-    .long aurora_exception_3-process_handler_offsets
-    .long aurora_exception_4-process_handler_offsets
-    .long aurora_exception_5-process_handler_offsets
-    .long aurora_exception_6-process_handler_offsets
-    .long aurora_exception_7-process_handler_offsets
-    .long aurora_exception_8-process_handler_offsets
-    .long aurora_exception_9-process_handler_offsets
-    .long aurora_exception_10-process_handler_offsets
-    .long aurora_exception_11-process_handler_offsets
-    .long aurora_exception_12-process_handler_offsets
-    .long aurora_exception_13-process_handler_offsets
-    .long aurora_exception_14-process_handler_offsets
-    .long aurora_exception_15-process_handler_offsets
-    .long aurora_exception_16-process_handler_offsets
-    .long aurora_exception_17-process_handler_offsets
-    .long aurora_exception_18-process_handler_offsets
-    .long aurora_exception_19-process_handler_offsets
-    .long aurora_exception_20-process_handler_offsets
-    .long aurora_exception_21-process_handler_offsets
-    .long aurora_exception_22-process_handler_offsets
-    .long aurora_exception_23-process_handler_offsets
-    .long aurora_exception_24-process_handler_offsets
-    .long aurora_exception_25-process_handler_offsets
-    .long aurora_exception_26-process_handler_offsets
-    .long aurora_exception_27-process_handler_offsets
-    .long aurora_exception_28-process_handler_offsets
-    .long aurora_exception_29-process_handler_offsets
-    .long aurora_exception_30-process_handler_offsets
-    .long aurora_exception_31-process_handler_offsets
+    .long uefi_process_exception_0-process_handler_offsets
+    .long uefi_process_exception_1-process_handler_offsets
+    .long uefi_process_exception_2-process_handler_offsets
+    .long uefi_process_exception_3-process_handler_offsets
+    .long uefi_process_exception_4-process_handler_offsets
+    .long uefi_process_exception_5-process_handler_offsets
+    .long uefi_process_exception_6-process_handler_offsets
+    .long uefi_process_exception_7-process_handler_offsets
+    .long uefi_process_exception_8-process_handler_offsets
+    .long uefi_process_exception_9-process_handler_offsets
+    .long uefi_process_exception_10-process_handler_offsets
+    .long uefi_process_exception_11-process_handler_offsets
+    .long uefi_process_exception_12-process_handler_offsets
+    .long uefi_process_exception_13-process_handler_offsets
+    .long uefi_process_exception_14-process_handler_offsets
+    .long uefi_process_exception_15-process_handler_offsets
+    .long uefi_process_exception_16-process_handler_offsets
+    .long uefi_process_exception_17-process_handler_offsets
+    .long uefi_process_exception_18-process_handler_offsets
+    .long uefi_process_exception_19-process_handler_offsets
+    .long uefi_process_exception_20-process_handler_offsets
+    .long uefi_process_exception_21-process_handler_offsets
+    .long uefi_process_exception_22-process_handler_offsets
+    .long uefi_process_exception_23-process_handler_offsets
+    .long uefi_process_exception_24-process_handler_offsets
+    .long uefi_process_exception_25-process_handler_offsets
+    .long uefi_process_exception_26-process_handler_offsets
+    .long uefi_process_exception_27-process_handler_offsets
+    .long uefi_process_exception_28-process_handler_offsets
+    .long uefi_process_exception_29-process_handler_offsets
+    .long uefi_process_exception_30-process_handler_offsets
+    .long uefi_process_exception_31-process_handler_offsets
 .section .bss
 .balign 8
 .global uefi_process_saved_rsp

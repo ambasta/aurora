@@ -1,9 +1,9 @@
 #include "acpi.hpp"
 #include "acpi-policy.hpp"
 #include "tables.hpp"
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
 #include "ivrs-policy.hpp"
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
 #include "event-profile-policy.hpp"
 #endif
 #endif
@@ -12,10 +12,19 @@
 #endif
 #include "../console.hpp"
 namespace aurora::uefi {
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
 [[gnu::noinline]] auto read_event_ivrs(std::span<const std::byte> bytes, unsigned bits) -> std::optional<EventIvrs> {
     return EventIvrs::parse_qemu_default(bytes, bits);
 }
+[[gnu::noinline]] auto read_nvme_ivrs(std::span<const std::byte> bytes, unsigned bits) -> std::optional<NvmeIvrs> {
+    return NvmeIvrs::parse_qemu_default(bytes, bits);
+}
+#ifdef AURORA_PRODUCTION
+[[gnu::noinline]] auto read_nvme_graphics_ivrs(std::span<const std::byte> bytes, unsigned bits)
+    -> std::optional<NvmeGraphicsIvrs> {
+    return NvmeGraphicsIvrs::parse_qemu_default(bytes, bits);
+}
+#endif
 #endif
 
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||   \
@@ -130,7 +139,7 @@ public:
 #if defined(AURORA_UEFI_TABLES)
 [[gnu::noinline]] auto
 prepare_table_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::size_t &copied_mcfg_size) -> bool {
-#elif defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
+#elif defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
 [[gnu::noinline]] auto
 prepare_ivrs_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::size_t &copied_mcfg_size) -> bool {
 #elif defined(AURORA_UEFI_PCI)
@@ -145,6 +154,9 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     using platform::Fixture;
     const auto fixture = platform::row(handoff.get(Handoff::fixture_offset));
     const bool pci_row = platform::pci(fixture), ivrs_row = platform::ivrs(fixture);
+#elif (defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_PRODUCTION)) && defined(AURORA_UEFI_NVME)
+    // One process image: only the closed storage composition admits device work.
+    const bool pci_row = Handoff::bar(handoff), ivrs_row = pci_row;
 #else
     [[maybe_unused]] constexpr bool pci_row = true, ivrs_row = true;
 #endif
@@ -206,7 +218,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     if (!xsdt || !Acpi::xsdt(*xsdt, *xsdt_address))
         return false;
     U64 madt_address = 0;
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
     U64 ivrs_address = 0;
 #endif
 #ifdef AURORA_UEFI_PCI
@@ -229,7 +241,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
             mcfg_address = candidate;
         }
 #endif
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
         if (ivrs_row && Acpi::signature(header, "IVRS")) {
             if (ivrs_address)
                 return false;
@@ -272,7 +284,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     const auto topology = Topology::parse(*madt, physical_bits);
     if (!topology || !window.closed() || !tables.verify(arena, handoff))
         return false;
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
     if (ivrs_row && topology->apic() != 0xfee00000)
         return false; // Explicit q35 profile; no unverified APIC alias.
 #endif
@@ -312,7 +324,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
         mcfg_size = mcfg->size();
     }
 #endif
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
     if (ivrs_row) {
         if (!ivrs_address) {
             Serial::text("AURORA_IVRS_REJECTED: reason=missing-table\r\n");
@@ -331,7 +343,11 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
             Serial::put(digits[byte & 15]);
         }
         Serial::text("\r\n");
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_NVME) && defined(AURORA_PRODUCTION)
+        const auto facts = read_nvme_graphics_ivrs(*ivrs, physical_bits);
+#elif defined(AURORA_UEFI_NVME)
+        const auto facts = read_nvme_ivrs(*ivrs, physical_bits);
+#elif defined(AURORA_UEFI_IOMMU_EVENT)
         const auto facts = read_event_ivrs(*ivrs, physical_bits);
 #else
         const auto facts = Ivrs::parse_qemu_10_0_13(*ivrs, physical_bits);
@@ -367,7 +383,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
 #ifdef AURORA_UEFI_TABLES
     if (!prepare_table_acpi(arena, handoff, physical_bits, mcfg_size))
         return false;
-#elif defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
+#elif defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
     if (!prepare_ivrs_acpi(arena, handoff, physical_bits, mcfg_size))
         return false;
 #else
@@ -378,6 +394,10 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     // Early and ACPI rows end after ACPI discovery, as their ACPI-only images did.
     if (!platform::pci(platform::row(handoff.get(Handoff::fixture_offset))))
         return true;
+#endif
+#if (defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_PRODUCTION)) && defined(AURORA_UEFI_NVME)
+    if (!Handoff::bar(handoff))
+        return true; // RAM-only process rows retain their ACPI/timer-only path.
 #endif
     // ACPI parsing/Topology temporaries have ended before PCI scan construction.
     const bool accepted = discover_pci(arena, handoff, bytes(arena + 0x70000, mcfg_size), physical_bits, pool);

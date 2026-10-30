@@ -88,7 +88,8 @@ selector or injection state.
 
 `uefi/production` is the one production UEFI configuration: ACPI, PCI, the
 protected runtime, IPC, service and user budgets, the protected program console
-(`program-console` is its alias) and the graphical terminal that renders it.
+(`program-console` is its alias), the graphical terminal that renders it, and
+the retained process/file-service runtime behind `run PATH [args]`.
 `production-profile.hpp` makes any fixture, test, capture or probe flag a compile
 error in its loader and payload, `graphical-profile.hpp` admits the graphical
 terminal only with that complete runtime stack and no test flag, the image policy
@@ -103,30 +104,57 @@ append and namespace roles; source filenames do not select a second check.
 ProgramSubmission/ProgramResponse and their Console entries remain outside this
 coverage. Runtime value, capability and lifecycle checks are separate properties.
 
-Composition. The image links two closed Aurora objects with separate bridges and
-import policies: the program console (`examples/kernel-program-console.au`,
-Console imports only) and the terminal painter
-(`examples/kernel-graphical-terminal.au`, whose only import is the Display pixel
-service; `imports:terminal` in the image policy). The painter emits its object
-directly and Aurora composes the separately assembled private wrapper, preserving
-LOCAL source definitions and its checked six-qword entry ABI. The protected program console
-is the only owner of COM1 input and of the LAPIC timer and stays the command
-surface: there is one input consumer and one timer user, so nothing is routed
-between consoles. Every byte its sealed Console session delivers is also copied
-into an 80x24 cell grid (`kernel/terminal-grid.hpp`, data only); native
-diagnostics are not. Changed cells are painted through one DisplaySession loan
-before the console's poll wait and after each Console turn releases its grant,
-never during a protected run, with the paired LAPIC/framebuffer tree verified at
-each paint and the leaf rechecked per store (`kernel/uefi/graphical-terminal.inc`).
-The display fixture's standalone graphical console keeps its own line editor and capture
-cases; both consoles draw cells through the shared `graphics.text_cells` library.
+Composition. The image links the Aurora console, terminal painter and process
+policy objects through separate checked bridges. The console
+(`examples/kernel-program-console.au`) imports only Console; the painter
+(`examples/kernel-graphical-terminal.au`) imports only Display pixel
+(`imports:terminal`). The process bridge exposes only live admission, frame,
+volume, trap, call and memory policies, not a kernel file-store, fixture run-list
+or serial-export interface. `bin/file-service` is a separate Aurora program in
+the production boot volume, retaining committed versions in its private region.
 
-Handoff. Version 7 is the production layout: word 112 is the copied RSDP, word
-120 the runtime metadata (as in v3) and word 128 the framebuffer record, in a
-136-byte header. Only the production header admits v7 and it admits nothing
-else; every other image keeps its 128-byte header, rejects v7 and validates
-v1-v6 unchanged (`native-kernel-uefi-handoff[-terminal]`). The platform fixture's
-word 128 exists only in its own image, which can never compose the terminal.
+The protected console remains the only COM1 input consumer. Its copied session
+policy selects `run`, then revokes the Console grant before handing over the
+quiescent supervisor to the process runtime. That runtime attaches its exact
+extension/window mappings, owns the GDT/TSS/IDT and timer during child execution,
+and delivers only copied stdout/stderr bytes at a timer-quiet supervisor boundary.
+The retained service pins each selected executable while the loader validates a
+snapshot; guest-created object and ELF files stay available in the same boot.
+The same source owner also retains the existing note/four-file commands in a
+private session namespace. Production keeps only transient projections, selection
+tokens and the shared authenticated retirement ledger, not a second kernel store;
+see [console storage ownership](program-console-contract.md#production-console-storage-ownership).
+
+Every Console byte and copied process-output byte also enters an 80x24 cell grid
+(`kernel/terminal-grid.hpp`, data only); native diagnostics do not. Painting uses
+one DisplaySession loan only after the process has parked its service, audited
+and detached its mappings, restored the exact old architecture (including the
+prior CR2 diagnostic context), and passed the unchanged graphical verifier.
+No Display/Console loan spans a process handoff. The leaf is rechecked per store
+(`kernel/uefi/graphical-terminal.inc`). The display fixture's standalone console
+keeps its own line editor and capture cases; both draw cells through
+`graphics.text_cells`. See [program launch](program-console-contract.md#production-program-launch)
+for the bounded grammar, statuses and RAM-only persistence contract.
+
+Handoff. The one production image admits fixed 184-byte v10 RAM/storage
+compositions 1/4. Word 112 is the copied RSDP, 120 the runtime metadata, 128 the
+framebuffer record, and 136/144 the separately allocated boot-volume address/length.
+Fixture word 168 stays zero. Word 152 is zero for tag 1 and a closed readonly XFS
+profile 0/1 for tag 4; its process-fixture case meaning is unchanged. Word 176 is
+the tag. BAR word 160 is zero for
+tag 1 and exactly arena+0xe1000 for tag 4, never the runtime metadata page 0x81000.
+The process image uses exact RAM/NVMe tags 2/3; its tag 3 BAR remains arena+0x81000
+and cannot compose the graphical runtime. Historical formats remain exact only
+in their owning profiles.
+Native production handoff and process-tag cases cover cross-composition and
+forbidden-word rejection; volume addresses still need independent final-map
+admission. The platform fixture's selector layout cannot compose production.
+The independent production selectors `nvme` and `nvme-linux-6.12-clean` under
+`opt/aurora/storage` both require the same closed
+seven-function profile and source-bound GOP/BAR agreement; no opt-in means no
+PCI/NVMe probes. The same image reports the bounded XFS startup result before
+its first prompt. Its dedicated runner uses a fresh read-only disk, not a fixture
+kernel or a physical device.
 
 Framebuffer admission. The loader and the payload's restoration use the firmware
 rule (`FramebufferAdmission::authorize_firmware`): the source-bound GOP resource
@@ -142,8 +170,14 @@ framebuffer in firmware RAM (QEMU ramfb) fails closed in the loader. The std-VGA
 fixture rule remains for the display fixture's framebuffer and graphical-console rows.
 This is exercised only under QEMU/OVMF; it is not physical-hardware support.
 
-Guest. `scripts/kernel_production_smoke.py` runs the program-console PTY oracle
-on the image, then one q35/OVMF/std-VGA guest with QMP: the commands in
+Guest. `scripts/kernel_production_smoke.py` runs the existing program-console PTY
+oracle on the shipped image, including guest source compilation, native linking
+and retained executable launch in one boot. A second pass uses the identical
+production kernel and a private copied ESP augmented only with existing hostile
+programs and malformed ELF data; it checks fault/watchdog/quota/authority refusal,
+cleanup and healthy commands afterward. No hostile programs ship in the normal
+volume and no per-case kernel is built. A q35/OVMF/std-VGA guest with QMP then runs
+the commands in
 `tests/kernel-production-console.json` over serial, whose Console output must
 equal that reviewed transcript (only whole native diagnostic lines may
 interleave), and the framebuffer viewport, which must equal the real host painter's

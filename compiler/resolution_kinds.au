@@ -27,7 +27,9 @@ export namespace compiler_resolver {
         port_range,
         serve_session,
         value_span,
-        host_files
+        host_files,
+        read_only_block,
+        writable_block
     };
     enum class DeclarationKind {
         invalid,

@@ -8,17 +8,33 @@ import std.binary_buffer;
 import storage.sector;
 import storage.block_io;
 import storage.ram_sector;
+import fs.xfs_mount;
+import fs.xfs_log;
 
 // 0 zero, 1 all ones, 2 the seeded image, 3 index/256, 4 0,255,128,1 repeated, then mixed.
 auto pattern_byte(i64 pattern, i64 index) -> u8 {
-    if (pattern == 0) { return 0u8; }
-    if (pattern == 1) { return 255u8; }
-    if (pattern == 2) { return u8((index * 53 + index / 256 * 31 + 7) % 256); }
-    if (pattern == 3) { return u8(index / 256); }
+    if (pattern == 0) {
+        return 0u8;
+    }
+    if (pattern == 1) {
+        return 255u8;
+    }
+    if (pattern == 2) {
+        return u8((index * 53 + index / 256 * 31 + 7) % 256);
+    }
+    if (pattern == 3) {
+        return u8(index / 256);
+    }
     if (pattern == 4) {
-        if (index % 4 == 0) { return 0u8; }
-        if (index % 4 == 1) { return 255u8; }
-        if (index % 4 == 2) { return 128u8; }
+        if (index % 4 == 0) {
+            return 0u8;
+        }
+        if (index % 4 == 1) {
+            return 255u8;
+        }
+        if (index % 4 == 2) {
+            return 128u8;
+        }
         return 1u8;
     }
     return u8((index * (pattern * 2 + 1) + pattern * 41 + index / 7) % 256);
@@ -48,13 +64,15 @@ auto holds(storage::Sector512 sector, i64 pattern) -> bool {
 }
 
 auto reads(storage::SectorReadResult report, i64 pattern) -> bool {
-    if (report.status() != storage::SectorIoStatus::success) { return false; }
+    if (report.status() != storage::SectorIoStatus::success) {
+        return false;
+    }
     return holds(report.sector_or_zero(), pattern);
 }
 
 auto flushes(storage::SectorFlushStatus visibility, storage::SectorFlushStatus durable) -> bool {
-    return visibility == storage::SectorFlushStatus::volatile_complete
-        && durable == storage::SectorFlushStatus::unsupported;
+    return visibility == storage::SectorFlushStatus::volatile_complete && durable
+        == storage::SectorFlushStatus::unsupported;
 }
 
 auto copy_geometry(storage::SectorGeometry value) -> storage::SectorGeometry {
@@ -70,11 +88,21 @@ auto transfer_device(builtin::ByteRegion region, storage::RamSectorDevice value)
 }
 
 auto invalid_index(i64 code) -> i64 {
-    if (code == 0) { return 0 - 9223372036854775807 - 1; }
-    if (code == 1) { return 0 - 1; }
-    if (code == 2) { return 1; }
-    if (code == 3) { return 2; }
-    if (code == 4) { return 512; }
+    if (code == 0) {
+        return 0 - 9223372036854775807 - 1;
+    }
+    if (code == 1) {
+        return 0 - 1;
+    }
+    if (code == 2) {
+        return 1;
+    }
+    if (code == 3) {
+        return 2;
+    }
+    if (code == 4) {
+        return 512;
+    }
     return 9223372036854775807;
 }
 
@@ -94,18 +122,28 @@ auto layout(builtin::ByteRegion region) -> u64 {
         return 3u64;
     }
     const storage::SectorReadResult read = device.read_sector(0);
-    if (!reads(read, 0)) { return 4u64; }
+    if (!reads(read, 0)) {
+        return 4u64;
+    }
     return 42u64;
 }
 
 auto geometry_count(i64 code) -> u64 {
     u64 count = 0u64;
-    if (code == 1) { count = 1u64; }
-    if (code == 2) { count = 9223372036854775808u64; }
-    if (code == 3) { count = 18446744073709551615u64; }
+    if (code == 1) {
+        count = 1u64;
+    }
+    if (code == 2) {
+        count = 9223372036854775808u64;
+    }
+    if (code == 3) {
+        count = 18446744073709551615u64;
+    }
     const storage::SectorGeometry geometry = storage::SectorGeometry(count, false);
     const storage::SectorGeometry saved = copy_geometry(geometry);
-    if (saved.sector_size_bytes() != 512u64 || saved.can_write()) { return 0u64; }
+    if (saved.sector_size_bytes() != 512u64 || saved.can_write()) {
+        return 0u64;
+    }
     return saved.sector_count();
 }
 
@@ -113,27 +151,41 @@ auto seeding(builtin::ByteRegion region, bool read_only) -> u64 {
     storage::Sector512 initial = filled(2);
     builtin::OwnedBytes bytes = region.try_allocate(512);
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));
-    if (device.write_sector(0, initial) != storage::SectorIoStatus::success) { return 1u64; }
-    if (read_only && device.make_read_only() != storage::SectorIoStatus::success) { return 2u64; }
+    if (device.write_sector(0, initial) != storage::SectorIoStatus::success) {
+        return 1u64;
+    }
+    if (read_only && device.make_read_only() != storage::SectorIoStatus::success) {
+        return 2u64;
+    }
     initial.write_byte(0, 0u8);
     initial.write_byte(511, 0u8);
     const storage::SectorGeometry geometry = device.geometry();
-    if (geometry.can_write() == read_only) { return 3u64; }
+    if (geometry.can_write() == read_only) {
+        return 3u64;
+    }
     const storage::SectorReadResult read = device.read_sector(0);
-    if (!reads(read, 2)) { return 4u64; }
+    if (!reads(read, 2)) {
+        return 4u64;
+    }
     return 42u64;
 }
 
 auto pattern_write(builtin::ByteRegion region, i64 pattern) -> u64 {
     builtin::OwnedBytes bytes = region.try_allocate(512);
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));
-    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) { return 1u64; }
+    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) {
+        return 1u64;
+    }
     storage::Sector512 input = filled(pattern);
-    if (device.write_sector(0, input) != storage::SectorIoStatus::success) { return 2u64; }
+    if (device.write_sector(0, input) != storage::SectorIoStatus::success) {
+        return 2u64;
+    }
     input.write_byte(0, 3u8);
     input.write_byte(511, 9u8);
     const storage::SectorReadResult read = device.read_sector(0);
-    if (!reads(read, pattern)) { return 3u64; }
+    if (!reads(read, pattern)) {
+        return 3u64;
+    }
     return 42u64;
 }
 
@@ -144,16 +196,24 @@ auto every_position(builtin::ByteRegion region) -> u64 {
     while (selected < 512) {
         storage::Sector512 input = storage::Sector512();
         input.write_byte(selected, 255u8);
-        if (device.write_sector(0, input) != storage::SectorIoStatus::success) { return 1u64; }
+        if (device.write_sector(0, input) != storage::SectorIoStatus::success) {
+            return 1u64;
+        }
         const storage::SectorReadResult report = device.read_sector(0);
-        if (report.status() != storage::SectorIoStatus::success) { return 2u64; }
+        if (report.status() != storage::SectorIoStatus::success) {
+            return 2u64;
+        }
         const storage::Sector512 actual = report.sector_or_zero();
         i64 offset = 0;
         while (offset < 512) {
             u64 expected = 0u64;
-            if (offset == selected) { expected = 255u64; }
+            if (offset == selected) {
+                expected = 255u64;
+            }
             const std::ByteReadResult byte = actual.read_byte(offset);
-            if (byte.status() != std::ByteReadStatus::success || byte.value_or(999u64) != expected) { return 3u64; }
+            if (byte.status() != std::ByteReadStatus::success || byte.value_or(999u64) != expected) {
+                return 3u64;
+            }
             offset = offset + 1;
         }
         selected = selected + 1;
@@ -164,7 +224,9 @@ auto every_position(builtin::ByteRegion region) -> u64 {
 auto report_copy(builtin::ByteRegion region) -> u64 {
     builtin::OwnedBytes bytes = region.try_allocate(512);
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));
-    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) { return 1u64; }
+    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) {
+        return 1u64;
+    }
     const storage::SectorReadResult saved = device.read_sector(0);
     const storage::SectorReadResult returned = copy_report(saved);
     const storage::Sector512 zero = storage::Sector512();
@@ -176,35 +238,55 @@ auto report_copy(builtin::ByteRegion region) -> u64 {
     if (saved.status() != storage::SectorIoStatus::success || returned.status() != storage::SectorIoStatus::success) {
         return 2u64;
     }
-    if (!holds(snapshot, 2)) { return 3u64; }
+    if (!holds(snapshot, 2)) {
+        return 3u64;
+    }
     const storage::SectorReadResult read = device.read_sector(0);
-    if (!reads(read, 0)) { return 4u64; }
+    if (!reads(read, 0)) {
+        return 4u64;
+    }
     return 42u64;
 }
 
 auto transfers(builtin::ByteRegion region, bool read_only) -> u64 {
     builtin::OwnedBytes bytes = region.try_allocate(512);
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));
-    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) { return 1u64; }
-    if (read_only && device.make_read_only() != storage::SectorIoStatus::success) { return 2u64; }
+    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) {
+        return 1u64;
+    }
+    if (read_only && device.make_read_only() != storage::SectorIoStatus::success) {
+        return 2u64;
+    }
     const storage::SectorReadResult saved = device.read_sector(0);
     const storage::SectorGeometry before = device.geometry();
     storage::RamSectorDevice intermediate = move(device);
     storage::RamSectorDevice transferred = transfer_device(region, move(intermediate));
     const storage::SectorGeometry after = transferred.geometry();
-    if (before.can_write() != after.can_write() || after.sector_count() != 1u64) { return 3u64; }
+    if (before.can_write() != after.can_write() || after.sector_count() != 1u64) {
+        return 3u64;
+    }
     const storage::Sector512 zero = storage::Sector512();
     if (read_only) {
-        if (transferred.write_sector(0, zero) != storage::SectorIoStatus::read_only) { return 4u64; }
+        if (transferred.write_sector(0, zero) != storage::SectorIoStatus::read_only) {
+            return 4u64;
+        }
         const storage::SectorReadResult kept = transferred.read_sector(0);
-        if (!reads(kept, 2)) { return 5u64; }
+        if (!reads(kept, 2)) {
+            return 5u64;
+        }
     } else {
-        if (transferred.write_sector(0, zero) != storage::SectorIoStatus::success) { return 6u64; }
+        if (transferred.write_sector(0, zero) != storage::SectorIoStatus::success) {
+            return 6u64;
+        }
         transferred.make_read_only();
         const storage::SectorReadResult cleared = transferred.read_sector(0);
-        if (!reads(cleared, 0)) { return 7u64; }
+        if (!reads(cleared, 0)) {
+            return 7u64;
+        }
     }
-    if (!holds(saved.sector_or_zero(), 2)) { return 8u64; }
+    if (!holds(saved.sector_or_zero(), 2)) {
+        return 8u64;
+    }
     return 42u64;
 }
 
@@ -212,55 +294,89 @@ auto transfers(builtin::ByteRegion region, bool read_only) -> u64 {
 auto range_error(builtin::ByteRegion region, bool read_only, i64 index) -> u64 {
     builtin::OwnedBytes bytes = region.try_allocate(512);
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));
-    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) { return 1u64; }
-    if (read_only && device.make_read_only() != storage::SectorIoStatus::success) { return 2u64; }
+    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) {
+        return 1u64;
+    }
+    if (read_only && device.make_read_only() != storage::SectorIoStatus::success) {
+        return 2u64;
+    }
     const storage::Sector512 input = filled(1);
-    if (device.write_sector(index, input) != storage::SectorIoStatus::out_of_range) { return 3u64; }
+    if (device.write_sector(index, input) != storage::SectorIoStatus::out_of_range) {
+        return 3u64;
+    }
     const storage::SectorReadResult failed = device.read_sector(index);
-    if (failed.status() != storage::SectorIoStatus::out_of_range) { return 4u64; }
+    if (failed.status() != storage::SectorIoStatus::out_of_range) {
+        return 4u64;
+    }
     const storage::SectorGeometry geometry = device.geometry();
-    if (geometry.can_write() == read_only) { return 5u64; }
-    if (!holds(failed.sector_or_zero(), 0)) { return 6u64; }
+    if (geometry.can_write() == read_only) {
+        return 5u64;
+    }
+    if (!holds(failed.sector_or_zero(), 0)) {
+        return 6u64;
+    }
     const storage::SectorReadResult read = device.read_sector(0);
-    if (!reads(read, 2)) { return 7u64; }
+    if (!reads(read, 2)) {
+        return 7u64;
+    }
     return 42u64;
 }
 
 auto one_way_readonly(builtin::ByteRegion region) -> u64 {
     builtin::OwnedBytes bytes = region.try_allocate(512);
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));
-    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) { return 1u64; }
+    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) {
+        return 1u64;
+    }
     const storage::SectorGeometry before = device.geometry();
-    if (device.make_read_only() != storage::SectorIoStatus::success
-        || device.make_read_only() != storage::SectorIoStatus::success) {
+    if (device.make_read_only() != storage::SectorIoStatus::success || device.make_read_only()
+        != storage::SectorIoStatus::success) {
         return 2u64;
     }
     const storage::SectorGeometry after = device.geometry();
-    if (!before.can_write() || after.can_write()) { return 3u64; }
+    if (!before.can_write() || after.can_write()) {
+        return 3u64;
+    }
     const storage::Sector512 zero = storage::Sector512();
-    if (device.write_sector(0, zero) != storage::SectorIoStatus::read_only) { return 4u64; }
+    if (device.write_sector(0, zero) != storage::SectorIoStatus::read_only) {
+        return 4u64;
+    }
     const storage::SectorReadResult read = device.read_sector(0);
-    if (!reads(read, 2)) { return 5u64; }
+    if (!reads(read, 2)) {
+        return 5u64;
+    }
     return 42u64;
 }
 
 auto public_mask(i64 code) -> u64 {
     storage::SectorIoStatus status = storage::SectorIoStatus::out_of_range;
-    if (code == 1) { status = storage::SectorIoStatus::read_only; }
-    if (code == 2) { status = storage::SectorIoStatus::invalid_source; }
+    if (code == 1) {
+        status = storage::SectorIoStatus::read_only;
+    }
+    if (code == 2) {
+        status = storage::SectorIoStatus::invalid_source;
+    }
     storage::Sector512 input = filled(2);
     const storage::SectorReadResult failed = storage::SectorReadResult(status, input);
     input.write_byte(0, 0u8);
-    if (failed.status() != status) { return 1u64; }
-    if (!holds(failed.sector_or_zero(), 0)) { return 2u64; }
+    if (failed.status() != status) {
+        return 1u64;
+    }
+    if (!holds(failed.sector_or_zero(), 0)) {
+        return 2u64;
+    }
     return 42u64;
 }
 
 auto flush_preserves(builtin::ByteRegion region, bool read_only) -> u64 {
     builtin::OwnedBytes bytes = region.try_allocate(512);
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));
-    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) { return 1u64; }
-    if (read_only && device.make_read_only() != storage::SectorIoStatus::success) { return 2u64; }
+    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) {
+        return 1u64;
+    }
+    if (read_only && device.make_read_only() != storage::SectorIoStatus::success) {
+        return 2u64;
+    }
     i64 repeat = 0;
     while (repeat < 3) {
         if (!flushes(device.flush(storage::SectorFlushMode::visibility),
@@ -270,9 +386,13 @@ auto flush_preserves(builtin::ByteRegion region, bool read_only) -> u64 {
         repeat = repeat + 1;
     }
     const storage::SectorReadResult read = device.read_sector(0);
-    if (!reads(read, 2)) { return 4u64; }
+    if (!reads(read, 2)) {
+        return 4u64;
+    }
     const storage::SectorGeometry geometry = device.geometry();
-    if (geometry.can_write() == read_only) { return 5u64; }
+    if (geometry.can_write() == read_only) {
+        return 5u64;
+    }
     return 42u64;
 }
 
@@ -281,30 +401,46 @@ auto flush_preserves(builtin::ByteRegion region, bool read_only) -> u64 {
 auto sequence_index(i64 sequence, i64 operation) -> i64 {
     if (sequence == 0) {
         if (operation == 0 || operation == 3 || operation == 4 || operation == 7) {
-            if (operation == 0) { return 0 - 1; }
+            if (operation == 0) {
+                return 0 - 1;
+            }
             return 1;
         }
         return 0;
     }
     if (sequence == 1) {
-        if (operation == 1 || operation == 7) { return 0 - 1; }
-        if (operation == 3) { return 1; }
+        if (operation == 1 || operation == 7) {
+            return 0 - 1;
+        }
+        if (operation == 3) {
+            return 1;
+        }
         return 0;
     }
     if (sequence == 2) {
-        if (operation == 4 || operation == 7) { return 0 - 1; }
-        if (operation == 1 || operation == 6) { return 1; }
+        if (operation == 4 || operation == 7) {
+            return 0 - 1;
+        }
+        if (operation == 1 || operation == 6) {
+            return 1;
+        }
         return 0;
     }
-    if (operation == 6) { return 0 - 1; }
-    if (operation == 0 || operation == 1) { return 1; }
+    if (operation == 6) {
+        return 0 - 1;
+    }
+    if (operation == 0 || operation == 1) {
+        return 1;
+    }
     return 0;
 }
 
 auto sequence(builtin::ByteRegion region, i64 number) -> u64 {
     builtin::OwnedBytes bytes = region.try_allocate(512);
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));
-    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) { return 1u64; }
+    if (device.write_sector(0, filled(2)) != storage::SectorIoStatus::success) {
+        return 1u64;
+    }
     i64 model = 2;
     bool read_only = false;
     i64 operation = 0;
@@ -325,15 +461,23 @@ auto sequence(builtin::ByteRegion region, i64 number) -> u64 {
                 if (index != 0) {
                     expected = storage::SectorIoStatus::out_of_range;
                 } else {
-                    if (read_only) { expected = storage::SectorIoStatus::read_only; }
+                    if (read_only) {
+                        expected = storage::SectorIoStatus::read_only;
+                    }
                 }
                 const storage::Sector512 input = filled(pattern);
-                if (device.write_sector(index, input) != expected) { return 3u64; }
-                if (expected == storage::SectorIoStatus::success) { model = pattern; }
+                if (device.write_sector(index, input) != expected) {
+                    return 3u64;
+                }
+                if (expected == storage::SectorIoStatus::success) {
+                    model = pattern;
+                }
             }
         }
         const storage::SectorReadResult read = device.read_sector(0);
-        if (!reads(read, model)) { return 4u64; }
+        if (!reads(read, model)) {
+            return 4u64;
+        }
         operation = operation + 1;
     }
     return 42u64;
@@ -347,26 +491,36 @@ auto masked_failure(storage::SectorReadResult failed, storage::SectorIoStatus st
 auto runtime_sectors(builtin::ByteRegion region, i64 n) -> u64 {
     builtin::OwnedBytes bytes = region.try_allocate(n * 512);
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));
-    if (device.status() != storage::SectorIoStatus::success) { return 1u64; }
+    if (device.status() != storage::SectorIoStatus::success) {
+        return 1u64;
+    }
     const storage::SectorGeometry geometry = device.geometry();
-    if (geometry.sector_count() != u64(n) || !geometry.can_write()) { return 2u64; }
+    if (geometry.sector_count() != u64(n) || !geometry.can_write()) {
+        return 2u64;
+    }
     i64 index = 0;
     while (index < n) {
         const storage::SectorReadResult empty_read = device.read_sector(index);
-        if (!reads(empty_read, 0)) { return 3u64; }
+        if (!reads(empty_read, 0)) {
+            return 3u64;
+        }
         storage::Sector512 pattern = storage::Sector512();
         i64 offset = 0;
         while (offset < 512) {
             pattern.write_byte(offset, u8((index * 31 + offset * 53 + 7) % 256));
             offset = offset + 1;
         }
-        if (device.write_sector(index, pattern) != storage::SectorIoStatus::success) { return 4u64; }
+        if (device.write_sector(index, pattern) != storage::SectorIoStatus::success) {
+            return 4u64;
+        }
         index = index + 1;
     }
     const storage::SectorReadResult saved = device.read_sector(n - 1);
     const storage::SectorReadResult report_copy = saved;
     const storage::Sector512 zero = storage::Sector512();
-    if (device.write_sector(n - 1, zero) != storage::SectorIoStatus::success) { return 5u64; }
+    if (device.write_sector(n - 1, zero) != storage::SectorIoStatus::success) {
+        return 5u64;
+    }
     storage::Sector512 mutated = report_copy.sector_or_zero();
     mutated.write_byte(0, 0u8);
     const storage::Sector512 snapshot = saved.sector_or_zero();
@@ -374,37 +528,51 @@ auto runtime_sectors(builtin::ByteRegion region, i64 n) -> u64 {
     index = 0;
     while (index < n) {
         const storage::SectorReadResult read = device.read_sector(index);
-        if (read.status() != storage::SectorIoStatus::success) { return 6u64; }
+        if (read.status() != storage::SectorIoStatus::success) {
+            return 6u64;
+        }
         const storage::Sector512 actual = read.sector_or_zero();
         i64 offset = 0;
         while (offset < 512) {
             u64 expected = u64((index * 31 + offset * 53 + 7) % 256);
-            if (index == n - 1) { expected = 0u64; }
+            if (index == n - 1) {
+                expected = 0u64;
+            }
             const std::ByteReadResult byte = actual.read_byte(offset);
             const std::ByteReadResult prior = snapshot.read_byte(offset);
             const std::ByteReadResult copied = snapshot_copy.read_byte(offset);
             const u64 last = u64(((n - 1) * 31 + offset * 53 + 7) % 256);
-            if (byte.value_or(256u64) != expected || prior.value_or(256u64) != last
-                || copied.value_or(256u64) != prior.value_or(257u64)) {
+            if (byte.value_or(256u64) != expected || prior.value_or(256u64) != last || copied.value_or(256u64)
+                != prior.value_or(257u64)) {
                 return 7u64;
             }
             offset = offset + 1;
         }
         index = index + 1;
     }
-    if (device.make_read_only() != storage::SectorIoStatus::success
-        || device.write_sector(n - 1, zero) != storage::SectorIoStatus::read_only) {
+    if (device.make_read_only() != storage::SectorIoStatus::success || device.write_sector(n - 1, zero)
+        != storage::SectorIoStatus::read_only) {
         return 8u64;
     }
     i64 code = 0;
     while (code < 4) {
         i64 bad = n;
-        if (code == 0) { bad = 0 - 9223372036854775807 - 1; }
-        if (code == 1) { bad = 0 - 1; }
-        if (code == 3) { bad = 9223372036854775807; }
-        if (device.write_sector(bad, zero) != storage::SectorIoStatus::out_of_range) { return 9u64; }
+        if (code == 0) {
+            bad = 0 - 9223372036854775807 - 1;
+        }
+        if (code == 1) {
+            bad = 0 - 1;
+        }
+        if (code == 3) {
+            bad = 9223372036854775807;
+        }
+        if (device.write_sector(bad, zero) != storage::SectorIoStatus::out_of_range) {
+            return 9u64;
+        }
         const storage::SectorReadResult failed = device.read_sector(bad);
-        if (!masked_failure(failed, storage::SectorIoStatus::out_of_range)) { return 10u64; }
+        if (!masked_failure(failed, storage::SectorIoStatus::out_of_range)) {
+            return 10u64;
+        }
         code = code + 1;
     }
     if (!flushes(device.flush(storage::SectorFlushMode::visibility), device.flush(storage::SectorFlushMode::durable))) {
@@ -416,22 +584,30 @@ auto runtime_sectors(builtin::ByteRegion region, i64 n) -> u64 {
 // Linear bytes seeded before the device exists fix the physical sector mapping.
 auto linear_backing(builtin::ByteRegion region, i64 n) -> u64 {
     builtin::OwnedBytes bytes = region.try_allocate(n * 512);
-    if (!bytes.ok()) { return 1u64; }
+    if (!bytes.ok()) {
+        return 1u64;
+    }
     i64 linear = 0;
     while (linear < n * 512) {
-        if (!bytes.set(linear, u8((linear / 512 * 31 + linear % 512 * 53 + 7) % 256))) { return 2u64; }
+        if (!bytes.set(linear, u8((linear / 512 * 31 + linear % 512 * 53 + 7) % 256))) {
+            return 2u64;
+        }
         linear = linear + 1;
     }
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));
     i64 index = 0;
     while (index < n) {
         const storage::SectorReadResult read = device.read_sector(index);
-        if (read.status() != storage::SectorIoStatus::success) { return 3u64; }
+        if (read.status() != storage::SectorIoStatus::success) {
+            return 3u64;
+        }
         const storage::Sector512 actual = read.sector_or_zero();
         i64 offset = 0;
         while (offset < 512) {
             const std::ByteReadResult byte = actual.read_byte(offset);
-            if (byte.value_or(256u64) != u64((index * 31 + offset * 53 + 7) % 256)) { return 4u64; }
+            if (byte.value_or(256u64) != u64((index * 31 + offset * 53 + 7) % 256)) {
+                return 4u64;
+            }
             offset = offset + 1;
         }
         index = index + 1;
@@ -442,42 +618,59 @@ auto linear_backing(builtin::ByteRegion region, i64 n) -> u64 {
 auto independent_owners(builtin::ByteRegion region, i64 n) -> u64 {
     builtin::OwnedBytes first = region.try_allocate(n * 512);
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(first));
-    if (device.status() != storage::SectorIoStatus::success) { return 1u64; }
+    if (device.status() != storage::SectorIoStatus::success) {
+        return 1u64;
+    }
     builtin::OwnedBytes second = region.try_allocate(n * 512);
     storage::RamSectorDevice other = storage::RamSectorDevice(region, move(second));
-    if (other.status() != storage::SectorIoStatus::success) { return 2u64; }
+    if (other.status() != storage::SectorIoStatus::success) {
+        return 2u64;
+    }
     const storage::Sector512 initial = filled(2);
-    if (device.write_sector(n - 1, initial) != storage::SectorIoStatus::success) { return 3u64; }
+    if (device.write_sector(n - 1, initial) != storage::SectorIoStatus::success) {
+        return 3u64;
+    }
     storage::RamSectorDevice transferred = move(device);
     const storage::SectorReadResult moved = transferred.read_sector(n - 1);
     const storage::SectorReadResult untouched = other.read_sector(n - 1);
-    if (!reads(moved, 2) || !reads(untouched, 0)) { return 4u64; }
-    if (other.write_sector(n - 1, initial) != storage::SectorIoStatus::success) { return 5u64; }
+    if (!reads(moved, 2) || !reads(untouched, 0)) {
+        return 4u64;
+    }
+    if (other.write_sector(n - 1, initial) != storage::SectorIoStatus::success) {
+        return 5u64;
+    }
     const storage::Sector512 zero = storage::Sector512();
-    if (transferred.write_sector(n - 1, zero) != storage::SectorIoStatus::success) { return 6u64; }
+    if (transferred.write_sector(n - 1, zero) != storage::SectorIoStatus::success) {
+        return 6u64;
+    }
     const storage::SectorReadResult cleared = transferred.read_sector(n - 1);
     const storage::SectorReadResult written = other.read_sector(n - 1);
-    if (!reads(cleared, 0) || !reads(written, 2)) { return 7u64; }
+    if (!reads(cleared, 0) || !reads(written, 2)) {
+        return 7u64;
+    }
     return 42u64;
 }
 
 auto empty_owner(builtin::ByteRegion region) -> u64 {
     builtin::OwnedBytes bytes = region.try_allocate(0);
     storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));
-    if (device.status() != storage::SectorIoStatus::success) { return 1u64; }
+    if (device.status() != storage::SectorIoStatus::success) {
+        return 1u64;
+    }
     const storage::SectorGeometry geometry = device.geometry();
     const storage::Sector512 zero = storage::Sector512();
     const storage::SectorReadResult read = device.read_sector(0);
-    if (geometry.sector_count() != 0u64 || !geometry.can_write()
-        || read.status() != storage::SectorIoStatus::out_of_range
-        || device.write_sector(0, zero) != storage::SectorIoStatus::out_of_range
-        || device.make_read_only() != storage::SectorIoStatus::success
+    if (geometry.sector_count() != 0u64 || !geometry.can_write() || read.status()
+        != storage::SectorIoStatus::out_of_range || device.write_sector(0, zero)
+        != storage::SectorIoStatus::out_of_range || device.make_read_only() != storage::SectorIoStatus::success
         || device.write_sector(0, zero) != storage::SectorIoStatus::out_of_range
         || !flushes(device.flush(storage::SectorFlushMode::visibility),
-            device.flush(storage::SectorFlushMode::durable))) {
+        device.flush(storage::SectorFlushMode::durable))) {
         return 2u64;
     }
-    if (!holds(read.sector_or_zero(), 0)) { return 3u64; }
+    if (!holds(read.sector_or_zero(), 0)) {
+        return 3u64;
+    }
     return 42u64;
 }
 
@@ -496,13 +689,25 @@ auto invalid_source(builtin::ByteRegion region, i64 n) -> u64 {
     i64 code = 0;
     while (code < 5) {
         i64 index = 0;
-        if (code == 0) { index = 0 - 9223372036854775807 - 1; }
-        if (code == 1) { index = 0 - 1; }
-        if (code == 3) { index = 1; }
-        if (code == 4) { index = 9223372036854775807; }
-        if (device.write_sector(index, zero) != storage::SectorIoStatus::invalid_source) { return 2u64; }
+        if (code == 0) {
+            index = 0 - 9223372036854775807 - 1;
+        }
+        if (code == 1) {
+            index = 0 - 1;
+        }
+        if (code == 3) {
+            index = 1;
+        }
+        if (code == 4) {
+            index = 9223372036854775807;
+        }
+        if (device.write_sector(index, zero) != storage::SectorIoStatus::invalid_source) {
+            return 2u64;
+        }
         const storage::SectorReadResult failed = device.read_sector(index);
-        if (!masked_failure(failed, storage::SectorIoStatus::invalid_source)) { return 3u64; }
+        if (!masked_failure(failed, storage::SectorIoStatus::invalid_source)) {
+            return 3u64;
+        }
         code = code + 1;
     }
     return 42u64;
@@ -558,18 +763,26 @@ auto produced(builtin::ByteRegion region, i64 n, bool failure) -> u64 {
     const ProducedRecord report = produce(region, n);
     const std::BinaryBuffer64 record = report.record();
     if (failure) {
-        if (report.status() != storage::SectorIoStatus::invalid_source) { return 1u64; }
+        if (report.status() != storage::SectorIoStatus::invalid_source) {
+            return 1u64;
+        }
         i64 index = 0;
         while (index < 64) {
-            if (record.at(index) != 0u8) { return 2u64; }
+            if (record.at(index) != 0u8) {
+                return 2u64;
+            }
             index = index + 1;
         }
         return 42u64;
     }
-    if (report.status() != storage::SectorIoStatus::success) { return 3u64; }
+    if (report.status() != storage::SectorIoStatus::success) {
+        return 3u64;
+    }
     // The producer must have dropped both owners before this quota-sized allocation.
     builtin::OwnedBytes replacement = region.try_allocate(n * 512 + 1);
-    if (!replacement.ok()) { return 4u64; }
+    if (!replacement.ok()) {
+        return 4u64;
+    }
     i64 index = 0;
     while (index < replacement.size()) {
         replacement.set(index, 238u8);
@@ -577,34 +790,192 @@ auto produced(builtin::ByteRegion region, i64 n, bool failure) -> u64 {
     }
     std::BinaryBuffer64 changed = report.record();
     changed.write_u8(0, 99u8);
-    if (changed.at(0) != 99u8) { return 5u64; }
+    if (changed.at(0) != 99u8) {
+        return 5u64;
+    }
     const std::BinaryBuffer64 unchanged = report.record();
     index = 0;
     while (index < 64) {
         const u8 expected = u8((index * 53 + 7) % 256);
-        if (record.at(index) != expected || unchanged.at(index) != expected) { return 6u64; }
+        if (record.at(index) != expected || unchanged.at(index) != expected) {
+            return 6u64;
+        }
         index = index + 1;
     }
     return 42u64;
 }
 
+// Owning mount protocol errors must not publish any file bytes or become ready.
+auto mount_protocol(builtin::ByteRegion region, i64 mode) -> u64 {
+    i64 bytes = 1536;
+    if (mode == 5) {
+        bytes = 1535;
+    }
+    builtin::OwnedBytes cache = region.try_allocate(bytes);
+    fs::XfsLogTopology topology = fs::XfsLogTopology();
+    if (mode == 6) {
+        topology.begin(64u64);
+    }
+    fs::XfsReadonlyMount mount = fs::XfsReadonlyMount(region, move(cache), 1048576u64,
+        fs::XfsReadonlyProfile::fresh_format, topology);
+    const builtin::array<u8, 1> short_bytes = {
+        0u8
+    };
+    if (mode >= 4) {
+        if (mount.status() != fs::XfsMountStatus::invalid_request || mount.needs_read() || mount.read_file("hello",
+            0)) {
+            return 8u64;
+        }
+    } else {
+        if (mode == 0) {
+            if (mount.read_file("hello", 0)) {
+                return 1u64;
+            }
+            if (mount.status() != fs::XfsMountStatus::reading_superblock) {
+                return 2u64;
+            }
+        } else {
+            if (mode == 1) {
+                mount.accept(1u64, storage::SectorIoStatus::success, borrow_bytes(short_bytes));
+            }
+            if (mode == 2) {
+                mount.accept(0u64, storage::SectorIoStatus::invalid_source, borrow_bytes(short_bytes));
+            }
+            if (mode == 3) {
+                mount.accept(0u64, storage::SectorIoStatus::success, borrow_bytes(short_bytes));
+            }
+            if (mode == 2) {
+                if (mount.status() != fs::XfsMountStatus::io_error) {
+                    return 3u64;
+                }
+            } else {
+                if (mount.status() != fs::XfsMountStatus::protocol_error) {
+                    return 4u64;
+                }
+            }
+            if (mount.read_file("hello", 0) || mount.needs_read()) {
+                return 5u64;
+            }
+        }
+    }
+    if (mount.valid_bytes() != 0u64) {
+        return 6u64;
+    }
+    const storage::Sector512 data = mount.sector_or_zero();
+    i64 at = 0;
+    while (at < 512) {
+        const std::ByteReadResult byte = data.read_byte(at);
+        if (byte.value_or(1u64) != 0u64) {
+            return 7u64;
+        }
+        at = at + 1;
+    }
+    return 42u64;
+}
+
+auto topology_protocol(i64 mode) -> u64 {
+    fs::XfsLogTopology topology = fs::XfsLogTopology();
+    const builtin::array<u8, 1> short_bytes = {
+        0u8
+    };
+    if (!topology.pristine() || topology.complete() || topology.head_lsn() != 0u64 || topology.newest_lsn() != 0u64
+        || topology.selected_header()) {
+        return 1u64;
+    }
+    if (mode == 0) {
+        if (topology.begin(0u64)) {
+            return 2u64;
+        }
+    } else {
+        if (mode == 1) {
+            if (topology.begin(131073u64)) {
+                return 3u64;
+            }
+        } else {
+            if (mode == 2) {
+                if (topology.accept(borrow_bytes(short_bytes), borrow_bytes(short_bytes))) {
+                    return 4u64;
+                }
+            } else {
+                if (!topology.begin(64u64)) {
+                    return 5u64;
+                }
+                if (mode == 3) {
+                    if (topology.begin(64u64)) {
+                        return 6u64;
+                    }
+                } else {
+                    if (topology.accept(borrow_bytes(short_bytes), borrow_bytes(short_bytes))) {
+                        return 7u64;
+                    }
+                }
+            }
+        }
+    }
+    if (topology.pristine() || topology.begin(64u64) || topology.complete() || topology.head_lsn() != 0u64
+        || topology.newest_lsn() != 0u64 || topology.selected_header()) {
+        return 8u64;
+    }
+    return 42u64;
+}
+
 auto entry(builtin::ByteRegion region, i64 n, i64 selector) -> u64 {
-    if (selector == 0) { return layout(region); }
-    if (selector < 5) { return geometry_count(selector - 1); }
-    if (selector < 7) { return seeding(region, selector == 6); }
-    if (selector < 13) { return pattern_write(region, selector - 7); }
-    if (selector == 13) { return every_position(region); }
-    if (selector == 14) { return report_copy(region); }
-    if (selector < 17) { return transfers(region, selector == 16); }
-    if (selector < 29) { return range_error(region, selector >= 23, invalid_index((selector - 17) % 6)); }
-    if (selector == 29) { return one_way_readonly(region); }
-    if (selector < 33) { return public_mask(selector - 30); }
-    if (selector < 35) { return flush_preserves(region, selector == 34); }
-    if (selector < 39) { return sequence(region, selector - 35); }
-    if (selector == 39) { return runtime_sectors(region, n); }
-    if (selector == 40) { return linear_backing(region, n); }
-    if (selector == 41) { return independent_owners(region, n); }
-    if (selector == 42) { return empty_owner(region); }
-    if (selector == 43) { return invalid_source(region, n); }
+    if (selector == 47) {
+        return topology_protocol(n);
+    }
+    if (selector == 46) {
+        return mount_protocol(region, n);
+    }
+    if (selector == 0) {
+        return layout(region);
+    }
+    if (selector < 5) {
+        return geometry_count(selector - 1);
+    }
+    if (selector < 7) {
+        return seeding(region, selector == 6);
+    }
+    if (selector < 13) {
+        return pattern_write(region, selector - 7);
+    }
+    if (selector == 13) {
+        return every_position(region);
+    }
+    if (selector == 14) {
+        return report_copy(region);
+    }
+    if (selector < 17) {
+        return transfers(region, selector == 16);
+    }
+    if (selector < 29) {
+        return range_error(region, selector >= 23, invalid_index((selector - 17) % 6));
+    }
+    if (selector == 29) {
+        return one_way_readonly(region);
+    }
+    if (selector < 33) {
+        return public_mask(selector - 30);
+    }
+    if (selector < 35) {
+        return flush_preserves(region, selector == 34);
+    }
+    if (selector < 39) {
+        return sequence(region, selector - 35);
+    }
+    if (selector == 39) {
+        return runtime_sectors(region, n);
+    }
+    if (selector == 40) {
+        return linear_backing(region, n);
+    }
+    if (selector == 41) {
+        return independent_owners(region, n);
+    }
+    if (selector == 42) {
+        return empty_owner(region);
+    }
+    if (selector == 43) {
+        return invalid_source(region, n);
+    }
     return produced(region, n, selector == 45);
 }

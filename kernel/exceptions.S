@@ -6,190 +6,172 @@
 .endif
 .section .text
 .code64
+# One trap implementation, distinct symbol namespaces when both protected
+# console and hosted-process supervisors are linked into production.
+.macro trap_entry name
+.ifdef AURORA_PROCESS_TRAPS
+.global uefi_process_\name
+uefi_process_\name:
+.else
+.global aurora_\name
+aurora_\name:
+.endif
+.endm
+.ifdef AURORA_PROCESS_TRAPS
+.extern uefi_process_exception_dispatch
+.extern uefi_process_leave_user
+.else
 .extern aurora_exception_dispatch
 .extern aurora_leave_user
-.global aurora_exception_0
-aurora_exception_0:
+.endif
+trap_entry exception_0
     pushq $0
     pushq $0
     jmp exception_common
-.global aurora_exception_1
-aurora_exception_1:
+trap_entry exception_1
     pushq $0
     pushq $1
     jmp exception_common
-.global aurora_exception_2
-aurora_exception_2:
+trap_entry exception_2
     pushq $0
     pushq $2
     jmp exception_common
-.global aurora_exception_3
-aurora_exception_3:
+trap_entry exception_3
     pushq $0
     pushq $3
     jmp exception_common
-.global aurora_exception_4
-aurora_exception_4:
+trap_entry exception_4
     pushq $0
     pushq $4
     jmp exception_common
-.global aurora_exception_5
-aurora_exception_5:
+trap_entry exception_5
     pushq $0
     pushq $5
     jmp exception_common
-.global aurora_exception_6
-aurora_exception_6:
+trap_entry exception_6
     pushq $0
     pushq $6
     jmp exception_common
-.global aurora_exception_7
-aurora_exception_7:
+trap_entry exception_7
     pushq $0
     pushq $7
     jmp exception_common
-.global aurora_exception_8
-aurora_exception_8:
+trap_entry exception_8
     pushq $8
     jmp exception_common
-.global aurora_exception_9
-aurora_exception_9:
+trap_entry exception_9
     pushq $0
     pushq $9
     jmp exception_common
-.global aurora_exception_10
-aurora_exception_10:
+trap_entry exception_10
     pushq $10
     jmp exception_common
-.global aurora_exception_11
-aurora_exception_11:
+trap_entry exception_11
     pushq $11
     jmp exception_common
-.global aurora_exception_12
-aurora_exception_12:
+trap_entry exception_12
     pushq $12
     jmp exception_common
-.global aurora_exception_13
-aurora_exception_13:
+trap_entry exception_13
     pushq $13
     jmp exception_common
-.global aurora_exception_14
-aurora_exception_14:
+trap_entry exception_14
     pushq $14
     jmp exception_common
-.global aurora_exception_15
-aurora_exception_15:
+trap_entry exception_15
     pushq $0
     pushq $15
     jmp exception_common
-.global aurora_exception_16
-aurora_exception_16:
+trap_entry exception_16
     pushq $0
     pushq $16
     jmp exception_common
-.global aurora_exception_17
-aurora_exception_17:
+trap_entry exception_17
     pushq $17
     jmp exception_common
-.global aurora_exception_18
-aurora_exception_18:
+trap_entry exception_18
     pushq $0
     pushq $18
     jmp exception_common
-.global aurora_exception_19
-aurora_exception_19:
+trap_entry exception_19
     pushq $0
     pushq $19
     jmp exception_common
-.global aurora_exception_20
-aurora_exception_20:
+trap_entry exception_20
     pushq $0
     pushq $20
     jmp exception_common
-.global aurora_exception_21
-aurora_exception_21:
+trap_entry exception_21
     pushq $21
     jmp exception_common
-.global aurora_exception_22
-aurora_exception_22:
+trap_entry exception_22
     pushq $0
     pushq $22
     jmp exception_common
-.global aurora_exception_23
-aurora_exception_23:
+trap_entry exception_23
     pushq $0
     pushq $23
     jmp exception_common
-.global aurora_exception_24
-aurora_exception_24:
+trap_entry exception_24
     pushq $0
     pushq $24
     jmp exception_common
-.global aurora_exception_25
-aurora_exception_25:
+trap_entry exception_25
     pushq $0
     pushq $25
     jmp exception_common
-.global aurora_exception_26
-aurora_exception_26:
+trap_entry exception_26
     pushq $0
     pushq $26
     jmp exception_common
-.global aurora_exception_27
-aurora_exception_27:
+trap_entry exception_27
     pushq $0
     pushq $27
     jmp exception_common
-.global aurora_exception_28
-aurora_exception_28:
+trap_entry exception_28
     pushq $0
     pushq $28
     jmp exception_common
-.global aurora_exception_29
-aurora_exception_29:
+trap_entry exception_29
     pushq $29
     jmp exception_common
-.global aurora_exception_30
-aurora_exception_30:
+trap_entry exception_30
     pushq $30
     jmp exception_common
-.global aurora_exception_31
-aurora_exception_31:
+trap_entry exception_31
     pushq $0
     pushq $31
     jmp exception_common
-.global aurora_timer_interrupt
-aurora_timer_interrupt:
+trap_entry timer_interrupt
     pushq $0
     pushq $64
     jmp exception_common
 .ifdef AURORA_REGISTER_TRAP
-.global aurora_program_call
-aurora_program_call:
+trap_entry program_call
     pushq $0
     pushq $130
     jmp exception_common
 .endif
 .ifdef AURORA_PROCESS_CALL
 # The process image's kernel-call gate, INT 0x83 (kernel/uefi/process.md#entries).
-.global aurora_process_call
-aurora_process_call:
+trap_entry process_call
     pushq $0
     pushq $131
     jmp exception_common
 .endif
-.global aurora_program_return
-aurora_program_return:
+# The process IDT has only INT83; protected-program return gates are not
+# part of that architecture and must not remain as uninstalled entry roots.
+.ifndef AURORA_PROCESS_TRAPS
+trap_entry program_return
     pushq $0
     pushq $129
     jmp exception_common
-.global aurora_user_return
-aurora_user_return:
+trap_entry user_return
     pushq $0
     pushq $128
     jmp exception_common
-.global aurora_unexpected_interrupt
-aurora_unexpected_interrupt:
+.endif
+trap_entry unexpected_interrupt
     pushq $0
     pushq $255
 exception_common:
@@ -217,9 +199,17 @@ exception_common:
     mov 112(%rsp), %r9
     mov %rsp, %rbx
     and $-16, %rsp
+.ifdef AURORA_PROCESS_TRAPS
+    call uefi_process_exception_dispatch
+.else
     call aurora_exception_dispatch
+.endif
     cmp $1, %rax
+.ifdef AURORA_PROCESS_TRAPS
+    je uefi_process_leave_user
+.else
     je aurora_leave_user
+.endif
     mov %rbx, %rsp
     pop %r15
     pop %r14
@@ -238,8 +228,7 @@ exception_common:
     pop %rax
     add $16, %rsp
     iretq
-.global aurora_breakpoint_probe
-aurora_breakpoint_probe:
+trap_entry breakpoint_probe
     push %rbx
     push %rbp
     push %r12
@@ -313,8 +302,7 @@ probe_done:
     ret
 .ifndef AURORA_RELATIVE_ONLY
 .section .rodata
-.global aurora_exception_vectors
-aurora_exception_vectors:
+trap_entry exception_vectors
     .quad aurora_exception_0
     .quad aurora_exception_1
     .quad aurora_exception_2

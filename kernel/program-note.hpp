@@ -11,7 +11,7 @@
 namespace aurora::program {
 // Native retention and authenticated publication only. Aurora owns all commands,
 // replacement policy, missing/empty interpretation and the projected read bytes.
-class Note final {
+template <bool RetainNote> class NoteCommand final {
 public:
     using Value = std::array<std::byte, 72>;
     using UpdateInput = std::array<std::byte, 144>;
@@ -22,7 +22,7 @@ public:
     static constexpr std::size_t stream_stack_reservation = 176;
 
 private:
-    Value saved_ = empty();
+    [[no_unique_address]] std::array<std::byte, RetainNote ? 72 : 0> saved_{};
     Value read_{}, suffix_{};
     std::uint64_t generation_{};
     static constexpr auto empty() -> Value {
@@ -43,16 +43,59 @@ private:
     }
 
 public:
-    Note() = default;
-    Note(const Note &) = delete;
-    auto operator=(const Note &) -> Note & = delete;
-    [[nodiscard]] auto saved() const -> const Value & {
+    constexpr NoteCommand() {
+        if constexpr (RetainNote)
+            saved_ = empty();
+    }
+    NoteCommand(const NoteCommand &) = delete;
+    auto operator=(const NoteCommand &) -> NoteCommand & = delete;
+    [[nodiscard]] auto saved() const -> const Value &
+        requires(RetainNote)
+    {
         return saved_;
+    }
+    [[nodiscard]] auto select_projection(const Value &projection) -> bool
+        requires(!RetainNote)
+    {
+        if (bound() || !closed(projection))
+            return false;
+        const auto length = word(projection, 64);
+        for (std::size_t index = 0; index < 64; ++index) {
+            const auto byte = std::to_integer<unsigned>(projection[index]);
+            if (length != UINT64_MAX && index < length ? byte < 32 || byte > 126 : byte != 0)
+                return false;
+        }
+        read_ = projection;
+        return true;
+    }
+    [[nodiscard]] auto select(const Update &update) -> std::optional<std::uint64_t>
+        requires(!RetainNote)
+    {
+        const auto action = word(update, 72), length = word(update, 64);
+        if (action > 4 || (action == 3 ? length != UINT64_MAX : action != 0 && length == UINT64_MAX))
+            return std::nullopt;
+        Value projection{};
+        std::copy_n(update.begin(), projection.size(), projection.begin());
+        const bool valid = select_projection(projection);
+        for (auto &byte : projection)
+            *static_cast<volatile std::byte *>(&byte) = std::byte{0};
+        if (!valid)
+            return std::nullopt;
+        if (action < 2)
+            release();
+        return action;
+    }
+    [[nodiscard]] auto projection() const -> const Value &
+        requires(!RetainNote)
+    {
+        return read_;
     }
     [[nodiscard]] auto bound() const -> bool {
         return generation_ != 0;
     }
-    [[nodiscard]] auto commit(const Update &update) -> std::optional<std::uint64_t> {
+    [[nodiscard]] auto commit(const Update &update) -> std::optional<std::uint64_t>
+        requires(RetainNote)
+    {
         const auto event = word(update, 72);
         if (bound() || event > 4 || !closed(update))
             return std::nullopt;
@@ -76,7 +119,9 @@ public:
             input[i] = std::to_integer<std::uint8_t>(projection[i]);
         return stream.begin(input, length);
     }
-    [[nodiscard]] auto replacement(const Output &output, UpdateInput &input) const -> bool {
+    [[nodiscard]] auto replacement(const Output &output, UpdateInput &input) const -> bool
+        requires(RetainNote)
+    {
         if (bound() || output.missing() || output.length() > 53)
             return false;
         input = {};
@@ -141,7 +186,10 @@ public:
     }
     auto clear() -> void {
         release();
-        saved_ = empty();
+        if constexpr (RetainNote)
+            saved_ = empty();
     }
 };
+using Note = NoteCommand<true>;
+using ExternalNote = NoteCommand<false>;
 } // namespace aurora::program

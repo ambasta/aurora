@@ -94,10 +94,21 @@ FILES_RUNS = tuple(
 # directories, on Linux either), which must equal the hosted build's
 # host-sort.o, then each rejected source of COMPILE_GOLDEN (the volume's
 # rejections/case-NNNN.au), whose diagnostics and exit status must be the
-# hosted compiler's.
+# hosted compiler's. A second successful run compiles and statically links
+# the same source for Aurora, without any host binary tool.
 COMPILE_GOLDEN = "tests/kernel-process/compile.golden"
 COMPILE_FLAGS = "aurorac --emit-object --target linux --runtime-root /runtime/linux"
-COMPILE_RUNS = ((128, 0, 0, "bin/aurorac", COMPILE_FLAGS + " examples/host-sort.au -o host-sort.o"),) + tuple(
+COMPILE_RUNS = (
+    (128, 0, 0, "bin/aurorac", COMPILE_FLAGS + " examples/host-sort.au -o host-sort.o"),
+    (
+        128,
+        0,
+        0,
+        "bin/aurorac",
+        "aurorac --emit-executable --target aurora --runtime-root /runtime/aurora "
+        "examples/host-sort.au -o host-sort-aurora-native",
+    ),
+) + tuple(
     (32, 0, 0, "bin/aurorac", f"{COMPILE_FLAGS} rejections/case-{index:04d}.au -o case-{index:04d}.o")
     for index, _ in enumerate((ROOT / COMPILE_GOLDEN).read_text().splitlines())
 )
@@ -170,16 +181,180 @@ PROCESS_CASES = {
     "process-files": (4, FILES_RUNS),
     "process-compile": (5, COMPILE_RUNS),
     "process-self-host": (6, SELF_HOST_RUNS),
+    # Exactly two resident processes at a time. The first three pairs keep
+    # disjoint quotas; the final pair proves an all-free reservation blocks a
+    # second load even though its frames have not been physically allocated.
+    "process-lifecycle": (
+        7,
+        (
+            (64, 0, 4096, "bin/lifecycle", "lifecycle A"),
+            (64, 0, 4096, "bin/lifecycle", "lifecycle B"),
+            (64, 0, 4096, "bin/lifecycle", "lifecycle A"),
+            (64, 0, 4096, "bin/lifecycle", "lifecycle fault"),
+            (64, 0, 4096, "bin/lifecycle", "lifecycle A"),
+            (1, 0, 4096, "bin/lifecycle", "lifecycle spin"),
+            (64, 0, 0, "bin/lifecycle", "lifecycle A"),
+            (64, 0, 4096, "bin/lifecycle", "lifecycle B"),
+        ),
+    ),
+    "process-service": (
+        8,
+        (
+            (64, 0, 16384, "bin/file-service", "file-service"),
+            (
+                128,
+                0,
+                8192,
+                "bin/probe",
+                "probe create tree/shared write @1 v1 commit @1 file tree/shared "
+                "create tree/shared write @5 v2 commit @5 read @4 0 file tree/shared read @9 0 "
+                "create tree/pending fill @11 5",
+            ),
+            (
+                128,
+                0,
+                8192,
+                "bin/probe",
+                "probe file tree/shared read @1 0 read 65 0 file tree/pending "
+                "create tree/reused write @5 z commit @5 file tree/reused read @8 0",
+            ),
+            (1, 0, 8192, "bin/hostile", "hostile spin"),
+            (128, 0, 8192, "bin/probe", "probe file tree/shared read @1 0"),
+            (128, 0, 8192, "bin/lifecycle", "lifecycle bulk"),
+            (128, 0, 8192, "bin/isolation-6", "raw-write"),
+            (128, 0, 8192, "bin/isolation-6", "raw-quota"),
+            (128, 0, 8192, "bin/isolation-6", "raw-quota-small"),
+            (128, 0, 8192, "bin/probe", "probe file tree/quota-reused read @1 0 file tree/shared read @3 0"),
+            (1, 0, 8192, "bin/lifecycle", "lifecycle rpc"),
+            (128, 0, 8192, "bin/probe", "probe file tree/rpc-pending file tree/shared read @2 0"),
+            (8, 0, 8192, "bin/isolation-6", "forge-service"),
+            (8, 0, 8192, "bin/file-service", "file-service unauthorized"),
+            (128, 0, 8192, "bin/probe", "probe file tree/shared read @1 0"),
+        ),
+    ),
+    "process-service-hostile": (
+        9,
+        tuple(
+            row
+            for mode in ("zero", "stale", "window", "tx", "count", "reply", "reserved", "die", "spin", "duplicate")
+            for row in (
+                (8, 0, 8192, "bin/isolation-6", "svc-" + mode),
+                (128, 0, 8192, "bin/probe", "probe file tree/no-such-file"),
+            )
+        )
+        + (
+            (64, 0, 16384, "bin/file-service", "file-service"),
+            (128, 0, 8192, "bin/probe", "probe create tree/restart write @1 fresh commit @1"),
+            (128, 0, 8192, "bin/probe", "probe file tree/restart read @1 0"),
+            (8, 0, 8192, "bin/isolation-6", "block-zero"),
+            (8, 0, 8192, "bin/isolation-6", "block-forge"),
+            (8, 0, 8192, "bin/isolation-6", "block-reserved"),
+            (128, 0, 8192, "bin/probe", "probe file tree/restart read @1 0"),
+        ),
+    ),
+    "process-xfs": (
+        10,
+        (
+            (8, 0, 8192, "bin/isolation-6", "svc-block-forge"),
+            (128, 0, 8192, "bin/probe", "probe file tree/no-such-file"),
+            (16, 8, 16384, "bin/file-service", "file-service"),
+            (16, 8, 8192, "bin/lifecycle", "lifecycle disk"),
+            (8, 0, 8192, "bin/isolation-6", "block-forge"),
+            (128, 0, 8192, "bin/lifecycle", "lifecycle disk"),
+        ),
+    ),
+    "process-xfs-clean": (
+        11,
+        (
+            (16, 8, 16384, "bin/file-service", "file-service"),
+            (
+                16,
+                8,
+                8192,
+                "bin/probe",
+                "probe file /disk/hello read @1 64 close @1 file /disk/pattern read @4 9001 close @4 "
+                "create tree/clean-check write @7 retained commit @7 file tree/clean-check read @10 0",
+            ),
+            (128, 0, 8192, "bin/lifecycle", "lifecycle disk-clean"),
+            (128, 0, 8192, "bin/lifecycle", "lifecycle disk-clean"),
+            (
+                128,
+                0,
+                8192,
+                "bin/probe",
+                "probe file /disk/hello read @1 64 close @1 file tree/clean-check read @4 0 create /disk/pattern",
+            ),
+        ),
+    ),
 }
+# Recovery remains a private, explicit history-image fixture. Its first boot
+# role is writable; all subsequent clients receive only ordinary file authority.
+PROCESS_CASES["process-xfs-recover"] = (
+    12,
+    (
+        (16, 8, 16384, "bin/xfs-recover", "xfs-recover"),
+        PROCESS_CASES["process-xfs-clean"][1][0],
+        (8, 0, 8192, "bin/isolation-6", "writer-stale-write"),
+        (8, 0, 8192, "bin/isolation-6", "writer-stale-flush"),
+        *PROCESS_CASES["process-xfs-clean"][1][1:],
+    ),
+)
+PROCESS_CASES["process-xfs-recover-pair"] = (
+    41,
+    (
+        *PROCESS_CASES["process-xfs-recover"][1][:4],
+        (16, 8, 8192, "bin/lifecycle", "lifecycle recovered-pair"),
+    ),
+)
+# Both mounted rows use production startup and ordinary HostFiles clients.
+for mode, case, argument in (
+    ("process-xfs-mounted", 17, "mounted"),
+    ("process-xfs-mounted-small", 39, "mounted-small"),
+):
+    PROCESS_CASES[mode] = (
+        case,
+        (
+            (64, 0, 32768, "bin/file-service-mounted", "file-service"),
+            (16, 8, 8192, "bin/lifecycle", "lifecycle " + argument),
+        ),
+    )
+PROCESS_CASES["process-xfs-mounted-loss"] = (
+    40,
+    (
+        *PROCESS_CASES["process-xfs-mounted"][1],
+        (64, 0, 32768, "bin/file-service", "file-service"),
+        (16, 8, 8192, "bin/lifecycle", "lifecycle mounted-absent"),
+    ),
+)
 # The run lists of the compiler volume (\\aurora\\compiler, kernel/uefi/loader-fixture.hpp)
 # and of the self-host volume (\\aurora\\selfhost).
 COMPILER_CASES = frozenset({3, 5})
 SELF_HOST_CASES = frozenset({6})
 # Guest memory of the rows that need more than the UEFI default: one memory
 # case keeps 4 GiB mapped (committed on first touch, but charged in full).
-# The files row holds a 64 MiB output beside the probe's 8 MiB stack.
+# The fresh source file service owns its copied volume, index and up to a
+# 64 MiB output independently of the client. Keep that full capacity; even
+# the basic and compile rows now need room for both resident processes.
 # The self-host row's compiler charges about 600 MiB at its peak.
-PROCESS_MEMORY = {"process-memory": "5G", "process-files": "256M", "process-self-host": "1G"}
+PROCESS_MEMORY = {
+    "process-run": "256M",
+    "process-hostile": "256M",
+    "process-compile": "256M",
+    "process-memory": "5G",
+    "process-files": "256M",
+    "process-self-host": "1G",
+    "process-service": "256M",
+    "process-xfs": "256M",
+    "process-xfs-clean": "256M",
+    "process-xfs-recover": "256M",
+    "process-xfs-recover-pair": "256M",
+    "process-xfs-mounted": "256M",
+    "process-xfs-mounted-small": "256M",
+    "process-xfs-mounted-loss": "256M",
+    "process-service-hostile": "256M",
+    "production": "256M",
+    "program-console": "256M",
+}
 FIXTURE_MODES.update({mode: FIXTURE_MODES["process-volume"] for mode in PROCESS_CASES})
 # These images read their selector from a QEMU fw_cfg file instead of a serial
 # byte. The loader fixture images read it at loader entry, echo it and hand it
@@ -209,10 +384,25 @@ UEFI_FAMILIES = [
     ([], {"normal": []}),
     # The boot volume, frame allocator, export and processes (kernel/uefi/process.md),
     # selected by a fw_cfg row and case word read at loader entry.
-    ([], {"process-fixture": ["-DAURORA_UEFI_ACPI", "-DAURORA_PROCESS_FIXTURE"]}),
+    (
+        [],
+        {
+            "process-fixture": [
+                "-DAURORA_UEFI_ACPI",
+                "-DAURORA_UEFI_PCI",
+                "-DAURORA_UEFI_NVME",
+                "-DAURORA_PROCESS_FIXTURE",
+                "-maccumulate-outgoing-args",
+            ]
+        },
+    ),
     (
         ["-maccumulate-outgoing-args", "-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_IOMMU_EVENT"],
         {"iommu-event": []},
+    ),
+    (
+        ["-maccumulate-outgoing-args", "-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_NVME"],
+        {"nvme": []},
     ),
     # The framebuffer cases and the standalone graphical console (plain and
     # capture), selected by a fw_cfg row read at loader entry.
@@ -255,6 +445,7 @@ UEFI_FAMILIES = [
             "production": [
                 "-DAURORA_PRODUCTION",
                 "-DAURORA_UEFI_GRAPHICAL_TERMINAL",
+                "-DAURORA_UEFI_NVME",
                 "-DAURORA_PROGRAM_APPEND_CALL",
                 "-DAURORA_BLOCKING_CALL",
             ],
@@ -849,7 +1040,8 @@ def uefi_profile(profile_mode, flags):
     console = owned_bytes = mode == "device-fixture"
     graphical = framebuffer = mode == "display-fixture"
     event = mode == "iommu-event"
-    process = mode == "process-fixture"
+    nvme = mode in ("nvme", "process-fixture") or profile_mode == "production"
+    process = mode == "process-fixture" or profile_mode == "production"
     user_mode = "normal"
     if mode.startswith("runtime-") and mode[8:] in ("owned-text", "fixture"):
         user_mode = mode[8:]
@@ -1005,6 +1197,8 @@ def uefi_profile(profile_mode, flags):
         owned_objects = ["owned-bytes-runtime"]
     if framebuffer:
         cpp["framebuffer"] = "kernel/uefi/framebuffer.cpp"
+    if nvme:
+        cpp["nvme"] = "kernel/uefi/nvme.cpp"
     if event:
         cpp["event-intake"] = "kernel/uefi/event-intake.cpp"
     if process:
@@ -1012,7 +1206,15 @@ def uefi_profile(profile_mode, flags):
         assembly["process-user"] = dict(source="kernel/uefi/process-user.S", flags=["--64"])
         assembly["process-exceptions"] = dict(
             source="kernel/exceptions.S",
-            flags=["--64", "--defsym", "AURORA_RELATIVE_ONLY=1", "--defsym", "AURORA_PROCESS_CALL=1"],
+            flags=[
+                "--64",
+                "--defsym",
+                "AURORA_RELATIVE_ONLY=1",
+                "--defsym",
+                "AURORA_PROCESS_CALL=1",
+                "--defsym",
+                "AURORA_PROCESS_TRAPS=1",
+            ],
         )
     entry, bridge = "examples/kernel.au", ""
     for enabled, source, adapter in (
@@ -1026,6 +1228,8 @@ def uefi_profile(profile_mode, flags):
     ):
         if enabled:
             entry, bridge = "examples/kernel-" + source + ".au", "kernel/uefi/" + adapter + "-entry.S"
+    if profile_mode == "production":
+        bridge = "kernel/uefi/production-program-entry.S"
     # Further closed Aurora objects, each with its own private bridge, local
     # symbols and import policy (imports:STEM): the production terminal painter,
     # and the services co-hosted by the display and device fixture images.
@@ -1040,6 +1244,8 @@ def uefi_profile(profile_mode, flags):
             languages[stem] = dict(
                 source="examples/kernel-" + source + ".au", bridge="kernel/uefi/" + adapter + "-entry.S", roots=roots
             )
+            if stem == "process-policy" and profile_mode == "production":
+                languages[stem]["bridge"] = "kernel/uefi/production-process-entry.S"
     return dict(
         platform="uefi",
         mode=profile_mode,
@@ -1063,6 +1269,7 @@ def uefi_profile(profile_mode, flags):
         + owned_objects
         + (["framebuffer"] if framebuffer else [])
         + (["event-intake"] if event else [])
+        + (["nvme"] if nvme else [])
         + (["process", "process-user", "process-exceptions"] if process else []),
         closed=program,
         # Closed objects keep local symbols and referenced reflection only.
@@ -1071,7 +1278,7 @@ def uefi_profile(profile_mode, flags):
         optimization="s" if program or scratchpad else "2",
         languages=languages,
         owned_objects=owned_objects,
-        esp=PROCESS_ESP if process else {},
+        esp=PRODUCTION_ESP if profile_mode == "production" else PROCESS_ESP if process else {},
     )
 
 
@@ -1083,13 +1290,21 @@ PROCESS_VOLUME_FILES = ("examples/core_math.au", "examples/host-sort.au")
 # aurora, linux for the hosted Linux build, assembly for GNU as) and header-only ELF files (--elf
 # PATH=EDITS over the writer's admission image) the run lists name. The
 # compiler volume carries the compiler and the memory probe for cases 3 and 5.
-PROCESS_COMPILER_PROGRAMS = {"bin/aurorac": "aurora:aurorac", "bin/memory": "aurora:host-memory-probe"}
-# It also holds what the compile row reads: the Linux runtime root and the program.
+PROCESS_COMPILER_PROGRAMS = {
+    "bin/aurorac": "aurora:aurorac",
+    "bin/memory": "aurora:host-memory-probe",
+    "bin/file-service": "aurora:file-service",
+}
+# It also holds what the compile row reads: both runtime roots and the program.
 PROCESS_RUNTIME_FILES = ("runtime/linux/aurora/host.au", "runtime/linux/aurora/memory.au")
-PROCESS_COMPILER_FILES = ("examples/host-sort.au", *PROCESS_RUNTIME_FILES)
+PROCESS_COMPILER_FILES = ("examples/host-sort.au", "runtime/aurora/aurora/host.au", *PROCESS_RUNTIME_FILES)
 PROCESS_PROGRAMS = {
     "bin/probe": "aurora:host-files-probe",
+    "bin/xfs-recover": "aurora:xfs-recover",
     "bin/hostile": "aurora:process-hostile",
+    "bin/lifecycle": "aurora:process-lifecycle",
+    "bin/file-service": "aurora:file-service",
+    "bin/file-service-mounted": "aurora:file-service-mounted",
     "bin/recurse": "assembly:process-recurse",
     "bin/isolation-1": "assembly:process-isolation-1",
     "bin/isolation-2": "assembly:process-isolation-2",
@@ -1134,6 +1349,7 @@ PROCESS_ESP = {
         word for path, program in PROCESS_COMPILER_PROGRAMS.items() for word in ("--program", path + "=" + program)
     ]
     + [word for path in PROCESS_COMPILER_FILES for word in ("--file", path)]
+    + ["--program", "runtime/aurora/aurora/memory.au=source:aurora-memory"]
     + ["--rejections", "rejections=" + COMPILE_GOLDEN]
     + [
         word
@@ -1144,7 +1360,16 @@ PROCESS_ESP = {
     ],
     # The configured compiler driver (source:aurorac) and the compiler modules
     # (--compiler-modules, kernel-images/meson.build) as the build stages them.
-    "selfhost": ["--program", "bin/aurorac=aurora:aurorac", "--program", "aurorac.au=source:aurorac"]
+    "selfhost": [
+        "--program",
+        "bin/aurorac=aurora:aurorac",
+        "--program",
+        "bin/file-service=aurora:file-service",
+        "--program",
+        "bin/file-service-mounted=aurora:file-service-mounted",
+        "--program",
+        "aurorac.au=source:aurorac",
+    ]
     + [word for path in PROCESS_RUNTIME_FILES for word in ("--file", path)]
     + ["--compiler-modules", "modules"]
     + [
@@ -1156,6 +1381,34 @@ PROCESS_ESP = {
     ],
     "corrupt": ["--raw-order"] + [word for path in reversed(PROCESS_VOLUME_FILES) for word in ("--file", path)],
     "empty": ["--empty"],
+}
+
+
+# The shipped production volume contains programs and source, never run lists or
+# hostile kernel fixtures. Every command resolves through the same retained file
+# service; the short source alias fits the console's established 64-byte line.
+PRODUCTION_ESP = {
+    "system": [
+        "--program",
+        "bin/aurorac=aurora:aurorac",
+        "--program",
+        "bin/file-service=aurora:file-service",
+        "--program",
+        "bin/file-service-mounted=aurora:file-service-mounted",
+        "--program",
+        "bin/xfs-recover=aurora:xfs-recover",
+        "--program",
+        "bin/cat=aurora:host-files-cat",
+        "--program",
+        "bin/sort=aurora:host-sort",
+        "--program",
+        "sort.au=source:host-sort",
+        "--program",
+        "runtime/aurora/aurora/memory.au=source:aurora-memory",
+        "--program",
+        "input.txt=source:host-sort-input",
+    ]
+    + [word for path in ("runtime/aurora/aurora/host.au", *PROCESS_RUNTIME_FILES) for word in ("--file", path)]
 }
 
 
@@ -1183,12 +1436,27 @@ GUEST_FAMILIES = {
     "tables": "runtime-table-readback runtime-table-reject runtime-table-exhaust runtime-table-quarantine",
     "pins": "runtime-pin-cancel runtime-pin-fault runtime-pin-stale runtime-pin-exhaust",
     "process": "process-volume process-volume-corrupt process-volume-empty process-volume-map process-run "
-    "process-hostile process-memory process-files process-compile",
+    "process-hostile process-memory process-files process-compile process-lifecycle process-service "
+    "process-service-hostile process-xfs",
     # The release suite's row (tests/native/meson.build), minutes under TCG.
     "self-host": "process-self-host",
 }
 # The QEMU limit of a guest row in seconds (scripts/kernel-uefi-smoke.sh), 60 unless listed.
-GUEST_TIMEOUTS = {"process-self-host": 900}
+# The independent memory/files goldens boot a fresh source-service companion
+# per case (28/35 executions of one compiled ELF). Their original 60s outer
+# bound expired during healthy progress; process watchdog budgets are unchanged.
+GUEST_TIMEOUTS = {
+    "process-self-host": 900,
+    "process-xfs": 900,
+    "process-xfs-clean": 900,
+    "process-xfs-recover": 900,
+    "process-xfs-recover-pair": 900,
+    "process-xfs-mounted": 900,
+    "process-xfs-mounted-small": 900,
+    "process-xfs-mounted-loss": 900,
+    "process-memory": 180,
+    "process-files": 180,
+}
 
 
 # Machine variants boot their baseline mode's image and selector on other QEMU hardware.
@@ -1240,12 +1508,51 @@ def serial_fixture_byte(mode):
     return "" if image in FW_CFG_IMAGES else value
 
 
-def fw_cfg_fixture(mode):
+def mounted_recovery_outcome(prefix):
+    """Closed completed-command prefixes of the reviewed 777-byte mounted plan.
+
+    Equal-LSN homes are replayed idempotently, even when their bytes are already
+    on disk. The returned changed sectors exclude those already durable bytes.
+    """
+    if not 0 <= prefix <= 16:
+        raise ValueError("Mounted recovery prefix outside 0..16")
+    target = 64 if prefix <= 11 else 777
+    if prefix <= 8 or prefix == 16:
+        return 0, 1, target, set()
+    if prefix == 9:
+        return 2, 3, target, {524361, 524362}
+    if prefix <= 11:
+        return 3, 3, target, {100, 524363, 524364}
+    changed = {524365}
+    if prefix < 15:
+        changed.add(524366)
+    if prefix < 14:
+        changed.add(96)
+    if prefix < 13:
+        changed.add(100)
+    return 4, 3, target, changed
+
+
+RECOVERY_CUT_CASES = {"flush-1": 13, "flush-2": 14, "flush-3": 15, "write-1": 16}
+MOUNTED_CUT_CASES = {
+    **{f"write-{ordinal}": 17 + ordinal for ordinal in range(1, 17)},
+    **{f"flush-{ordinal}": 33 + ordinal for ordinal in range(1, 6)},
+}
+
+
+def fw_cfg_fixture(mode, *, recovery_cut=None, mounted_cut=None):
     """QEMU arguments carrying a fw_cfg selector; empty for serial-selector and ordinary modes."""
+    if recovery_cut is not None and (mode != "process-xfs-recover" or recovery_cut not in RECOVERY_CUT_CASES):
+        raise ValueError("Recovery cut requires the closed private recovery fixture")
+    if mounted_cut is not None and (mode != "process-xfs-mounted" or mounted_cut not in MOUNTED_CUT_CASES):
+        raise ValueError("Mounted cut requires the closed private mounted fixture")
     image, value = FIXTURE_MODES.get(UEFI_VARIANTS.get(mode, mode), ("", 0))
     if image not in FW_CFG_IMAGES:
         return []
-    case = ["-fw_cfg", f"name=opt/aurora/case,string={PROCESS_CASES[mode][0]}"] if mode in PROCESS_CASES else []
+    number = RECOVERY_CUT_CASES[recovery_cut] if recovery_cut else PROCESS_CASES.get(mode, (0,))[0]
+    if mounted_cut:
+        number = MOUNTED_CUT_CASES[mounted_cut]
+    case = ["-fw_cfg", f"name=opt/aurora/case,string={number}"] if mode in PROCESS_CASES else []
     return ["-fw_cfg", f"name=opt/aurora/fixture,string={value}", *case]
 
 

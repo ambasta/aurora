@@ -1,0 +1,109 @@
+module xfs_recovery_ag_driver;
+import aurora.host;
+import aurora.memory;
+import std.binary;
+import std.binary_buffer;
+import std.checksum;
+import fs.xfs_geometry;
+import fs.xfs_probe;
+import fs.xfs_log;
+import fs.xfs_recovery_ag;
+
+// One fixed record: five little-endian words, SB/AGF/AGI, one 4096-byte leaf.
+auto main(builtin::HostFiles& files, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    i64 at = 0;
+    while (at < arguments.size() && arguments.at(at) != 0u8) {
+        at = at + 1;
+    }
+    const i64 begin = at + 1;
+    at = begin;
+    while (at < arguments.size() && arguments.at(at) != 0u8) {
+        at = at + 1;
+    }
+    if (begin >= arguments.size() || begin == at) {
+        return builtin::HostExit::usage;
+    }
+    const builtin::HostFileResult file = files.open_file(arguments.subspan(begin, at - begin));
+    if (file.status != builtin::HostStatus::success || file.size != 5672u64) {
+        return builtin::HostExit::failure;
+    }
+    builtin::OwnedBytes input = region.try_allocate(5672);
+    if (!input.ok()) {
+        return builtin::HostExit::failure;
+    }
+    i64 copied = 0;
+    while (copied < 5672) {
+        const builtin::HostChunk chunk = files.read(file.id, u64(copied));
+        if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64 || chunk.count > u64(5672 - copied)) {
+            return builtin::HostExit::failure;
+        }
+        const builtin::array<u8, 504> bytes = chunk.bytes;
+        at = 0;
+        while (at < i64(chunk.count)) {
+            input.set(copied + at, bytes[at]);
+            at = at + 1;
+        }
+        copied = copied + i64(chunk.count);
+    }
+    files.close(file.id);
+    const builtin::span<const u8> bytes = borrow_bytes(input);
+    const std::ByteReadResult operation = std::read_le64(bytes, 0);
+    const std::ByteReadResult inode = std::read_le64(bytes, 8);
+    const std::ByteReadResult number = std::read_le64(bytes, 16);
+    const std::ByteReadResult head = std::read_le64(bytes, 24);
+    const std::ByteReadResult length = std::read_le64(bytes, 32);
+    std::BinaryBuffer64 output = std::BinaryBuffer64();
+    if (operation.value_or(9u64) >= 2u64 && operation.value_or(9u64) <= 4u64) {
+        bool valid = false;
+        if (operation.value_or(9u64) == 2u64 && length.value_or(0u64) == 512u64) {
+            valid = fs::inspect_xfs_mounted_headers(bytes.subspan(40, 512), bytes.subspan(552, 512), bytes.subspan(1064,
+                512), bytes.subspan(1576, 512), head.value_or(0u64));
+        }
+        if (operation.value_or(9u64) == 3u64 && length.value_or(0u64) <= 4096u64) {
+            valid = fs::inspect_xfs_mounted_leaf(bytes.subspan(40, 512), bytes.subspan(1576,
+                i64(length.value_or(0u64))), number.value_or(0u64), head.value_or(0u64));
+        }
+        if (operation.value_or(9u64) == 4u64 && length.value_or(0u64) <= 512u64) {
+            valid = fs::inspect_xfs_mounted_empty_inode(bytes.subspan(40, 512), bytes.subspan(552,
+                i64(length.value_or(0u64))), inode.value_or(0u64), head.value_or(0u64));
+        }
+        if (valid) {
+            output.write_le64(0, 1u64);
+        }
+    } else {
+        if (operation.value_or(2u64) == 1u64) {
+            if (length.value_or(4097u64) > 4096u64) {
+                return builtin::HostExit::usage;
+            }
+            const fs::XfsRecoveryInodeRequest request = fs::XfsRecoveryInodeRequest(number.value_or(0u64),
+                head.value_or(0u64), inode.value_or(0u64));
+            const fs::XfsRecoveryInodeReport report = fs::inspect_xfs_recovery_inode(bytes.subspan(40, 512),
+                bytes.subspan(1064, 512), bytes.subspan(1576, i64(length.value_or(0u64))), request);
+            if (report.valid()) {
+                output.write_le64(0, 1u64);
+            }
+            if (report.allocated()) {
+                output.write_le64(8, 1u64);
+            }
+        } else {
+            if (operation.value_or(2u64) != 0u64 || length.value_or(513u64) > 512u64) {
+                return builtin::HostExit::usage;
+            }
+            const fs::XfsRecoveryAgRequest request = fs::XfsRecoveryAgRequest(number.value_or(0u64),
+                head.value_or(0u64));
+            const fs::XfsRecoveryAgReport report = fs::inspect_xfs_recovery_ag(bytes.subspan(40, 512),
+                bytes.subspan(552, i64(length.value_or(0u64))), bytes.subspan(1064, 512), request);
+            if (report.valid()) {
+                output.write_le64(0, 1u64);
+            }
+            output.write_le64(8, report.inode_count());
+            output.write_le64(16, report.free_inodes());
+            output.write_le64(24, report.free_blocks());
+        }
+    }
+    if (files.print(builtin::HostStream::stdout, output.bytes(0, 32)) != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    return builtin::HostExit::success;
+}

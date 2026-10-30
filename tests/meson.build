@@ -478,14 +478,35 @@ process_policy_object = custom_target('process-policy',
               '--module-root', meson.project_source_root() / 'library', '--local-symbols',
               '--referenced-reflection-only', '--bridge', files('../kernel/uefi/process-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
-kernel_process = executable('kernel-process', 'kernel-process.cpp', process_policy_object,
-    cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'],
+process_files_policy_object = custom_target('process-files-policy-reference',
+    input: 'kernel-process-files.au', output: 'process-files-policy-reference.o', depfile: 'process-files-policy-reference.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'kernel/policies',
+              '--module-root', meson.project_source_root() / 'library', '--local-symbols',
+              '--referenced-reflection-only', '--bridge', files('kernel-process-files-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+kernel_process = executable('kernel-process', 'kernel-process.cpp', process_policy_object, process_files_policy_object,
+    cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DAURORA_PROCESS_FIXTURE', '-DAURORA_UEFI_NVME'], link_args: ['-no-pie'],
     native: true, override_options: fixture_options, install: false)
+# The native static linker runs once-built objects and itself; its ELF output
+# is admitted by this same kernel-policy driver. Malformed ELF cases are data.
+static_link_args = ['-B', files('compiler/static_link.py'), aurorac.full_path(),
+                    hosted_objects['host-sort'].full_path(), aurorac_object.full_path(), kernel_process.full_path()]
+if process_linked.length() > 0
+  static_link_args += ['--guest-executable', process_linked[0].full_path()]
+endif
+test('static-link', python, args: static_link_args,
+     depends: [aurorac, hosted_objects['host-sort'], aurorac_object, kernel_process] + process_linked,
+     suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 process_volume_cases = custom_target('process-volume-cases', input: 'kernel-process/volumes.cases',
     output: 'process-volumes.bin',
     depend_files: files('../scripts/kernel_volume.py', '../examples/core_math.au', '../examples/host-sort.au'),
     command: [python, '-B', files('../scripts/kernel_volume.py'), '--cases', '@INPUT@',
               '--root', meson.project_source_root(), '--output', '@OUTPUT@'])
+test('kernel-process-handoff', python,
+     args: ['-B', golden_runner, files('kernel-process/handoff.golden'), '--', kernel_process, 'handoff',
+            files('kernel-process/handoff.cases')],
+     suite: ['full', 'merge', 'dev'], timeout: 60)
 test('kernel-process-frames', python,
      args: ['-B', golden_runner, files('kernel-process/frames.golden'), '--', kernel_process, 'frames',
             files('kernel-process/frames.cases')],
@@ -634,11 +655,13 @@ foreach family : ['identity', 'manifest', 'graph']
 endforeach
 # Storage and filesystem libraries: one compiled driver per family over data cases,
 # compared with the golden file beside it (tests/compiler/storage).
-foreach family : ['byte_storage', 'storage_binary', 'block_io', 'xfs_geometry', 'xfs_root', 'xfs_file']
+foreach family : ['byte_storage', 'storage_binary', 'block_io', 'xfs_geometry', 'xfs_root', 'xfs_file', 'xfs_core_redo', 'xfs_recovery_ag', 'xfs_core_log', 'xfs_recovery', 'xfs_mount', 'xfs_service']
+    # Start the full-image witnesses early rather than leave them as a serial tail.
+    priority = family in ['xfs_recovery', 'xfs_service'] ? 1 : 0
     test(family.replace('_', '-'), python,
          args: ['-B', files('compiler/storage/' + family + '.py'), aurorac.full_path()],
          depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
-         env: oracle_env, workdir: meson.current_build_dir(), timeout: 120)
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 120, priority: priority)
 endforeach
 test('xfs-offline-native', python,
      args: ['-B', '-O', files('../fixtures/xfs-offline/verify_native.py'),

@@ -200,6 +200,20 @@ class Table final {
     const Ranges *ranges_ = nullptr;
     U64 head_ = 0, free_ = 0, allocated_ = 0, reserved_ = 0;
     bool poisoned_ = false;
+    // Exactly two simultaneous process owners. Counts are updated with the
+    // frame records and checked against a complete record walk by audit().
+    class Owner final {
+    public:
+        U64 id = 0, frames = 0;
+    };
+    std::array<Owner, 2> owners_{};
+
+    [[nodiscard]] auto owner_slot(U64 owner) const -> std::size_t {
+        for (std::size_t slot = 0; slot < owners_.size(); ++slot)
+            if (owners_[slot].id == owner)
+                return slot;
+        return owners_.size();
+    }
 
     [[nodiscard]] auto apply(U64 index, const Decision &decision) -> Rejection {
         if (decision.rejection == Rejection::malformed)
@@ -240,6 +254,15 @@ public:
     [[nodiscard]] auto allocate(U64 owner) -> std::optional<Frame> {
         if (poisoned_ || head_ == 0)
             return std::nullopt;
+        auto slot = owner_slot(owner);
+        if (slot == owners_.size())
+            for (std::size_t at = 0; at < owners_.size(); ++at)
+                if (owners_[at].frames == 0) {
+                    slot = at;
+                    break;
+                }
+        if (slot == owners_.size())
+            return std::nullopt;
         const auto index = head_ - 1;
         if (index >= records_.size())
             return std::nullopt;
@@ -254,6 +277,8 @@ public:
         head_ = word(old);
         --free_;
         ++allocated_;
+        owners_[slot].id = owner;
+        ++owners_[slot].frames;
         return Frame{index, generation(old)};
     }
     [[nodiscard]] auto release(Frame frame, U64 owner) -> Rejection {
@@ -266,10 +291,15 @@ public:
         if (decision.rejection == Rejection::none && state(decision.record) == static_cast<U64>(State::free) &&
             word(decision.record) != head_)
             decision = {0, Rejection::malformed};
+        const auto slot = owner_slot(owner);
+        if (decision.rejection == Rejection::none && (slot == owners_.size() || !owners_[slot].frames))
+            decision = {0, Rejection::malformed};
         const auto applied = apply(frame.index, decision);
         if (applied != Rejection::none)
             return applied;
         --allocated_;
+        if (--owners_[slot].frames == 0)
+            owners_[slot].id = 0;
         if (state(decision.record) == static_cast<U64>(State::free)) {
             head_ = frame.index + 1;
             ++free_;
@@ -294,6 +324,10 @@ public:
     [[nodiscard]] auto allocated() const -> U64 {
         return allocated_;
     }
+    [[nodiscard]] auto allocated(U64 owner) const -> U64 {
+        const auto slot = owner_slot(owner);
+        return slot < owners_.size() ? owners_[slot].frames : 0;
+    }
     [[nodiscard]] auto poisoned() const -> bool {
         return poisoned_;
     }
@@ -308,6 +342,7 @@ public:
         Audit result;
         if (!ranges_ || poisoned_)
             return result;
+        std::array<U64, 2> owner_frames{};
         for (U64 index = 0; index < records_.size(); ++index) {
             const auto value = records_[index];
             const auto kind = state(value);
@@ -318,12 +353,21 @@ public:
             result.kernel += kind == static_cast<U64>(State::kernel);
             result.retired += kind == static_cast<U64>(State::retired);
             const auto holder = word(value);
+            if (kind == static_cast<U64>(State::allocated)) {
+                const auto slot = owner_slot(holder);
+                if (slot == owners_.size())
+                    return result;
+                ++owner_frames[slot];
+            }
             if (kind == 0 || kind > 4 || (kind == static_cast<U64>(State::free) && holder > records_.size()) ||
                 (kind == static_cast<U64>(State::allocated) && (holder < first_owner || holder > 0xffffffffULL)) ||
                 (kind == static_cast<U64>(State::kernel) && (holder == 0 || holder >= first_owner)) ||
                 (kind == static_cast<U64>(State::retired) && holder != 0))
                 return result;
         }
+        for (std::size_t slot = 0; slot < owners_.size(); ++slot)
+            if (owner_frames[slot] != owners_[slot].frames || ((owners_[slot].frames == 0) != (owners_[slot].id == 0)))
+                return result;
         U64 walked = 0;
         for (auto link = head_; link; ++walked) {
             if (walked > result.free || link > records_.size() ||

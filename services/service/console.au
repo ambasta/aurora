@@ -1,0 +1,322 @@
+export module service.console;
+import console.protected_files;
+import console.protected_commands;
+import console.session_note;
+import console.session_files;
+import console.file_namespace;
+import std.binary;
+import std.binary_buffer;
+
+namespace service {
+    auto console_word(builtin::span<const u8> bytes, i64 offset) -> u64 {
+        const std::ByteReadResult word = std::read_le64(bytes, offset);
+        return word.value_or(18446744073709551615u64);
+    }
+    auto console_buffer(builtin::span<const u8> bytes, i64 offset) -> std::BinaryBuffer64 {
+        std::BinaryBuffer64 result = std::BinaryBuffer64();
+        i64 at = 0;
+        while (at < 64) {
+            result.write_u8(at, bytes.at(offset + at));
+            at = at + 1;
+        }
+        return result;
+    }
+    auto console_tail(builtin::span<const u8> bytes, i64 offset, u64 length) -> bool {
+        if (length > 64u64) {
+            return false;
+        }
+        i64 at = i64(length);
+        while (at < 64) {
+            if (bytes.at(offset + at) != 0u8) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto console_event(console::FileEvent event) -> u64 {
+        if (event == console::FileEvent::written) {
+            return 1u64;
+        }
+        if (event == console::FileEvent::read) {
+            return 2u64;
+        }
+        if (event == console::FileEvent::removed) {
+            return 3u64;
+        }
+        if (event == console::FileEvent::listed) {
+            return 4u64;
+        }
+        if (event == console::FileEvent::missing) {
+            return 5u64;
+        }
+        if (event == console::FileEvent::invalid) {
+            return 6u64;
+        }
+        if (event == console::FileEvent::full) {
+            return 7u64;
+        }
+        if (event == console::FileEvent::reserved) {
+            return 8u64;
+        }
+        return 0u64;
+    }
+}
+
+export namespace service {
+    // The sole retained console namespace is private CPL3 state. The byte owner
+    // holds only the current bounded reply, never an exported namespace image.
+    // Kernel-only control authentication and service-generation binding are
+    // separate from these copied request bytes and note/file revisions.
+    class ConsoleStore {
+        console::SessionNote note;
+        console::ProtectedFiles files;
+        builtin::OwnedBytes output;
+        u64 note_revision;
+        u64 result_status;
+        u64 result_count;
+        u64 result_revision;
+        auto word(i64 offset, u64 value) -> bool {
+            i64 byte = 0;
+            while (byte < 8) {
+                output.set(offset + byte, u8((value >> (byte * 8)) & 255u64));
+                byte = byte + 1;
+            }
+            return true;
+        }
+        auto failure(u64 status) -> bool {
+            result_status = status;
+            result_count = 0u64;
+            result_revision = 0u64;
+            return false;
+        }
+        auto success(u64 count) -> bool {
+            result_status = 0u64;
+            result_count = count;
+            return true;
+        }
+        auto file_reply(console::FileReply reply, i64 offset) -> bool {
+            i64 at = 0;
+            while (at < 64) {
+                output.set(offset + at, reply.at(at));
+                at = at + 1;
+            }
+            word(offset + 64, u64(reply.size()));
+            return word(offset + 72, console_event(reply.status()));
+        }
+        auto selection(console::FileSelection selected, i64 offset) -> bool {
+            const console::FileName name = selected.selected_name();
+            const console::FileValue suffix = selected.appended_value();
+            i64 at = 0;
+            while (at < 64) {
+                output.set(offset + at, name.at(at));
+                output.set(offset + 88 + at, suffix.at(at));
+                at = at + 1;
+            }
+            u64 length = 18446744073709551615u64;
+            if (name.size() >= 0) {
+                length = u64(name.size());
+            }
+            word(offset + 64, length);
+            word(offset + 72, selected.version());
+            u64 writable = 0u64;
+            if (selected.writable()) {
+                writable = 1u64;
+            }
+            if (selected.appending()) {
+                writable = 2u64;
+            }
+            word(offset + 80, writable);
+            length = 18446744073709551615u64;
+            if (suffix.size() >= 0) {
+                length = u64(suffix.size());
+            }
+            return word(offset + 152, length);
+        }
+        auto project_note(u64 action) -> bool {
+            i64 at = 0;
+            while (at < 64) {
+                output.set(at, note.at(at));
+                at = at + 1;
+            }
+            u64 length = 18446744073709551615u64;
+            if (note.size() >= 0) {
+                length = u64(note.size());
+            }
+            word(64, length);
+            word(72, action);
+            result_revision = note_revision;
+            return success(80u64);
+        }
+        auto note_command(std::BinaryBuffer64 command, i64 count) -> bool {
+            const console::SessionNote current = note;
+            const console::ProtectedNoteCommand result = console::protected_note_command(current, command, count);
+            const u64 action = result.action();
+            if (action == 1u64) {
+                const u64 revision = console::file_next_revision(note_revision);
+                if (revision == 0u64) {
+                    return failure(1u64);
+                }
+                const console::SessionNote updated = result.next_note();
+                note = updated;
+                note_revision = revision;
+            }
+            return project_note(action);
+        }
+        auto files_command(std::BinaryBuffer64 command, i64 count, u64 profile) -> bool {
+            const console::ProtectedFileDecision result = files.command(command, count, profile);
+            const console::FileReply reply = result.response();
+            const console::FileSelection selected = result.selection();
+            file_reply(reply, 0);
+            word(80, result.action());
+            selection(selected, 88);
+            return success(248u64);
+        }
+    public:
+        ConsoleStore(builtin::ByteRegion region, console::SessionNote initial_note,
+            console::ProtectedFiles initial_files) : note(initial_note), files(initial_files),
+            output(region.try_allocate(248)), note_revision(1u64), result_status(2u64), result_count(0u64),
+            result_revision(0u64) {
+        }
+        auto ok() const -> bool {
+            return output.ok();
+        }
+        auto status() const -> u64 {
+            return result_status;
+        }
+        auto count() const -> u64 {
+            return result_count;
+        }
+        auto revision() const -> u64 {
+            return result_revision;
+        }
+        auto byte(u64 index) const -> u8 {
+            if (!ok() || result_status != 0u64 || index >= result_count) {
+                return 0u8;
+            }
+            return output.at(i64(index));
+        }
+        auto execute(u64 operation, u64 expected_revision, builtin::span<const u8> request) -> bool {
+            failure(2u64);
+            if (!ok()) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < 248) {
+                output.set(at, 0u8);
+                at = at + 1;
+            }
+            if (operation == 10u64 || operation == 11u64) {
+                i64 required = 72;
+                if (operation == 11u64) {
+                    required = 80;
+                }
+                if (expected_revision != 0u64 || request.size() != required) {
+                    return false;
+                }
+                const u64 count = console_word(request, 64);
+                if (!console_tail(request, 0, count)) {
+                    return false;
+                }
+                const std::BinaryBuffer64 command = console_buffer(request, 0);
+                if (operation == 10u64) {
+                    return note_command(command, i64(count));
+                }
+                return files_command(command, i64(count), console_word(request, 72));
+            }
+            if (operation == 12u64) {
+                if (request.size() != 72) {
+                    return false;
+                }
+                const u64 count = console_word(request, 64);
+                if (count > 53u64 || !console_tail(request, 0, count)) {
+                    return false;
+                }
+                at = 0;
+                while (at < i64(count)) {
+                    if (request.at(at) < 32u8 || request.at(at) > 126u8) {
+                        return false;
+                    }
+                    at = at + 1;
+                }
+                const u64 next = console::file_next_revision(note_revision);
+                if (expected_revision == 0u64 || expected_revision != note_revision || note.size() < 0 || next
+                    == 0u64) {
+                    return failure(1u64);
+                }
+                std::BinaryBuffer64 command = std::BinaryBuffer64();
+                const builtin::array<u8, 11> prefix = "write note ";
+                at = 0;
+                while (at < 11) {
+                    command.write_u8(at, prefix[at]);
+                    at = at + 1;
+                }
+                at = 0;
+                while (at < i64(count)) {
+                    command.write_u8(11 + at, request.at(at));
+                    at = at + 1;
+                }
+                const console::NoteEvent event = note.submit(command, 11 + i64(count));
+                if (event != console::NoteEvent::written) {
+                    return failure(2u64);
+                }
+                note_revision = next;
+                result_revision = next;
+                return success(0u64);
+            }
+            if (operation == 13u64) {
+                if (expected_revision != 0u64 || request.size() != 232) {
+                    return false;
+                }
+                const u64 name_length = console_word(request, 64);
+                const u64 version = console_word(request, 72);
+                const u64 writable = console_word(request, 80);
+                const u64 suffix_length = console_word(request, 152);
+                const u64 count = console_word(request, 224);
+                if (name_length < 1u64 || name_length > 8u64 || suffix_length > 49u64 || count > 49u64 || (writable
+                    != 1u64 && writable != 2u64) || !console_tail(request, 0, name_length) || !console_tail(request, 88,
+                    suffix_length) || !console_tail(request, 160, count) || (writable == 1u64 && suffix_length
+                    != 0u64)) {
+                    return false;
+                }
+                const std::BinaryBuffer64 name_bytes = console_buffer(request, 0);
+                const std::BinaryBuffer64 suffix_bytes = console_buffer(request, 88);
+                const std::BinaryBuffer64 candidate = console_buffer(request, 160);
+                const console::FileName name = console::FileName(name_bytes, i64(name_length));
+                const console::FileValue suffix = console::FileValue(suffix_bytes, i64(suffix_length));
+                const console::FileValue output_value = console::FileValue(candidate, i64(count));
+                if (!name.valid() || name.reserved() || !suffix.valid() || !output_value.valid()) {
+                    return false;
+                }
+                if (version == 0u64 || version != files.version()) {
+                    return failure(1u64);
+                }
+                const console::FileSelection selected = console::FileSelection(name, version, writable, suffix);
+                const console::FileReply reply = files.replace(selected, candidate, i64(count));
+                if (reply.status() != console::FileEvent::written) {
+                    return failure(1u64);
+                }
+                file_reply(reply, 0);
+                return success(80u64);
+            }
+            if (operation == 14u64) {
+                if (expected_revision != 0u64 || request.size() != 0) {
+                    return false;
+                }
+                const u64 next = console::file_next_revision(note_revision);
+                if (next == 0u64 || console::file_next_revision(files.version()) == 0u64) {
+                    return failure(1u64);
+                }
+                if (!files.clear()) {
+                    return failure(1u64);
+                }
+                const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+                const console::SessionNote cleared = console::SessionNote(empty);
+                note = cleared;
+                note_revision = next;
+                return success(0u64);
+            }
+            return false;
+        }
+    };
+}

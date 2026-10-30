@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Build the fixed optional Event emulator dependency; never run Aurora guests."""
+"""Build the fixed Event model, or its separate optional NVMe device extension."""
 
+import argparse
 import hashlib
+import os
 import json
 from pathlib import Path
 import shutil
@@ -41,7 +43,31 @@ FIRMWARE = {
     "OVMF_CODE_4M.fd": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0",
     "OVMF_VARS_4M.fd": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
 }
-PREFIX = Path("/opt/aurora-event")
+parser = argparse.ArgumentParser(description=__doc__)
+models = parser.add_mutually_exclusive_group()
+models.add_argument(
+    "--nvme", action="store_true", help="build a separate NVMe-capable model from the packaged Event sources"
+)
+models.add_argument(
+    "--nvme-graphics", action="store_true", help="build the separate NVMe+standard VGA production model"
+)
+parser.add_argument("--prefix", type=Path, help="new output prefix for the selected bounded model")
+parser.add_argument(
+    "--event-prefix",
+    type=Path,
+    default=Path("/opt/aurora-event"),
+    help="verified packaged Event source inputs for either optional NVMe model",
+)
+parser.add_argument("--data-dir", type=Path, default=Path("/usr/share/qemu"), help="matching QEMU ROM/data directory")
+args = parser.parse_args()
+optional = args.nvme or args.nvme_graphics
+PREFIX = args.prefix or Path(
+    "/opt/aurora-nvme-graphics" if args.nvme_graphics else "/opt/aurora-nvme" if args.nvme else "/opt/aurora-event"
+)
+if optional and PREFIX.resolve() == args.event_prefix.resolve():
+    raise SystemExit("NVMe output must not overwrite the reference Event prefix")
+if optional and (PREFIX.is_symlink() or (PREFIX.exists() and (not PREFIX.is_dir() or any(PREFIX.iterdir())))):
+    raise SystemExit("NVMe output prefix must be absent or an empty directory")
 
 
 def verify(path, expected):
@@ -60,19 +86,25 @@ def install(source, relative):
 with tempfile.TemporaryDirectory(prefix="aurora-event-build-") as temporary:
     work = Path(temporary)
     archive = work / "qemu.tar.xz"
-    with urllib.request.urlopen(SOURCE_URL, timeout=120) as response, archive.open("wb") as stream:
-        shutil.copyfileobj(response, stream)
+    if optional:
+        # Offline extension: the same archive/patch/model hashes remain mandatory.
+        shutil.copyfile(args.event_prefix / "share/source/qemu_10.0.13+ds.orig.tar.xz", archive)
+    else:
+        with urllib.request.urlopen(SOURCE_URL, timeout=120) as response, archive.open("wb") as stream:
+            shutil.copyfileobj(response, stream)
     verify(archive, SOURCE_SHA256)
     install(archive, "share/source/qemu_10.0.13+ds.orig.tar.xz")
     with tarfile.open(archive) as source_archive:
         source_archive.extractall(work, filter="data")
     source = work / "qemu-10.0.13"
     for name, digest in PATCHES.items():
-        patch = Path("/tmp/event-patches") / name
+        patch = (args.event_prefix / "share/source/patches" if optional else Path("/tmp/event-patches")) / name
         verify(patch, digest)
         install(patch, "share/source/patches/" + name)
         subprocess.run(["patch", "--fuzz=0", "-p1", "-i", str(patch)], cwd=source, check=True)
     packaging_patch = Path(__file__).with_name(PACKAGING_PATCH)
+    if optional and not packaging_patch.is_file():
+        packaging_patch = args.event_prefix / "share/source/packaging" / PACKAGING_PATCH
     verify(packaging_patch, PACKAGING_SHA256)
     verify(source / PACKAGING_TARGET, PACKAGING_PREIMAGE)
     subprocess.run(["patch", "--fuzz=0", "-p1", "-i", str(packaging_patch)], cwd=source, check=True)
@@ -100,7 +132,11 @@ with tempfile.TemporaryDirectory(prefix="aurora-event-build-") as temporary:
         verify(source / name, digest)
         install(source / name, "model/" + name)
     config = "configs/devices/x86_64-softmmu/aurora-dma.mak"
-    (source / config).write_text("CONFIG_Q35=y\nCONFIG_AMD_IOMMU=y\nCONFIG_EDU=y\nCONFIG_ISA_DEBUG=y\n")
+    (source / config).write_text(
+        "CONFIG_Q35=y\nCONFIG_AMD_IOMMU=y\nCONFIG_EDU=y\nCONFIG_ISA_DEBUG=y\n"
+        + ("CONFIG_NVME_PCI=y\n" if optional else "")
+        + ("CONFIG_VGA_PCI=y\n" if args.nvme_graphics else "")
+    )
     install(source / config, "model/" + config)
     build = work / "build"
     build.mkdir()
@@ -108,12 +144,13 @@ with tempfile.TemporaryDirectory(prefix="aurora-event-build-") as temporary:
         [
             str(source / "configure"),
             "--target-list=x86_64-softmmu",
-            "--python=/usr/bin/python3",
-            "--ninja=/usr/bin/ninja",
+            "--python=" + (shutil.which("python3") if optional else "/usr/bin/python3"),
+            "--ninja=" + (shutil.which("ninja") if optional else "/usr/bin/ninja"),
             "--without-default-features",
             "--without-default-devices",
             "--with-devices-x86_64=aurora-dma",
             "--enable-tcg",
+            *(["--enable-pixman"] if args.nvme_graphics else []),
             "--disable-kvm",
             "--disable-xen",
             "--disable-user",
@@ -130,13 +167,18 @@ with tempfile.TemporaryDirectory(prefix="aurora-event-build-") as temporary:
         cwd=build,
         check=True,
     )
-    subprocess.run(["ninja", "-j2", "qemu-system-x86_64"], cwd=build, check=True, timeout=1200)
+    # Optional all-core builds run under scripts/watchdog.sh; the established
+    # Event packaging command is unchanged. No guest qualification is inferred.
+    jobs = str(len(os.sched_getaffinity(0))) if optional else "2"
+    subprocess.run(["ninja", "-j" + jobs, "qemu-system-x86_64"], cwd=build, check=True, timeout=1200)
     install(build / "qemu-system-x86_64", "bin/qemu-system-x86_64")
     install(source / "COPYING", "share/doc/COPYING")
 
 install(Path(__file__), "share/source/build-event.py")
-(PREFIX / "share/qemu").symlink_to("/usr/share/qemu", target_is_directory=True)
-for name, digest in FIRMWARE.items():
+(PREFIX / "share/qemu").symlink_to(args.data_dir.resolve(), target_is_directory=True)
+# NVMe deliberately does not inherit the stock Event firmware. Its guest
+# runner selects AURORA_BOOT_FIXTURE_PREFIX's clean no-NvmExpressDxe pair.
+for name, digest in ({} if optional else FIRMWARE).items():
     firmware = Path("/usr/share/OVMF") / name
     verify(firmware, digest)
     install(firmware, "firmware/" + name)
@@ -144,9 +186,15 @@ for name, digest in FIRMWARE.items():
     json.dumps(
         {
             "schema": "aurora-event-runtime-v1",
-            "model": "aurora-amdvi-command-stop-v1",
+            "model": (
+                "aurora-amdvi-command-stop-nvme-graphics-v1"
+                if args.nvme_graphics
+                else "aurora-amdvi-command-stop-nvme-v1"
+                if args.nvme
+                else "aurora-amdvi-command-stop-v1"
+            ),
             "qemu_version": "10.0.13",
-            "firmware_version": "2025.02-8+deb13u1",
+            "firmware_version": "separate clean-nvme-v1 package required" if optional else "2025.02-8+deb13u1",
         },
         indent=2,
     )

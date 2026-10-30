@@ -8,6 +8,7 @@ import console.session_note;
 import console.file_namespace;
 import console.session_files;
 import console.protected_files;
+import console.protected_commands;
 import console.command_stream;
 import console.program_input;
 import console.program_output;
@@ -127,28 +128,9 @@ public:
 };
 
 auto update_note(console::SessionNote current, std::BinaryBuffer64 command, i64 count) -> NoteUpdate {
-    console::SessionNote next = current;
-    const console::NoteEvent event = next.submit(command, count);
-    u64 action = 0u64;
-    // Select the existing protected uppercase program without changing storage.
-    if (count == 10 && command.at(0) == 'u' && command.at(1) == 'p' && command.at(2) == 'p' && command.at(3) == 'e'
-        && command.at(4) == 'r' && command.at(5) == ' ' && command.at(6) == 'n' && command.at(7) == 'o' && command.at(8)
-        == 't' && command.at(9) == 'e') {
-        action = 4u64;
-        if (current.size() < 0) {
-            action = 3u64;
-        }
-    }
-    if (event == console::NoteEvent::written) {
-        action = 1u64;
-    }
-    if (event == console::NoteEvent::read) {
-        action = 2u64;
-    }
-    if (event == console::NoteEvent::missing) {
-        action = 3u64;
-    }
-    const NoteUpdate update = NoteUpdate(next, action);
+    const console::ProtectedNoteCommand result = console::protected_note_command(current, command, count);
+    const console::SessionNote next = result.next_note();
+    const NoteUpdate update = NoteUpdate(next, result.action());
     return update;
 }
 
@@ -162,18 +144,9 @@ auto project_note(console::SessionNote current) -> kernel::NoteRead64 {
     return projection;
 }
 
-// Named-file state and selection are copied only at the quiescent supervisor
-// boundary. Protected programs receive the read projection, never this store.
-class FileUpdate {
-    console::ProtectedFiles files;
-    console::FileReply reply;
-    u64 action;
-    console::FileSelection selection;
-public:
-    FileUpdate(console::ProtectedFiles next, console::FileReply result, u64 operation,
-        console::FileSelection selected) : files(next), reply(result), action(operation), selection(selected) {
-    }
-};
+// Legacy fixtures copy the admitted namespace into one mutable policy receiver,
+// then form the native result once. The source service calls its owned receiver
+// directly; protected programs receive a read projection, never the store.
 class FileMutation {
     console::ProtectedFiles files;
     console::FileReply reply;
@@ -181,53 +154,15 @@ public:
     FileMutation(console::ProtectedFiles next, console::FileReply result) : files(next), reply(result) {
     }
 };
-auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, i64 count, u64 profile) -> FileUpdate {
-    static_assert(size_of(console::FileSelection) == 160);
-    static_assert(size_of(FileUpdate) == 520);
-    const console::FileSelection selection = current.select(command, count);
-    if (profile != 0u64) {
-        console::FileReply rejected = console::FileReply();
-        rejected.select(console::FileEvent::invalid);
-        return FileUpdate(current, rejected, 1u64, selection);
-    }
-    if (selection.version() != 0u64) {
-        const console::FileReply reply = current.project(selection);
-        u64 action = 2u64;
-        // A nonzero selection admits only checked protected file operations.
-        if (command.at(0) == 'p') {
-            action = 4u64;
-        }
-        if (command.at(0) == 'w') {
-            action = 5u64;
-        }
-        if (command.starts_with(count, "crc ")) {
-            action = 6u64;
-        }
-        if (selection.writable()) {
-            action = 3u64;
-        }
-        if (selection.appending()) {
-            action = 7u64;
-        }
-        return FileUpdate(current, reply, action, selection);
-    }
-    if (command.starts_with(count, "append ")) {
-        const console::FileAppendRequest request = console::file_append_request(command, count);
-        const console::FileReply reply = current.prepare_append(request);
-        return FileUpdate(current, reply, 1u64, selection);
-    }
+auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, i64 count,
+    u64 profile) -> console::ProtectedFileCommand {
     console::ProtectedFiles next = current;
-    console::FileReply reply = next.submit(command, count);
-    u64 action = 0u64;
-    if (reply.status() != console::FileEvent::unknown) {
-        action = 1u64;
-    }
-    if (command.starts_with(count, "upper ")) {
-        reply.select(console::FileEvent::invalid);
-        action = 1u64;
-    }
-    return FileUpdate(next, reply, action, selection);
+    const console::ProtectedFileDecision result = next.command(command, count, profile);
+    const console::FileReply reply = result.response();
+    const console::FileSelection selected = result.selection();
+    return console::ProtectedFileCommand(next, reply, result.action(), selected);
 }
+
 auto replace_files(console::ProtectedFiles current, console::FileSelection selected, std::BinaryBuffer64 output,
     i64 count) -> FileMutation {
     console::ProtectedFiles next = current;

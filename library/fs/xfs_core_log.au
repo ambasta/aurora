@@ -1,0 +1,336 @@
+export module fs.xfs_core_log;
+import std.binary;
+import std.binary_buffer;
+import storage.sector;
+import fs.xfs_log;
+
+export namespace fs {
+    enum class XfsCoreLogStatus {
+        ready,
+        invalid_record,
+        unsupported_transaction,
+        invalid_index
+    };
+    class XfsCoreLogFacts {
+        u64 _count;
+        u64 _tid;
+        u64 _inode;
+        u64 _block;
+        u64 _length;
+        u64 _offset;
+    public:
+        XfsCoreLogFacts(u64 count, u64 tid, u64 inode, u64 block, u64 length, u64 offset) : _count(count), _tid(tid),
+            _inode(inode), _block(block), _length(length), _offset(offset) {
+        }
+        auto item_count() const -> u64 {
+            return _count;
+        }
+        auto transaction_id() const -> u64 {
+            return _tid;
+        }
+        auto inode_number() const -> u64 {
+            return _inode;
+        }
+        auto buffer_lba() const -> u64 {
+            return _block;
+        }
+        auto buffer_sectors() const -> u64 {
+            return _length;
+        }
+        auto inode_offset() const -> u64 {
+            return _offset;
+        }
+    };
+    // Copied record facts only. Neither a committed live-log proof nor write authority.
+    class XfsCoreLogResult {
+        XfsCoreLogStatus _status;
+        XfsCoreLogFacts _facts;
+        std::BinaryBuffer64 _core0;
+        std::BinaryBuffer64 _core1;
+        std::BinaryBuffer64 _core2;
+    public:
+        XfsCoreLogResult(XfsCoreLogStatus status, XfsCoreLogFacts facts, std::BinaryBuffer64 core0,
+            std::BinaryBuffer64 core1, std::BinaryBuffer64 core2) : _status(status), _facts(facts), _core0(core0),
+            _core1(core1), _core2(core2) {
+        }
+        auto status() const -> XfsCoreLogStatus {
+            return _status;
+        }
+        auto item_count() const -> u64 {
+            if (_status == XfsCoreLogStatus::ready) {
+                return _facts.item_count();
+            }
+            return 0u64;
+        }
+        auto transaction_id() const -> u64 {
+            if (_status == XfsCoreLogStatus::ready) {
+                return _facts.transaction_id();
+            }
+            return 0u64;
+        }
+        auto inode_number() const -> u64 {
+            if (_status == XfsCoreLogStatus::ready) {
+                return _facts.inode_number();
+            }
+            return 0u64;
+        }
+        auto buffer_lba() const -> u64 {
+            if (_status == XfsCoreLogStatus::ready) {
+                return _facts.buffer_lba();
+            }
+            return 0u64;
+        }
+        auto buffer_sectors() const -> u64 {
+            if (_status == XfsCoreLogStatus::ready) {
+                return _facts.buffer_sectors();
+            }
+            return 0u64;
+        }
+        auto inode_offset() const -> u64 {
+            if (_status == XfsCoreLogStatus::ready) {
+                return _facts.inode_offset();
+            }
+            return 0u64;
+        }
+        auto core_or_zero() const -> storage::Sector512 {
+            if (_status == XfsCoreLogStatus::ready) {
+                storage::Sector512 copy = storage::Sector512();
+                const std::BinaryBuffer64 first = _core0;
+                const std::BinaryBuffer64 second = _core1;
+                copy.write_record(0, first);
+                copy.write_record(64, second);
+                i64 at = 0;
+                while (at < 48) {
+                    copy.write_byte(128 + at, _core2.at(at));
+                    at = at + 1;
+                }
+                return copy;
+            }
+            const storage::Sector512 zero = storage::Sector512();
+            return zero;
+        }
+    };
+}
+namespace fs {
+    auto xcl_fail(XfsCoreLogStatus status) -> XfsCoreLogResult {
+        const std::BinaryBuffer64 zero = std::BinaryBuffer64();
+        const XfsCoreLogFacts facts = XfsCoreLogFacts(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+        const XfsCoreLogResult result = XfsCoreLogResult(status, facts, zero, zero, zero);
+        return result;
+    }
+    // Read the original byte after restoring a sector's cycle-stamped first word.
+    auto xcl_byte(builtin::span<const u8> header, builtin::span<const u8> payload, i64 at) -> u8 {
+        if (at % 512 < 4) {
+            return header.at(44 + (at / 512) * 4 + at % 512);
+        }
+        return payload.at(at);
+    }
+    auto xcl_word(builtin::span<const u8> header, builtin::span<const u8> payload, i64 at, i64 count,
+        bool little) -> u64 {
+        u64 value = 0u64;
+        i64 i = 0;
+        while (i < count) {
+            i64 offset = i;
+            if (little) {
+                offset = count - 1 - i;
+            }
+            value = (value << 8) | u64(xcl_byte(header, payload, at + offset));
+            i = i + 1;
+        }
+        return value;
+    }
+    auto xcl_record_valid(builtin::span<const u8> header, builtin::span<const u8> payload) -> bool {
+        if (!xfs_log_record_checksum(header, payload)) {
+            return false;
+        }
+        const std::ByteReadResult cycle = std::read_be32(header, 4);
+        i64 at = 0;
+        while (at < payload.size()) {
+            const std::ByteReadResult stamp = std::read_be32(payload, at);
+            if (stamp.value_or(0u64) != cycle.value_or(0u64)) {
+                return false;
+            }
+            at = at + 512;
+        }
+        return true;
+    }
+    auto xcl_op(builtin::span<const u8> header, builtin::span<const u8> payload, i64 at, u64 tid, u64 length,
+        u8 flags) -> bool {
+        return xcl_word(header, payload, at, 4, false) == tid && xcl_word(header, payload, at + 4, 4, false) == length
+            && xcl_byte(header, payload, at + 8) == 105u8 && xcl_byte(header, payload, at + 9) == flags
+            && xcl_word(header, payload, at + 10, 2, false) == 0u64;
+    }
+}
+export namespace fs {
+    // Caller admits header identity/topology and stable live-log membership.
+    // This bounded profile accepts one complete, noncontinued CORE transaction.
+    // Every item is validated before any selected item is returned.
+    auto decode_xfs_core_log(builtin::span<const u8> header, builtin::span<const u8> payload,
+        i64 selected_index) -> XfsCoreLogResult {
+        if (!xcl_record_valid(header, payload)) {
+            return xcl_fail(XfsCoreLogStatus::invalid_record);
+        }
+        i64 at = 0;
+        const u64 tid = xcl_word(header, payload, 0, 4, false);
+        const u64 regions = xcl_word(header, payload, 36, 4, true);
+        const std::ByteReadResult operations = std::read_be32(header, 40);
+        if (regions == 0u64 || regions > 32u64 || regions % 2u64 != 0u64 || operations.value_or(0u64) != regions + 3u64
+            || !xcl_op(header, payload, 0, tid, 0u64, 1u8) || !xcl_op(header, payload, 12, tid, 16u64, 0u8)
+            || xcl_word(header, payload, 24, 4, true) != 1414676814u64 || xcl_word(header, payload, 28, 4, true)
+            != 40u64 || xcl_word(header, payload, 32, 4, true) != tid) {
+            return xcl_fail(XfsCoreLogStatus::unsupported_transaction);
+        }
+        const u64 count = regions / 2u64;
+        const i64 end = 40 + i64(count) * 256;
+        if (end + 12 > payload.size()) {
+            return xcl_fail(XfsCoreLogStatus::invalid_record);
+        }
+        u64 inode = 0u64;
+        u64 block = 0u64;
+        u64 length = 0u64;
+        u64 offset = 0u64;
+        storage::Sector512 core = storage::Sector512();
+        i64 item = 0;
+        while (item < i64(count)) {
+            at = 40 + item * 256;
+            const i64 format = at + 12;
+            if (!xcl_op(header, payload, at, tid, 56u64, 0u8) || !xcl_op(header, payload, at + 68, tid, 176u64, 0u8)
+                || xcl_word(header, payload, format, 2, true) != 4667u64 || xcl_word(header, payload, format + 2, 2,
+                true) != 2u64 || xcl_word(header, payload, format + 4, 4, true) != 1u64 || xcl_word(header, payload,
+                format + 8, 8, true) != 0u64 || xcl_word(header, payload, format + 24, 8, true) != 0u64
+                || xcl_word(header, payload, format + 32, 8, true) != 0u64) {
+                return xcl_fail(XfsCoreLogStatus::unsupported_transaction);
+            }
+            const u64 number = xcl_word(header, payload, format + 16, 8, true);
+            const u64 base = xcl_word(header, payload, format + 40, 8, true);
+            const u64 sectors = xcl_word(header, payload, format + 48, 4, true);
+            const u64 within = xcl_word(header, payload, format + 52, 4, true);
+            if (number == 0u64 || base > 9223372036854775807u64 || sectors == 0u64 || sectors > 128u64 || within
+                % 512u64 != 0u64 || within >= sectors * 512u64) {
+                return xcl_fail(XfsCoreLogStatus::unsupported_transaction);
+            }
+            if (item == selected_index) {
+                inode = number;
+                block = base;
+                length = sectors;
+                offset = within;
+                i64 byte = 0;
+                while (byte < 176) {
+                    core.write_byte(byte, xcl_byte(header, payload, at + 80 + byte));
+                    byte = byte + 1;
+                }
+            }
+            item = item + 1;
+        }
+        if (!xcl_op(header, payload, end, tid, 0u64, 2u8)) {
+            return xcl_fail(XfsCoreLogStatus::unsupported_transaction);
+        }
+        if (selected_index < 0 || selected_index >= i64(count)) {
+            return xcl_fail(XfsCoreLogStatus::invalid_index);
+        }
+        const storage::RecordReadResult first = core.read_record(0);
+        const storage::RecordReadResult second = core.read_record(64);
+        const storage::RecordReadResult third = core.read_record(128);
+        const XfsCoreLogFacts facts = XfsCoreLogFacts(count, tid, inode, block, length, offset);
+        const XfsCoreLogResult result = XfsCoreLogResult(XfsCoreLogStatus::ready, facts, first.record_or_zero(),
+            second.record_or_zero(), third.record_or_zero());
+        return result;
+    }
+}
+
+export namespace fs {
+    // One root CORE+LOCAL item, kept distinct from the regular-file CORE list.
+    // Facts describe the native core and complete padded local area. The caller
+    // retains the same immutable checked record while copying its bytes.
+    class XfsRootLogResult {
+        XfsCoreLogStatus _status;
+        XfsCoreLogFacts _facts;
+        u64 _size;
+    public:
+        XfsRootLogResult(XfsCoreLogStatus status, XfsCoreLogFacts facts, u64 size) : _status(status), _facts(facts),
+            _size(size) {
+        }
+        auto status() const -> XfsCoreLogStatus {
+            return _status;
+        }
+        auto facts() const -> XfsCoreLogFacts {
+            if (_status == XfsCoreLogStatus::ready) {
+                const XfsCoreLogFacts copy = _facts;
+                return copy;
+            }
+            const XfsCoreLogFacts zero = XfsCoreLogFacts(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+            return zero;
+        }
+        auto size() const -> u64 {
+            if (_status == XfsCoreLogStatus::ready) {
+                return _size;
+            }
+            return 0u64;
+        }
+        auto byte_at(builtin::span<const u8> header, builtin::span<const u8> payload, i64 at) const -> u8 {
+            if (_status != XfsCoreLogStatus::ready || at < 0 || at >= i64(_size) || header.size() != 512
+                || payload.size() < 144 + i64(_size)) {
+                return 0u8;
+            }
+            i64 source = 120 + at;
+            if (at >= 176) {
+                source = 308 + at - 176;
+            }
+            return xcl_byte(header, payload, source);
+        }
+    };
+}
+namespace fs {
+    auto xcl_root_fail(XfsCoreLogStatus status) -> XfsRootLogResult {
+        const XfsCoreLogFacts facts = XfsCoreLogFacts(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+        const XfsRootLogResult result = XfsRootLogResult(status, facts, 0u64);
+        return result;
+    }
+}
+export namespace fs {
+    auto decode_xfs_root_log(builtin::span<const u8> header, builtin::span<const u8> payload) -> XfsRootLogResult {
+        if (!xcl_record_valid(header, payload)) {
+            return xcl_root_fail(XfsCoreLogStatus::invalid_record);
+        }
+        // A full padded local fork is at most336 bytes. The checked record
+        // checksum requires at least one complete sector before these reads.
+        const u64 tid = xcl_word(header, payload, 0, 4, false);
+        const std::ByteReadResult operations = std::read_be32(header, 40);
+        const u64 size = xcl_word(header, payload, 62, 2, true);
+        const u64 padded = ((size + 3u64) / 4u64) * 4u64;
+        if (size < 6u64 || size > 336u64 || 320u64 + padded > u64(payload.size()) || operations.value_or(0u64) != 6u64
+            || !xcl_op(header, payload, 0, tid, 0u64, 1u8) || !xcl_op(header, payload, 12, tid, 16u64, 0u8)
+            || xcl_word(header, payload, 24, 4, true) != 1414676814u64 || xcl_word(header, payload, 28, 4, true)
+            != 40u64 || xcl_word(header, payload, 32, 4, true) != tid || xcl_word(header, payload, 36, 4, true) != 3u64
+            || !xcl_op(header, payload, 40, tid, 56u64, 0u8) || !xcl_op(header, payload, 108, tid, 176u64, 0u8)
+            || !xcl_op(header, payload, 296, tid, padded, 0u8) || !xcl_op(header, payload, 308 + i64(padded), tid, 0u64,
+            2u8) || xcl_word(header, payload, 52, 2, true) != 4667u64 || xcl_word(header, payload, 54, 2, true) != 3u64
+            || xcl_word(header, payload, 56, 4, true) != 3u64 || xcl_word(header, payload, 60, 2, true) != 0u64
+            || xcl_word(header, payload, 64, 4, true) != 0u64 || xcl_word(header, payload, 76, 8, true) != 0u64
+            || xcl_word(header, payload, 84, 8, true) != 0u64 || xcl_word(header, payload, 176, 8, true) != size) {
+            return xcl_root_fail(XfsCoreLogStatus::unsupported_transaction);
+        }
+        const u64 inode = xcl_word(header, payload, 68, 8, true);
+        const u64 block = xcl_word(header, payload, 92, 8, true);
+        const u64 length = xcl_word(header, payload, 100, 4, true);
+        const u64 offset = xcl_word(header, payload, 104, 4, true);
+        if (inode == 0u64 || block > 9223372036854775807u64 || length == 0u64 || length > 128u64 || offset % 512u64
+            != 0u64 || offset >= length * 512u64) {
+            return xcl_root_fail(XfsCoreLogStatus::unsupported_transaction);
+        }
+        const i64 end = 320 + i64(padded);
+        if (payload.size() != ((end + 511) / 512) * 512) {
+            return xcl_root_fail(XfsCoreLogStatus::unsupported_transaction);
+        }
+        i64 at = end;
+        while (at < payload.size()) {
+            if (xcl_byte(header, payload, at) != 0u8) {
+                return xcl_root_fail(XfsCoreLogStatus::unsupported_transaction);
+            }
+            at = at + 1;
+        }
+        const XfsCoreLogFacts facts = XfsCoreLogFacts(1u64, tid, inode, block, length, offset);
+        const XfsRootLogResult result = XfsRootLogResult(XfsCoreLogStatus::ready, facts, 176u64 + padded);
+        return result;
+    }
+}

@@ -104,15 +104,22 @@ The separate [protected-command console](docs/program-console-contract.md) runs
 and named-file append through two CPL3 domains. Append launches one live compiled
 Call-only caller and one Serve-only producer per command. The producer constructs
 its candidate once; both retain source state across exchanges. Only terminal EOF
-parking, clean caller return and both domain retirements permit publication to
-the surviving supervisor-held store. Revision invalidation and
-fault/budget recovery remain bounded to the session; this is not durable storage.
-Its public commands perform local build/image/stack checks. The same checked
-image can be passed by explicit build directory to the guest oracle; changed
-images still require independent review and final qualification. It is the
-console of the one production UEFI image, which also renders it on the firmware
-framebuffer; `make smoke-production` checks both (QEMU/OVMF only, see
-[production image](docs/kernel-fixture-consolidation.md#production-image)).
+parking, clean caller return and both domain retirements permit publication.
+Legacy program fixtures retain a supervisor-held store; production instead keeps
+note and named-file state in the separate Aurora file service. Native code retains
+only transient projections and authenticated worker state. RAM data disappears
+at session end or service loss; failed commands are never automatically replayed.
+
+The one production UEFI image adds `run PATH [args]`, including same-boot guest
+compile/link/run without host `ld`, and renders the console on the firmware
+framebuffer. Explicit NVMe compositions provide read-only XFS, bounded boot
+recovery, and one clean-only replacement of an existing 1–4096-byte file per
+boot. The shipped compiler can persist a bounded object through this service;
+general writable XFS remains open. `make smoke-production` checks the RAM
+composition; the optional storage gates and precise bounds are documented in
+[storage](storage/README.md). These are QEMU/OVMF mechanisms, not physical-device
+qualification. See the
+[production image](docs/kernel-fixture-consolidation.md#production-image).
 
 For the output-only graphical status page, `make capture-framebuffer` builds and
 saves a PNG under `build/`. This [developer preview](docs/framebuffer-console.md#developer-preview)
@@ -165,7 +172,8 @@ make test                    # merge suite, nproc jobs with memory watchdog; no 
 make run && make run-uefi     # normal BIOS/UEFI smokes; also run affected guest families
 # Releases, compiler and seed changes only:
 make test-release
-make smoke-all               # complete emulator matrix; QEMU and firmware required
+make smoke-all               # registered UEFI + legacy BIOS/device/console smokes
+# Other opt-in guest families retain their documented launchers.
 ```
 
 For direct Meson commands, configure a separate [build](docs/meson-bootstrap.md)

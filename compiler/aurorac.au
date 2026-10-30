@@ -3,6 +3,7 @@ import aurora.host;
 import aurora.memory;
 import aurora.compiler.lexer;
 import aurora.compiler.private_object;
+import aurora.compiler.static_link;
 import aurora.compiler.frontend_wrapper;
 import aurora.compiler.formatter;
 import aurora.compiler.syntax_arena;
@@ -844,6 +845,7 @@ public:
     bool local;
     bool referenced;
     bool object;
+    bool executable;
     bool formatSpecified;
     i64 input;
     i64 output;
@@ -864,6 +866,7 @@ auto no_options() -> Options {
         .local = false,
         .referenced = false,
         .object = false,
+        .executable = false,
         .formatSpecified = false,
         .input = 0,
         .output = 0,
@@ -908,8 +911,8 @@ auto json_requested(const Ranges& words, builtin::span<const u8> arguments, bool
         } else {
             if (is(words, arguments, index, "--module-root") || is(words, arguments, index, "--runtime-root")
                 || (!formatter && (is(words, arguments, index, "--emit-frontend-wrapper") || is(words, arguments, index,
-                "-o") || is(words, arguments, index, "--stack-facts") || is(words, arguments, index, "--abi-facts")
-                || is(words, arguments, index, "--target")))) {
+                "--link-object") || is(words, arguments, index, "-o") || is(words, arguments, index, "--stack-facts")
+                || is(words, arguments, index, "--abi-facts") || is(words, arguments, index, "--target")))) {
                 index = index + 1;
             } else {
                 if (is(words, arguments, index, "--diagnostics=json")) {
@@ -930,10 +933,14 @@ auto rejected(Options options, i64 error, i64 cited) -> Options {
     return result;
 }
 // The value-less aurorac option at index: 1 --emit-object, 2 --local-symbols,
-// 3 --referenced-reflection-only, 4 --check, 5 a diagnostic format, else 0.
+// 3 --referenced-reflection-only, 4 --check, 5 a diagnostic format,
+// 6 --emit-executable, else 0.
 auto flag_kind(const Ranges& words, builtin::span<const u8> arguments, i64 index) -> i64 {
     if (is(words, arguments, index, "--emit-object")) {
         return 1;
+    }
+    if (is(words, arguments, index, "--emit-executable")) {
+        return 6;
     }
     if (is(words, arguments, index, "--local-symbols")) {
         return 2;
@@ -1038,7 +1045,16 @@ auto compiler_options(const Ranges& words, builtin::span<const u8> arguments) ->
             if (result.object) {
                 result.error = 8;
             }
+            if (result.executable) {
+                result.error = 27;
+            }
             result.object = true;
+        }
+        if (flag == 6) {
+            if (result.object || result.executable) {
+                result.error = 27;
+            }
+            result.executable = true;
         }
         if (flag == 2) {
             if (result.local) {
@@ -1083,6 +1099,9 @@ auto compiler_options(const Ranges& words, builtin::span<const u8> arguments) ->
     }
     if (result.check && result.output != 0) {
         return rejected(result, 13, 0);
+    }
+    if (result.check && result.executable) {
+        return rejected(result, 28, 0);
     }
     if (result.check && result.object) {
         return rejected(result, 14, 0);
@@ -1181,7 +1200,8 @@ auto tool_options(const Ranges& words, builtin::span<const u8> arguments, bool f
 auto usage_message(Diagnostics& diagnostics, i64 error, builtin::span<const u8> cited) -> bool {
     diagnostics.begin(command_line(), false);
     if (error == usage_error()) {
-        diagnostics.text("usage: aurorac [--emit-object] [--local-symbols] [--referenced-reflection-only] ");
+        diagnostics.text(
+            "usage: aurorac [--emit-object|--emit-executable] [--local-symbols] [--referenced-reflection-only] ");
         diagnostics.text("[--target linux|aurora] [--module-root DIR] [--runtime-root DIR] INPUT.au -o OUTPUT ");
         diagnostics.text("[--stack-facts OUTPUT.json] [--abi-facts OUTPUT.json]\n       aurorac --check ");
         diagnostics.text("[--diagnostics=text|json] [--target linux|aurora] [--module-root DIR] ");
@@ -1262,6 +1282,15 @@ auto usage_message(Diagnostics& diagnostics, i64 error, builtin::span<const u8> 
     if (error == 26) {
         return diagnostics.text("exactly one --target linux or --target aurora may be given");
     }
+    if (error == 27) {
+        return diagnostics.text("exactly one --emit-object or --emit-executable may be given");
+    }
+    if (error == 28) {
+        return diagnostics.text("--check does not accept --emit-executable");
+    }
+    if (error == 29) {
+        return diagnostics.text("usage: aurorac --link-object INPUT.o -o OUTPUT");
+    }
     return diagnostics.text("usage: aurorac --emit-frontend-wrapper RECIPE -o OUTPUT");
 }
 
@@ -1297,6 +1326,26 @@ auto failure(Diagnostics& diagnostics, i64 code, builtin::span<const u8> message
     diagnostics.begin(code, false);
     return diagnostics.text(message);
 }
+// Linking errors describe unsupported or malformed input, never invoke a host tool.
+auto link_failure(Diagnostics& diagnostics, compiler_static_link::Status status) -> bool {
+    if (status == compiler_static_link::Status::allocation) {
+        return failure(diagnostics, internal(), "static linker allocation failed");
+    }
+    if (status == compiler_static_link::Status::symbol) {
+        return failure(diagnostics, unclassified(), "static link requires unique defined object symbols");
+    }
+    if (status == compiler_static_link::Status::entry) {
+        return failure(diagnostics, unclassified(), "static link requires one global _start function");
+    }
+    if (status == compiler_static_link::Status::relocation) {
+        return failure(diagnostics, unclassified(), "unsupported or malformed static-link relocation");
+    }
+    if (status == compiler_static_link::Status::limit) {
+        return failure(diagnostics, unclassified(), "static executable exceeds 67108864 bytes");
+    }
+    return failure(diagnostics, unclassified(), "unsupported or malformed static-link object");
+}
+
 // A failed open of an explicitly named file.
 auto open_failure(Diagnostics& diagnostics, builtin::span<const u8> message, builtin::HostStatus status,
     bool empty) -> bool {
@@ -1322,7 +1371,7 @@ auto beneath_failure(Diagnostics& diagnostics, builtin::HostStatus status) -> bo
     failure(diagnostics, unclassified(), "cannot open module under beneath-root source policy: ");
     return status_text(diagnostics, status, false);
 }
-// A failed output creation (with creating), write or commit. A creation that
+// A failed output creation (with creating) or write. A creation that
 // fails on a missing or symlinked parent names that directory.
 auto output_failure(Diagnostics& diagnostics, builtin::HostStatus status, bool creating) -> bool {
     if (status == builtin::HostStatus::invalid_path) {
@@ -1333,7 +1382,7 @@ auto output_failure(Diagnostics& diagnostics, builtin::HostStatus status, bool c
             "artifact destination must be a regular file, not a symlink or directory");
     }
     if (status == builtin::HostStatus::too_large) {
-        return failure(diagnostics, unclassified(), "artifact exceeds 67108864 bytes");
+        return failure(diagnostics, unclassified(), "artifact exceeds destination output limit");
     }
     if (creating && (status == builtin::HostStatus::not_found || status == builtin::HostStatus::escape)) {
         return directory_failure(diagnostics, status, false);
@@ -1343,6 +1392,13 @@ auto output_failure(Diagnostics& diagnostics, builtin::HostStatus status, bool c
     } else {
         failure(diagnostics, unclassified(), "cannot write artifact temporary: ");
     }
+    return status_text(diagnostics, status, false);
+}
+
+// An unconfirmed commit may already have published the destination. Never
+// describe a lost commit reply as a failed temporary write or as rollback.
+auto commit_failure(Diagnostics& diagnostics, builtin::HostStatus status) -> bool {
+    failure(diagnostics, unclassified(), "artifact commit was not confirmed; destination may have changed: ");
     return status_text(diagnostics, status, false);
 }
 
@@ -1533,7 +1589,7 @@ auto pipeline_options(Options options) -> u64 {
     if (options.referenced) {
         result = result + 4u64;
     }
-    if (options.object) {
+    if (options.object || options.executable) {
         result = result + 8u64;
     }
     if (options.stack != 0) {
@@ -1940,6 +1996,16 @@ auto compile(builtin::HostFiles& files, builtin::ByteRegion region, builtin::spa
         print(files, diagnostics.output(), options.json && !formatter);
         return exit_for(diagnostics, formatter);
     }
+    compiler_static_link::Workspace linked = compiler_static_link::Workspace(region);
+    if (options.executable) {
+        const compiler_static_link::Status status = linked.run(code);
+        if (status != compiler_static_link::Status::complete) {
+            link_failure(diagnostics, status);
+            render_failure(diagnostics, options.json, formatter);
+            print(files, diagnostics.output(), options.json && !formatter);
+            return exit_for(diagnostics, formatter);
+        }
+    }
     // Each output is an exclusive temporary beside its destination, renamed
     // into place on commit; one that would replace a source, or two outputs
     // naming one destination, fail. Uncommitted outputs are discarded when
@@ -2016,7 +2082,12 @@ auto compile(builtin::HostFiles& files, builtin::ByteRegion region, builtin::spa
         kind = kind + 1;
     }
     if (ok) {
-        const builtin::HostStatus written = files.write(code_output.id, code);
+        builtin::HostStatus written = builtin::HostStatus::success;
+        if (options.executable) {
+            written = files.write(code_output.id, linked.bytes());
+        } else {
+            written = files.write(code_output.id, code);
+        }
         if (written != builtin::HostStatus::success) {
             output_failure(diagnostics, written, false);
             ok = false;
@@ -2044,7 +2115,7 @@ auto compile(builtin::HostFiles& files, builtin::ByteRegion region, builtin::spa
         if (ok && id != 0u64) {
             const builtin::HostStatus committed = files.commit(id);
             if (committed != builtin::HostStatus::success) {
-                output_failure(diagnostics, committed, false);
+                commit_failure(diagnostics, committed);
                 ok = false;
             }
         }
@@ -2229,7 +2300,8 @@ auto artifact_limit() -> i64 {
 }
 
 // aurorac --compose-private-object SOURCE WRAPPER SELECTED -o OUTPUT and
-// --emit-frontend-wrapper RECIPE -o OUTPUT: Aurora admits the inputs and
+// --emit-frontend-wrapper RECIPE -o OUTPUT or --link-object INPUT -o OUTPUT:
+// Aurora admits the inputs and
 // composes or emits the object; the host only reads and writes the bytes.
 auto objects(builtin::HostFiles& files, builtin::ByteRegion region,
     builtin::span<const u8> arguments) -> builtin::HostExit {
@@ -2239,13 +2311,18 @@ auto objects(builtin::HostFiles& files, builtin::ByteRegion region,
     Identities identities = Identities(region);
     const bool json = json_requested(words, arguments, false);
     const bool compose = is(words, arguments, 1, "--compose-private-object");
+    const bool link = is(words, arguments, 1, "--link-object");
     bool ok = true;
     if (compose && (words.size() != 7 || !is(words, arguments, 5, "-o"))) {
         usage_message(diagnostics, 24, "");
         ok = false;
     }
     if (!compose && (words.size() != 5 || !is(words, arguments, 3, "-o"))) {
-        usage_message(diagnostics, 25, "");
+        i64 message = 25;
+        if (link) {
+            message = 29;
+        }
+        usage_message(diagnostics, message, "");
         ok = false;
     }
     i64 inputs = 1;
@@ -2338,6 +2415,7 @@ auto objects(builtin::HostFiles& files, builtin::ByteRegion region,
         print(files, diagnostics.output(), json);
         return exit_for(diagnostics, false);
     }
+    compiler_static_link::Workspace linked = compiler_static_link::Workspace(region);
     compiler_private_object::Workspace composed = compiler_private_object::create(region);
     compiler_x86::ObjectWorkspace wrapper = compiler_x86::object_create(region);
     compiler_x86::EmitStatus status = compiler_x86::EmitStatus::complete;
@@ -2346,8 +2424,19 @@ auto objects(builtin::HostFiles& files, builtin::ByteRegion region,
         status = compiler_private_object::run(composed, first.view(), second.view(), third.view());
         size = composed.size();
     } else {
-        status = compiler_frontend_wrapper::run(wrapper, first.view());
-        size = wrapper.size();
+        if (link) {
+            const compiler_static_link::Status linked_status = linked.run(first.view());
+            if (linked_status != compiler_static_link::Status::complete) {
+                link_failure(diagnostics, linked_status);
+                ok = false;
+            } else {
+                const builtin::span<const u8> bytes = linked.bytes();
+                size = bytes.size();
+            }
+        } else {
+            status = compiler_frontend_wrapper::run(wrapper, first.view());
+            size = wrapper.size();
+        }
     }
     if (status != compiler_x86::EmitStatus::complete) {
         const compiler_resolver::Report report = compiler_resolver::object_report(status, !compose, 0);
@@ -2387,7 +2476,11 @@ auto objects(builtin::HostFiles& files, builtin::ByteRegion region,
         if (compose) {
             written = files.write(output, composed.bytes());
         } else {
-            written = files.write(output, wrapper.bytes());
+            if (link) {
+                written = files.write(output, linked.bytes());
+            } else {
+                written = files.write(output, wrapper.bytes());
+            }
         }
         if (written != builtin::HostStatus::success) {
             output_failure(diagnostics, written, false);
@@ -2402,7 +2495,7 @@ auto objects(builtin::HostFiles& files, builtin::ByteRegion region,
     if (ok) {
         const builtin::HostStatus committed = files.commit(output);
         if (committed != builtin::HostStatus::success) {
-            output_failure(diagnostics, committed, false);
+            commit_failure(diagnostics, committed);
             ok = false;
         }
     }
@@ -2427,7 +2520,7 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
     const Range program = words.at(0);
     const bool formatter = named(arguments.subspan(program.begin, program.count), "aurora-fmt");
     if (!formatter && words.size() > 1 && (is(words, arguments, 1, "--compose-private-object") || is(words, arguments,
-        1, "--emit-frontend-wrapper"))) {
+        1, "--emit-frontend-wrapper") || is(words, arguments, 1, "--link-object"))) {
         return objects(files, region, arguments);
     }
     const Options options = tool_options(words, arguments, formatter);

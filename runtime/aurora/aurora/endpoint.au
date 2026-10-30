@@ -1,0 +1,49 @@
+export module aurora.endpoint;
+
+// Retained process messages are copied observations. Only this reserved
+// binding can access the compiler's private, disjoint request/reply windows.
+// The kernel authenticates the service incarnation and the implicit pending
+// transaction; none of these copied fields grants authority to reply elsewhere.
+export namespace endpoint {
+    class Message {
+        builtin::ServeStatus state;
+        u64 sender;
+        u64 sequence;
+        u64 length;
+    public:
+        Message(builtin::ServeStatus status, u64 source, u64 transaction, u64 count) : state(status), sender(source),
+            sequence(transaction), length(count) {
+        }
+        auto status() const -> builtin::ServeStatus {
+            return state;
+        }
+        auto source() const -> u64 {
+            return sender;
+        }
+        auto transaction() const -> u64 {
+            return sequence;
+        }
+        auto count() const -> u64 {
+            return length;
+        }
+    };
+    auto exchange(builtin::ServeSession& session, builtin::span<const u8> reply) -> Message {
+        i64 index = 0;
+        while (index < reply.size()) {
+            // message_store rejects index >= 65536 before writing; an oversized
+            // reply never reaches the exchange or changes kernel transaction state.
+            session.message_store(u64(index), reply.at(index));
+            index = index + 1;
+        }
+        const builtin::ServeRequest request = session.message_exchange(u64(reply.size()));
+        if (request.status == builtin::ServeStatus::cancelled) {
+            return Message(request.status, 0u64, 0u64, 0u64);
+        }
+        const u64 source = session.message_identity(0u64);
+        const u64 transaction = session.message_identity(1u64);
+        return Message(request.status, source, transaction, request.value);
+    }
+    auto byte(builtin::ServeSession& session, u64 index) -> u8 {
+        return session.message_load(index);
+    }
+}

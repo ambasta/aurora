@@ -1,0 +1,5 @@
+1 bin/file-service file-service	exit 0
+2 bin/probe probe file /disk/hello read @1 64 close @1 file /disk/pattern read @4 9001 close @4 create tree/clean-check write @7 retained commit @7 file tree/clean-check read @10 0	exit 0 | stdout: 1 file success 64 #1  / 2 read success 0  / 3 close success  / 4 file success 9001 #2  / 5 read success 0  / 6 close success  / 7 create success #0 #3  / 8 write success  / 9 commit success  / 10 file success 8 #4  / 11 read success 8 retained
+3 bin/lifecycle lifecycle disk-clean	exit 0 | stdout: xfs clean wrapped pattern 9001 readonly
+4 bin/lifecycle lifecycle disk-clean	exit 0 | stdout: xfs clean wrapped pattern 9001 readonly
+5 bin/probe probe file /disk/hello read @1 64 close @1 file tree/clean-check read @4 0 create /disk/pattern	exit 0 | stdout: 1 file success 64 #1  / 2 read success 0  / 3 close success  / 4 file success 8 #2  / 5 read success 8 retained / 6 create denied #0 #0

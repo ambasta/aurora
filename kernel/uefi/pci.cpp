@@ -5,16 +5,24 @@
      defined(AURORA_UEFI_IVRS)) &&                                                                                     \
     (!defined(AURORA_PLATFORM_FIXTURE) || !defined(AURORA_UEFI_ACPI) || !defined(AURORA_UEFI_PCI) ||                   \
      !defined(AURORA_UEFI_BAR_CAPTURE) || !defined(AURORA_UEFI_NVME_PREPARE) || !defined(AURORA_UEFI_IVRS) ||          \
-     defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_IOMMU_EVENT) ||                \
-     defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_UEFI_CONSOLE))
+     defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_TABLES) ||                                                    \
+     (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)) || defined(AURORA_UEFI_SERVICE_BUDGET) ||         \
+     defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_UEFI_CONSOLE))
 #error "BAR, NVMe preparation and IVRS cases are boot-selected rows of the platform fixture image"
 #endif
 #ifdef AURORA_UEFI_PCI
 #include "pci-policy.hpp"
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
 #include "event-profile-policy.hpp"
 #include "event-handoff-policy.hpp"
+#ifdef AURORA_UEFI_NVME
+#include "nvme.hpp"
+#ifdef AURORA_PRODUCTION
+#include "framebuffer-payload.hpp"
+#endif
+#else
 #include "event-intake.hpp"
+#endif
 #endif
 #ifdef AURORA_UEFI_IVRS
 #include "ivrs-policy.hpp"
@@ -44,7 +52,7 @@ class EcamWindow final {
     WindowAuthority authority_;
     unsigned reads_{};
     unsigned revoked_{};
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
     AURORA_UEFI_EVENT_OUTLINE [[nodiscard]] auto begin(U64 page, bool writable = false) -> std::optional<WindowTicket>
 #else
     [[nodiscard]] auto begin(U64 page) -> std::optional<WindowTicket>
@@ -56,7 +64,7 @@ class EcamWindow final {
         if (!ticket)
             return std::nullopt;
         // PAT3 (PWT|PCD) was verified UC; supervisor, NX, nonglobal.
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
         // Only Event command reduction requests a writable mapping.
         *slot_ = page | 1 | 8 | 16 | PageTables::nx | (writable ? 2 : 0);
 #else
@@ -106,7 +114,7 @@ public:
 #endif
         return result;
     }
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
     [[nodiscard]] auto iommu_capability(U64 page) -> std::optional<std::array<std::byte, 48>> {
         auto ticket = begin(page);
         if (!ticket)
@@ -123,17 +131,28 @@ public:
         return first;
     }
 #endif
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
     [[gnu::noinline, nodiscard]] auto reduce_event_command(const EventPciFact &before, unsigned command)
         -> std::optional<std::array<std::byte, 64>> {
         const auto rid = before.requester();
         const auto page = aperture_.address(before.segment, before.bus, before.device, before.function);
+#ifdef AURORA_UEFI_NVME
+        constexpr unsigned endpoint_requester = 0x10;
+        if (page && rid == endpoint_requester && command == 2 && Bytes{before.header}.get(4, 2) == 2)
+            return read(*page);
+#else
+        constexpr unsigned endpoint_requester = 0x20;
+#endif
         if (!page || Bytes{before.header}.get(4, 2) != 7)
             return std::nullopt;
         if (rid == 8 && command == 7)
             return read(*page); // Never write the IOMMU command.
-        if (!((rid == 0x20 && command == 2) ||
-              ((rid == 0 || rid == 0xf8 || rid == 0xfa || rid == 0xfb) && command == 3)))
+        if (!((rid == endpoint_requester && command == 2) || ((rid == 0 || rid == 0xf8 || rid == 0xfa || rid == 0xfb
+#if defined(AURORA_PRODUCTION) && defined(AURORA_UEFI_NVME)
+                                                               || rid == 0x18
+#endif
+                                                               ) &&
+                                                              command == 3)))
             return std::nullopt;
         auto ticket = begin(*page, true);
         if (!ticket)
@@ -168,7 +187,7 @@ public:
         return reads_;
     }
 };
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
 // Keep scan construction temporaries out of the later BAR/IOMMU call path.
 // The fixed bootstrap stack and its guard are unchanged.
 [[gnu::noinline]] auto scan_ivrs_inventory(const Q35Ecam &aperture, EcamWindow &window) -> std::optional<PciInventory> {
@@ -177,7 +196,7 @@ public:
     });
 }
 #endif
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
 #include "event-reader.inc"
 #endif
 #ifdef AURORA_PLATFORM_FIXTURE
@@ -251,6 +270,10 @@ auto discover_pci(U64 arena,
                   std::span<const std::byte> source,
                   unsigned bits,
                   [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
+#if (defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_PRODUCTION)) && defined(AURORA_UEFI_NVME)
+    if (!Handoff::bar(handoff))
+        return false;
+#endif
 #ifdef AURORA_PLATFORM_FIXTURE
     // ACPI has closed its window before this call; the row was admitted at handoff.
     pci_fixture = platform::row(handoff.get(Handoff::fixture_offset));
@@ -302,7 +325,7 @@ auto discover_pci(U64 arena,
         return false;
     }
 #endif
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
+#if defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
     const auto inventory = scan_ivrs_inventory(*aperture, window);
 #else
     const auto inventory = PciInventory::scan(*aperture, [&](U64 page) {
@@ -348,7 +371,7 @@ auto discover_pci(U64 arena,
     Serial::text("AURORA_PCI_WINDOW_CLOSED: reads=");
     Serial::number(window.reads());
     Serial::text("\r\n");
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
     return inspect_event(arena, handoff, *aperture, window, *inventory, bits);
 #elif defined(AURORA_PLATFORM_FIXTURE)
     return inspect_platform(arena, handoff, *aperture, window, *inventory, bits, pool);

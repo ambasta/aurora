@@ -251,7 +251,7 @@ def send(channel, data):
 
 
 @contextmanager
-def guest(args, mode, directory, record):
+def guest(args, mode, directory, record, *, idle=False):
     verify_images(args, mode)
     directory.mkdir()
     master = slave = proc = channel = None
@@ -272,7 +272,8 @@ def guest(args, mode, directory, record):
             proc = transport.start(
                 argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, bufsize=0, preexec_fn=child_limits
             )
-        channel = capture.Channel(proc, master, directory, time.monotonic() + 90)
+        # The idle row retains 4096 native wakes, over 81s of one-shots in this model.
+        channel = capture.Channel(proc, master, directory, time.monotonic() + (105 if idle else 90))
         channel.command("cont")
         yield channel
     except (Exception, KeyboardInterrupt) as error:
@@ -298,7 +299,7 @@ def capture_case(args, case, directory, record):
     idle = name == "idle4096"
     fail_after = {b"F": 0, b"I": 55}.get(selector)
     model = native(args.renderer, data or b"exit\r", fail_after)
-    with guest(args, "graphical-console-capture", directory, record) as channel:
+    with guest(args, "graphical-console-capture", directory, record, idle=idle) as channel:
         wait(channel, lambda rows: bool(rows))
         channel.stop()
         need(markers(channel.serial_bytes) == [("CAPTURE_GATE", dict(base=BASE, bytes=SIZE))], "capture gate")

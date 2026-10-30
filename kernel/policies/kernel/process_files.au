@@ -1003,19 +1003,4 @@ export namespace kernel {
         result.release = 1u64;
         return result;
     }
-
-    // An exported path's next byte as text: itself when it is one of the
-    // volume's name characters or "/", else "%" and two hexadecimal digits;
-    // the characters in bits 0..23, their count in bits 56..63.
-    auto path_text(u8 value) -> u64 {
-        const bool letter = (value >= 65u8 && value <= 90u8) || (value >= 97u8 && value <= 122u8);
-        const bool digit = value >= 48u8 && value <= 57u8;
-        if (letter || digit || value == 46u8 || value == 95u8 || value == 45u8 || value == 47u8) {
-            return u64(value) | 72057594037927936u64;
-        }
-        const array<u8, 16> digits = "0123456789ABCDEF";
-        const u64 high = u64(digits[i64(value / 16u8)]);
-        const u64 low = u64(digits[i64(value % 16u8)]);
-        return 37u64 | (high << 8) | (low << 16) | 216172782113783808u64;
-    }
 }

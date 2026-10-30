@@ -1,0 +1,398 @@
+; The independent IR uses appended numeric type23/kind7, not a parser alias.
+; CASE: accepted private block primitives
+; RUN: emit aurora
+; RUN: stack-facts aurora
+; CHECK-JSON-NOT: functions.__au_v_m2_6aurora5block_n1_5block_d4read.calls.__au_kernel_service_call <missing>
+; CHECK-JSON-NOT: functions.__au_v_m2_6aurora5block_n1_5block_d4byte.calls.__au_kernel_service_call <missing>
+; CHECK-JSON-NOT: functions.__au_v_m2_6aurora5block_n1_5block_d10descriptor.calls.__au_kernel_service_call <missing>
+function __au_v_m2_6aurora5block_n1_5block_d4read
+  result u64
+  params [23 u64]
+  frame 32
+  service 16
+  slot 24 u64
+    BindServiceParameter 0 16 7
+    BindParameter 1 24 u64
+    Load 24 u64
+    ServiceOperation 16 36 0 7
+    Return
+end
+function __au_v_m2_6aurora5block_n1_5block_d4byte
+  result u8
+  params [23 u64]
+  frame 32
+  service 16
+  slot 24 u64
+    BindServiceParameter 0 16 7
+    BindParameter 1 24 u64
+    Load 24 u64
+    ServiceOperation 16 37 0 7
+    Return
+end
+function __au_v_m2_6aurora5block_n1_5block_d10descriptor
+  result u64
+  params [23 u64]
+  frame 32
+  service 16
+  slot 24 u64
+    BindServiceParameter 0 16 7
+    BindParameter 1 24 u64
+    Load 24 u64
+    ServiceOperation 16 38 0 7
+    Return
+end
+
+; CASE: block rejects Linux
+; BASE: accepted private block primitives
+; RUN: verify
+; EXPECT-ERROR: read-only block primitive requires the Aurora target
+
+; CASE: block rejects wrong module
+; BASE: accepted private block primitives
+; RUN: verify aurora
+; EXPECT-ERROR: unknown sealed service operation
+@@ -1 +1 @@
+-function __au_v_m2_6aurora5block_n1_5block_d4read
++function __au_v_m2_6aurora5blocc_n1_5block_d4read
+
+; CASE: block rejects wrong kind
+; BASE: accepted private block primitives
+; RUN: verify aurora
+; EXPECT-ERROR: service operation kind does not match active capability
+@@ -10 +10 @@
+-    ServiceOperation 16 36 0 7
++    ServiceOperation 16 36 0 5
+
+; CASE: block rejects wrong root
+; BASE: accepted private block primitives
+; RUN: verify aurora
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
+@@ -10 +10 @@
+-    ServiceOperation 16 36 0 7
++    ServiceOperation 8 36 0 7
+
+; CASE: block rejects scalar result storage
+; BASE: accepted private block primitives
+; RUN: verify aurora
+; EXPECT-ERROR: unknown sealed service operation
+@@ -10 +10 @@
+-    ServiceOperation 16 36 0 7
++    ServiceOperation 16 36 24 7
+
+; CASE: block rejects signed argument
+; BASE: accepted private block primitives
+; RUN: verify aurora
+; EXPECT-ERROR: missing or mistyped current value
+@@ -9 +9 @@
+-    Load 24 u64
++    Constant 0 i64
+
+; CASE: block pair region forwarding
+; RUN: verify aurora
+; RUN: abi-facts aurora
+; ABI: function pair_caller pair_caller
+; ABI: function pair_helper pair_helper
+; CHECK-DAG: "type_name":"builtin::ReadOnlyBlock"
+; CHECK-DAG: "type_name":"builtin::ByteRegion"
+function pair_caller
+  result u64
+  params [serve 23 region]
+  frame 48
+  service 16
+  service 32
+  region 40
+    BindServiceParameter 0 16 Serve
+    BindServiceParameter 1 32 7
+    BindRegionParameter 2 40
+    AcquireServiceLoan 1 16 Serve
+    AcquireServiceLoan 2 32 7
+    ServiceCall pair_helper 2 0 [0 0 0] 7 [(1 Serve)] [] 40
+    ReleaseServiceLoan 2 7
+    ReleaseServiceLoan 1 Serve
+    Return
+end
+function pair_helper
+  result u64
+  params [23 serve region]
+  frame 48
+  service 16
+  service 32
+  region 40
+    BindServiceParameter 0 16 7
+    BindServiceParameter 1 32 Serve
+    BindRegionParameter 2 40
+    Constant 42 u64
+    Return
+end
+
+; CASE: block pair rejects missing authenticated region
+; BASE: block pair region forwarding
+; RUN: verify aurora
+; EXPECT-ERROR: region requires exact typed spill
+@@ -13 +13 @@
+-    ServiceCall pair_helper 2 0 [0 0 0] 7 [(1 Serve)] [] 40
++    ServiceCall pair_helper 2 0 [0 0 0] 7 [(1 Serve)]
+
+; CASE: block pair rejects forged region
+; BASE: block pair region forwarding
+; RUN: verify aurora
+; EXPECT-ERROR: region requires exact typed spill
+@@ -13 +13 @@
+-    ServiceCall pair_helper 2 0 [0 0 0] 7 [(1 Serve)] [] 40
++    ServiceCall pair_helper 2 0 [0 0 0] 7 [(1 Serve)] [] 32
+
+; CASE: block pair rejects wrong capability loan
+; BASE: block pair region forwarding
+; RUN: verify aurora
+; EXPECT-ERROR: service helper requires an unused loan with exact provenance
+@@ -13 +13 @@
+-    ServiceCall pair_helper 2 0 [0 0 0] 7 [(1 Serve)] [] 40
++    ServiceCall pair_helper 1 0 [0 0 0] 7 [(2 Serve)] [] 40
+
+; CASE: rejected legacy Display Event tag64 alias
+; RUN: verify
+; EXPECT-ERROR: unsupported service group
+function rejected
+  result u64
+  params [display 16]
+  frame 32
+  service 16
+  service 32
+    BindServiceParameter 0 16 Display
+    BindServiceParameter 1 32 IommuEvent
+    Constant 0 u64
+    Return
+end
+
+; CASE: rejected legacy Console Display Event tag128 alias
+; RUN: verify
+; EXPECT-ERROR: unsupported service group
+function rejected
+  result u64
+  params [console display 16]
+  frame 48
+  service 16
+  service 32
+  service 48
+    BindServiceParameter 0 16 Console
+    BindServiceParameter 1 32 Display
+    BindServiceParameter 2 48 IommuEvent
+    Constant 0 u64
+    Return
+end
+
+; CASE: accepted private writer read
+; RUN: emit aurora
+function __au_v_m2_6aurora11block_write_n1_11block_write_d4read
+  result u64
+  params [24 u64]
+  frame 32
+  service 16
+  slot 24 u64
+    BindServiceParameter 0 16 8
+    BindParameter 1 24 u64
+    Load 24 u64
+    ServiceOperation 16 39 0 8
+    Return
+end
+
+; CASE: writer rejects Linux
+; BASE: accepted private writer read
+; RUN: verify
+; EXPECT-ERROR: read-only block primitive requires the Aurora target
+
+; CASE: writer rejects wrong module
+; BASE: accepted private writer read
+; RUN: verify aurora
+; EXPECT-ERROR: unknown sealed service operation
+@@ -1 +1 @@
+-function __au_v_m2_6aurora11block_write_n1_11block_write_d4read
++function __au_v_m2_6aurora11block_writf_n1_11block_write_d4read
+
+; CASE: writer rejects readonly kind
+; BASE: accepted private writer read
+; RUN: verify aurora
+; EXPECT-ERROR: service operation kind does not match active capability
+@@ -10 +10 @@
+-    ServiceOperation 16 39 0 8
++    ServiceOperation 16 39 0 7
+
+; CASE: accepted private writer primitives
+; RUN: emit aurora
+function __au_v_m2_6aurora11block_write_n1_11block_write_d4read
+  result u64
+  params [24 u64]
+  frame 48
+  service 16
+  slot 24 u64
+    BindServiceParameter 0 16 8
+    BindParameter 1 24 u64
+    Load 24 u64
+    ServiceOperation 16 39 0 8
+    Return
+end
+function __au_v_m2_6aurora11block_write_n1_11block_write_d4byte
+  result u8
+  params [24 u64]
+  frame 48
+  service 16
+  slot 24 u64
+    BindServiceParameter 0 16 8
+    BindParameter 1 24 u64
+    Load 24 u64
+    ServiceOperation 16 40 0 8
+    Return
+end
+function __au_v_m2_6aurora11block_write_n1_11block_write_d10descriptor
+  result u64
+  params [24 u64]
+  frame 48
+  service 16
+  slot 24 u64
+    BindServiceParameter 0 16 8
+    BindParameter 1 24 u64
+    Load 24 u64
+    ServiceOperation 16 41 0 8
+    Return
+end
+function __au_v_m2_6aurora11block_write_n1_11block_write_d5stage
+  result u64
+  params [24 u64 u8]
+  frame 48
+  service 16
+  slot 24 u64
+  slot 32 u8
+    BindServiceParameter 0 16 8
+    BindParameter 1 24 u64
+    BindParameter 2 32 u8
+    Load 24 u64
+    Push
+    Load 32 u8
+    Push
+    ServiceOperation 16 42 0 8
+    Return
+end
+function __au_v_m2_6aurora11block_write_n1_11block_write_d5write
+  result u64
+  params [24 u64]
+  frame 48
+  service 16
+  slot 24 u64
+    BindServiceParameter 0 16 8
+    BindParameter 1 24 u64
+    Load 24 u64
+    ServiceOperation 16 43 0 8
+    Return
+end
+function __au_v_m2_6aurora11block_write_n1_11block_write_d5flush
+  result u64
+  params [24]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 8
+    ServiceOperation 16 44 0 8
+    Return
+end
+function __au_v_m2_6aurora11block_write_n1_11block_write_d6budget
+  result u64
+  params [24]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 8
+    ServiceOperation 16 45 0 8
+    Return
+end
+
+; CASE: writer pair region forwarding
+; RUN: verify aurora
+; RUN: abi-facts aurora
+; ABI: function pair_caller pair_caller
+; ABI: function pair_helper pair_helper
+; CHECK-DAG: "type_name":"builtin::WritableBlock"
+; CHECK-DAG: "type_name":"builtin::ByteRegion"
+function pair_caller
+  result u64
+  params [serve 24 region]
+  frame 48
+  service 16
+  service 32
+  region 40
+    BindServiceParameter 0 16 Serve
+    BindServiceParameter 1 32 8
+    BindRegionParameter 2 40
+    AcquireServiceLoan 1 16 Serve
+    AcquireServiceLoan 2 32 8
+    ServiceCall pair_helper 2 0 [0 0 0] 8 [(1 Serve)] [] 40
+    ReleaseServiceLoan 2 8
+    ReleaseServiceLoan 1 Serve
+    Return
+end
+function pair_helper
+  result u64
+  params [24 serve region]
+  frame 48
+  service 16
+  service 32
+  region 40
+    BindServiceParameter 0 16 8
+    BindServiceParameter 1 32 Serve
+    BindRegionParameter 2 40
+    Constant 42 u64
+    Return
+end
+
+; CASE: writer pair rejects missing authenticated region
+; BASE: writer pair region forwarding
+; RUN: verify aurora
+; EXPECT-ERROR: region requires exact typed spill
+@@ -13 +13 @@
+-    ServiceCall pair_helper 2 0 [0 0 0] 8 [(1 Serve)] [] 40
++    ServiceCall pair_helper 2 0 [0 0 0] 8 [(1 Serve)]
+
+; CASE: writer pair rejects forged region
+; BASE: writer pair region forwarding
+; RUN: verify aurora
+; EXPECT-ERROR: region requires exact typed spill
+@@ -13 +13 @@
+-    ServiceCall pair_helper 2 0 [0 0 0] 8 [(1 Serve)] [] 40
++    ServiceCall pair_helper 2 0 [0 0 0] 8 [(1 Serve)] [] 32
+
+; CASE: writer pair rejects wrong capability loan
+; BASE: writer pair region forwarding
+; RUN: verify aurora
+; EXPECT-ERROR: service helper requires an unused loan with exact provenance
+@@ -13 +13 @@
+-    ServiceCall pair_helper 2 0 [0 0 0] 8 [(1 Serve)] [] 40
++    ServiceCall pair_helper 1 0 [0 0 0] 8 [(2 Serve)] [] 40
+
+; CASE: writer rejects unrelated pair
+; RUN: verify aurora
+; EXPECT-ERROR: unsupported service group
+function rejected_writer
+  result u64
+  params [24 23]
+  frame 32
+  service 16
+  service 32
+    BindServiceParameter 0 16 8
+    BindServiceParameter 1 32 7
+    Constant 0 u64
+    Return
+end
+
+; CASE: writer rejects triple
+; RUN: verify aurora
+; EXPECT-ERROR: unsupported service group
+function rejected_writer
+  result u64
+  params [serve 24 23]
+  frame 48
+  service 16
+  service 32
+  service 48
+    BindServiceParameter 0 16 Serve
+    BindServiceParameter 1 32 8
+    BindServiceParameter 2 48 7
+    Constant 0 u64
+    Return
+end

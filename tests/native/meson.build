@@ -77,7 +77,7 @@ foreach driver : [
     ['uefi-user', [native_uefi_object], ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page']],
     ['uefi-multipage', [native_uefi_object], ['-DAURORA_RUNTIME_MULTIPAGE=1', '-DAURORA_RUNTIME_IMAGE_POLICY=multipage']],
     ['uefi-policy-models', [native_uefi_object], []],
-    ['uefi-handoff-terminal', [], ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DAURORA_UEFI_GRAPHICAL_TERMINAL']],
+    ['uefi-handoff-terminal', [], ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DAURORA_UEFI_GRAPHICAL_TERMINAL', '-DAURORA_PRODUCTION', '-DAURORA_UEFI_NVME']],
 ]
   native_drivers += {driver[0]: executable('native-' + driver[0], files(driver[0] + '.cpp') + driver[1],
       native: true, install: false, override_options: native_options, cpp_args: driver[2], link_args: ['-no-pie'])}
@@ -345,6 +345,9 @@ if get_option('kernel_images')
            args: [uefi_smoke, '--run-only', meson.project_build_root() / 'kernel-images' / canonical, mode],
            depends: kernel_profile_images[canonical] + process_references.get(mode, []),
            suite: ['guest', 'guest-' + family] + (family == 'self-host' ? ['release'] : []),
+           # These full-capacity workloads measure original-clock deadlines
+           # without other Meson tests running, not competing-emulator throughput.
+           is_parallel: mode != 'process-files' and mode != 'process-service',
            workdir: native_root, timeout: profile_data.get('guest_timeouts.' + mode, '60').to_int() + 120)
     endforeach
   endforeach
@@ -354,6 +357,9 @@ if get_option('kernel_images')
        args: ['-B', files('../../scripts/kernel_production_smoke.py'),
               '--build-dir', meson.project_build_root() / 'kernel-images/uefi/production',
               '--renderer', graphical_terminal_host],
-       depends: kernel_profile_images['uefi/production'] + [graphical_terminal_host],
+       depends: kernel_profile_images['uefi/production'] + [graphical_terminal_host,
+                process_programs['aurora:process-hostile'], process_programs['aurora:process-lifecycle'],
+                process_programs['aurora:host-files-probe'], process_programs['assembly:process-isolation-3'],
+                process_programs['assembly:process-isolation-6'], process_programs['aurora:console-commit-hostile']],
        suite: ['guest', 'guest-production'], workdir: native_root, timeout: 480)
 endif

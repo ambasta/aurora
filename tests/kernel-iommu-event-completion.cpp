@@ -1,5 +1,6 @@
 #include "amd310-event-completion-oracle.hpp"
 #include "amd310-translation-oracle.hpp"
+#include "../kernel/uefi/event-backing.hpp"
 
 #include <algorithm>
 #include <array>
@@ -357,16 +358,179 @@ void faults_are_not_completion() {
               "error after wait fetch is outside bounded model");
     }
 }
+void guest_default_deny() {
+    using Backing = aurora::uefi::EventBacking;
+    Backing backing;
+    constexpr std::uint64_t root = 0x108000;
+    check(backing.initialize_device_table(root), "guest bounded device table initialization");
+    // A reviewed allowed leaf lets the independent oracle distinguish the only
+    // permitted requester from all of the denied DTEs in the actual output.
+    constexpr std::uint64_t leaf = 0x600000000010c001ULL;
+    for (unsigned i = 0; i < 8; ++i)
+        backing.page_table[3 * 8 + i] = std::byte(leaf >> (8 * i));
+    const amd310_oracle::Input input{backing.device_table, backing.page_table, root, 1};
+    for (unsigned requester = 0; requester < 256; ++requester) {
+        for (unsigned byte = 0; byte < 32; ++byte) {
+            const auto expected_word = requester != 0x20 ? (byte < 8 ? 3ULL : 0ULL)
+                                       : byte < 8        ? 0x6000000000108203ULL
+                                       : byte < 16       ? 0x1234ULL
+                                                         : 0ULL;
+            check(backing.device_table[requester * 32 + byte] == std::byte(expected_word >> ((byte % 8) * 8)),
+                  "guest every DTE byte matches deny or sole allowed requester");
+        }
+        for (const auto access : {amd310_oracle::Access::read, amd310_oracle::Access::write}) {
+            const auto result =
+                amd310_oracle::translate(input, {static_cast<std::uint16_t>(requester), 0x3100, access});
+            check(requester == 0x20 ? std::holds_alternative<amd310_oracle::Translation>(result)
+                                    : std::holds_alternative<amd310_oracle::IoPageFault>(result),
+                  "guest actual DTE output interpreted by independent oracle");
+        }
+    }
+    for (const auto requester : {256, 65535})
+        for (const auto access : {amd310_oracle::Access::read, amd310_oracle::Access::write})
+            check(std::holds_alternative<amd310_oracle::IoPageFault>(
+                      amd310_oracle::translate(input, {static_cast<std::uint16_t>(requester), 0x3100, access})),
+                  "guest requester beyond table denied");
+    const auto original = backing.device_table;
+    for (const auto invalid : {0ULL, root + 1ULL, 1ULL << 40})
+        check(!backing.initialize_device_table(invalid) && backing.device_table == original,
+              "guest invalid root cannot partially initialize");
+}
+
+// The actual guest batch encoder/observer, not the independent assumption model
+// above. Cases share the once-built IOMMU component driver.
+void guest_invalidation() {
+    using Batch = aurora::uefi::EventInvalidation;
+    using Result = Batch::Result;
+    constexpr std::uint64_t physical = 0x106000;
+    alignas(4096) std::array<std::byte, 4096> page{};
+    const auto store = [&](std::size_t offset, std::uint64_t value) {
+        for (unsigned i = 0; i < 8; ++i)
+            page[offset + i] = std::byte(value >> (i * 8));
+    };
+    const auto word = [&](std::size_t offset) {
+        std::uint64_t value = 0;
+        for (unsigned i = 0; i < 8; ++i)
+            value |= std::uint64_t(std::to_integer<unsigned>(page[offset + i])) << (i * 8);
+        return value;
+    };
+    Batch batch{page, physical};
+    // An old matching store is actively poisoned before a new tail publication.
+    store(0x100, Batch::nonce);
+    check(batch.prepare(0, 0, 0x18) && word(0x100) == Batch::poison, "guest fresh completion poison");
+    constexpr std::array<std::uint64_t, 6> commands{0x2000000000000020ULL,
+                                                    0,
+                                                    0x3000123400000000ULL,
+                                                    0x7ffffffffffff001ULL,
+                                                    0x1000000000106105ULL,
+                                                    0xdb1937456280acefULL};
+    for (unsigned i = 0; i < commands.size(); ++i)
+        check(word(i * 8) == commands[i], "guest reviewed invalidation wire command");
+    check(!batch.prepare(0, 0, 0x18), "guest duplicate prepare refused");
+    for (std::uint64_t head : {0, 16, 32, 48})
+        check(batch.observe(head, 48, 0x18, 0, 0) == Result::pending, "head alone never completes");
+    store(0x100, Batch::nonce);
+    check(batch.observe(48, 48, 0x18, 0, 0) == Result::complete, "fresh store and complete head accepted");
+    check(batch.observe(48, 48, 0x18, 0, 0) == Result::failed && !batch.prepare(0, 0, 0x18),
+          "guest batch cannot grant a second completion");
+
+    // Each mutation is an input record to the same driver and real observer.
+    for (unsigned fault = 0; fault < 13; ++fault) {
+        page.fill(std::byte{0});
+        Batch rejected{page, physical};
+        check(rejected.prepare(0, 0, 0x18), "negative batch starts cold");
+        std::uint64_t head = 48, tail = 48, status = 0x18, event_head = 0, event_tail = 0;
+        store(0x100, Batch::nonce);
+        switch (fault) {
+        case 0:
+            head = 1;
+            break;
+        case 1:
+            head = 64;
+            break;
+        case 2:
+            tail = 0;
+            break;
+        case 3:
+            tail = 64;
+            break;
+        case 4:
+            status = 8;
+            break; // stopped command engine
+        case 5:
+            status = 0x19;
+            break; // overflow
+        case 6:
+            status = 0x1a;
+            break; // fault pending
+        case 7:
+            status = 0x1c;
+            break; // stale completion IRQ is not our store
+        case 8:
+            event_head = 16;
+            break;
+        case 9:
+            event_tail = 16;
+            break;
+        case 10:
+            store(0x100, 0);
+            break;
+        case 11:
+            page[0xf0] = std::byte{0};
+            break;
+        case 12:
+            page[0x117] = std::byte{0};
+            break;
+        }
+        check(rejected.observe(head, tail, status, event_head, event_tail) == Result::failed,
+              "guest malformed completion denied");
+        check(rejected.observe(48, 48, 0x18, 0, 0) == Result::failed && !rejected.prepare(0, 0, 0x18),
+              "guest failure absorbing");
+    }
+    page.fill(std::byte{0});
+    Batch early{page, physical};
+    check(early.prepare(0, 0, 0x18), "early store batch starts cold");
+    store(0x100, Batch::nonce);
+    check(early.observe(0, 48, 0x18, 0, 0) == Result::pending, "early nonce without complete head stays pending");
+    Batch backwards{page, physical};
+    check(backwards.prepare(0, 0, 0x18) && backwards.observe(32, 48, 0x18, 0, 0) == Result::pending &&
+              backwards.observe(16, 48, 0x18, 0, 0) == Result::failed,
+          "guest head cannot go backwards");
+    Batch timeout{page, physical};
+    check(timeout.prepare(0, 0, 0x18) && timeout.expire() == Result::failed &&
+              timeout.observe(48, 48, 0x18, 0, 0) == Result::failed,
+          "guest timeout cannot complete late");
+    for (const auto address : std::array<std::uint64_t, 4>{0, 0x106001, 1ULL << 40, UINT64_MAX}) {
+        Batch invalid{page, address};
+        check(!invalid.prepare(0, 0, 0x18) && !invalid.prepare(0, 0, 0x18), "guest invalid backing refused");
+    }
+    Batch unprepared{page, physical};
+    check(unprepared.observe(48, 48, 0x18, 0, 0) == Result::failed && !unprepared.prepare(0, 0, 0x18),
+          "guest unprepared observation cannot become a later session");
+    Batch expired{page, physical};
+    check(expired.expire() == Result::failed && !expired.prepare(0, 0, 0x18), "guest pre-publication expiry is final");
+    Batch short_page{std::span{page}.first(4095), physical};
+    Batch unaligned{std::span{page}.subspan(1), physical};
+    check(!short_page.prepare(0, 0, 0x18) && !unaligned.prepare(0, 0, 0x18), "guest page extent checked");
+    for (const auto initial :
+         std::array<std::array<std::uint64_t, 3>, 4>{{{16, 0, 0x18}, {0, 16, 0x18}, {0, 0, 8}, {0, 0, 0x1c}}}) {
+        Batch active{page, physical};
+        check(!active.prepare(initial[0], initial[1], initial[2]), "guest noncold command queue denied");
+    }
+}
+
 } // namespace
 
 int main() {
+    guest_default_deny();
+    guest_invalidation();
     raw_events();
     translation_cross_check();
     status_and_ring();
     batches();
     faults_are_not_completion();
     std::printf(
-        "%s %zu independent AMD310 event/completion checks; no device operation\n", failures ? "FAIL" : "PASS", checks);
+        "%s %zu AMD310 model and guest command checks; no device operation\n", failures ? "FAIL" : "PASS", checks);
     return failures ? 1 : 0;
 }
 } // namespace kernel_iommu_event_completion

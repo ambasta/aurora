@@ -4,7 +4,7 @@
 #include "framebuffer-policy.hpp"
 #include <array>
 // Share large helpers only inside the existing Event build family.
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
 #define AURORA_UEFI_EVENT_OUTLINE [[gnu::noinline]]
 #else
 #define AURORA_UEFI_EVENT_OUTLINE
@@ -274,7 +274,7 @@ public:
         if (h.get(8, 4) == 6)
             return h.get(120) == arena + Handoff::framebuffer_record_offset;
 #ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
-        return h.get(8, 4) == 7 && h.get(120) == arena + RuntimeLayout::metadata_offset &&
+        return h.get(8, 4) == Handoff::terminal_version && h.get(120) == arena + RuntimeLayout::metadata_offset &&
                h.get(Handoff::framebuffer_word) == arena + Handoff::framebuffer_record_offset;
 #else
         return false;
@@ -467,7 +467,9 @@ public:
 inline auto expected_flags(std::uint64_t offset, const Bytes &h) -> std::uint64_t {
     if (Handoff::framebuffer(h) && offset == Handoff::framebuffer_record_offset)
         return 1 | PageTables::nx;
-    if (h.get(8, 4) == 4 && offset == Handoff::bar_record_offset)
+    const auto bar_offset = Handoff::bar_offset(h);
+    if (bar_offset && h.get(24) <= ~std::uint64_t{0} - bar_offset && Handoff::bar_record(h) == h.get(24) + bar_offset &&
+        offset == bar_offset)
         return 1 | PageTables::nx;
     if (Handoff::runtime(h)) {
         const auto flags = RuntimeLayout::kernel_flags(offset);

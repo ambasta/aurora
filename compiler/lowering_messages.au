@@ -306,6 +306,12 @@ export namespace compiler_lowering {
         if (reason == LoweringError::host_runtime_operation_outside_runtime) {
             return say(session, "HostFiles system primitive is private to the hosted runtime module aurora.host");
         }
+        if (reason == LoweringError::block_runtime_operation_outside_runtime) {
+            return say(session, "read-only block primitive is private to the reserved runtime module aurora.block");
+        }
+        if (reason == LoweringError::endpoint_runtime_operation_outside_runtime) {
+            return say(session, "endpoint primitive is private to the reserved runtime module aurora.endpoint");
+        }
         if (reason == LoweringError::memory_runtime_operation_outside_runtime) {
             return say(session, "memory primitive is private to the hosted runtime module aurora.memory");
         }

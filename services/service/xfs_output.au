@@ -1,0 +1,74 @@
+export module service.xfs_output;
+
+export namespace service {
+    // A single pending output lives only in this source owner's RAM. Once a
+    // disk mutation is attempted, consumed never resets during this boot.
+    class XfsOutput {
+        builtin::OwnedBytes _bytes;
+        u64 _id;
+        u64 _length;
+        bool _poisoned;
+        bool _consumed;
+    public:
+        XfsOutput(builtin::ByteRegion region) : _bytes(region.try_allocate(4096)), _id(0u64), _length(0u64),
+            _poisoned(false), _consumed(false) {
+        }
+        auto ok() const -> bool {
+            return _bytes.ok();
+        }
+        auto available() const -> bool {
+            return ok() && !_consumed && _id == 0u64;
+        }
+        auto begin(u64 id) -> bool {
+            if (!available() || id == 0u64) {
+                return false;
+            }
+            _id = id;
+            _length = 0u64;
+            _poisoned = false;
+            return true;
+        }
+        auto owns(u64 id) const -> bool {
+            return id != 0u64 && id == _id;
+        }
+        auto exceeds_limit(u64 count) const -> bool {
+            return count > 4096u64 - _length;
+        }
+        auto append(u64 id, builtin::span<const u8> bytes) -> bool {
+            if (!owns(id) || _consumed || _poisoned || !ok()) {
+                return false;
+            }
+            if (bytes.size() < 1 || u64(bytes.size()) > 4096u64 - _length) {
+                _poisoned = true;
+                return false;
+            }
+            i64 at = 0;
+            while (at < bytes.size()) {
+                _bytes.set(i64(_length) + at, bytes.at(at));
+                at = at + 1;
+            }
+            _length = _length + u64(bytes.size());
+            return true;
+        }
+        auto committable(u64 id) const -> bool {
+            return owns(id) && ok() && !_consumed && !_poisoned && _length > 0u64 && _length <= 4096u64;
+        }
+        auto bytes() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(_bytes);
+            return all.subspan(0, i64(_length));
+        }
+        auto consume(u64 id) -> bool {
+            if (!committable(id)) {
+                return false;
+            }
+            _consumed = true;
+            return true;
+        }
+        auto clear() -> bool {
+            _id = 0u64;
+            _length = 0u64;
+            _poisoned = false;
+            return true;
+        }
+    };
+}

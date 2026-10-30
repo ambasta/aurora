@@ -15,13 +15,13 @@ from kernel_layout import LAYOUT  # noqa: E402
 MODES = ("iommu-event-denial", "iommu-event-success", "iommu-event-overflow", "iommu-event-command-error")
 # transfers, completion, polls, acknowledgements, entered, output bytes, tail, status
 CASES = (
-    (5, 0, 3, 2, 1, 192, 32, 10),
+    (9, 0, 3, 2, 1, 192, 32, 26),
     (2, 0, 1, 0, 1, 0, 0, 8),
     (257, 2, 0, 0, 0, 0, 4080, 11),
     (0, 4, 1, 0, 1, 57, 16, 10),
 )
 CAPTURES = (
-    ("terminal.bin", "terminal", 672, 8),
+    ("terminal.bin", "terminal", 720, 8),
     ("before-ring.bin", "before_ring", 4096, 4096),
     ("after-ring.bin", "after_ring", 4096, 4096),
     ("live-ring.bin", "ring", 4096, 4096),
@@ -308,7 +308,7 @@ def validate(mode, checked_receipt, serial, captures, qmp_log):
         header
         == [
             0x41554556494E5431,
-            1,
+            2,
             selector,
             5,
             0,
@@ -336,12 +336,12 @@ def validate(mode, checked_receipt, serial, captures, qmp_log):
     )
     before = [
         backing | 1,
-        command | (8 << 56) if selector == 3 else 0,
+        command | (8 << 56) if selector in (0, 3) else 0,
         ring | (8 << 56),
-        0x1005 if selector == 3 else 5,
+        0x1005 if selector in (0, 3) else 5,
         0x29D3,
-        0,
-        16 if selector == 3 else 0,
+        48 if selector == 0 else 0,
+        48 if selector == 0 else 16 if selector == 3 else 0,
         0,
         tail,
         status,
@@ -365,21 +365,50 @@ def validate(mode, checked_receipt, serial, captures, qmp_log):
     data = b"".join(bytes(range(0xA0, 0xB0)) + v + bytes(range(0x50, 0x60)) for v in values + [sink])
     need(terminal[384:528] == data == terminal[528:672], "all 144 guarded data bytes")
     full = bytearray(32768)
+    for requester in range(256):
+        struct.pack_into("<Q", full, requester * 32, 3)
     struct.pack_into("<QQ", full, 0x20 * 32, (backing + 8192) | 3 | (1 << 9) | (3 << 61), 0x1234)
     for index, offset, perm in ((3, 16384, 2), (4, 20480, 1), (5, 24576, 3), (6, 28672, 3)):
         struct.pack_into("<Q", full, 8192 + index * 8, (backing + offset) | 1 | (perm << 61))
     for i, offset in enumerate((16384, 20480, 24576, 28672)):
         full[offset + 0xF0 : offset + 0x114] = data[i * 36 : (i + 1) * 36]
+    invalidation = list(struct.unpack("<6Q", terminal[672:720]))
+    command_reads = invalidation[4]
+    nonce = 0xDB1937456280ACEF
+    if selector == 0:
+        need(1 <= command_reads <= 1 << 24, "bounded invalidation completion polling")
+        need(
+            invalidation == [0x7D5B3917, 0x192B4D6F, 1, 1, command_reads, nonce],
+            "permitted prime and fresh completion observations",
+        )
+        struct.pack_into(
+            "<6Q",
+            full,
+            12288,
+            0x2000000000000020,
+            0,
+            0x3000123400000000,
+            0x7FFFFFFFFFFFF001,
+            (1 << 60) | (command + 0x100) | 5,
+            nonce,
+        )
+        full[12288 + 0xF0 : 12288 + 0x100] = bytes(range(0xA0, 0xB0))
+        struct.pack_into("<Q", full, 12288 + 0x100, nonce)
+        full[12288 + 0x108 : 12288 + 0x118] = bytes(range(0x50, 0x60))
+    else:
+        need(invalidation == [0] * 6, "other rows submit no invalidation")
     need(captures["backing.bin"] == full, "all 32768 backing bytes")
     expected = [
         ADMISSION,
         "AURORA_IOMMU_EVENT_BACKING: terminal=%016x data=%016x ring=%016x pre=%016x post=%016x"
         % (physical["terminal.bin"], backing, ring, physical["before-ring.bin"], physical["after-ring.bin"]),
+        "AURORA_IOMMU_INVALIDATION: prime-read=%016x prime-write=%016x submitted=%016x completed=%016x "
+        "reads=%016x store=%016x retained=boot" % tuple(invalidation),
     ]
     aurora = (
         [
-            "IOMMU F raw=2050123400000020/0000000000003100 rid=0020 dom=1234 dva=0000000000003100 status=0a",
-            "IOMMU F raw=2070123400000020/0000000000004100 rid=0020 dom=1234 dva=0000000000004100 status=0a",
+            "IOMMU F raw=2050123400000020/0000000000003100 rid=0020 dom=1234 dva=0000000000003100 status=1a",
+            "IOMMU F raw=2070123400000020/0000000000004100 rid=0020 dom=1234 dva=0000000000004100 status=1a",
         ]
         if selector == 0
         else ["IOMMU C raw=5000000000000000/%016x status=0a" % command]
@@ -414,10 +443,12 @@ def validate(mode, checked_receipt, serial, captures, qmp_log):
         completion=completion,
         dma_completed=transfers,
         readiness_reads=readiness,
+        invalidation_reads=command_reads,
+        invalidation_completed=invalidation[3],
         polls=polls,
         acknowledgements=acknowledgements,
         event_protocol_lines=len(expected) - 1,
-        terminal_bytes=672,
+        terminal_bytes=720,
         guarded_data_bytes=144,
         ring_slots_per_capture=256,
         ring_captures=3,

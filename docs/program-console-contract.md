@@ -17,10 +17,72 @@ transformation executes in a separately compiled, one-page RX Aurora CPL3 client
 A separate CPL3 stream service validates and returns its requested output byte.
 The same production console executes `append NAME TEXT` through one live compiled
 Call-only caller and one live Serve-only candidate producer per command. Both
-retain source state across exchanges; publication stays with the supervisor store
-after both workers retire.
-This is an embedded bounded application demonstration, not a general process or
-syscall ABI, filesystem, terminal emulator, or hardware qualification.
+retain source state across exchanges. After both workers retire, the supervisor
+publishes the authenticated candidate through the retained Aurora file owner.
+The older commands remain embedded bounded application demonstrations. The
+production `run` path below is separate; neither path is a general terminal
+emulator or hardware qualification.
+
+## Production program launch
+
+The production command `run PATH [args]` loads a static Aurora ELF from the
+boot volume or the retained file service's committed namespace. The input line
+remains limited to 64 ASCII bytes; spaces separate at most 16 words including
+`PATH` (also `argv[0]`). Repeated spaces are ignored. Quoting, escapes and shell
+operators are not implemented; quotes and backslashes reject rather than silently
+changing their meaning. The existing note/four-file commands retain their own
+separate, small session namespace.
+
+The command is selected by the Aurora session policy, after its input turn has
+written the delimiter and revoked its Console grant. Native code transfers the
+quiescent supervisor to the process runtime. The retained service pins the
+selected committed version while the loader copies and admits it; malformed ELF,
+layout, permissions, argument and quota failures do not enter user mode. Each
+successful launch gets fresh process authority and its own checked root. The
+service persists across client exit, allowing a guest compiler's object and
+native-linked executable to be used later in the **same boot**. No serial export,
+host linker or reboot is part of this path. Committed RAM artifacts still vanish
+at session end or service loss; this is not durable storage.
+
+Stdout and stderr are copied to the same serial terminal and framebuffer grid.
+The sink runs only at the supervisor root; no Console or Display loan exists
+while the process owns the architecture. Painting and the `run:` exit status,
+fault, watchdog or admission result occur after process cleanup, retained-service
+parking, exact mapping audits, timer drain and restoration of the console's
+GDT/TSS/IDT and original page-table shape. Only then does the usual Aurora output
+turn restore `aurora>`. Transport failure remains terminal, with no output retry.
+Ordinary fault/watchdog cleanup cannot grant access to another process or discard
+an earlier committed artifact. Service loss is reported, never replaced by a
+hidden kernel file-store fallback.
+
+The production v10 handoff keeps runtime metadata at word 120 and the framebuffer
+record at word 128, adding the separately allocated boot volume at words 136/144.
+Its fixed 184-byte layout selects RAM composition 1 or explicit storage composition
+4; word 176 is the tag. Fixture word 168 stays zero. Word 152 is zero for RAM,
+or the closed readonly XFS profile 0/1 for storage; it is not a production fixture
+selector. Word 160 is zero
+for RAM, or exactly arena+0xe1000 for the storage BAR record, disjoint from runtime
+metadata at arena+0x81000. The volume has independent final-memory-map admission;
+merely naming its address does not grant ownership.
+The process extension/window views are attached only during process ownership,
+audited and detached before the unchanged exact graphical-console verifier runs.
+Retained frames remain owned while detached and are outside the old console's
+arena-only allocator.
+
+The exact fw_cfg value `opt/aurora/storage=nvme` selects fresh XFS; exact
+`nvme-linux-6.12-clean` selects the bounded clean profile qualified against
+Linux 6.12.107 x86_64, not every 6.12 release. Both opt into the same seven-function
+Q35/AMD-Vi/NVMe/std-VGA profile; absence preserves the RAM boot without PCI/NVMe
+probes. Only combined live resource/GOP admission can enable the service's
+separate ReadOnlyBlock grant. Before the first prompt, one bounded startup phase
+runs the full fresh-XFS log gate and reports `/disk` ready or unavailable. Normal
+client/service budgets resume afterward, without per-sector deadline renewal.
+The supported `/disk` mount is read-only; committed program output remains RAM.
+See [storage](../storage/README.md) for the model and mount limits.
+
+These integration paths require final-source native, image/stack and actual
+same-boot guest qualification; a parser or isolated process-fixture pass alone
+does not establish production launch or framebuffer recovery.
 
 ## Aurora-owned console turns
 
@@ -39,7 +101,8 @@ terminal outcome. Bounded input, note/file-selection and response-completion fac
 choose the next effect: production checks the note before files, while file-call
 admits its returning read commands. Invalid or post-terminal progression refuses
 without changing state. Native code executes those effects and retains
-authenticated lifecycle/publication and note/file commits. `console.program_output`
+authenticated lifecycle/publication; the retained Aurora service owns production
+note/file commits. `console.program_output`
 then presents a copied, bounded `ProgramResponse` and the following prompt through
 the same sealed capability. Ready, saved, missing, stopped and unknown responses
 carry no payload; output and local file replies carry at most 64 bytes. Presentation
@@ -67,6 +130,39 @@ driver exercises session transition data, delimiter/response failures, committed
 mutation preservation and CRLF carry through recovery. Actual boots and complete
 qualification remain final-source gates.
 
+## Production console storage ownership
+
+The same retained Aurora file-service process that owns HostFiles also owns the
+legacy console's private note and four-file namespace. These names do not alias
+HostFiles paths or `/disk`; no second service or kernel fallback stores them.
+`service::ConsoleStore` holds `SessionNote` and `ProtectedFiles` in private CPL3
+state. The shared `console.protected_commands` policy is also used by the old
+bounded reference fixtures, so migration does not introduce a second parser.
+The production native ledgers have no saved 72-byte note or 272-byte namespace:
+they retain only a command's frozen projection, selection and authenticated worker
+retirement state. The reference fixture variants still retain their copied values;
+they do not establish production ownership.
+
+Only authenticated supervisor source 0, with no active HostFiles client, may use
+controls 10–14: note command, files command, note replacement, files replacement
+and session clear. Requests and replies have exact bounded shapes. A fresh
+command may start the owner; a replacement carries the previously observed service
+incarnation and the source's frozen note revision or file selection. A mismatched
+or lost incarnation cannot restart, reselect or replay that operation. Note
+revisions and file selections remain source-owned; clear advances rather than
+resets revisions. Note contents remain limited to 53 printable ASCII bytes and
+named files to four slots, eight-character names and 49 printable ASCII bytes.
+
+Selection and replacement cross only at the same exact quiet root, timer and
+architecture boundary as `run`. Both protected workers must complete and retire
+before the source may receive a replacement candidate. Copied projections and
+selection tokens are scrubbed on completion or failure. Malformed source replies
+revoke only the observed service incarnation and return controlled unavailability,
+not a kernel invariant failure. Service loss invalidates the frozen selection;
+only a new user command may start a new owner. A lost commit reply reports an
+unknown result and never claims rollback or retries. A known commit followed by
+terminal output failure likewise stays committed until session teardown.
+
 ## Session-local protected note
 
 The current source also accepts `write note <text>`, `cat note` and `upper note`. One RAM-only
@@ -76,12 +172,13 @@ matching, validation before replacement, missing/empty semantics and suffix
 clearing. The supervisor-level Aurora wrapper classifies `upper note`; the native
 adapter never computes the uppercase transformation.
 
-An ordinary `update_note(SessionNote, BinaryBuffer64, i64) -> NoteUpdate` returns
-a closed 72-byte note plus an explicitly mapped 8-byte event. The native bridge
-commits that result only at the quiescent console boundary, with no Mailbox,
-active domain, retained frame or bound read. Native initialization has an exact
-private representation; a generated `SessionNote(empty)` constructor-equivalence
-fixture checks it. Invalid input preserves the old value.
+The production source owner executes the shared note command policy and returns
+only a closed 72-byte projection plus an explicitly mapped 8-byte action. The
+native adapter validates this copied reply at the quiescent console boundary,
+with no Mailbox, active old domain, old frame or bound read. The reference fixture's
+`update_note(SessionNote, BinaryBuffer64, i64) -> NoteUpdate` bridge still returns
+its copied value; its generated `SessionNote(empty)` constructor-equivalence test
+checks that reference representation. Invalid input preserves the source value.
 
 Each read freezes an Aurora `NoteRead64` projection: 64 payload bytes and a signed
 length, with -1 representing missing. The small dependency-free module adds no
@@ -118,10 +215,11 @@ note completes the existing zero-byte stream lifecycle and remains valid empty.
 
 Only a completely acknowledged stream, successful quiescent retirement of both
 domains and successful whole-output extraction may reach replacement. Native
-preparation bounds the completed output to 53 bytes and forms a `write note `
-command for the same Aurora update bridge and `SessionNote.submit` policy. The
-commit boundary rechecks no command owner, Mailbox, frames, bound projection or
-active runtime. Partial faults, budgets, bad output and cleanup failures cannot
+preparation bounds the completed output to 53 bytes. Production submits that
+candidate with the frozen service incarnation and note revision; the source
+checks both and applies the shared `SessionNote` policy. Reference fixtures form
+a `write note ` command for their copied update bridge. The commit boundary
+rechecks no command owner, Mailbox, old frames, bound projection or active runtime. Partial faults, budgets, bad output and cleanup failures cannot
 replace the original note. The completed output is acknowledged with `Note saved.`;
 `cat note` performs the separate protected readback. There is no general protected
 file-write API. Scratch records have separate lifetimes outside domain creation
@@ -162,12 +260,19 @@ and the opt-in file-call profile retain their local append operation and output.
 `console::ProtectedFiles` adds a copied private selection and a session mutation
 revision around that same typed store. Core operations return copied data/status,
 not English reply text; the revision counter remains only in this protected wrapper.
-This factoring does not move committed storage out of the supervisor. Every successful write/removal/replacement,
+Production retains this typed store only in the external source owner; reference
+fixtures retain their copied supervisor value. Every successful write/removal/replacement,
 including an identical write or self-copy, invalidates all old selections. This conservative
 rule also invalidates a selection after an unrelated-file mutation. Deletion and
 slot reuse cannot resurrect it. Revision exhaustion refuses mutation without
 changing any saved byte and still permits reads/listing. Failed validation and
 full-store refusal preserve the complete store and revision.
+
+`ProtectedFiles.command` applies the shared command policy to that mutable owner
+and returns only a 248-byte reply/action/selection value. The source service does
+not copy the namespace out and back for each command. The legacy supervisor
+adapter copies its admitted input once and forms the unchanged 520-byte native
+result once; the separate file-call profile retains its own closed policy.
 
 A selected file is projected by Aurora, bound to actual fresh Mailbox owners and
 grants, and copied only into the authenticated service's verified stack record.
@@ -343,8 +448,9 @@ worker failure preserves the latest commit. Output failure retains the existing
 terminal session exit, which clears all RAM files. A later explicitly submitted
 append is a new operation, not an internal replay.
 
-This production append integration keeps an independent supervisor commit owner.
-It adds no general scheduler, service-owned namespace, mounted filesystem,
+This production append integration keeps an independent supervisor publication
+authority, with the actual namespace committed by the external source owner.
+The protected worker protocol adds no general scheduler, mounted filesystem,
 zero-copy/DMA path or survival across supervisor/session exit or reboot. Changed
 source still requires final native, exact-image, affected-guest and independent
 review gates; implementation is not a qualification claim.

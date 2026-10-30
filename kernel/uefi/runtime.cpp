@@ -77,6 +77,9 @@
 #error "Append Call belongs only to the original production/program pair"
 #endif
 #include "runtime.hpp"
+#ifdef AURORA_PRODUCTION
+#include "process.hpp"
+#endif
 #ifdef AURORA_UEFI_RUNTIME
 #include "runtime-tables.hpp"
 #include "tables.hpp"
@@ -1268,8 +1271,8 @@ auto run_protected(U64 owned_arena, const Bytes &h, memory::PhysicalPages &produ
 auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #endif
 #ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
-    // The production composition's runtime metadata arrives only in v7.
-    constexpr unsigned runtime_version = 7;
+    // Each graphical composition admits only its exact handoff version.
+    constexpr unsigned runtime_version = Handoff::terminal_version;
 #else
     constexpr unsigned runtime_version = 3;
 #endif

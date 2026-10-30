@@ -13,8 +13,8 @@ usage() {
         'Normal boots are bounded self-tests, not an interactive OS shell (BIOS 15s/UEFI 60s).' \
         'Console --smoke uses the existing PTY oracle; protected fault profiles are smoke-only.' \
         'Overrides: CXX, UEFI_LD, QEMU, QEMU_DATA, OVMF, OVMF_CODE/OVMF_VARS, OVMF_DIR.' \
-        'Specialized profiles: iommu-event, graphical-console, framebuffer, bar, ivrs, bar-*, ivrs-*.' \
-        'Event/graphical: --smoke (default) or --build-only; their existing oracles own restoration.' \
+        'Specialized profiles: nvme, iommu-event, graphical-console, framebuffer, bar, ivrs, bar-*, ivrs-*.' \
+        'NVMe/Event/graphical: --smoke (default) or --build-only; their existing oracles own restoration.' \
         'Framebuffer defaults to one PNG preview: Not qualified evidence. --smoke/--full-smoke runs all cases.' \
         'BAR/IVRS: bar or ivrs runs the family; one mode takes --output DIR and --run-only IMAGE.'
 }
@@ -39,19 +39,24 @@ case "$profile" in
     --namespace-console|namespace-console) platform=uefi; mode=namespace-console; profile=namespace-console; namespace=true; strict=true; label='named namespace Console'; action="${action:---console}" ;;
     production) platform=uefi; mode=program-console; protected=true; strict=true; action="${action:---smoke}" ;;
     program-*) platform=uefi; mode="$profile"; protected=true; strict=true; action="${action:---smoke}" ;;
-    graphical-console|iommu-event) platform=uefi; mode="$profile"; action="${action:---smoke}" ;;
+    graphical-console|iommu-event|nvme) platform=uefi; mode="$profile"; action="${action:---smoke}" ;;
     framebuffer) platform=uefi; mode="$profile"; strict=true; label='framebuffer preview'; action="${action:-preview}" ;;
     *) usage >&2; exit 2 ;;
 esac
 case "$action:$profile" in
     --console:bios|--console:uefi|--console:bios-console|--console:uefi-console|--console:production|--console:program-*|--console:ram-scratchpad-console|--console:namespace-console|--smoke:*) ;;
-    --build-only:iommu-event|--build-only:graphical-console) ;;
+    --build-only:iommu-event|--build-only:graphical-console|--build-only:nvme) ;;
     preview:framebuffer) [[ $# == 1 ]] || { usage >&2; exit 2; } ;;
     --full-smoke:framebuffer) action=--smoke ;;
     *) usage >&2; exit 2 ;;
 esac
 if [[ "$mode" == normal && "$action" == --console ]]; then mode=console; fi
 cd "$(dirname "$0")/.."
+if [[ "$mode" == nvme ]]; then
+    options=()
+    if [[ "$action" == --build-only ]]; then options=(--build-only); fi
+    exec python3 -B scripts/kernel_nvme_smoke.py "${options[@]}"
+fi
 if [[ "$mode" == iommu-event ]]; then
     options=()
     if [[ "$action" == --build-only ]]; then options=(--build-only); fi
@@ -209,7 +214,9 @@ if [[ "$action" == --smoke ]]; then
         # The production image (program-console is its alias) has both consoles:
         # the PTY oracle, then serial commands with the framebuffer.
         build_root="${image_dir%/kernel-images/*}"
-        meson compile -C "$build_root" tests/graphical-terminal-host >/dev/null
+        meson compile -C "$build_root" tests/graphical-terminal-host process-hostile-aurora \
+            process-lifecycle-aurora host-files-probe-aurora process-isolation-3 \
+            process-isolation-6 console-commit-hostile-aurora >/dev/null
         exec python3 -B scripts/kernel_production_smoke.py --build-dir "$image_dir" \
             --renderer "$build_root/tests/graphical-terminal-host"
     fi

@@ -1,0 +1,21 @@
+{
+  "input": [
+    "write note lower\r",
+    "upper note\r",
+    "cat note\r",
+    "upper\rhealthy after owner loss\r"
+  ],
+  "console": [
+    "AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines",
+    "aurora> write note lower",
+    "Note saved.",
+    "aurora> upper note",
+    "File service unavailable; result unknown.",
+    "aurora> cat note",
+    "Note is missing.",
+    "aurora> upper",
+    "text> healthy after owner loss",
+    "output> HEALTHY AFTER OWNER LOSS",
+    "aurora> "
+  ]
+}

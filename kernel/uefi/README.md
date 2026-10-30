@@ -211,8 +211,9 @@ These emulator profiles do not establish physical hardware support or a general 
 
 ## Process image
 
-The [process image](process.md) hands off version 9 with an ESP boot volume and
-a case word, builds a frame allocator over every usable conventional frame with
+The [process image](process.md) uses the fixed v10 handoff with an exact RAM or
+NVMe composition, an ESP boot volume and a case word. It builds a frame allocator
+over every usable conventional frame with
 dynamically allocated kernel table pages, exports volume files over serial and
 runs static ELF programs from the volume as CPL 3 processes with memory and
 file services (the `--target aurora` compiler, the HostFiles cases,

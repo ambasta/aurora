@@ -188,14 +188,18 @@ All failures return a zero-initialized owned sector. No view escapes the call.
 ## Protected console RAM records
 
 The [production console](program-console-contract.md#protected-append-and-surviving-commits)
-keeps four named 49-byte files in its supervisor-held session store, separate from
-the byte/sector APIs above. Its protected append worker receives only a frozen
-selected prefix and suffix. It constructs the candidate in CPL3; source commit
-policy checks exact append contents and revision only after authenticated
-completion and both worker retirements. Worker failure discards staging rather
-than the committed store. Response failure never repeats an append, but ends the
-session and clears all RAM state. This is not mounted storage, a service-owned
-filesystem, or durable/reboot recovery. Final-source qualification is required.
+keeps four named 49-byte files as private state in its retained Aurora file
+service, separate from the byte/sector APIs above and the mounted `/disk`
+namespace. Older program fixtures retain the supervisor-held reference store.
+The protected append worker receives only a frozen selected prefix and suffix.
+It constructs the candidate in CPL3; source commit policy checks exact append
+contents and revision only after authenticated completion and both worker
+retirements. Worker failure discards staging rather than committed data. A lost
+or malformed service reply reports an unknown result without replay; the console
+can accept a new command with a fresh owner, losing the previous owner's RAM.
+By contrast, console output transport failure ends the session: a known commit
+remains committed until teardown clears RAM. These console records provide no
+durable/reboot recovery. Final-source qualification is required.
 
 ## Tests
 

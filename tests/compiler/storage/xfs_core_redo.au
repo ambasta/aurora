@@ -1,0 +1,63 @@
+module xfs_core_redo_driver;
+import std.binary;
+import std.binary_buffer;
+import std.checksum;
+import storage.block_io;
+import fs.xfs_file;
+import fs.xfs_log;
+import storage.sector;
+import fs.xfs_core_redo;
+
+auto status(fs::XfsCoreRedoStatus value) -> u64 {
+    if (value == fs::XfsCoreRedoStatus::converted) { return 0u64; }
+    if (value == fs::XfsCoreRedoStatus::already_newer) { return 1u64; }
+    if (value == fs::XfsCoreRedoStatus::invalid_input) { return 2u64; }
+    if (value == fs::XfsCoreRedoStatus::invalid_home) { return 3u64; }
+    if (value == fs::XfsCoreRedoStatus::unsupported_change) { return 4u64; }
+    return 999u64;
+}
+class CoreInput {
+    builtin::array<u8, 512> sb;
+    builtin::array<u8, 512> home;
+    builtin::array<u8, 512> core;
+    i64 sb_length;
+    i64 home_length;
+    i64 core_length;
+    u64 inode;
+    u64 lsn;
+    u64 capacity;
+    u64 encode;
+public:
+    CoreInput() : sb{}, home{}, core{}, sb_length(0), home_length(0), core_length(0), inode(0u64), lsn(0u64),
+        capacity(0u64), encode(0u64) {
+    }
+    auto entry(i64 slot) const -> u64 {
+        const builtin::span<const u8> sb_all = borrow_bytes(sb);
+        const builtin::span<const u8> home_all = borrow_bytes(home);
+        const builtin::span<const u8> core_all = borrow_bytes(core);
+        const fs::XfsCoreRedoRequest request = fs::XfsCoreRedoRequest(inode, lsn, capacity);
+        const fs::XfsCoreRedoResult result = fs::convert_xfs_core_redo(sb_all.subspan(0, sb_length), home_all.subspan(0,
+            home_length), core_all.subspan(0, core_length), request);
+        if (slot == 0) {
+            if (encode != 0u64) {
+                return 0u64;
+            }
+            return status(result.status());
+        }
+        const storage::Sector512 sector = result.sector_or_zero();
+        const storage::Sector512 encoded = fs::encode_xfs_core(home_all.subspan(0, home_length));
+        u64 word = 0u64;
+        i64 at = 7;
+        while (at >= 0) {
+            const std::ByteReadResult byte = sector.read_byte((slot - 1) * 8 + at);
+            const std::ByteReadResult encoded_byte = encoded.read_byte((slot - 1) * 8 + at);
+            if (encode != 0u64) {
+                word = (word << 8) | encoded_byte.value_or(0u64);
+            } else {
+                word = (word << 8) | byte.value_or(0u64);
+            }
+            at = at - 1;
+        }
+        return word;
+    }
+};

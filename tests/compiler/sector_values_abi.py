@@ -91,10 +91,11 @@ def replace(assembly, symbol, replacement):
 
 
 def compare_bytes(pointer, expected, size, label):
-    return f"""xorq %rcx, %rcx
+    return f"""movq {expected}, %rdi
+xorq %rcx, %rcx
 .Lcompare_{label}:
 movzbq ({pointer},%rcx), %rsi
-cmpb {expected}(%rcx), %sil
+cmpb (%rdi,%rcx), %sil
 jne .Labi_fail
 incq %rcx
 cmpq ${size}, %rcx
@@ -115,37 +116,18 @@ ja .Labi_fail
 
 def canaries():
     code = ""
-    for name, value in [
-        ("record_left", 0x5252525252525252),
-        ("record_right", 0x5353535353535353),
-        ("result_left", 0x6161616161616161),
-        ("result_right", 0x6262626262626262),
-        ("receiver_left", 0x7171717171717171),
-        ("receiver_right", 0x7272727272727272),
+    for pointer, size, left, right in [
+        ("input_record", "record_size", 0x5252525252525252, 0x5353535353535353),
+        ("result", "result_size", 0x6161616161616161, 0x6262626262626262),
     ]:
+        code += f"movq {pointer}, %rdx\nmovabsq ${left:#x}, %rsi\ncmpq %rsi, -8(%rdx)\njne .Labi_fail\n"
+        code += f"addq {size}, %rdx\nmovabsq ${right:#x}, %rsi\ncmpq %rsi, (%rdx)\njne .Labi_fail\n"
+    for name, value in [("receiver_left", 0x7171717171717171), ("receiver_right", 0x7272727272727272)]:
         code += f"movabsq ${value:#x}, %rsi\ncmpq %rsi, {name}\njne .Labi_fail\n"
     return code
 
 
-def incoming_setup(kind):
-    code = POISON + "leaq input_record, %r11\n"
-    if kind == "method":
-        code += "leaq receiver, %r10\nleaq result, %rax\n"
-    else:
-        code += "leaq result, %r10\n"
-    return code + f"call sector_in_{kind}\n"
-
-
-def result_check(size):
-    return (
-        "leaq result, %rdx\n"
-        + compare_bytes("%rdx", "expected_result", size, "result")
-        + canaries()
-        + "movq $42, %rax\n"
-    )
-
-
-def independent_target(kind, corrupt=False):
+def independent_target(kind):
     size = 512 if kind == "block" else 520
     record_size = 512 if kind == "block" else 3120
     result_register = "%rax" if kind == "method" else "%r10"
@@ -168,28 +150,31 @@ ja .Labi_fail
         code += disjoint("%rdx", size, "%r10", 8, "result_receiver")
         code += disjoint("%r10", 8, "%r11", record_size, "receiver_record")
     code += compare_bytes("%r11", "expected_record", record_size, "outgoing")
-    code += f"""xorq %rcx, %rcx
+    code += f"""movq expected_result, %rdi
+xorq %rcx, %rcx
 .Lwrite_result:
-movzbq expected_result(%rcx), %rsi
+movzbq (%rdi,%rcx), %rsi
 movb %sil, (%rdx,%rcx)
 incq %rcx
 cmpq ${size}, %rcx
 jne .Lwrite_result
 """
-    if corrupt:
-        code += f"xorb $1, {size - 1}(%rdx)\n"
     return code + "movq $-111, %r10\nmovq $-112, %r11\nxorq %rax, %rax\nret\n"
 
 
 def overwrite_original():
     return (
         ALIGN
-        + """xorq %rcx, %rcx
+        + """testq $2, case_flags
+jz .Lclobber_done
+movq input_record, %rdx
+xorq %rcx, %rcx
 .Loverwrite_original:
-movb $165, input_record(%rcx)
+movb $165, (%rdx,%rcx)
 incq %rcx
 cmpq $3120, %rcx
 jne .Loverwrite_original
+.Lclobber_done:
 movq $-111, %r10
 movq $-112, %r11
 movq $-113, %rax
@@ -198,26 +183,107 @@ ret
     )
 
 
-def native_test(
-    work,
-    number,
-    name,
-    assembly,
-    entry,
-    replacements=None,
-    input_record=RECORD,
-    expected_result=RESULT,
-    expected=42,
-    expected_exit=0,
-):
-    case = work / f"{number:02d}-{name}"
-    case.mkdir()
-    code = assembly
-    for symbol, replacement in (replacements or {}).items():
-        code = replace(code, symbol, replacement)
-    code += "\n.text\n.globl _start\n_start:\n" + entry
-    code += f"""cmpq ${expected}, %rax
+def native_cases():
+    # name, emitted entry, input bytes, expected result, flags:
+    # method receiver = 1, overwrite original after binding = 2, outgoing = 4.
+    cases = []
+    for kind in ["function", "constructor", "method"]:
+        flags = 1 if kind == "method" else 0
+        cases += [
+            ("incoming-six-reports-" + kind, "sector_in_" + kind, RECORD, RESULT, flags),
+            ("incoming-owned-snapshots-" + kind, "sector_in_" + kind, RECORD, RESULT, flags | 2),
+            ("outgoing-six-reports-" + kind, "sector_out_" + kind, RECORD, RESULT, 4),
+        ]
+    cases += [
+        ("incoming-512-byte-block", "sector_in_block", BLOCK, BLOCK, 0),
+        ("outgoing-512-byte-block", "sector_out_block", BLOCK, BLOCK, 4),
+    ]
+    # Noncanonical padding is deliberately different on either side. Payload
+    # lowering must neither import the caller's poisoned gaps nor overwrite the
+    # result's untouched gaps, even beside nested unaligned U8 runs.
+    mixed_input = bytearray([165] * 48)
+    mixed_result = bytearray([204] * 48)
+    for offset in (*range(11), *range(40, 47)):
+        mixed_input[offset] = mixed_result[offset] = (offset * 37 + 131) % 256
+    for offset, value in ((16, 1), (24, 1), (32, (1 << 64) - 1)):
+        mixed_input[offset : offset + 8] = value.to_bytes(8, "little")
+        mixed_result[offset : offset + 8] = value.to_bytes(8, "little")
+    cases.append(("mixed-width-poisoned-padding-and-canaries", "sector_in_mixed", mixed_input, mixed_result, 0))
+    gap_input = bytearray([165] * 24)
+    gap_result = bytearray([204] * 24)
+    gap_input[0:8] = gap_result[0:8] = ((1 << 64) - 1).to_bytes(8, "little")
+    for offset in (*range(8, 15), 16):
+        gap_input[offset] = gap_result[offset] = (offset * 37 + 131) % 256
+    cases.append(("eight-logical-bytes-split-by-poisoned-gap", "sector_in_gap", gap_input, gap_result, 0))
+    return cases
+
+
+def native_driver(assembly, work):
+    cases = native_cases()
+    assembly = replace(assembly, "sector_clobber", overwrite_original())
+    for kind in ["function", "constructor", "method", "block"]:
+        target = independent_target(kind)
+        # Each handwritten boundary has private loop labels in the shared object.
+        target = re.sub(r"\.L(?!abi_fail\b)(\w+)", rf".L{kind}_\1", target)
+        assembly = replace(assembly, "sector_target_" + kind, target)
+    # Linux's initial stack supplies argv[1], a decimal case index. Every case
+    # gets a fresh process, but all share this one emitted and linked program.
+    assembly += f"""
+.text
+.globl _start
+_start:
+cmpq $2, (%rsp)
 jne .Labi_fail
+movq 16(%rsp), %rsi
+xorq %rax, %rax
+.Lcase_number:
+movzbq (%rsi), %rdx
+testq %rdx, %rdx
+jz .Lcase_selected
+subq $48, %rdx
+cmpq $9, %rdx
+ja .Labi_fail
+imulq $10, %rax
+addq %rdx, %rax
+cmpq ${len(cases)}, %rax
+jae .Labi_fail
+incq %rsi
+jmp .Lcase_number
+.Lcase_selected:
+shlq $6, %rax
+leaq case_table(%rax), %rsi
+leaq case_target, %rdi
+movq $8, %rcx
+rep movsq
+{POISON}
+movq input_record, %r11
+testq $4, case_flags
+jnz .Lcall
+movq result, %r10
+testq $1, case_flags
+jz .Lcall
+leaq receiver, %r10
+movq result, %rax
+.Lcall:
+call *case_target
+testq $4, case_flags
+jz .Lcheck_result
+cmpq $43, %rax
+jne .Labi_fail
+jmp .Lcheck_canaries
+.Lcheck_result:
+movq result, %rdx
+movq expected_result, %rdi
+xorq %rcx, %rcx
+.Lresult_bytes:
+movzbq (%rdx,%rcx), %rsi
+cmpb (%rdi,%rcx), %sil
+jne .Labi_fail
+incq %rcx
+cmpq result_size, %rcx
+jne .Lresult_bytes
+.Lcheck_canaries:
+{canaries()}
 movq $60, %rax
 xorq %rdi, %rdi
 syscall
@@ -230,141 +296,43 @@ syscall
 receiver_left: .quad 0x7171717171717171
 receiver: .quad 1000
 receiver_right: .quad 0x7272727272727272
-record_left: .quad 0x5252525252525252
+case_target: .quad 0
+input_record: .quad 0
+expected_record: .quad 0
+expected_result: .quad 0
+result: .quad 0
+record_size: .quad 0
+result_size: .quad 0
+case_flags: .quad 0
+case_table:
 """
-    code += data("input_record", input_record)
-    code += "record_right: .quad 0x5353535353535353\n"
-    code += data("expected_record", BLOCK if len(input_record) == 512 else RECORD)
-    code += data("expected_result", expected_result)
-    code += f"""result_left: .quad 0x6161616161616161
-result: .fill {len(expected_result)},1,204
-result_right: .quad 0x6262626262626262
-.section .note.GNU-stack,"",@progbits
+    for number, (_, entry, record, result, flags) in enumerate(cases):
+        assembly += (
+            f".quad {entry}, input_{number}, record_{number}, expected_{number}, result_{number}, "
+            f"{len(record)}, {len(result)}, {flags}\n"
+        )
+    for number, (_, _, record, result, _) in enumerate(cases):
+        assembly += ".balign 8\n.quad 0x5252525252525252\n" + data(f"input_{number}", record)
+        assembly += ".quad 0x5353535353535353\n"
+        assembly += data(f"record_{number}", record) + data(f"expected_{number}", result)
+        assembly += f""".balign 8
+.quad 0x6161616161616161
+result_{number}: .fill {len(result)},1,204
+.quad 0x6262626262626262
 """
-    (case / "program.s").write_text(code)
-    run(["as", "--64", case / "program.s", "-o", case / "program.o"])
-    symbols = run(["nm", case / "program.o"]).decode()
+    assembly += '.section .note.GNU-stack,"",@progbits\n'
+    (work / "program.s").write_text(assembly)
+    run(["as", "--64", work / "program.s", "-o", work / "program.o"])
+    symbols = run(["nm", work / "program.o"]).decode()
     for kind in ["function", "constructor", "method", "block"]:
         for prefix in ["sector_in_", "sector_out_", "sector_target_"]:
             symbol = prefix + kind
-            require(re.search(rf"\bt {symbol}$", symbols, re.M), f"{name}: {symbol} lost private binding")
-    run(["ld", "-o", case / "program", case / "program.o"])
-    run([case / "program"], expected_exit=expected_exit)
-    print("PASS sector ABI", name, flush=True)
-
-
-def native_cases(assembly, work):
-    count = 0
-
-    def test(name, entry, **options):
-        nonlocal count
-        native_test(work, count, name, assembly, entry, **options)
-        count += 1
-
-    for kind in ["function", "constructor", "method"]:
-        test("incoming-six-reports-" + kind, incoming_setup(kind) + result_check(520))
-        test(
-            "incoming-owned-snapshots-" + kind,
-            incoming_setup(kind) + result_check(520),
-            replacements={"sector_clobber": overwrite_original()},
-        )
-        outgoing = POISON + "leaq input_record, %r11\n" + f"call sector_out_{kind}\n" + canaries()
-        test(
-            "outgoing-six-reports-" + kind,
-            outgoing,
-            expected=43,
-            replacements={"sector_target_" + kind: independent_target(kind)},
-        )
-        bad_payload = bytearray(RECORD)
-        bad_payload[3 * 520 + 8 + 511] ^= 1
-        test(
-            "control-last-byte-input-" + kind,
-            incoming_setup(kind) + result_check(520),
-            input_record=bad_payload,
-            expected_exit=91,
-        )
-        bad_status = bytearray(RECORD)
-        bad_status[4 * 520 + 7] ^= 1
-        test(
-            "control-high-status-byte-" + kind,
-            incoming_setup(kind) + result_check(520),
-            input_record=bad_status,
-            expected_exit=91,
-        )
-        test(
-            "control-last-byte-result-" + kind,
-            outgoing,
-            expected=43,
-            expected_exit=91,
-            replacements={"sector_target_" + kind: independent_target(kind, corrupt=True)},
-        )
-    test(
-        "incoming-512-byte-block",
-        incoming_setup("block") + result_check(512),
-        input_record=BLOCK,
-        expected_result=BLOCK,
-    )
-    outgoing_block = POISON + "leaq input_record, %r11\ncall sector_out_block\n" + canaries()
-    test(
-        "outgoing-512-byte-block",
-        outgoing_block,
-        expected=43,
-        input_record=BLOCK,
-        expected_result=BLOCK,
-        replacements={"sector_target_block": independent_target("block")},
-    )
-    test(
-        "control-last-byte-block-result",
-        outgoing_block,
-        expected=43,
-        expected_exit=91,
-        input_record=BLOCK,
-        expected_result=BLOCK,
-        replacements={"sector_target_block": independent_target("block", corrupt=True)},
-    )
-    # Noncanonical padding is deliberately different on either side. Payload
-    # lowering must neither import the caller's poisoned gaps nor overwrite the
-    # result's untouched gaps, even beside nested unaligned U8 runs.
-    mixed_input = bytearray([165] * 48)
-    mixed_result = bytearray([204] * 48)
-    for offset in (*range(11), *range(40, 47)):
-        mixed_input[offset] = mixed_result[offset] = (offset * 37 + 131) % 256
-    for offset, value in ((16, 1), (24, 1), (32, (1 << 64) - 1)):
-        mixed_input[offset : offset + 8] = value.to_bytes(8, "little")
-        mixed_result[offset : offset + 8] = value.to_bytes(8, "little")
-    incoming_mixed = POISON + "leaq input_record, %r11\nleaq result, %r10\ncall sector_in_mixed\n" + result_check(48)
-    test(
-        "mixed-width-poisoned-padding-and-canaries",
-        incoming_mixed,
-        input_record=mixed_input,
-        expected_result=mixed_result,
-    )
-    corrupt_mixed = bytearray(mixed_input)
-    corrupt_mixed[46] ^= 1
-    test(
-        "control-mixed-last-byte",
-        incoming_mixed,
-        input_record=corrupt_mixed,
-        expected_result=mixed_result,
-        expected_exit=91,
-    )
-    gap_input = bytearray([165] * 24)
-    gap_result = bytearray([204] * 24)
-    gap_input[0:8] = gap_result[0:8] = ((1 << 64) - 1).to_bytes(8, "little")
-    for offset in (*range(8, 15), 16):
-        gap_input[offset] = gap_result[offset] = (offset * 37 + 131) % 256
-    incoming_gap = POISON + "leaq input_record, %r11\nleaq result, %r10\ncall sector_in_gap\n" + result_check(24)
-    test("eight-logical-bytes-split-by-poisoned-gap", incoming_gap, input_record=gap_input, expected_result=gap_result)
-    corrupt_gap = bytearray(gap_input)
-    corrupt_gap[16] ^= 1
-    test(
-        "control-last-byte-after-nested-gap",
-        incoming_gap,
-        input_record=corrupt_gap,
-        expected_result=gap_result,
-        expected_exit=91,
-    )
-    return count
+            require(re.search(rf"\bt {symbol}$", symbols, re.M), f"{symbol} lost private binding")
+    run(["ld", "-o", work / "program", work / "program.o"])
+    for number, (name, *_data) in enumerate(cases):
+        run([work / "program", number])
+        print("PASS sector ABI", name, flush=True)
+    return len(cases)
 
 
 def label_guard_probes(assembly):
@@ -454,7 +422,7 @@ def stack_guard_cases(fixture, work):
 def sector_abi_cases(fixture, air, work):
     assembly = run([fixture, "--output", air, "abi"]).decode()
     (work / "fixture.s").write_text(assembly)
-    count = native_cases(assembly, work)
+    count = native_driver(assembly, work)
     print(f"PASS sector ABI: {count} independent native cases; all payload bytes and status checked", flush=True)
 
 

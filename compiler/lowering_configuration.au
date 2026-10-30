@@ -36,17 +36,25 @@ export namespace compiler_lowering {
         const i64 mask = compiler_catalog::host_service_group();
         return (u64(groups) & u64(mask)) != 0u64;
     }
+    auto has_block_service(i64 groups) -> bool {
+        return (u64(groups) & u64(compiler_catalog::block_service_group())) != 0u64;
+    }
+    auto has_writer_service(i64 groups) -> bool {
+        return (u64(groups) & u64(compiler_catalog::writer_service_group())) != 0u64;
+    }
     auto valid_service_groups(i64 groups) -> bool {
         return groups >= 0 && groups == compiler_catalog::service_groups(has_call_service(groups),
-            has_port_service(groups), has_serve_service(groups), has_host_service(groups));
+            has_port_service(groups), has_serve_service(groups), has_host_service(groups), has_block_service(groups),
+            has_writer_service(groups));
     }
     auto active_service_kind(i64 groups, i64 kind) -> bool {
-        if (kind < 0 || kind > 6) {
+        if (kind < 0 || kind > 8) {
             return false;
         }
         const i64 family = compiler_catalog::kind_family(kind);
         return family == 0 || (family == 1 && has_call_service(groups)) || (family == 2 && has_port_service(groups))
-            || (family == 3 && has_serve_service(groups)) || (family == 4 && has_host_service(groups));
+            || (family == 3 && has_serve_service(groups)) || (family == 4 && has_host_service(groups)) || (family == 5
+            && has_block_service(groups)) || (family == 6 && has_writer_service(groups));
     }
     auto active_service_operation(i64 groups, i64 operation) -> bool {
         return operation >= 0 && operation < compiler_catalog::operation_count() && active_service_kind(groups,
@@ -203,7 +211,8 @@ export namespace compiler_lowering {
         }
         const i64 groups = compiler_catalog::service_groups(compiler_resolver::family_seeded(session, 1),
             compiler_resolver::family_seeded(session, 2), compiler_resolver::family_seeded(session, 3),
-            compiler_resolver::family_seeded(session, 4));
+            compiler_resolver::family_seeded(session, 4), compiler_resolver::family_seeded(session, 5),
+            compiler_resolver::family_seeded(session, 6));
         const i64 begin = session.operand_count();
         put(session, OperandRole::MaximumCopiedByteLeaves, 512);
         put(session, OperandRole::MaximumCopiedNonByteLeaves, 64);
@@ -277,28 +286,42 @@ export namespace compiler_lowering {
         return ordinal + 9;
     }
     auto service_group_supported(compiler_resolver::Session& session, i64 first, i64 second) -> bool {
-        if (first < 0 || first > 6 || second < -1 || second > 6) {
+        if (first < 0 || first > 8 || second < -1 || second > 8) {
             setup_invalid(session);
             return false;
-        }
-        if (first == 6 || second == 6) {
-            const i64 configured = configured_limit(session, OperandRole::SupportedServiceGroups);
-            if (!valid_service_groups(configured)) {
-                setup_invalid(session);
-                return false;
-            }
-            return second == -1 && has_host_service(configured);
-        }
-        u64 group = 1u64 << first;
-        if (second >= 0) {
-            group = group | (1u64 << second);
         }
         const i64 allowed = configured_limit(session, OperandRole::SupportedServiceGroups);
         if (!valid_service_groups(allowed)) {
             setup_invalid(session);
             return false;
         }
-        return (u64(allowed) & (1u64 << i64(group))) != 0u64;
+        if (second < 0) {
+            if (first == 8) {
+                return has_writer_service(allowed);
+            }
+            if (first == 6) {
+                return has_host_service(allowed);
+            }
+            if (first == 7) {
+                return has_block_service(allowed);
+            }
+            return (u64(allowed) & (1u64 << i64(1u64 << first))) != 0u64;
+        }
+        // Explicit closed pairs: the new tags64/128 never authorize the
+        // legacy numeric mask6 pair or mask7 triple.
+        if ((first == 5 && second == 8) || (first == 8 && second == 5)) {
+            return (u64(allowed) & u64(compiler_catalog::serve_writer_service_group())) != 0u64;
+        }
+        if ((first == 5 && second == 7) || (first == 7 && second == 5)) {
+            return (u64(allowed) & u64(compiler_catalog::serve_block_service_group())) != 0u64;
+        }
+        if ((first == 0 && second == 1) || (first == 1 && second == 0)) {
+            return (u64(allowed) & 8u64) != 0u64;
+        }
+        if ((first == 0 && second == 2) || (first == 2 && second == 0)) {
+            return (u64(allowed) & 32u64) != 0u64;
+        }
+        return false;
     }
     auto initial_layout_count(compiler_resolver::Session& session) -> i64 {
         const i64 layout = lowering_prelude_rows(session) - 1;

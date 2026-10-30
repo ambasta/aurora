@@ -1,0 +1,410 @@
+export module fs.xfs_core_redo;
+import std.binary;
+import std.binary_buffer;
+import std.checksum;
+import storage.block_io;
+import storage.sector;
+import fs.xfs_file;
+import fs.xfs_root;
+import fs.xfs_log;
+
+export namespace fs {
+    enum class XfsCoreRedoStatus {
+        converted,
+        already_newer,
+        invalid_input,
+        invalid_home,
+        unsupported_change
+    };
+
+    class XfsCoreRedoRequest {
+        u64 _inode;
+        u64 _lsn;
+        u64 _capacity;
+    public:
+        XfsCoreRedoRequest(u64 inode, u64 transaction_lsn, u64 volume_sectors) : _inode(inode), _lsn(transaction_lsn),
+            _capacity(volume_sectors) {
+        }
+        auto inode_number() const -> u64 {
+            return _inode;
+        }
+        auto transaction_lsn() const -> u64 {
+            return _lsn;
+        }
+        auto volume_sectors() const -> u64 {
+            return _capacity;
+        }
+    };
+
+    // A copied conversion result is not an allocation, transaction or write
+    // grant. The recovery owner establishes those facts before calling here.
+    class XfsCoreRedoResult {
+        XfsCoreRedoStatus _status;
+        storage::Sector512 _sector;
+    public:
+        XfsCoreRedoResult(XfsCoreRedoStatus status, storage::Sector512 sector) : _status(status), _sector(sector) {
+        }
+        auto status() const -> XfsCoreRedoStatus {
+            return _status;
+        }
+        auto sector_or_zero() const -> storage::Sector512 {
+            if (_status == XfsCoreRedoStatus::converted) {
+                const storage::Sector512 result = _sector;
+                return result;
+            }
+            const storage::Sector512 zero = storage::Sector512();
+            return zero;
+        }
+    };
+}
+
+namespace fs {
+    // Receiver-bound copy for reusing the checked inode parser on a candidate.
+    // Sector512 itself deliberately does not expose an escaping byte span.
+    class XcrCandidate {
+        builtin::array<u8, 512> _bytes;
+    public:
+        XcrCandidate() : _bytes{} {
+        }
+        auto copy(storage::Sector512 sector) -> bool {
+            i64 at = 0;
+            while (at < 512) {
+                const std::ByteReadResult byte = sector.read_byte(at);
+                _bytes[at] = u8(byte.value_or(0u64));
+                at = at + 1;
+            }
+            return true;
+        }
+        auto bytes() const -> builtin::span<const u8> {
+            return borrow_bytes(_bytes);
+        }
+    };
+    auto xcr_failure(XfsCoreRedoStatus status) -> XfsCoreRedoResult {
+        const storage::Sector512 zero = storage::Sector512();
+        const XfsCoreRedoResult result = XfsCoreRedoResult(status, zero);
+        return result;
+    }
+
+    // Native-LE log dinode -> big-endian v3 dinode, legacy timestamps and
+    // 32-bit extent counts only. Negative means a field Linux normalizes or
+    // does not recover. The caller handles unlink, CRC and LSN separately.
+    // Layout follows Linux 6.12.107 xfs_log_dinode_to_disk, not a byte swap of
+    // the complete core: timestamps contain two independently swapped words.
+    auto xcr_source_byte(i64 at) -> i64 {
+        if (at < 4) {
+            return (at / 2) * 2 + 1 - at % 2;
+        }
+        if (at < 6) {
+            return at;
+        }
+        if (at < 8) {
+            return -1;
+        }
+        if (at < 20) {
+            return 8 + ((at - 8) / 4) * 4 + 3 - (at - 8) % 4;
+        }
+        if (at < 24) {
+            return 20 + ((at - 20) / 2) * 2 + 1 - (at - 20) % 2;
+        }
+        if (at < 32) {
+            return -1;
+        }
+        if (at < 56) {
+            return 32 + ((at - 32) / 4) * 4 + 3 - (at - 32) % 4;
+        }
+        if (at < 72) {
+            return 56 + ((at - 56) / 8) * 8 + 7 - (at - 56) % 8;
+        }
+        if (at < 80) {
+            return 72 + ((at - 72) / 4) * 4 + 3 - (at - 72) % 4;
+        }
+        if (at < 82) {
+            return 80 + 1 - (at - 80);
+        }
+        if (at < 84) {
+            return at;
+        }
+        if (at < 88) {
+            return 84 + 3 - (at - 84);
+        }
+        if (at < 92) {
+            return 88 + ((at - 88) / 2) * 2 + 1 - (at - 88) % 2;
+        }
+        if (at < 96) {
+            return 92 + 3 - (at - 92);
+        }
+        if (at < 104) {
+            return -1;
+        }
+        if (at < 112) {
+            return 104 + 7 - (at - 104);
+        }
+        if (at < 120) {
+            return -1;
+        }
+        if (at < 128) {
+            return 120 + 7 - (at - 120);
+        }
+        if (at < 132) {
+            return 128 + 3 - (at - 128);
+        }
+        if (at < 144) {
+            return -1;
+        }
+        if (at < 152) {
+            return 144 + ((at - 144) / 4) * 4 + 3 - (at - 144) % 4;
+        }
+        if (at < 160) {
+            return 152 + 7 - (at - 152);
+        }
+        return at;
+    }
+    auto xcr_mutable_byte(i64 at) -> bool {
+        return (at >= 32 && at < 56) || (at >= 100 && at < 120);
+    }
+}
+
+namespace fs {
+    // Callers independently admit regular-file or root-directory homes. Shared
+    // conversion preserves every immutable core field for both inode kinds.
+    auto xcr_convert(builtin::span<const u8> superblock, builtin::span<const u8> home,
+        builtin::span<const u8> logged_core, builtin::span<const u8> local,
+        XfsCoreRedoRequest request) -> XfsCoreRedoResult {
+        const std::ByteReadResult block_bytes = std::read_be32(superblock, 4);
+        const std::ByteReadResult log_blocks = std::read_be32(superblock, 96);
+        const std::ByteReadResult home_flags = std::read_be64(home, 120);
+        const std::ByteReadResult logged_flags = std::read_le64(logged_core, 120);
+        const std::ByteReadResult logged_pad = std::read_le64(logged_core, 24);
+        if (block_bytes.value_or(0u64) != 4096u64 || home_flags.value_or(1u64) != 0u64 || logged_flags.value_or(1u64)
+            != 0u64 || logged_pad.value_or(1u64) != 0u64) {
+            return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+        }
+        // Geometry and the fixed 4096-byte block size bound this multiplication.
+        const u64 log_sectors = log_blocks.value_or(0u64) * 8u64;
+        const std::ByteReadResult home_lsn = std::read_be64(home, 112);
+        const u64 before_lsn = home_lsn.value_or(18446744073709551615u64);
+        if (!xfs_log_lsn_valid(request.transaction_lsn(), log_sectors) || (before_lsn != 0u64
+            && !xfs_log_lsn_valid(before_lsn, log_sectors))) {
+            return xcr_failure(XfsCoreRedoStatus::invalid_input);
+        }
+        i64 timestamp = 0;
+        while (timestamp < 4) {
+            i64 nanoseconds = 36 + timestamp * 8;
+            if (timestamp == 3) {
+                nanoseconds = 148;
+            }
+            const std::ByteReadResult old_nsec = std::read_be32(home, nanoseconds);
+            const std::ByteReadResult new_nsec = std::read_le32(logged_core, nanoseconds);
+            if (old_nsec.value_or(1000000000u64) >= 1000000000u64 || new_nsec.value_or(1000000000u64)
+                >= 1000000000u64) {
+                return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+            }
+            timestamp = timestamp + 1;
+        }
+        const bool regular = local.size() == 0;
+        if (regular) {
+            const std::ByteReadResult old_size = std::read_be64(home, 56);
+            const std::ByteReadResult new_size = std::read_le64(logged_core, 56);
+            const u64 before = old_size.value_or(0u64);
+            const u64 after = new_size.value_or(0u64);
+            // No allocation or extent change: only the last block's visible
+            // byte count may change. Empty and cross-block sizes are refused.
+            if (before == 0u64 || after == 0u64 || after > 9223372036854775807u64 || (before - 1u64) / 4096u64 != (after
+                - 1u64) / 4096u64) {
+                return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+            }
+        }
+        storage::Sector512 converted = storage::Sector512();
+        i64 at = 0;
+        while (at < 512) {
+            converted.write_byte(at, home.at(at));
+            at = at + 1;
+        }
+        at = 0;
+        while (at < 176) {
+            u8 byte = 0u8;
+            const i64 from = xcr_source_byte(at);
+            if (from >= 0) {
+                byte = logged_core.at(from);
+            }
+            // di_next_unlinked is not part of CORE replay. The existing home
+            // parser requires its NULLAGINO value for this linked-file subset.
+            if (at >= 96 && at < 100) {
+                byte = home.at(at);
+            }
+            // The logged di_lsn is explicitly not a recovery ordering value.
+            if (at >= 112 && at < 120) {
+                byte = u8((request.transaction_lsn() >> ((119 - at) * 8)) & 255u64);
+            }
+            if (!xcr_mutable_byte(at) && !(regular && at >= 56 && at < 64) && byte != home.at(at)) {
+                return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+            }
+            converted.write_byte(at, byte);
+            at = at + 1;
+        }
+        at = 0;
+        while (at < local.size()) {
+            converted.write_byte(176 + at, local.at(at));
+            at = at + 1;
+        }
+        // The copied sector API exposes checked 64-byte records, not an
+        // escaping span. Extend over all eight records with the CRC slot zero.
+        u64 checksum = 0u64;
+        at = 0;
+        while (at < 512) {
+            const storage::RecordReadResult record = converted.read_record(at);
+            if (record.status() != std::ByteReadStatus::success) {
+                return xcr_failure(XfsCoreRedoStatus::invalid_input);
+            }
+            const std::BinaryBuffer64 bytes = record.record_or_zero();
+            const std::ChecksumResult extended = std::crc32c_extend(checksum, bytes.bytes(0, 64), 0, 64);
+            if (extended.status() != std::ChecksumStatus::success) {
+                return xcr_failure(XfsCoreRedoStatus::invalid_input);
+            }
+            checksum = extended.value_or(0u64);
+            at = at + 64;
+        }
+        at = 0;
+        while (at < 4) {
+            converted.write_byte(100 + at, u8((checksum >> (at * 8)) & 255u64));
+            at = at + 1;
+        }
+        if (regular) {
+            XcrCandidate candidate = XcrCandidate();
+            candidate.copy(converted);
+            const storage::SectorGeometry source = storage::SectorGeometry(request.volume_sectors(), false);
+            const XfsFileRequest file_request = XfsFileRequest(request.inode_number(), 0);
+            const XfsFileReport admitted = plan_xfs_v5_512_file_sector(source, superblock, candidate.bytes(),
+                file_request);
+            if (admitted.status() != XfsFileStatus::ready) {
+                return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+            }
+        }
+        // All inputs and the resulting inode are checked before deciding to
+        // skip. Equal LSN may be another checkpoint at the same transaction.
+        if (before_lsn > request.transaction_lsn()) {
+            return xcr_failure(XfsCoreRedoStatus::already_newer);
+        }
+        const XfsCoreRedoResult result = XfsCoreRedoResult(XfsCoreRedoStatus::converted, converted);
+        return result;
+    }
+}
+export namespace fs {
+    // Canonical legacy v3 CORE bytes for a separately admitted home. This is
+    // only a copied encoding, never a write grant; callers validate any changed
+    // fields through the converter before publishing. Normalized/ignored log
+    // fields stay zero, including the logged LSN that recovery never trusts.
+    auto encode_xfs_core(builtin::span<const u8> home) -> storage::Sector512 {
+        storage::Sector512 encoded = storage::Sector512();
+        if (home.size() != 512) {
+            return encoded;
+        }
+        const std::ByteReadResult magic = std::read_be16(home, 0);
+        const std::ByteReadResult flags = std::read_be64(home, 120);
+        if (magic.value_or(0u64) != 18766u64 || home.at(4) != 3u8 || flags.value_or(1u64) != 0u64) {
+            return encoded;
+        }
+        i64 at = 0;
+        while (at < 176) {
+            const i64 destination = xcr_source_byte(at);
+            if (destination >= 0) {
+                encoded.write_byte(destination, home.at(at));
+            }
+            at = at + 1;
+        }
+        return encoded;
+    }
+    // Pure conversion of an intact, fully checked home inode. It does not
+    // accept torn homes, prove live-log membership or authorize publication.
+    auto convert_xfs_core_redo(builtin::span<const u8> superblock, builtin::span<const u8> home,
+        builtin::span<const u8> logged_core, XfsCoreRedoRequest request) -> XfsCoreRedoResult {
+        if (superblock.size() != 512 || home.size() != 512 || logged_core.size() != 176) {
+            return xcr_failure(XfsCoreRedoStatus::invalid_input);
+        }
+        const storage::SectorGeometry source = storage::SectorGeometry(request.volume_sectors(), false);
+        const XfsFileRequest file_request = XfsFileRequest(request.inode_number(), 0);
+        const XfsFileReport admitted = plan_xfs_v5_512_file_sector(source, superblock, home, file_request);
+        if (admitted.status() != XfsFileStatus::ready) {
+            return xcr_failure(XfsCoreRedoStatus::invalid_home);
+        }
+        return xcr_convert(superblock, home, logged_core, home.subspan(0, 0), request);
+    }
+    // Only the existing names' inode numbers may be permuted. No directory
+    // growth, new links, foreign targets or allocation changes are admitted.
+    // The recovery owner validates every referenced regular inode/allocation.
+    auto convert_xfs_root_redo(builtin::span<const u8> superblock, builtin::span<const u8> home,
+        builtin::span<const u8> logged, XfsCoreRedoRequest request) -> XfsCoreRedoResult {
+        if (superblock.size() != 512 || home.size() != 512 || logged.size() < 176 || logged.size() > 512) {
+            return xcr_failure(XfsCoreRedoStatus::invalid_input);
+        }
+        const std::ByteReadResult blocks = std::read_be64(superblock, 8);
+        if (request.volume_sectors() == 0u64 || blocks.value_or(18446744073709551615u64) > request.volume_sectors()
+            / 8u64) {
+            return xcr_failure(XfsCoreRedoStatus::invalid_input);
+        }
+        const XfsRootEntryReport first = entry_at_xfs_v5_512_root(superblock, home, 0);
+        const XfsRootFacts facts = first.facts();
+        if (first.status() != XfsRootEntryStatus::found || facts.root_inode() != request.inode_number()) {
+            return xcr_failure(XfsCoreRedoStatus::invalid_home);
+        }
+        const i64 size = i64(facts.payload_bytes());
+        const i64 padded = ((size + 3) / 4) * 4;
+        if (logged.size() != 176 + padded) {
+            return xcr_failure(XfsCoreRedoStatus::invalid_input);
+        }
+        const builtin::span<const u8> local = logged.subspan(176, padded);
+        i64 at = 0;
+        while (at < 6) {
+            if (local.at(at) != home.at(176 + at)) {
+                return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+            }
+            at = at + 1;
+        }
+        u64 seen = 0u64;
+        u64 index = 0u64;
+        at = 6;
+        while (index < facts.entry_count()) {
+            const i64 length = i64(home.at(176 + at));
+            i64 byte = 0;
+            while (byte < length + 4) {
+                if (local.at(at + byte) != home.at(176 + at + byte)) {
+                    return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+                }
+                byte = byte + 1;
+            }
+            const std::ByteReadResult target = std::read_be32(local, at + length + 4);
+            u64 old = 0u64;
+            u64 matched = facts.entry_count();
+            while (old < facts.entry_count()) {
+                const XfsRootEntryReport entry = entry_at_xfs_v5_512_root(superblock, home, i64(old));
+                const XfsRootEntry value = entry.entry();
+                if (entry.status() != XfsRootEntryStatus::found || value.file_type() != 1u64) {
+                    return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+                }
+                if (value.inode_number() == target.value_or(0u64)) {
+                    if (matched != facts.entry_count()) {
+                        return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+                    }
+                    matched = old;
+                }
+                old = old + 1u64;
+            }
+            if (matched == facts.entry_count() || (seen & (1u64 << i64(matched))) != 0u64) {
+                return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+            }
+            seen = seen | (1u64 << i64(matched));
+            at = at + length + 8;
+            index = index + 1u64;
+        }
+        if (at != size) {
+            return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+        }
+        while (at < padded) {
+            if (local.at(at) != 0u8) {
+                return xcr_failure(XfsCoreRedoStatus::unsupported_change);
+            }
+            at = at + 1;
+        }
+        return xcr_convert(superblock, home, logged.subspan(0, 176), local, request);
+    }
+}

@@ -1,0 +1,136 @@
+full dirty log plans Linux inode sectors	ready writes=2 reads=131123 reserve=32789
+modeled body-only interruption	readonly refused without file bytes
+exact orphan body resumes full preflight	ready writes=2 reads=115 reserve=32789
+changed completion header on reread	unsupported writes=0 reads=66 reserve=0
+changed completion body on reread	invalid_log writes=0 reads=67 reserve=0
+non-stale old boundary cannot arm orphan	invalid_log writes=0 reads=10 reserve=0
+altered orphan padding	invalid_log writes=0 reads=10 reserve=0
+wrong orphan cycle	invalid_log writes=0 reads=10 reserve=0
+wrong orphan location	invalid_log writes=0 reads=11 reserve=0
+double orphan body	invalid_log writes=0 reads=12 reserve=0
+invalid old header before orphan	invalid_log writes=0 reads=9 reserve=0
+orphan cannot hide torn home	invalid_metadata writes=0 reads=69 reserve=0
+modeled completion readonly hello	exact 64 bytes
+modeled completion readonly pattern	exact 9001 bytes
+modeled completed-marker reentry	already_clean writes=0 reads=109 reserve=32769
+clean marker IO failure	io_error writes=0 reads=65 reserve=0
+clean marker cannot hide torn home	invalid_metadata writes=0 reads=68 reserve=0
+clean marker cannot hide mismatched summary	unsupported writes=0 reads=109 reserve=0
+synthetic short-ring dirty log plans Linux inode sectors	ready writes=2 reads=115 reserve=32789
+short cache	invalid_request writes=0 reads=0 reserve=0
+reused topology	invalid_request writes=0 reads=0 reserve=0
+failed IO	io_error writes=0 reads=0 reserve=0
+wrong LBA	protocol_error writes=0 reads=0 reserve=0
+short response	protocol_error writes=0 reads=0 reserve=0
+late failed IO discards prior converted homes	io_error writes=0 reads=114 reserve=0
+torn home 99	invalid_metadata writes=0 reads=69 reserve=0
+torn home 100	invalid_metadata writes=0 reads=70 reserve=0
+duplicate root target	unsupported writes=0 reads=68 reserve=0
+mismatched summary	unsupported writes=0 reads=110 reserve=0
+bad final AG CRC	invalid_metadata writes=0 reads=102 reserve=0
+bad final INOBT CRC	invalid_metadata writes=0 reads=110 reserve=0
+bad final INOBT last byte	invalid_metadata writes=0 reads=110 reserve=0
+unsupported later transaction discards earlier plan	invalid_log writes=0 reads=115 reserve=0
+late truncated live record CRC	invalid_log writes=0 reads=115 reserve=0
+synthetic short-ring dirty log with already recovered homes	ready writes=2 reads=115 reserve=32789
+exchange synthetic short ring	ready writes=1 reserve=32789; exact expected root
+exchange no-op name permutation	ready writes=1 reserve=32789; exact expected root
+exchange already applied root	ready writes=1 reserve=32789; exact expected root
+exchange torn root	refused with zero output
+exchange future root LSN	refused with zero output
+exchange torn referenced inode	refused with zero output
+exchange unknown item flags	refused with zero output
+exchange wrong transaction region count	refused with zero output
+exchange wrong inode region count	refused with zero output
+exchange wrong local size	refused with zero output
+exchange wrong local region length	refused with zero output
+exchange foreign logged inode	refused with zero output
+exchange wrong target sector	refused with zero output
+exchange changed inode size	refused with zero output
+exchange changed inode UID	refused with zero output
+exchange changed inode mode	refused with zero output
+exchange changed inode link count	refused with zero output
+exchange changed directory parent	refused with zero output
+exchange changed entry count	refused with zero output
+exchange changed inode width	refused with zero output
+exchange changed name	refused with zero output
+exchange changed saved offset	refused with zero output
+exchange changed entry type	refused with zero output
+exchange duplicate inode	refused with zero output
+exchange foreign inode	refused with zero output
+exchange root self reference	refused with zero output
+exchange nonzero local padding	refused with zero output
+exchange continued commit	refused with zero output
+exchange wrong operation count	refused with zero output
+exchange record CRC failure	refused with zero output
+exchange mixed later CORE transaction	refused with zero output
+exchange root-write interruption reentry	ready writes=1 reserve=32789; exact expected root
+exchange orphan readonly refusal	refused without file bytes
+exchange orphan-body reentry	ready writes=1 reserve=32789; exact expected root
+exchange completed readonly hello	exact 9001 bytes
+exchange completed readonly pattern	exact 64 bytes
+exchange completed-marker reentry	already_clean writes=0 reserve=32769
+staged CORE then root permutation	ready writes=2; exact Linux homes
+staged equal home reapplies	ready writes=2; exact Linux homes
+staged equal root reapplies	ready writes=2; exact Linux homes
+staged both homes reapplied	ready writes=2; exact Linux homes
+staged newer intact home skipped	ready writes=1; exact Linux homes
+staged synthetic prefix without root	ready writes=1; exact Linux homes
+staged torn target home	refused with zero output
+staged root changes UID	refused with zero output
+staged root duplicates inode	refused with zero output
+staged first item foreign inode	refused with zero output
+staged first item allocation change	refused with zero output
+staged rejects size 0	refused with zero output
+staged rejects size 4097	refused with zero output
+staged rejects size 9223372036854775808	refused with zero output
+staged rejects size 18446744073709551615	refused with zero output
+staged first-home interruption	ready writes=2; exact Linux homes
+staged orphan completion reentry	ready writes=2; exact Linux homes
+staged completed readonly hello	exact 777 bytes
+staged completed readonly pattern	exact 64 bytes
+staged completed-marker reentry	already_clean writes=0 reserve=32769
+genuine stage-only CORE size change	ready writes=1; exact Linux homes
+dirty plan clean-snapshot denial	zero metadata and sectors
+clean plan copied snapshot	exact metadata and admitted sectors; foreign inode zero
+authored stage body-only short ring	ready writes=0; pending body not replayed
+readonly rejects stage body-only	refused without recovery overlay
+stage append malformed completion body	refused with zero output
+stage append completion-body interruption	ready writes=0; pending body not replayed
+stage append nonzero padding	refused with zero output
+stage append wrong ticket	refused with zero output
+stage append wrong body cycle	refused with zero output
+stage append bad frontier header	refused with zero output
+stage append bad successor	refused with zero output
+stage append second current body	refused with zero output
+stage append corrupt root home	refused with zero output
+stage append foreign stage name	refused with zero output
+stage append corrupt allocation metadata	refused with zero output
+stage append multiply linked stage	refused with zero output
+stage append wrong logged inode	refused with zero output
+stage append pending size 0	refused with zero output
+stage append pending size 4097	refused with zero output
+stage append completed reentry	already_clean writes=0 reserve=32769
+stage append retains old target	exact old 64 bytes
+stage append raw stage matches Linux	exact 64 bytes
+authored root body-only short ring	ready writes=1; pending body not replayed
+readonly rejects root body-only	refused without recovery overlay
+root append malformed completion body	refused with zero output
+root append completion-body interruption	ready writes=1; pending body not replayed
+root append already-replayed stage	ready writes=1; pending body not replayed
+root append nonzero padding	refused with zero output
+root append wrong ticket	refused with zero output
+root append wrong body cycle	refused with zero output
+root append bad frontier header	refused with zero output
+root append bad successor	refused with zero output
+root append second current body	refused with zero output
+root append corrupt root home	refused with zero output
+root append foreign stage name	refused with zero output
+root append corrupt allocation metadata	refused with zero output
+root append multiply linked stage	refused with zero output
+root append wrong logged inode	refused with zero output
+root append pending root no exchange	refused with zero output
+root append missing committed stage header	refused with zero output
+root append completed reentry	already_clean writes=0 reserve=32769
+root append retains old target	exact old 64 bytes
+root append raw stage matches Linux	exact 777 bytes

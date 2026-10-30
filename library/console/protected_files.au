@@ -35,6 +35,28 @@ export namespace console {
         }
     };
 
+    // Command metadata only. The mutable receiver remains the sole namespace.
+    class ProtectedFileDecision {
+        FileReply reply;
+        u64 event;
+        FileSelection selected;
+    public:
+        ProtectedFileDecision(FileReply result, u64 action, FileSelection selection) : reply(result), event(action),
+            selected(selection) {
+        }
+        auto response() const -> FileReply {
+            const FileReply result = reply;
+            return result;
+        }
+        auto action() const -> u64 {
+            return event;
+        }
+        auto selection() const -> FileSelection {
+            const FileSelection result = selected;
+            return result;
+        }
+    };
+
     // The existing four records remain the sole naming/content implementation.
     // Any successful mutation invalidates selections, even for another name.
     class ProtectedFiles {
@@ -49,6 +71,66 @@ export namespace console {
         }
     public:
         ProtectedFiles(FileNamespace initial) : files(initial), revision(1u64) {
+        }
+        auto command(std::BinaryBuffer64 command, i64 count, u64 profile) -> ProtectedFileDecision {
+            static_assert(size_of(console::FileSelection) == 160);
+            static_assert(size_of(ProtectedFileDecision) == 248);
+            const console::FileSelection selection = select(command, count);
+            if (profile != 0u64) {
+                console::FileReply rejected = console::FileReply();
+                rejected.select(console::FileEvent::invalid);
+                return ProtectedFileDecision(rejected, 1u64, selection);
+            }
+            if (selection.version() != 0u64) {
+                const console::FileReply reply = project(selection);
+                u64 action = 2u64;
+                // A nonzero selection admits only checked protected file operations.
+                if (command.at(0) == 'p') {
+                    action = 4u64;
+                }
+                if (command.at(0) == 'w') {
+                    action = 5u64;
+                }
+                if (command.starts_with(count, "crc ")) {
+                    action = 6u64;
+                }
+                if (selection.writable()) {
+                    action = 3u64;
+                }
+                if (selection.appending()) {
+                    action = 7u64;
+                }
+                return ProtectedFileDecision(reply, action, selection);
+            }
+            if (command.starts_with(count, "append ")) {
+                const console::FileAppendRequest request = console::file_append_request(command, count);
+                const console::FileReply reply = prepare_append(request);
+                return ProtectedFileDecision(reply, 1u64, selection);
+            }
+            console::FileReply reply = submit(command, count);
+            u64 action = 0u64;
+            if (reply.status() != console::FileEvent::unknown) {
+                action = 1u64;
+            }
+            if (command.starts_with(count, "upper ")) {
+                reply.select(console::FileEvent::invalid);
+                action = 1u64;
+            }
+            return ProtectedFileDecision(reply, action, selection);
+        }
+        auto version() const -> u64 {
+            return revision;
+        }
+        auto clear() -> bool {
+            const u64 next = file_next_revision(revision);
+            if (next == 0u64) {
+                return false;
+            }
+            const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+            const FileNamespace cleared = FileNamespace(empty);
+            files = cleared;
+            revision = next;
+            return true;
         }
         auto submit(std::BinaryBuffer64 command, i64 count) -> FileReply {
             SessionFiles next = command_adapter();

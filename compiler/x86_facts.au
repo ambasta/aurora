@@ -86,7 +86,7 @@ export namespace compiler_x86 {
             return false;
         }
         const i64 kind = type_kind(metadata, parameter_type(metadata, callable, 0));
-        return kind == 19 || kind == 20 || kind == 22;
+        return kind == 19 || kind == 20 || kind == 22 || kind == 23 || kind == 24;
     }
     auto port_service_record_bytes(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> i64 {
         const i64 result = result_type(metadata, callable);
@@ -100,7 +100,12 @@ export namespace compiler_x86 {
         i64 at = 1;
         while (at < parameter_count(metadata, callable)) {
             const i64 type = parameter_type(metadata, callable, at);
-            if (!fact_scalar_kind(type_kind(metadata, type)) && port_copied_bytes(metadata, type) == 0) {
+            const i64 kind = type_kind(metadata, type);
+            const i64 first = type_kind(metadata, parameter_type(metadata, callable, 0));
+            const bool endpoint_parameter = (first == 20 || first == 23 || first == 24) && (kind == 11
+                || service_type_kind(kind) || (kind == 12 && at == compiler_ir_metadata::service_region_index(metadata,
+                metadata.callable_at(callable))));
+            if (!fact_scalar_kind(kind) && port_copied_bytes(metadata, type) == 0 && !endpoint_parameter) {
                 return 0;
             }
             at = at + 1;
@@ -639,8 +644,17 @@ export namespace compiler_x86 {
         if (kind == 22) {
             return workspace.text("\"builtin::HostFiles\"");
         }
+        if (kind == 24) {
+            return workspace.text("\"builtin::WritableBlock\"");
+        }
+        if (kind == 23) {
+            return workspace.text("\"builtin::ReadOnlyBlock\"");
+        }
         if (kind == 12) {
             return workspace.text("\"builtin::ByteRegion\"");
+        }
+        if (kind == 11) {
+            return workspace.text("\"readonly_span\"");
         }
         return workspace.text("\"scalar\"");
     }
@@ -1086,6 +1100,7 @@ export namespace compiler_x86 {
         workspace.text("},\"parameter_bytes\":");
         workspace.number(record_offset(metadata, callable, parameter_count(metadata, callable)));
         workspace.text(",\"parameters\":[");
+        const i64 region_index = compiler_ir_metadata::service_region_index(metadata, row);
         at = 0;
         while (at < parameter_count(metadata, callable) && workspace.ok()) {
             if (at > 0) {
@@ -1098,8 +1113,9 @@ export namespace compiler_x86 {
             workspace.number(argument_bytes(metadata, type));
             workspace.byte(',');
             fact_emit_type(workspace, metadata, type);
-            if ((at < 2 && compiler_ir_metadata::service_region_signature(metadata, row)) || type_kind(metadata, type)
-                == 19 || type_kind(metadata, type) == 20 || type_kind(metadata, type) == 22) {
+            if (at <= region_index || type_kind(metadata, type) == 19 || type_kind(metadata, type) == 20
+                || type_kind(metadata, type) == 22 || type_kind(metadata, type) == 23 || type_kind(metadata, type)
+                == 24) {
                 workspace.text(",\"type_name\":");
                 fact_emit_service_kind(workspace, type_kind(metadata, type));
             }

@@ -491,5 +491,6 @@ endforeach
 # Guest-machine aliases share identical image bytes and native compilation.
 foreach alias : profile_data['aliases'].split('|')
   canonical = profile_data['aliases.' + alias]
-  alias_target('kernel-' + alias.replace('/', '-'), kernel_profile_images[canonical])
+  alias_target('kernel-' + alias.replace('/', '-'),
+               kernel_profile_images[canonical] + process_references.get(alias.split('/')[1], []))
 endforeach

@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STREAM_LIMIT = 1024 * 1024
 # Linked symbol, exact bytes and alignment of each allocation the guest retains for capture.
 RETAINED = {
-    "terminal": ("uefi_event_terminal", 672, 8),
+    "terminal": ("uefi_event_terminal", 720, 8),
     "backing": ("uefi_event_backing", 32768, 4096),
     "ring": ("_ZN6aurora11iommu_event16BootLifetimeRing6bytes_E", 4096, 4096),
     "before_ring": ("uefi_event_before_ring", 4096, 4096),
@@ -84,15 +84,21 @@ def image_receipt(mode, image):
     return dict(mode=mode, image=dict(mode=mode, backing=backing, payload_layout=layout))
 
 
-def raw_esp(loader, path):
-    """A 64 MiB FAT32 disk holding only EFI/BOOT/BOOTX64.EFI; the Event QEMU has no vvfat driver."""
-    with path.open("wb") as stream:
+def raw_esp(source, path):
+    """Copy a loader or complete ESP tree into FAT32; the bounded model has no vvfat driver."""
+    with path.open("xb") as stream:
         stream.truncate(64 * 1024 * 1024)
-    for argv in (
-        ["mformat", "-i", path, "-F", "-T", "131072", "-h", "64", "-s", "32", "-c", "1", "-v", "AURORAESP", "::"],
-        ["mmd", "-i", path, "::/EFI", "::/EFI/BOOT"],
-        ["mcopy", "-i", path, loader, "::/EFI/BOOT/BOOTX64.EFI"],
-    ):
+    commands = [
+        ["mformat", "-i", path, "-F", "-T", "131072", "-h", "64", "-s", "32", "-c", "1", "-v", "AURORAESP", "::"]
+    ]
+    if source.is_dir():
+        commands.append(["mcopy", "-s", "-i", path, *sorted(source.iterdir()), "::/"])
+    else:
+        commands += [
+            ["mmd", "-i", path, "::/EFI", "::/EFI/BOOT"],
+            ["mcopy", "-i", path, source, "::/EFI/BOOT/BOOTX64.EFI"],
+        ]
+    for argv in commands:
         result = subprocess.run([str(value) for value in argv], capture_output=True, text=True, timeout=60)
         need(result.returncode == 0, " ".join(map(str, argv)) + ": " + result.stderr)
 

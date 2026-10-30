@@ -1,0 +1,141 @@
+module xfs_fresh_cat;
+import aurora.host;
+import aurora.memory;
+import std.binary;
+import std.binary_buffer;
+import storage.sector;
+import storage.block_io;
+import fs.xfs_mount;
+import fs.xfs_log;
+
+// xfs-fresh-cat IMAGE ROOT_FILENAME [--linux-6.12-x86_64-clean]
+// No writes, replay, or repair. The explicit research mode does not widen the
+// production service's fresh-format profile.
+// The image must remain stable while this diagnostic reads it.
+auto main(builtin::HostFiles& files, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    i64 at = 0;
+    while (at < arguments.size() && arguments.at(at) != 0u8) {
+        at = at + 1;
+    }
+    const i64 begin = at + 1;
+    at = begin;
+    while (at < arguments.size() && arguments.at(at) != 0u8) {
+        at = at + 1;
+    }
+    const i64 name_begin = at + 1;
+    const i64 image_length = at - begin;
+    at = name_begin;
+    while (at < arguments.size() && arguments.at(at) != 0u8) {
+        at = at + 1;
+    }
+    if (begin >= arguments.size() || name_begin >= arguments.size() || at == name_begin) {
+        return builtin::HostExit::usage;
+    }
+    const builtin::span<const u8> image = arguments.subspan(begin, image_length);
+    const builtin::span<const u8> name = arguments.subspan(name_begin, at - name_begin);
+    fs::XfsReadonlyProfile profile = fs::XfsReadonlyProfile::fresh_format;
+    if (at + 1 < arguments.size()) {
+        const builtin::array<u8, 25> option = "--linux-6.12-x86_64-clean";
+        if (arguments.size() - at - 1 != 26 || arguments.at(arguments.size() - 1) != 0u8) {
+            return builtin::HostExit::usage;
+        }
+        i64 index = 0;
+        while (index < 25) {
+            if (arguments.at(at + 1 + index) != option[index]) {
+                return builtin::HostExit::usage;
+            }
+            index = index + 1;
+        }
+        profile = fs::XfsReadonlyProfile::linux_6_12_x86_64_clean;
+    }
+    const builtin::HostFileResult file = files.open_file(image);
+    if (file.status != builtin::HostStatus::success || file.size % 512u64 != 0u64) {
+        return builtin::HostExit::failure;
+    }
+    builtin::OwnedBytes cache = region.try_allocate(1536);
+    const fs::XfsLogTopology topology = fs::XfsLogTopology();
+    fs::XfsReadonlyMount mount = fs::XfsReadonlyMount(region, move(cache), file.size / 512u64, profile, topology);
+    builtin::OwnedBytes sector = region.try_allocate(512);
+    if (!sector.ok()) {
+        return builtin::HostExit::failure;
+    }
+    i64 index = 0;
+    bool complete = false;
+    while (!complete) {
+        if (mount.needs_read()) {
+            const u64 lba = mount.requested_lba();
+            i64 copied = 0;
+            bool failed = false;
+            while (copied < 512 && !failed) {
+                const builtin::HostChunk chunk = files.read(file.id, lba * 512u64 + u64(copied));
+                if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64) {
+                    failed = true;
+                } else {
+                    const builtin::array<u8, 504> bytes = chunk.bytes;
+                    i64 count = i64(chunk.count);
+                    if (count > 512 - copied) {
+                        count = 512 - copied;
+                    }
+                    i64 pos = 0;
+                    while (pos < count) {
+                        sector.set(copied + pos, bytes[pos]);
+                        pos = pos + 1;
+                    }
+                    copied = copied + count;
+                }
+            }
+            storage::SectorIoStatus io = storage::SectorIoStatus::success;
+            if (failed) {
+                io = storage::SectorIoStatus::invalid_source;
+            }
+            mount.accept(lba, io, borrow_bytes(sector));
+        } else {
+            if (mount.status() == fs::XfsMountStatus::ready) {
+                mount.read_file(name, index);
+            } else {
+                if (mount.status() == fs::XfsMountStatus::file_sector_ready) {
+                    const storage::Sector512 data = mount.sector_or_zero();
+                    i64 pos = 0;
+                    while (pos < 512) {
+                        const std::ByteReadResult byte = data.read_byte(pos);
+                        sector.set(pos, u8(byte.value_or(0u64)));
+                        pos = pos + 1;
+                    }
+                    const builtin::span<const u8> all = borrow_bytes(sector);
+                    const builtin::span<const u8> visible = all.subspan(0, i64(mount.valid_bytes()));
+                    if (files.print(builtin::HostStream::stdout, visible) != builtin::HostStatus::success) {
+                        return builtin::HostExit::failure;
+                    }
+                    index = index + 1;
+                    mount.read_file(name, index);
+                } else {
+                    if (mount.status() == fs::XfsMountStatus::end) {
+                        complete = true;
+                    } else {
+                        if (mount.status() == fs::XfsMountStatus::log_not_clean) {
+                            files.print(builtin::HostStream::stderr, "log_not_clean\n");
+                            return builtin::HostExit::failure;
+                        }
+                        if (mount.status() == fs::XfsMountStatus::log_not_fresh) {
+                            files.print(builtin::HostStream::stderr, "log_not_fresh\n");
+                        } else {
+                            if (mount.status() == fs::XfsMountStatus::unsupported_profile) {
+                                files.print(builtin::HostStream::stderr, "unsupported_profile\n");
+                            } else {
+                                if (mount.status() == fs::XfsMountStatus::not_found) {
+                                    files.print(builtin::HostStream::stderr, "not_found\n");
+                                } else {
+                                    files.print(builtin::HostStream::stderr, "admission_or_read_rejected\n");
+                                }
+                            }
+                        }
+                        return builtin::HostExit::failure;
+                    }
+                }
+            }
+        }
+    }
+    files.close(file.id);
+    return builtin::HostExit::success;
+}

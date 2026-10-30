@@ -1912,29 +1912,38 @@ void rawLinkageCaches() {
 }
 
 void rawCatalogueControls() {
-    context = "catalog-seeded historical and optional Call/Port/Serve lowering preludes";
+    context = "catalog-seeded historical and optional Call/Port/Serve/Block lowering preludes";
     namespace Lowering = aurora::hosted_abi::compiler_lowering;
     using Role = Lowering::OperandRole;
     // Comments and user names never enable an optional family.
     const std::string base = "module m;class CallStatus{};auto answer()->i64{return 0;} // builtin::CallStatus\n";
-    for (int families = 0; families < 8; ++families) {
+    for (int families = 0; families < 16; ++families) {
         std::string source = base;
         std::int64_t groups = 62;
-        std::vector<std::int64_t> operations{0, 1, 2, 3, 4};
+        std::vector<std::pair<std::int64_t, std::int64_t>> operations{{0, 0}, {0, 1}, {1, 2}, {2, 3}, {2, 4}};
         if ((families & 1) != 0) {
             source += "auto c(builtin::CallStatus status)->i64{return 0;}";
             groups += 256;
-            operations.push_back(5);
+            operations.emplace_back(3, 5);
         }
         if ((families & 2) != 0) {
             source += "auto p(builtin::PortWriteResult result)->i64{return 0;}";
             groups += 65536;
-            operations.insert(operations.end(), {6, 7});
+            operations.insert(operations.end(), {{4, 6}, {4, 7}});
         }
         if ((families & 4) != 0) {
             source += "auto v()->i64{return size_of(builtin::ServeRequest);}";
             groups += std::int64_t{1} << 32;
-            operations.push_back(8);
+            // The private endpoint operations share Serve's optional family;
+            // their publication does not grant source access outside its binding.
+            operations.insert(operations.end(), {{5, 8}, {5, 32}, {5, 33}, {5, 34}, {5, 35}});
+        }
+        if ((families & 8) != 0) {
+            source += "auto b(builtin::ReadOnlyBlock& blocks)->i64{return 0;}";
+            groups += 64;
+            if ((families & 4) != 0)
+                groups += 128;
+            operations.insert(operations.end(), {{7, 36}, {7, 37}, {7, 38}});
         }
         Allocations allocations;
         RawResolution resolution(allocations);
@@ -1961,11 +1970,9 @@ void rawCatalogueControls() {
             require(operand(at + 2, 1).signedValue == identities[static_cast<std::size_t>(at)] &&
                         operand(at + 2, 2).signedValue == sizes[static_cast<std::size_t>(at)],
                     "catalogue scalar descriptor changed");
-        const std::array<std::int64_t, 9> kinds{0, 0, 1, 2, 2, 3, 4, 4, 5};
         for (std::int64_t at = 0; at < count; ++at) {
-            const auto operation = operations[static_cast<std::size_t>(at)];
-            require(operand(at + 9, 1).signedValue == kinds[static_cast<std::size_t>(operation)] &&
-                        operand(at + 9, 2).signedValue == operation,
+            const auto [kind, operation] = operations[static_cast<std::size_t>(at)];
+            require(operand(at + 9, 1).signedValue == kind && operand(at + 9, 2).signedValue == operation,
                     "catalogue service operation changed");
         }
         // Initial layout order lists every class declaration by ascending native name.
@@ -2645,7 +2652,9 @@ void rawInstructionAdmission() {
            release(INT64_MAX, 2),
            release(2, 3),
            release(3, 4),
-           release(4, 5)}}}, // Closed kinds need no matching entry or live loan here.
+           release(4, 5),
+           release(5, 6),
+           release(6, 7)}}}, // Closed kinds need no matching entry or live loan here.
         {{{acquire(1), release(1), acquire(1)}}},
         {{{acquire(7), acquire(7), acquire(7)}}},
         {{{acquire(1), acquire(1, 32, 1)}}, Reason::service_loan_identity},
@@ -2663,8 +2672,8 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(id)}}, Reason::service_loan_identity});
         services.push_back({{{release(id)}}, Reason::service_release});
     }
-    // Kinds 0..6 (HostFiles is 6) and operations 0..31 are the closed tables.
-    for (const auto kind : {std::int64_t{-1}, std::int64_t{7}, INT64_MAX}) {
+    // Kinds 0..8 and operations 0..45 are the closed tables.
+    for (const auto kind : {std::int64_t{-1}, std::int64_t{9}, INT64_MAX}) {
         services.push_back({{{acquire(1, 16, kind)}}, Reason::service_loan_root});
         services.push_back({{{release(1, kind)}}, Reason::service_release});
         services.push_back({{{operation(1, kind)}}, Reason::service_operation_kind});
@@ -2677,7 +2686,9 @@ void rawInstructionAdmission() {
     services.push_back({{{operation(1, 5)}}, Reason::service_operation_kind});
     services.push_back({{{operation(8, 0)}}, Reason::service_operation_kind});
     services.push_back({{{operation(9, 0)}}, Reason::service_operation_kind});
-    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{32}, INT64_MAX})
+    for (const auto op : {32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45})
+        services.push_back({{{operation(op, 0)}}, Reason::service_operation_kind});
+    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{46}, INT64_MAX})
         services.push_back({{{operation(op, 0)}}, Reason::service_operation});
     for (const auto &[op, kind, offset, reason] :
          std::vector<std::tuple<std::int64_t, std::int64_t, std::int64_t, Reason>>{
@@ -3019,9 +3030,9 @@ void rawAdmission() {
         ++cases;
     }
     // Raw parser policies may narrow the closed group set, but may not
-    // authorize a new mixed Serve group or an unknown high-bit identity. Bit 0
-    // (the empty set) admits the singleton HostFiles kind, whose set bit 64
-    // does not fit the word.
+    // authorize an unlisted mixed group or an unknown high-bit identity. Bit 0
+    // admits HostFiles; explicit tags 64/128 admit ReadOnlyBlock/Serve+Block,
+    // not the historical Display+Event/Console+Display+Event mask aliases.
     for (const auto groups : std::vector<std::int64_t>{0,
                                                        54,
                                                        62,
@@ -3030,6 +3041,13 @@ void rawAdmission() {
                                                        -1,
                                                        1,
                                                        64,
+                                                       128,
+                                                       192,
+                                                       4295033343,
+                                                       512,
+                                                       4295033855,
+                                                       1024,
+                                                       4295034879,
                                                        std::int64_t{1} << 31,
                                                        std::int64_t{1} << 33,
                                                        std::int64_t{1} << 48,
@@ -3040,23 +3058,38 @@ void rawAdmission() {
         const auto parsed = arena.parse(source, Stop::module_definition);
         require(parsed[0] == wire(Status::success), "raw group fixture failed grammar");
         const auto result = arena.admit(source, parsed[1], {64, 512, groups, 1, 2, 4});
-        const bool allowed = groups >= 0 && (groups & 4295033151LL) == groups;
+        const bool allowed = groups >= 0 && (groups & 4295034879LL) == groups;
         require(result[0] == wire(allowed ? AdmissionStatus::success : AdmissionStatus::invalid),
                 "parser group policy lost closed full-width admission");
         arena.finish();
         require(allocations.successful == allocations.released, "raw group admission leaked an owner");
         ++cases;
     }
-    {
-        const std::string source = "module admitted;auto f(builtin::ServeSession& s)->u64{return 0u64;}";
+    for (const auto &[parameters, groups, allowed] : std::vector<std::tuple<std::string, std::int64_t, bool>>{
+             {"builtin::ServeSession& s", 4294967296, true},
+             {"builtin::ReadOnlyBlock& b", 64, true},
+             {"builtin::WritableBlock& w", 512, true},
+             {"builtin::ServeSession& s,builtin::WritableBlock& w", 512, false},
+             {"builtin::ServeSession& s,builtin::WritableBlock& w", 1024, true},
+             {"builtin::WritableBlock& w,builtin::ServeSession& s", 1024, true},
+             {"builtin::DisplaySession& d,builtin::CallSession& c", 1024, false},
+             {"builtin::WritableBlock& w,builtin::ReadOnlyBlock& b", 512, false},
+             {"builtin::ServeSession& s,builtin::ReadOnlyBlock& b", 128, true},
+             {"builtin::ReadOnlyBlock& b,builtin::ServeSession& s", 128, true},
+             {"builtin::ServeSession& s,builtin::ReadOnlyBlock& b", 64, false},
+             {"builtin::DisplaySession& d,builtin::IommuEventSession& e", 64, false},
+             {"builtin::ConsoleSession& c,builtin::DisplaySession& d,builtin::IommuEventSession& e", 128, false}}) {
+        context = "raw service group " + parameters + " policy " + std::to_string(groups);
+        const std::string source = "module admitted;auto f(" + parameters + ")->u64{return 0u64;}";
         Allocations allocations;
         RawArena arena(allocations);
         const auto parsed = arena.parse(source, Stop::module_definition);
-        require(parsed[0] == wire(Status::success), "Serve raw group fixture failed grammar");
-        require(arena.admit(source, parsed[1], {64, 512, 4294967296, 1, 2, 4})[0] == wire(AdmissionStatus::success),
-                "exact Serve singleton group bit was narrowed or truncated");
+        require(parsed[0] == wire(Status::success), "raw service group fixture failed grammar");
+        require(arena.admit(source, parsed[1], {64, 512, groups, 1, 2, 4})[0] ==
+                    wire(allowed ? AdmissionStatus::success : AdmissionStatus::borrowed_parameter),
+                "explicit service group tag admitted an alias or lost its intended capability");
         arena.finish();
-        require(allocations.successful == allocations.released, "Serve group admission leaked an owner");
+        require(allocations.successful == allocations.released, "service group admission leaked an owner");
         ++cases;
     }
     context = "post-grammar admission scratch growth and allocation failure";

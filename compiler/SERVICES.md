@@ -16,9 +16,10 @@ auto receive(builtin::ConsoleSession& session) -> builtin::ConsoleSample {
 ## Source and lifetime
 
 `ConsoleSession`, `DisplaySession`, `IommuEventSession`, `CallSession`, `Com1UartGrant`, `ServeSession` and
-`HostFiles` ([below](#hosted-files)) are distinct compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
-reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port, Serve or HostFiles alone, Console+Display
-in either order, and Event+Console in either order. Call, Port, Serve and HostFiles cannot mix with any other kind. Event+Display, duplicate kinds
+`HostFiles` ([below](#hosted-files)) and `ReadOnlyBlock` ([below](#read-only-block-volume)), plus `WritableBlock`
+([boot recovery writer](#boot-recovery-writer)), are distinct compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
+reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port, Serve, HostFiles, ReadOnlyBlock or WritableBlock alone, Console+Display
+in either order, Event+Console in either order, Serve+ReadOnlyBlock and Serve+WritableBlock in either helper order. Call, Port and HostFiles cannot mix with any other kind. Event+Display, duplicate kinds
 and all triples are rejected. There is no
 by-value or const variant. It cannot be constructed, copied, moved, assigned, stored in a
 local/field/array, returned, reflected or converted. A reference is a parameter
@@ -40,12 +41,13 @@ Native operations retain exact canonical report types; Display has no host input
 or copied class-report operation. Duplicate kinds, non-leading capabilities and
 forwarding one kind into a formal of the other kind are rejected.
 
-Two mixed capability prefixes are accepted: `builtin::ConsoleSession& session,
-builtin::ByteRegion region` and `builtin::HostFiles& files, builtin::ByteRegion
-region`, followed by the same copied values or readonly byte spans. The order and
-kinds are exact; other services, service pairs, repeated or misplaced regions and
-owner parameters/results remain rejected. Ordinary helpers
-may forward this prefix, call Console-only helpers or call region-only helpers.
+Mixed prefixes accept one of `ConsoleSession&`, `HostFiles&`, `ServeSession&`
+or `ReadOnlyBlock&` or `WritableBlock&` followed immediately by `ByteRegion`, or the exact
+Serve+ReadOnlyBlock or Serve+WritableBlock pair (either helper order) followed immediately by `ByteRegion`.
+Later formals use the same copied-value/readonly-span rules. Other service pairs,
+repeated or misplaced regions and owner parameters/results remain rejected.
+Helpers may forward this prefix, either service subset, or the region alone.
+Root process main order is more restrictive, as described below.
 Local owners retain their original region identity across these calls; service
 loans remain exclusive and cannot escape. The region has an explicit authenticated
 IR operand, never a scalar argument. The private packed record starts with a
@@ -158,9 +160,9 @@ This is one fixed client/service pair, not general scheduling or concurrent call
 `status: builtin::ServeStatus` and `value: u64` fields at offsets 0 and 8. Its
 closed statuses are `request` (0) and `cancelled` (1); cancelled requires zero
 value. The exact 16-byte sealed capability is a singleton exclusive parameter,
-not a copied value or an endpoint. Existing synchronous helper forwarding and
+not a copied value. Existing synchronous helper forwarding and
 copied-value rules apply; no construction, storage, return, reflection, mixed
-capability group, escaping borrow or asynchronous language feature is admitted.
+service group, escaping borrow or asynchronous language feature is admitted.
 
 `__au_runtime_serve_exchange` receives grant, generation and reply in RDI, RSI
 and RDX, then returns status in RAX and value in RDX. Full-width status and
@@ -173,8 +175,11 @@ trap parks the runtime service with its ordinary locals retained.
 Permanent identities append kind 5, operation 8 and metadata type 20. The
 singleton group mask is 32, so its catalogue bit is the full-width value
 4294967296. Parser admission permits restrictive subsets of the closed group
-allowlist; lowering accepts exactly the eight old/base plus optional Call,
-Port and Serve catalogue combinations. No mixed Serve bit is authorized.
+allowlist; lowering seeds the closed optional Call, Port, Serve, HostFiles and
+ReadOnlyBlock and WritableBlock families. Serve includes scalar operation 8 and private endpoint
+operations 32–35, all with kind 5; the private operations remain binding-only.
+The protected exchange stays singleton; the retained-process Serve+ReadOnlyBlock
+pair is described below.
 Only admitted graph syntax referencing ServeSession, ServeRequest or ServeStatus
 activates the family, including unused templates; comments, strings and unrelated
 names do not. Serve-free catalogue, reflection, assembly and ABI behavior stays
@@ -186,6 +191,126 @@ RAM-file profile. It is not a general daemon, scheduler or filesystem API.
 Source, hostile IR, full-width raw ABI, image/stack and guest qualification are
 required independently; implementing the primitive alone establishes no retained
 file functionality.
+
+## Retained process endpoint
+
+The Aurora-process entry is exactly
+`main(builtin::ServeSession&, builtin::ByteRegion, builtin::span<const u8>) -> builtin::HostExit`.
+It imports `aurora.memory`; `--target linux` rejects the entry even when its body
+performs no endpoint operation. This reuses sealed Serve authority without adding
+a file-specific capability or granting the server HostFiles. Serve+region helpers
+retain the existing authenticated region operand, exclusive service loans and
+readonly span source-root/live-read checks.
+
+The reserved imported module `aurora.endpoint` exports:
+
+- `endpoint::exchange(session, readonly_reply_span) -> endpoint::Message`;
+- `endpoint::byte(session, u64 index) -> u8`.
+
+`Message` is an ordinary copied class with `status()`, `source()`, `transaction()`
+and `count()` observations. It carries no authority, pointer or escaping view.
+Reply bytes are synchronously copied into a private staging window before the
+kernel call. Replies and requests are bounded to 65,536 bytes; byte access checks
+the current active request and `index < count`. Oversized replies trap before
+exchange. A cancelled message has zero source, transaction and count.
+
+Only `aurora.endpoint` may name private Serve operations 32..35:
+`message_exchange(u64 length)` returns the existing `ServeRequest`,
+`message_load(u64 index)` and `message_store(u64 index, u8 byte)` return `u8`
+(the store result is zero), and `message_identity(u64 field)` returns `u64`
+for selector 0 source or 1 transaction. Independent source and typed-IR admission
+require the reserved module, exact Serve kind and Aurora target. Public helper
+calls use the ordinary span-aware ServiceCall, not a new raw-span intrinsic.
+Protected scalar Serve operation 8, its two-register result and runtime ABI are
+unchanged. Process objects do not define the protected scalar adapter; protected
+image admission rejects the process-only kernel-service marker of every private
+endpoint operation, including window-only access. Serve kind alone does not
+distinguish the two private grant layouts.
+
+The kernel enters with the readonly argument address/length in RDI/RSI and a
+nonzero, kernel-selected endpoint generation in RDX. `_start` creates two disjoint
+records: the source main record (Serve grant/generation, region at byte 16,
+arguments span at byte 24), and a private memory-only bootstrap record. Their
+endpoint window and memory mapping table do not overlap. Only memory start/finish
+hooks run; no `host::start`, `host::finish` or source HostFiles loan is created.
+The memory backend retains its private sealed bootstrap access for allocations.
+
+The private endpoint window is 131,136 bytes: count/source/transaction/active at
+0/8/16/24, zero reserved words at 32..63, request bytes at 64 and reply bytes at
+65,600. INT 0x83 operation 15 receives its base in RDI, reply count in RSI,
+endpoint generation in RDX and the current transaction (initially zero) in R10.
+It returns ServeStatus in RAX and count in RDX. The kernel authenticates the
+current designated server incarnation and its implicit pending client/transaction,
+validates the owned window, copies one reply before parking and writes the next
+request before resumption. The first exchange requires an empty reply. Source
+cannot select a reply recipient or write identity metadata. Compiler checks reject
+full-width invalid status/count, inconsistent memory/register counts, zero request
+transaction, invalid active/reserved words and noncanonical cancelled metadata
+before a typed observation is published.
+
+Native raw-boundary tests validate compiler canonicalization and bounds using a
+signal adapter for the fixed trap ABI. They do not establish kernel scheduling,
+role authentication or cancellation correctness; those require the real process
+guest tests and final-source merge/release/seed qualification.
+
+## Read-only block volume
+
+`builtin::ReadOnlyBlock&` is a separate sealed authority, never derived from Serve,
+a memory region, copied geometry or a caller-supplied stability flag. The only
+additional process entry is exactly
+`main(ServeSession&, ReadOnlyBlock&, ByteRegion, span<const u8>) -> HostExit`.
+Its packed record has Serve at 0 (16 bytes), block at 16 (16 bytes), region at 32
+(8 bytes), and arguments at 40 (56 bytes). Serve-only main remains unchanged.
+Both process entries reject Linux even without operations. Source and independent
+IR use closed group allowlists. Catalogue tags 64 (block singleton) and 128
+(Serve+block) are explicit tags, not shifts of service-kind sets: the old
+Display+Event and Console+Display+Event aliases remain rejected.
+
+Reserved imported `aurora.block` provides `block::sector_count(blocks)` and
+`block::volume_generation(blocks)` observations, and
+`block::read_sector(blocks, u64 lba) -> storage::SectorReadResult`. The existing
+ordinary result contains an eight-byte status and a copied `Sector512`: exactly
+520 bytes/513 leaves/512 byte leaves under unchanged copied-result limits.
+It exposes neither a window pointer nor a span. Consumers directly import
+`storage.block_io`, `storage.sector`, `std.binary` and `std.binary_buffer`, retaining
+existing visibility checks for the sector's public API. Raw success/range map to
+`SectorIoStatus::success/out_of_range`; failed/unavailable map to `invalid_source`.
+Every failure result has an all-zero sector. A prior successful copy remains
+independent of a later read, failure or grant revocation.
+
+Only `aurora.block` may name private scalar operations 36 `read_sector(u64)->u64`,
+37 `sector_byte(u64)->u8`, and 38 `descriptor(u64)->u64`, with exact block kind 7,
+metadata type 23 and Aurora target checks. All three carry the process-only kernel
+service fact marker, including window-only access, keeping protected admission
+closed. Descriptor selectors are 0 immutable sector count and 1 volume generation.
+Byte access requires a successful latest read and index <512.
+
+The loader supplies independent block generation in R8 and sector count in R9;
+startup preserves both before argument or memory bootstrap register reuse. Both
+zero means no block grant; mixed zero/nonzero traps. The private 528-byte window
+has immutable count at 0, last status at 8 (initially unavailable), and sector
+bytes at 16. Its separate grant/window do not overlap endpoint payload, metadata,
+memory-only bootstrap record or mapping table. No source HostFiles loan or host
+start/finish hook is introduced.
+
+INT 0x83 operation 16 receives the exact 512-byte destination in RDI, LBA in RSI,
+block generation in RDX and reserved zero in R10. It returns full-width closed
+status in RAX (0 success, 1 range, 2 failed, 3 unavailable), and RDX exactly 512 on
+success, zero otherwise. Before each call the emitter invalidates last status and
+zeros payload, preserving the immutable descriptor. It rejects invalid status/count
+and any nonzero failure payload before publishing status. The kernel independently
+authenticates designated role, running incarnation, separate live block generation
+and immutable volume lease; it validates actual LBA extent and owned destination
+under the current root and copies the sector. Copied geometry is not authorization.
+Absent authority returns unavailable; forged/stale nonzero authority is not absence.
+Reset, termination or backend quarantine invalidates the lease; generation is never
+reused. No disk writes, DMA mappings, physical addresses, BME or MMIO authority is
+granted by this source capability.
+
+Native raw-boundary tests establish compiler canonicalization, copied-value
+isolation and accessor bounds, not kernel role/incarnation/volume lifecycle.
+Actual retained-process guest authority tests, integrated current-source seed
+convergence and merge/release qualification remain separate required gates.
 
 ## Bounded IOMMU event observation
 
@@ -243,7 +368,16 @@ Operations copy data only; `builtin::HostStatus` is `success`, `invalid_handle`,
 | `create_output(span path)` | `HostOutputResult {status, id, device, inode, directory_device, directory_inode}`; an exclusive temporary beside the destination |
 | `write(u64 output, span bytes)` | `HostStatus`; at most 64 MiB per output |
 | `commit(u64 output)`, `discard(u64 output)` | `HostStatus`; atomic rename into place, or removal |
+
 | `print(HostStream stream, span bytes)` | `HostStatus`; `stdout` or `stderr` |
+
+A failed or lost commit reply does not prove rollback: the destination may already
+have been published. The caller must not automatically retry it as a fresh output
+transaction. `aurorac` reports an unconfirmed commit distinctly from a temporary
+write failure. A backend claiming durable success must finish its persistence
+fences before returning success. The bounded mounted XFS backend admits only
+1–4096 nonempty bytes for replacement of its existing destination; the RAM and
+hosted output limit remains 64 MiB.
 
 `HostChunk.bytes` is `array<u8, 504>`: with the two leading words that is the
 whole 520-byte copied-class bound (506 of 513 leaves). It is the one sealed class
@@ -543,3 +677,38 @@ native test graph. Native Display grant/transport and guest qualification remain
 separate from these compiler tests. See the
 [kernel migration contract](../docs/native-console-service.md) for required
 linked-stack, image, emulator, restoration and final developer gates. Qualification must match the exact final source and built images.
+
+### Block writer entries
+
+`builtin::WritableBlock&` is a distinct sealed authority, not a conversion from
+`ReadOnlyBlock`, Serve, memory or copied descriptors. The Aurora-only recovery entry
+is `main(WritableBlock&, ByteRegion, span<const u8>) -> HostExit`; it requires RDX
+zero and nonzero independent writer generation/count in R8/R9.
+The separately admitted mounted-service entry is
+`main(ServeSession&, WritableBlock&, ByteRegion, span<const u8>) -> HostExit`.
+It requires nonzero endpoint generation in RDX and independent nonzero writer
+generation/count in R8/R9. Its main record has Serve at 0, writer at 16, region at 32
+and argument span at 40; disjoint endpoint and 544-byte writer windows precede the
+memory runtime state. Helpers may forward the exact pair in either order. No
+other writer pair or triple is admitted. An ELF signature alone cannot mint a
+grant, and this pair does not promote a retired recovery writer back to writable.
+
+Reserved `aurora.block_write` provides copied-sector reads/writes, Flush and
+count/generation/remaining-command observations. Private operations 39–45 are
+restricted to that module and kind 8. The 544-byte private window contains count
+at 0, read status at 8, a 512-byte payload at 16, and sequential staging count at
+528. A write requires all 512 staged bytes and consumes the stage before entry.
+Read, write, Flush and budget calls invalidate staging and prior read status;
+malformed local staging traps. These checks are source-binding invariants, not
+kernel authority or evidence that caller memory is trustworthy.
+
+INT 0x83 operations 17/18 read/write use RDI for the exact 512-byte destination/
+source, RSI for LBA, RDX for writer generation and R10 zero. Read returns status
+0–3 and RDX 512 only on success; all failed read bytes must be zero. Write and
+Flush return status 0–3 and RDX zero. Flush (19) and remaining budget (20) require
+RDI/RSI/R10 zero and RDX generation. Budget returns at most 65535 with RDX zero;
+it is an observation, never a reservation. The kernel independently authenticates
+the admitted recovery or mounted-service owner, memory window, extent and remaining completion budget.
+
+Writer boot minting and recovery handoff require separate kernel integration;
+compiler support alone does not enable writes in existing production modes.

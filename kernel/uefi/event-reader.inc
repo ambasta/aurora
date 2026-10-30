@@ -1,7 +1,29 @@
+#ifdef AURORA_UEFI_NVME
+#ifdef AURORA_PRODUCTION
+using BootResources = NvmeGraphicsResources;
+using BootIvrs = NvmeGraphicsIvrs;
+using BootHandoff = NvmeGraphicsHandoff;
+#else
+using BootResources = NvmeResources;
+using BootIvrs = NvmeIvrs;
+using BootHandoff = NvmeHandoff;
+#endif
+using BootObservation = NvmeColdObservation;
+constexpr unsigned boot_endpoint_requester = 0x10;
+constexpr std::uint64_t boot_capture_magic = 0x314d564e41525541ULL;
+#else
+using BootResources = EventResources;
+using BootIvrs = EventIvrs;
+using BootHandoff = EventHandoff;
+using BootObservation = EventEduObservation;
+constexpr unsigned boot_endpoint_requester = 0x20;
+constexpr std::uint64_t boot_capture_magic = 0x3154564541525541ULL;
+#endif
+using CaptureLayout = DmaCaptureLayout<BootResources::graphics>;
 // Exact model-only firmware handoff. Copied firmware facts remain immutable.
 // Case 4 is read-only and cannot link transition or Event producer authority.
 class EventRegisterWindow final {
-    const EventResources &resources_;
+    const BootResources &resources_;
     const PageTables &tables_;
     const Bytes &handoff_;
     EcamWindow &ecam_;
@@ -23,7 +45,7 @@ class EventRegisterWindow final {
 
 public:
     EventRegisterWindow(
-        const EventResources &resources, const PageTables &tables, const Bytes &handoff, EcamWindow &ecam, U64 arena)
+        const BootResources &resources, const PageTables &tables, const Bytes &handoff, EcamWindow &ecam, U64 arena)
         : resources_(resources), tables_(tables), handoff_(handoff), ecam_(ecam), arena_(arena),
           slot_(tables.window_slot()) {
         if (slot_)
@@ -39,10 +61,10 @@ public:
             return std::nullopt;
         return facts;
     }
-    [[gnu::noinline, nodiscard]] auto edu() -> std::optional<EventEduObservation> {
-        if (!begin(resources_.edu_base()))
+    [[gnu::noinline, nodiscard]] auto edu() -> std::optional<BootObservation> {
+        if (!begin(resources_.endpoint_base()))
             return std::nullopt;
-        const auto facts = EventEduObservation::sample([](unsigned offset, unsigned width) -> U64 {
+        const auto facts = BootObservation::sample([](unsigned offset, unsigned width) -> U64 {
             if (width == 4)
                 return *reinterpret_cast<volatile const std::uint32_t *>(window + offset);
             return *reinterpret_cast<volatile const U64 *>(window + offset);
@@ -71,25 +93,38 @@ constinit bool event_handoff_attempted{};
                                      unsigned bits) -> bool {
     if (event_handoff_attempted)
         return false;
-    if (handoff.get(8, 4) != 4 || handoff.get(120) != arena + Handoff::bar_record_offset ||
-        inventory.count() != EventResources::maximum_functions)
+    const auto record = Handoff::bar_record(handoff);
+    if (record != arena + Handoff::bar_offset(handoff) || inventory.count() != BootResources::maximum_functions)
         return false;
-    const auto storage = std::span<const std::byte>{reinterpret_cast<const std::byte *>(handoff.get(120)), 4096};
+#ifndef AURORA_UEFI_NVME
+    if (handoff.get(8, 4) != 4)
+        return false;
+#endif
+    const auto storage = std::span<const std::byte>{reinterpret_cast<const std::byte *>(record), 4096};
     const Bytes saved{storage};
-    if (saved.get(0) != 0x3154564541525541ULL || saved.get(8, 4) != 1 || saved.get(12, 4) != 4096 ||
-        saved.get(16) != 0 || saved.get(24) != 0 || saved.get(32) != 4 || saved.get(40) != 0 || saved.get(48) != 0 ||
-        saved.get(56) != 48 || saved.get(64) < 48 || saved.get(64) > 738 || (saved.get(64) - 2) % 46 ||
-        saved.get(72) != 64 || saved.get(88) != 1 || saved.get(96) != 6 || saved.get(104) != 1)
+    if (saved.get(0) != boot_capture_magic || saved.get(8, 4) != CaptureLayout::version || saved.get(12, 4) != 4096 ||
+        saved.get(16) != 0 || saved.get(24) != 0 || saved.get(32) != (boot_endpoint_requester >> 3) ||
+        saved.get(40) != 0 || saved.get(48) != 0 || saved.get(56) != 48 || saved.get(64) < 48 || saved.get(64) > 738 ||
+        (saved.get(64) - 2) % 46 || saved.get(72) != 64 || saved.get(88) != CaptureLayout::reservation_count ||
+        saved.get(96) != CaptureLayout::functions || saved.get(104) != 1)
         return false;
     const auto ivrs_bytes =
-        std::span<const std::byte>{reinterpret_cast<const std::byte *>(arena + 0x60000), EventIvrs::maximum_table};
+        std::span<const std::byte>{reinterpret_cast<const std::byte *>(arena + 0x60000), BootIvrs::maximum_table};
     const auto length = Bytes{ivrs_bytes}.get(4, 4);
+#if defined(AURORA_UEFI_NVME) && defined(AURORA_PRODUCTION)
+    const auto ivrs =
+        length <= ivrs_bytes.size() ? read_nvme_graphics_ivrs(ivrs_bytes.first(length), bits) : std::nullopt;
+#elif defined(AURORA_UEFI_NVME)
+    const auto ivrs = length <= ivrs_bytes.size() ? read_nvme_ivrs(ivrs_bytes.first(length), bits) : std::nullopt;
+#else
     const auto ivrs = length <= ivrs_bytes.size() ? read_event_ivrs(ivrs_bytes.first(length), bits) : std::nullopt;
+#endif
     if (!ivrs || saved.get(112) != ivrs->unit().device_id())
         return false;
-    std::array<EventPciFact, 6> copied{}, current{};
-    for (std::size_t i = 0; i < 6; ++i) {
-        const auto bytes = storage.subspan(576 + i * 72, 72);
+    std::array<EventPciFact, CaptureLayout::functions> copied{}, current{};
+    for (std::size_t i = 0; i < copied.size(); ++i) {
+        const auto bytes =
+            storage.subspan(CaptureLayout::headers + i * CaptureLayout::header_bytes, CaptureLayout::header_bytes);
         const Bytes fact{bytes};
         if (fact.get(5, 3) != 0)
             return false;
@@ -109,47 +144,69 @@ constinit bool event_handoff_attempted{};
     const auto rid = ivrs->unit().device_id();
     const auto address = aperture.address(0, rid >> 8, (rid >> 3) & 31, rid & 7);
     const auto caps = address ? ecam.iommu_capability(*address) : std::nullopt;
-    const auto root = PciResources::parse_edk2_root(storage.subspan(1024, saved.get(64)), bits);
+    const auto root = PciResources::parse_edk2_root(storage.subspan(CaptureLayout::root, saved.get(64)), bits);
     if (!caps || !root)
         return false;
-    std::array<EventBarFact, 2> bars{};
-    bars[0].requester = 0x20;
+    std::array<EventBarFact, CaptureLayout::reservation_count + 1> bars{};
+    bars[0].requester = boot_endpoint_requester;
     bars[0].index = 0;
     for (unsigned byte = 0; byte < 48; ++byte)
         bars[0].descriptor[byte] = storage[512 + byte];
-    const auto reservation = storage.subspan(2048, 256);
-    const Bytes r{reservation};
-    if (r.get(0) != 0 || r.get(8) != 0 || r.get(16) != 31 || r.get(24) != 2 || r.get(32) != 5 || r.get(40) != 48)
-        return false;
-    bars[1].requester = 0xfa;
-    bars[1].index = 5;
-    for (unsigned byte = 0; byte < 48; ++byte)
-        bars[1].descriptor[byte] = reservation[128 + byte];
-    // Redundant copies in the legacy-compatible capture layout must agree too.
-    for (const auto &fact : copied) {
-        if (fact.requester() != 0x20 && fact.requester() != 0xfa)
-            continue;
-        const auto raw = fact.requester() == 0x20 ? storage.subspan(256, 64) : reservation.subspan(64, 64);
-        for (unsigned byte = 0; byte < 64; ++byte)
-            if (fact.header[byte] != raw[byte])
-                return false;
+    for (unsigned index = 0; index < CaptureLayout::reservation_count; ++index) {
+        const auto reservation = storage.subspan(CaptureLayout::reservations + index * CaptureLayout::reservation_bytes,
+                                                 CaptureLayout::reservation_bytes);
+        const bool vga = BootResources::graphics && index < 2;
+        const unsigned requester = vga ? 0x18 : 0xfa, bar_index = vga ? index * 2 : 5;
+        const Bytes r{reservation};
+        if (r.get(0) || r.get(8) || r.get(16) != (requester >> 3) || r.get(24) != (requester & 7) ||
+            r.get(32) != bar_index || r.get(40) != 48)
+            return false;
+        bars[index + 1].requester = requester;
+        bars[index + 1].index = bar_index;
+        for (unsigned byte = 0; byte < 48; ++byte)
+            bars[index + 1].descriptor[byte] = reservation[128 + byte];
+        bool matched = false;
+        for (const auto &fact : copied) {
+            if (fact.requester() != requester)
+                continue;
+            matched = true;
+            for (unsigned byte = 0; byte < 64; ++byte)
+                if (fact.header[byte] != reservation[64 + byte])
+                    return false;
+        }
+        if (!matched)
+            return false;
     }
+    // The target header is also repeated by the legacy-compatible BAR record.
+    for (const auto &fact : copied)
+        if (fact.requester() == boot_endpoint_requester)
+            for (unsigned byte = 0; byte < 64; ++byte)
+                if (fact.header[byte] != storage[256 + byte])
+                    return false;
+#if defined(AURORA_UEFI_NVME) && defined(AURORA_PRODUCTION)
+    const auto framebuffer = FramebufferPayload::restore_storage_boot(arena);
+    if (!framebuffer)
+        return false;
+    const auto *display = &*framebuffer;
+#else
+    const FramebufferAdmission *display = nullptr;
+#endif
     const auto map = std::span<const std::byte>{reinterpret_cast<const std::byte *>(arena + Handoff::map_offset),
                                                 static_cast<std::size_t>(handoff.get(32))};
-    const auto resources = EventResources::admit_qemu_default(*ivrs,
-                                                              copied,
-                                                              current,
-                                                              storage.subspan(128, 48),
-                                                              *caps,
-                                                              bars,
-                                                              *root,
-                                                              0,
-                                                              map,
-                                                              handoff.get(40),
-                                                              arena,
-                                                              0xfee00000,
-                                                              EventResources::Purpose::firmware_handoff
-    );
+    const auto resources = BootResources::admit_qemu_default(*ivrs,
+                                                             copied,
+                                                             current,
+                                                             storage.subspan(128, 48),
+                                                             *caps,
+                                                             bars,
+                                                             *root,
+                                                             0,
+                                                             map,
+                                                             handoff.get(40),
+                                                             arena,
+                                                             0xfee00000,
+                                                             BootResources::Purpose::firmware_handoff,
+                                                             display);
     if (!resources) {
         Serial::text("AURORA_EVENT_REJECTED: reason=resources-or-bme\r\n");
         return false;
@@ -174,7 +231,7 @@ constinit bool event_handoff_attempted{};
     const auto after_caps = ecam.iommu_capability(*address);
     if (!after_caps || *after_caps != *caps || !ecam.closed() || !tables.verify(arena, handoff))
         return false;
-    auto attempt = EventHandoff::prepare(*resources, current, ahci, second, edu, map, handoff.get(40), arena);
+    auto attempt = BootHandoff::prepare(*resources, current, ahci, second, edu, map, handoff.get(40), arena);
     const auto admission = attempt ? attempt->complete(
                                          event_handoff_attempted,
                                          [&] {
@@ -198,13 +255,37 @@ constinit bool event_handoff_attempted{};
         const auto page = aperture.address(fact.segment, fact.bus, fact.device, fact.function);
         const auto after = page ? ecam.read(*page) : std::nullopt;
         auto expected = fact.header;
-        put(expected, 4, fact.requester() == 8 ? 7 : fact.requester() == 0x20 ? 2 : 3, 2);
+        put(expected, 4, fact.requester() == 8 ? 7 : fact.requester() == boot_endpoint_requester ? 2 : 3, 2);
         if (!after || *after != expected)
             return false;
     }
     const auto final_caps = ecam.iommu_capability(*address);
     if (!final_caps || *final_caps != *caps || !ecam.closed() || !tables.verify(arena, handoff))
         return false;
+#ifdef AURORA_UEFI_NVME
+    Serial::text("AURORA_NVME_ADMISSION_OK: default-ivrs=1 cold=1 handoff-complete=1\r\n");
+#if defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_PRODUCTION)
+#ifdef AURORA_PROCESS_FIXTURE
+    if ((handoff.get(Handoff::case_word) >= 12 && handoff.get(Handoff::case_word) <= 16) ||
+        handoff.get(Handoff::case_word) == 41)
+        initialize_nvme_recovery(arena, handoff, *admission);
+    else if (handoff.get(Handoff::case_word) >= 17 && handoff.get(Handoff::case_word) <= 40)
+        initialize_nvme_mounted(arena, handoff, *admission);
+    else
+#else
+    if (handoff.get(Handoff::readonly_profile_word) == 3)
+        initialize_nvme_mounted(arena, handoff, *admission);
+    else if (handoff.get(Handoff::readonly_profile_word) == 2)
+        initialize_nvme_recovery(arena, handoff, *admission);
+    else
+#endif
+        initialize_nvme_readonly(arena, handoff, *admission);
+    return true;
+#else
+    run_nvme(arena, handoff, *admission);
+#endif
+#else
     Serial::text("AURORA_EVENT_ADMISSION_OK: default-ivrs=1 handoff-complete=1\r\n");
     run_event_intake(arena, handoff, *admission);
+#endif
 }

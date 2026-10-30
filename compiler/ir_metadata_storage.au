@@ -38,7 +38,9 @@ export namespace compiler_ir_metadata {
         Com1UartGrant,
         ServeSession,
         ValueSpan,
-        HostFiles
+        HostFiles,
+        ReadOnlyBlock,
+        WritableBlock
     };
     // Each reason's message is in pipeline.au (compiler_ir_metadata::metadata_text).
     enum class MetadataError {
@@ -314,6 +316,12 @@ export namespace compiler_ir_metadata {
         }
         auto service_host() const -> u64 {
             return 64u64;
+        }
+        auto service_writer() const -> u64 {
+            return 256u64;
+        }
+        auto service_block() const -> u64 {
+            return 128u64;
         }
         auto service_iommu() const -> u64 {
             return serviceIommu;

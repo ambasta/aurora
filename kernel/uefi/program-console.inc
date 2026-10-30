@@ -5,8 +5,16 @@ using ProgramSerial = Serial; // One shared sticky receive-error latch, includin
 #ifndef AURORA_FILE_CALL
 program::Stream command_stream;
 #endif
-program::Note command_note;
-program::Files command_files;
+#ifdef AURORA_PRODUCTION
+using ConsoleNote = program::ExternalNote;
+using ConsoleFiles = program::ExternalFiles;
+U64 console_selection_generation{}, console_note_revision{}, console_last_generation{};
+#else
+using ConsoleNote = program::Note;
+using ConsoleFiles = program::Files;
+#endif
+ConsoleNote command_note;
+ConsoleFiles command_files;
 #ifdef AURORA_PROGRAM_APPEND_CALL
 program::AppendCall command_append;
 // Captured once at the original caller's first suspension, before a service
@@ -17,7 +25,7 @@ U64 append_operation{};
 #endif
 #ifdef AURORA_PROGRAM_FIXTURE
 // Retained test-image evidence, never an additional production store or stack copy.
-program::Files::Value program_append_checkpoint{};
+ConsoleFiles::Value program_append_checkpoint{};
 U64 program_append_operation{}, program_append_revision{};
 #endif
 #ifndef AURORA_FILE_CALL
@@ -278,9 +286,9 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
     const auto endpoint = mailbox->endpoint(*domains[1].handle);
     require(endpoint && mailbox->state() == ipc::State::delivered && command_note.matches(*endpoint),
             "note authenticated publication");
-    auto *record = reinterpret_cast<std::byte *>(program_stack_tail(1) - program::Note::stream_stack_reservation);
+    auto *record = reinterpret_cast<std::byte *>(program_stack_tail(1) - ConsoleNote::stream_stack_reservation);
     require(command_note.stage_stream(
-                std::span<std::byte, program::Note::stream_record_bytes>{record, program::Note::stream_record_bytes},
+                std::span<std::byte, ConsoleNote::stream_record_bytes>{record, ConsoleNote::stream_record_bytes},
                 *endpoint,
                 source,
                 ipc::Request{byte, ordinal}),
@@ -627,41 +635,160 @@ auto program_cleanup(bool success) -> void {
     ProgramSerial::number(timer_epoch);
     ProgramSerial::text("\r\n");
 }
+#ifdef AURORA_PRODUCTION
+// Both external-file commands and run transfer only from an exact quiescent
+// console boundary. The process runtime returns with its retained owner parked
+// and every extension/window mapping detached; the old architecture owns input
+// and Display again only after these checks.
+[[nodiscard]] auto production_process_enter() -> U64 {
+    require(ProgramInputPlatform::quiet() && terminal_mapping() && !mailbox && frames.used() == 0,
+            "production service entry ownership");
+    U64 previous_cr2;
+    asm volatile("mov %%cr2, %0" : "=r"(previous_cr2));
+    command_owned = true;
+    return previous_cr2;
+}
+auto production_process_leave(U64 previous_cr2) -> void {
+    install_architecture();
+    // Child fault handling is complete. Preserve the prior diagnostic context,
+    // rather than clearing or concealing any live child's fault address.
+    asm volatile("mov %0, %%cr2" : : "r"(previous_cr2) : "memory");
+    command_owned = false;
+    require(ProgramInputPlatform::quiet() && terminal_mapping(), "production service return ownership");
+}
+[[nodiscard]] auto production_console_request(ConsoleOperation operation,
+                                              U64 generation,
+                                              U64 revision,
+                                              std::span<const std::byte> request,
+                                              std::span<std::byte> response) -> ConsoleResult {
+    const auto previous_cr2 = production_process_enter();
+    const auto result = console_request(arena, *handoff, operation, generation, revision, request, response);
+    production_process_leave(previous_cr2);
+    if (result.status == ConsoleStatus::success) {
+        require(result.generation != 0, "console source generation");
+        console_last_generation = result.generation;
+    }
+    return result;
+}
+auto production_store_failure(ConsoleStatus status, program::Response &response) -> void {
+    using namespace std::literals::string_view_literals;
+    response = program::Response{program::Response::Kind::file_reply};
+    const std::string_view message = status == ConsoleStatus::conflict ? "File changed; output discarded."sv
+                                     : status == ConsoleStatus::malformed
+                                         ? "File service rejected the request."sv
+                                         : "File service unavailable; result unknown."sv;
+    require(response.payload(std::as_bytes(std::span{message.data(), message.size()})), "console service failure");
+}
+auto production_selection_clear() -> void {
+    console_selection_generation = console_note_revision = 0;
+    command_note.release();
+}
+// The inner policy reply is copied from an untrusted service too. A malformed
+// reply revokes only that observed incarnation; a possibly committed operation
+// is not replayed and its result is reported as unknown.
+auto production_bad_store_reply(U64 generation, program::Response &response) -> void {
+    const auto previous_cr2 = production_process_enter();
+    const auto rejected = reject_program_service(arena, *handoff, generation);
+    production_process_leave(previous_cr2);
+    require(rejected != ConsoleStatus::malformed, "console observed generation");
+    command_files.abort();
+    production_selection_clear();
+    if (console_last_generation == generation)
+        console_last_generation = 0;
+    production_store_failure(ConsoleStatus::unavailable, response);
+}
+#endif
 // Keep copied preparation records out of the domain creation/retirement stack.
 __attribute__((noinline)) auto program_begin_upper_note() -> U64 {
-    program::Note::Value projection{};
+    ConsoleNote::Value projection{};
+#ifdef AURORA_PRODUCTION
+    projection = command_note.projection();
+#else
     __au_runtime_note_project(command_note.saved().data(), projection.data());
+#endif
     require(command_note.begin_upper(projection, command_stream), "note upper input");
-    return Bytes{projection}.get(64);
+    const auto length = Bytes{projection}.get(64);
+    program_scrub_copy(projection);
+    return length;
 }
-[[nodiscard]] __attribute__((noinline)) auto program_note_apply(const program::Note::UpdateInput &copied) -> U64 {
+#ifdef AURORA_PRODUCTION
+[[nodiscard]] __attribute__((noinline)) auto program_save_note(program::Output &output, program::Response &response)
+    -> bool {
+    require(!command_note.bound() && !output.missing() && output.length() <= 53 && console_selection_generation &&
+                console_note_revision,
+            "note one-shot replacement");
+    ConsoleNote::Value copied{};
+    for (std::size_t index = 0; index < output.length(); ++index)
+        copied[index] = std::byte(*output.byte(index));
+    put(copied, 64, output.length());
+    output.scrub();
+    const auto result = production_console_request(
+        ConsoleOperation::note_replace, console_selection_generation, console_note_revision, copied, {});
+    program_scrub_copy(copied);
+    if (result.status != ConsoleStatus::success) {
+        production_store_failure(result.status, response);
+        return false;
+    }
+    require(result.generation == console_selection_generation && console_note_revision != ~U64{0} &&
+                result.revision != 0 && result.revision == console_note_revision + 1,
+            "note committed revision");
+    return true;
+}
+#else
+[[nodiscard]] __attribute__((noinline)) auto program_note_apply(const ConsoleNote::UpdateInput &copied) -> U64 {
     require(!command_owned && !mailbox && frames.used() == 0 && program_boundary() && !command_note.bound(),
             "note quiescent update");
-    program::Note::Update update{};
+    ConsoleNote::Update update{};
     __au_runtime_note_update(copied.data(), update.data());
     const auto event = command_note.commit(update);
     require(event.has_value(), "note closed update");
     return *event;
 }
-__attribute__((noinline)) auto program_save_note(program::Output &output) -> void {
-    program::Note::UpdateInput copied{};
+__attribute__((noinline)) auto program_save_note(program::Output &output, program::Response &) -> bool {
+    ConsoleNote::UpdateInput copied{};
     require(command_note.replacement(output, copied), "note complete replacement input");
     output.scrub();
     require(program_note_apply(copied) == 1, "note replacement accepted");
+    return true;
 }
-__attribute__((noinline)) auto program_save_file(program::Response &response) -> void {
+#endif
+[[nodiscard]] __attribute__((noinline)) auto program_save_file(program::Response &response) -> bool {
     require(!command_owned && !mailbox && frames.used() == 0 && program_boundary(), "file quiescent replacement");
-    program::Files::ReplaceInput copied{};
+    ConsoleFiles::ReplaceInput copied{};
     require(command_files.appending() ? command_files.replacement(command_append, copied)
                                       : command_files.replacement(command_stream, copied),
             "file one-shot complete replacement");
-    program::Files::Mutation result{};
+    ConsoleFiles::Mutation result{};
+#ifdef AURORA_PRODUCTION
+    require(console_selection_generation != 0, "file selected service incarnation");
+    const auto committed =
+        production_console_request(ConsoleOperation::files_replace, console_selection_generation, 0, copied, result);
+    if (committed.status != ConsoleStatus::success) {
+        command_files.abort();
+        production_store_failure(committed.status, response);
+        program_scrub_copy(copied);
+        program_scrub_copy(result);
+        return false;
+    }
+    require(committed.generation == console_selection_generation, "file committed service incarnation");
+#else
     __au_runtime_files_replace(copied.data(), result.data());
+#endif
+#ifdef AURORA_PRODUCTION
+    if (!command_files.publish(result)) {
+        production_bad_store_reply(committed.generation, response);
+        program_scrub_copy(copied);
+        program_scrub_copy(result);
+        return false;
+    }
+#else
     require(command_files.publish(result), "file Aurora replacement accepted");
+#endif
     if (command_files.appending()) {
         response = program::Response{program::Response::Kind::file_reply};
-        const auto count = Bytes{result}.get(336);
-        require(count <= 64 && response.payload(std::span<const std::byte>{result}.subspan(272, count)),
+        const auto count = Bytes{result}.get(ConsoleFiles::namespace_bytes + 64);
+        require(count <= 64 &&
+                    response.payload(std::span<const std::byte>{result}.subspan(ConsoleFiles::namespace_bytes, count)),
                 "append response");
     } else
         response = program::Response{program::Response::Kind::file_saved};
@@ -682,6 +809,7 @@ __attribute__((noinline)) auto program_save_file(program::Response &response) ->
         program_output_left = 5;
     }
 #endif
+    return true;
 }
 [[nodiscard]] auto
 program_command(program::Submission &input, bool reading = false, bool saving = false, bool file = false) -> bool {
@@ -703,15 +831,20 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
     mailbox.emplace(registry);
     require(create(0) == 0 && create(1) == 1 && mailbox->bind(*domains[0].handle, *domains[1].handle),
             "program participants");
-    program::Note::Value projection{};
+    ConsoleNote::Value projection{};
     // Upper ignores the read field and receives only its zero placeholder.
     if (file)
         projection = command_files.projection();
-    else if (reading)
+    else if (reading) {
+#ifdef AURORA_PRODUCTION
+        projection = command_note.projection();
+#else
         __au_runtime_note_project(command_note.saved().data(), projection.data());
+#endif
+    }
     const auto service_grant = mailbox->endpoint(*domains[1].handle);
     require(service_grant &&
-                command_note.bind(projection, *service_grant, file ? command_files.suffix() : program::Note::Value{}),
+                command_note.bind(projection, *service_grant, file ? command_files.suffix() : ConsoleNote::Value{}),
             "note frozen publication");
     if (file)
         require(command_appending ? command_files.bind_append(
@@ -720,7 +853,7 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
                     ? command_files.bind(registry, *mailbox, *domains[0].handle, *domains[1].handle, command_stream)
                     : command_files.bind_read(registry, *mailbox, *domains[0].handle, *domains[1].handle),
                 "file command grants");
-    projection = {};
+    program_scrub_copy(projection);
     const auto grant = mailbox->endpoint(*domains[0].handle);
     require(grant.has_value(), "program command grant");
     ProgramSerial::text("AURORA_PROGRAM_COMMAND_BEGIN: grant=");
@@ -777,13 +910,14 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
     program_cleanup(success);
     program::Response response{program::Response::Kind::stopped};
     if (success && command_transform) {
-        program_save_file(response);
+        success = program_save_file(response);
     } else if (success) {
         auto output = command_stream.finish();
         require(output && command_stream.scrubbed(), "program complete output");
         if (saving) {
-            program_save_note(*output);
-            response = program::Response{program::Response::Kind::note_saved};
+            success = program_save_note(*output, response);
+            if (success)
+                response = program::Response{program::Response::Kind::note_saved};
         } else {
             response = program::Response{output->missing() ? (file ? program::Response::Kind::file_missing
                                                                    : program::Response::Kind::note_missing)
@@ -819,10 +953,42 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
 #endif
     if (success && command_transform)
         require(command_files.response_complete(delivered), "file settled response completion");
+#ifdef AURORA_PRODUCTION
+    production_selection_clear();
+#endif
     return delivered;
 }
-[[nodiscard]] auto program_note_update(const program::Submission &input) -> U64 {
-    program::Note::UpdateInput copied{};
+#ifdef AURORA_PRODUCTION
+[[nodiscard]] auto program_note_update(const program::Submission &input, program::Response &response) -> U64 {
+    production_selection_clear();
+    std::array<std::byte, 72> request{};
+    for (std::size_t index = 0; index < input.length(); ++index)
+        request[index] = std::byte(input.bytes()[index]);
+    put(request, 64, input.length());
+    ConsoleNote::Update result{};
+    const auto reply = production_console_request(ConsoleOperation::note_command, 0, 0, request, result);
+    program_scrub_copy(request);
+    if (reply.status != ConsoleStatus::success) {
+        production_store_failure(reply.status, response);
+        program_scrub_copy(result);
+        return 5; // Source session's production-only controlled failure response.
+    }
+    const auto action = command_note.select(result);
+    if (!action) {
+        production_bad_store_reply(reply.generation, response);
+        program_scrub_copy(result);
+        return 5;
+    }
+    if (*action >= 2) {
+        console_selection_generation = reply.generation;
+        console_note_revision = reply.revision;
+    }
+    program_scrub_copy(result);
+    return *action;
+}
+#else
+[[nodiscard]] auto program_note_update(const program::Submission &input, program::Response &) -> U64 {
+    ConsoleNote::UpdateInput copied{};
     const auto &saved = command_note.saved();
     for (std::size_t index = 0; index < saved.size(); ++index) {
         copied[index] = saved[index];
@@ -836,28 +1002,52 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
     return program_note_apply(copied);
 }
 #endif
+#endif
 [[nodiscard]] __attribute__((noinline)) auto program_files_update(const program::Submission &input,
                                                                   program::Response &response) -> U64 {
     require(ProgramInputPlatform::quiet(), "file storage mutation boundary");
-    program::Files::UpdateInput copied{};
+    ConsoleFiles::UpdateInput copied{};
+#ifndef AURORA_PRODUCTION
     const auto &saved = command_files.saved();
-    for (std::size_t i = 0; i < saved.size(); ++i)
-        copied[i] = saved[i];
-    for (std::size_t i = 0; i < input.bytes().size(); ++i)
-        copied[272 + i] = std::byte(input.bytes()[i]);
-    for (unsigned i = 0; i < 8; ++i)
-        copied[336 + i] = std::byte(input.length() >> (8 * i));
-#ifdef AURORA_FILE_CALL
-    copied[344] = std::byte{1};
+    std::copy(saved.begin(), saved.end(), copied.begin());
 #endif
-    program::Files::Update result{};
+    for (std::size_t i = 0; i < input.length(); ++i)
+        copied[ConsoleFiles::namespace_bytes + i] = std::byte(input.bytes()[i]);
+    put(copied, ConsoleFiles::namespace_bytes + 64, input.length());
+#ifdef AURORA_FILE_CALL
+    copied[ConsoleFiles::namespace_bytes + 72] = std::byte{1};
+#endif
+    ConsoleFiles::Update result{};
+#ifdef AURORA_PRODUCTION
+    production_selection_clear();
+    const auto reply = production_console_request(ConsoleOperation::files_command, 0, 0, copied, result);
+    if (reply.status != ConsoleStatus::success) {
+        production_store_failure(reply.status, response);
+        program_scrub_copy(copied);
+        program_scrub_copy(result);
+        return 1;
+    }
+#else
     __au_runtime_files_update(copied.data(), result.data());
+#endif
     const auto action = command_files.update(result);
+#ifdef AURORA_PRODUCTION
+    if (!action) {
+        production_bad_store_reply(reply.generation, response);
+        program_scrub_copy(copied);
+        program_scrub_copy(result);
+        return 1;
+    }
+    if (*action >= 2)
+        console_selection_generation = reply.generation;
+#else
     require(action.has_value(), "file closed update");
+#endif
     if (*action == 1) {
         response = program::Response{program::Response::Kind::file_reply};
-        const auto count = Bytes{result}.get(336);
-        require(count <= 64 && response.payload(std::span<const std::byte>{result}.subspan(272, count)),
+        const auto count = Bytes{result}.get(ConsoleFiles::namespace_bytes + 64);
+        require(count <= 64 &&
+                    response.payload(std::span<const std::byte>{result}.subspan(ConsoleFiles::namespace_bytes, count)),
                 "file copied response bytes");
     }
     program_scrub_copy(copied);
@@ -871,7 +1061,7 @@ auto file_call_offset(U64 offset) -> void {
     require(offset == caller.call_count, "file bounded sequential offset");
 }
 [[nodiscard]] auto file_call_reply(U64 reply) -> bool {
-    if (!program::Files::read_reply_valid(reply))
+    if (!ConsoleFiles::read_reply_valid(reply))
         return false;
     if (domains[0].call_limit > 1 && (reply & 255) != 1)
         domains[0].call_closed = true;
@@ -879,6 +1069,85 @@ auto file_call_offset(U64 offset) -> void {
 }
 #include "blocking-call.inc"
 #include "file-call.inc"
+#endif
+#ifdef AURORA_PRODUCTION
+// Child output crosses only as bounded copied bytes at the supervisor root.
+// There is no Console/Display grant while the process owns the architecture;
+// the grid is painted after exact root/window and interrupt-owner restoration.
+auto production_output(void *, bool, std::span<const std::byte> bytes) -> bool {
+    if (root() != kernel_root || !irq_off() || !command_owned || saved_rsp || active != L::domain_count ||
+        program.running() || timer_armed || timer_draining || timer_owner || run_authority || console_waiting ||
+        LocalApicTimerIo::read(0x390) != 0 ||
+        (LocalApicTimerIo::read(0x320) & 0x700ff) != (0x10000 | LocalApicTimerIo::vector) ||
+        !LocalApicTimerIo::quiet(0x100, false) || !LocalApicTimerIo::quiet(0x200, false))
+        stop("production output ownership");
+    for (const auto byte : bytes)
+        if (ProgramConsoleTransport::try_put(std::to_integer<std::uint8_t>(byte)) != console::PutResult::success)
+            return false;
+    return true;
+}
+[[nodiscard]] __attribute__((noinline)) auto production_run(const program::Submission &input) -> bool {
+    require(ProgramInputPlatform::quiet() && terminal_mapping(), "production run entry ownership");
+    program::RunArguments arguments;
+    program::Response response{program::Response::Kind::file_reply};
+    if (!arguments.parse(input)) {
+        constexpr std::string_view usage = "Usage: run PATH [args]; no quotes/escapes; at most 16 words.";
+        require(response.payload(std::as_bytes(std::span{usage.data(), usage.size()})), "run usage");
+        return program_write_response(response);
+    }
+    const auto previous_cr2 = production_process_enter();
+    const auto result =
+        run_program(arena, *handoff, arguments.path(), arguments.arguments(), production_output, nullptr);
+    production_process_leave(previous_cr2);
+    if (result.status == RunStatus::output_failed)
+        return false; // Never retry output or print a prompt after transport failure.
+    std::array<std::byte, 64> message{};
+    std::size_t size = 0;
+    const auto append = [&](std::string_view text) {
+        for (const auto byte : text) {
+            require(size < message.size(), "run response bounds");
+            message[size++] = std::byte{static_cast<unsigned char>(byte)};
+        }
+    };
+    append("\r\nrun: ");
+    switch (result.status) {
+    case RunStatus::exited:
+        append("exited status=");
+        break;
+    case RunStatus::fault:
+        append("fault vector=");
+        break;
+    case RunStatus::watchdog:
+        append("watchdog");
+        break;
+    case RunStatus::missing:
+        append("program not found");
+        break;
+    case RunStatus::malformed:
+        append("invalid executable or arguments");
+        break;
+    case RunStatus::quota:
+        append("resource quota exceeded");
+        break;
+    case RunStatus::unavailable:
+        append("file service unavailable");
+        break;
+    default:
+        stop("production run result");
+    }
+    if (result.status == RunStatus::exited || result.status == RunStatus::fault) {
+        U64 divisor = 1;
+        while (divisor <= result.value / 10)
+            divisor *= 10;
+        do {
+            const char digit = static_cast<char>('0' + result.value / divisor % 10);
+            append({&digit, 1});
+            divisor /= 10;
+        } while (divisor);
+    }
+    require(response.payload(std::span<const std::byte>{message}.first(size)), "run result response");
+    return program_write_response(response);
+}
 #endif
 __attribute__((noinline)) auto run_program_console() -> void {
     require(program_boundary() && !command_owned && L::domain_count == 2, "program console initial ownership");
@@ -893,10 +1162,22 @@ __attribute__((noinline)) auto run_program_console() -> void {
 #ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
     terminal_install();
 #endif
+#if defined(AURORA_PRODUCTION) && defined(AURORA_UEFI_NVME)
+    if (Handoff::bar(*handoff)) {
+        // Only admitted production tag 4 starts storage before the first prompt.
+        // Readiness (or controlled unavailability) is reported by the source-owner
+        // boundary; the default RAM composition remains lazy and never probes NVMe.
+        const auto previous_cr2 = production_process_enter();
+        static_cast<void>(prepare_programs(arena, *handoff));
+        production_process_leave(previous_cr2);
+    }
+#endif
     using Event = program::Session::Event;
     using Effect = program::Session::Effect;
     program::Session session;
-#ifdef AURORA_FILE_CALL
+#ifdef AURORA_PRODUCTION
+    auto effect = session.advance(Event::begin, 2);
+#elif defined(AURORA_FILE_CALL)
     auto effect = session.advance(Event::begin, 1);
 #else
     auto effect = session.advance(Event::begin, 0);
@@ -909,6 +1190,12 @@ __attribute__((noinline)) auto run_program_console() -> void {
             program_read_input(copied, session.after_cr());
             effect = session.advance(Event::input, static_cast<U64>(copied.action()), copied.after_cr());
             continue;
+#ifdef AURORA_PRODUCTION
+        case Effect::run:
+            effect = session.advance(Event::response, production_run(copied));
+            copied.scrub();
+            continue;
+#endif
         case Effect::files:
             response = program::Response{program::Response::Kind::unknown};
             effect = session.advance(Event::files, program_files_update(copied, response));
@@ -918,7 +1205,7 @@ __attribute__((noinline)) auto run_program_console() -> void {
             response = program::Response{program::Response::Kind::ready};
             break;
         case Effect::note:
-            effect = session.advance(Event::note, program_note_update(copied));
+            effect = session.advance(Event::note, program_note_update(copied, response));
             continue;
         case Effect::upper:
             effect = session.advance(Event::response, program_command(copied));
@@ -954,6 +1241,9 @@ __attribute__((noinline)) auto run_program_console() -> void {
 #endif
         case Effect::abort_file:
             command_files.abort();
+#ifdef AURORA_PRODUCTION
+            production_selection_clear();
+#endif
             [[fallthrough]];
         case Effect::unknown:
             response = program::Response{program::Response::Kind::unknown};
@@ -978,6 +1268,20 @@ __attribute__((noinline)) auto run_program_console() -> void {
     Serial::text("AURORA_FILE_SERVICE_EXIT: service=");
     Serial::number(exiting_service);
     Serial::text(" used=0 scrubbed=1\r\n");
+#endif
+#ifdef AURORA_PRODUCTION
+    production_selection_clear();
+    if (console_last_generation) {
+        const auto cleared = production_console_request(ConsoleOperation::clear, console_last_generation, 0, {}, {});
+        // A refused clear can also mean source revision exhaustion. Revoke the
+        // exact old owner on every non-success; never affect another incarnation,
+        // start an owner or retry a possibly completed clear on exit.
+        if (cleared.status != ConsoleStatus::success) {
+            production_bad_store_reply(console_last_generation, response);
+            response.scrub();
+        }
+        console_last_generation = 0;
+    }
 #endif
     command_note.clear();
     command_files.clear();

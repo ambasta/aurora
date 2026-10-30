@@ -1,0 +1,287 @@
+export module aurora.compiler.static_link;
+import std.binary;
+import aurora.compiler.private_object;
+
+// A static linker for one complete object emitted by Aurora. Imports and the
+// runtime are already in that object. No host tool, external symbol search,
+// dynamic linking, writable data or unrecognized ELF feature is accepted.
+export namespace compiler_static_link {
+    enum class Status {
+        pending,
+        complete,
+        allocation,
+        object,
+        symbol,
+        entry,
+        relocation,
+        limit
+    };
+    class Workspace {
+        builtin::OwnedBytes output;
+        builtin::OwnedValues<compiler_private_object::NameRow> names;
+        Status outcome;
+        i64 entry;
+    public:
+        Workspace(builtin::ByteRegion region) : output(region.try_allocate(0)),
+            names(compiler_private_object::names(region)), outcome(Status::pending), entry(-1) {
+        }
+    private:
+        auto fail(Status reason) -> Status {
+            outcome = reason;
+            return outcome;
+        }
+        auto read_name(i64 index) const -> compiler_private_object::NameRow {
+            const compiler_private_object::NameRow row = names.at(index);
+            return row;
+        }
+        auto set_name(i64 index, compiler_private_object::NameRow row) -> bool {
+            return names.set(index, row);
+        }
+        auto sift(builtin::span<const u8> input, i64 root, i64 end, bool lexical) -> bool {
+            i64 parent = root;
+            bool done = false;
+            while (parent < end / 2 && !done) {
+                i64 child = parent * 2 + 1;
+                if (child + 1 < end && compiler_private_object::greater(input, read_name(child + 1), read_name(child),
+                    lexical)) {
+                    child = child + 1;
+                }
+                const compiler_private_object::NameRow old = read_name(parent);
+                if (compiler_private_object::greater(input, read_name(child), old, lexical)) {
+                    set_name(parent, read_name(child));
+                    set_name(child, old);
+                    parent = child;
+                } else {
+                    done = true;
+                }
+            }
+            return true;
+        }
+        auto sort(builtin::span<const u8> input, bool lexical) -> bool {
+            i64 at = names.size() / 2;
+            while (at > 0) {
+                at = at - 1;
+                sift(input, at, names.size(), lexical);
+            }
+            i64 end = names.size();
+            while (end > 1) {
+                end = end - 1;
+                const compiler_private_object::NameRow first = read_name(0);
+                set_name(0, read_name(end));
+                set_name(end, first);
+                sift(input, 0, end, lexical);
+            }
+            return true;
+        }
+        auto symbols(builtin::span<const u8> input, compiler_private_object::Profile p) -> Status {
+            const compiler_private_object::NameRow blank = compiler_private_object::NameRow(0, 0, 0);
+            if (!names.try_resize(p.symbolSize / 24 - 1, blank)) {
+                return Status::allocation;
+            }
+            i64 index = 1;
+            while (index < p.symbolSize / 24) {
+                const i64 at = p.symbols + index * 24;
+                const i64 name = compiler_private_object::number(input, at, 4);
+                const i64 info = i64(input.at(at + 4));
+                const i64 visibility = i64(input.at(at + 5));
+                const i64 section = compiler_private_object::number(input, at + 6, 2);
+                const i64 value = compiler_private_object::number(input, at + 8, 8);
+                const i64 size = compiler_private_object::number(input, at + 16, 8);
+                const bool local = index < p.locals;
+                if (name <= 0 || name >= p.stringSize || input.at(p.strings + name - 1) != 0u8 || value < 0 || size < 0
+                    || (local && (visibility != 0 || (info != 0 && info != 2))) || (!local && ((visibility != 0
+                    && visibility != 2) || (info != 16 && info != 18))) || (section != 1 && section != 7) || (section
+                    == 7 && (!local || info != 0))) {
+                    return Status::symbol;
+                }
+                i64 bytes = p.textSize;
+                if (section == 7) {
+                    bytes = p.rodataSize;
+                }
+                if (value > bytes || size > bytes - value || (info % 16 == 2 && (size == 0 || value == bytes))) {
+                    return Status::symbol;
+                }
+                set_name(index - 1, compiler_private_object::NameRow(p.strings + name, 0, index));
+                index = index + 1;
+            }
+            // Disjoint name spans bound scanning by the input size, even for
+            // hostile repeated offsets. Then sort lexically to reject duplicates.
+            sort(input, false);
+            index = 0;
+            while (index < names.size()) {
+                compiler_private_object::NameRow name = read_name(index);
+                i64 end = p.strings + p.stringSize;
+                if (index + 1 < names.size()) {
+                    const compiler_private_object::NameRow next = read_name(index + 1);
+                    end = next.offset;
+                }
+                i64 at = name.offset;
+                while (at < end && input.at(at) != 0u8) {
+                    at = at + 1;
+                }
+                if (at == end || at == name.offset) {
+                    return Status::symbol;
+                }
+                name.length = at - name.offset;
+                set_name(index, name);
+                if (compiler_private_object::equal(input, name.offset, name.length, "_start")) {
+                    const i64 symbol = p.symbols + name.symbol * 24;
+                    if (entry != -1 || name.symbol < p.locals || input.at(symbol + 4) != 18u8
+                        || compiler_private_object::number(input, symbol + 6, 2) != 1) {
+                        return Status::entry;
+                    }
+                    entry = compiler_private_object::number(input, symbol + 8, 8);
+                }
+                index = index + 1;
+            }
+            sort(input, true);
+            index = 1;
+            while (index < names.size()) {
+                if (compiler_private_object::compare(input, read_name(index - 1), input, read_name(index)) == 0) {
+                    return Status::symbol;
+                }
+                index = index + 1;
+            }
+            if (entry < 0) {
+                return Status::entry;
+            }
+            return Status::complete;
+        }
+        auto little(i64 at, u64 value, i64 width) -> bool {
+            i64 byte = 0;
+            u64 remaining = value;
+            while (byte < width) {
+                output.set(at + byte, u8(remaining % 256u64));
+                remaining = remaining / 256u64;
+                byte = byte + 1;
+            }
+            return true;
+        }
+        auto segment(i64 at, i64 flags, i64 offset, i64 bytes) -> bool {
+            little(at, 1u64, 4);
+            little(at + 4, u64(flags), 4);
+            little(at + 8, u64(offset), 8);
+            little(at + 16, 4194304u64 + u64(offset), 8);
+            little(at + 24, 4194304u64 + u64(offset), 8);
+            little(at + 32, u64(bytes), 8);
+            little(at + 40, u64(bytes), 8);
+            return little(at + 48, 4096u64, 8);
+        }
+        auto copy(builtin::span<const u8> input, i64 source, i64 destination, i64 count) -> bool {
+            i64 at = 0;
+            while (at < count) {
+                output.set(destination + at, input.at(source + at));
+                at = at + 1;
+            }
+            return true;
+        }
+        auto relocations(builtin::span<const u8> input, compiler_private_object::Profile p, i64 readonly) -> Status {
+            i64 index = 0;
+            i64 end = 0;
+            while (index < p.relocationSize / 24) {
+                const i64 at = p.relocations + index * 24;
+                const i64 site = compiler_private_object::number(input, at, 8);
+                const i64 kind = compiler_private_object::number(input, at + 8, 4);
+                const i64 symbol = compiler_private_object::number(input, at + 12, 4);
+                const std::ByteReadResult addend = std::read_le64(input, at + 16);
+                if (site < end || site > p.textSize || p.textSize - site < 4 || symbol <= 0 || symbol >= p.symbolSize
+                    / 24 || (kind != 2 && kind != 4) || addend.value_or(0u64) != 18446744073709551612u64
+                    || !compiler_private_object::zeroes(input, p.text + site, 4)) {
+                    return Status::relocation;
+                }
+                const i64 target = p.symbols + symbol * 24;
+                const i64 section = compiler_private_object::number(input, target + 6, 2);
+                const i64 type = i64(input.at(target + 4)) % 16;
+                i64 address = 4096 + compiler_private_object::number(input, target + 8, 8);
+                if (kind == 2) {
+                    if (section != 7 || type != 0) {
+                        return Status::relocation;
+                    }
+                    address = readonly + compiler_private_object::number(input, target + 8, 8);
+                } else {
+                    if (section != 1 || type != 2) {
+                        return Status::relocation;
+                    }
+                }
+                // S + A - P; admitted offsets are below 64 MiB and A is -4,
+                // so this subtraction cannot overflow i64. Encode negative
+                // displacements without a checked negative-to-u64 conversion.
+                const i64 displacement = address - (4096 + site) - 4;
+                if (displacement < -2147483648 || displacement > 2147483647) {
+                    return Status::relocation;
+                }
+                i64 encoded = displacement;
+                if (encoded < 0) {
+                    encoded = encoded + 4294967296;
+                }
+                little(4096 + site, u64(encoded), 4);
+                end = site + 4;
+                index = index + 1;
+            }
+            return Status::complete;
+        }
+    public:
+        auto run(builtin::span<const u8> input) -> Status {
+            if (outcome != Status::pending) {
+                return fail(Status::object);
+            }
+            const compiler_private_object::Profile p = compiler_private_object::profile(input, false);
+            if (!p.valid) {
+                return fail(Status::object);
+            }
+            const Status admitted = symbols(input, p);
+            if (admitted != Status::complete) {
+                return fail(admitted);
+            }
+            const i64 readonly = (4096 + p.textSize + 4095) / 4096 * 4096;
+            i64 size = 4096 + p.textSize;
+            i64 segments = 3;
+            if (p.rodataSize > 0) {
+                size = readonly + p.rodataSize;
+                segments = 4;
+            }
+            if (size > 67108864) {
+                return fail(Status::limit);
+            }
+            if (!output.try_resize(size)) {
+                return fail(Status::allocation);
+            }
+            // The header page is R, code RX, literals R; no page is W+X.
+            copy(input, 0, 0, 16);
+            little(16, 2u64, 2);
+            little(18, 62u64, 2);
+            little(20, 1u64, 4);
+            little(24, 4198400u64 + u64(entry), 8);
+            little(32, 64u64, 8);
+            little(52, 64u64, 2);
+            little(54, 56u64, 2);
+            little(56, u64(segments), 2);
+            segment(64, 4, 0, 64 + 56 * segments);
+            segment(120, 5, 4096, p.textSize);
+            i64 stack = 176;
+            if (p.rodataSize > 0) {
+                segment(176, 4, readonly, p.rodataSize);
+                copy(input, p.rodata, readonly, p.rodataSize);
+                stack = 232;
+            }
+            little(stack, 1685382481u64, 4); // PT_GNU_STACK
+            little(stack + 4, 6u64, 4); // RW, never executable
+            little(stack + 48, 16u64, 8);
+            copy(input, p.text, 4096, p.textSize);
+            const Status relocated = relocations(input, p, readonly);
+            if (relocated != Status::complete) {
+                return fail(relocated);
+            }
+            outcome = Status::complete;
+            return outcome;
+        }
+        auto bytes() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(output);
+            i64 count = 0;
+            if (outcome == Status::complete) {
+                count = output.size();
+            }
+            return all.subspan(0, count);
+        }
+    };
+}

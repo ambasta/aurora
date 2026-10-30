@@ -34,6 +34,26 @@ case "$mode" in
     echo 'For the separate supported developer guest route, use make smoke-iommu-event with its explicit custom-model inputs.' >&2
     exit 2 ;;
 esac
+if [[ "$mode" == process-xfs-recover ]]; then
+    echo 'This row writes only a private copy of an explicit dirty XFS history.' >&2
+    echo 'Use scripts/kernel_nvme_smoke.py --process-xfs-recover IMAGE [--run-only IMAGE_DIR].' >&2
+    exit 2
+fi
+if [[ "$mode" == process-xfs-clean ]]; then
+    echo 'This row requires an explicit regular-file history and expected outcome.' >&2
+    echo 'Use scripts/kernel_nvme_smoke.py --process-xfs-clean IMAGE --xfs-history used|wrapped|dirty [--run-only IMAGE_DIR].' >&2
+    exit 2
+fi
+if [[ "$mode" == process-xfs ]]; then
+    # This row needs the separately reviewed NVMe model and a private readonly
+    # XFS namespace, not the ordinary stock-QEMU/vvfat launcher.
+    options=(--process-xfs)
+    if [[ -n "$run_only" ]]; then options+=(--run-only "$run_only"); fi
+    if [[ -n "$output_dir" ]]; then options+=(--output-dir "$output_dir"); fi
+    python3 -B scripts/kernel_nvme_smoke.py "${options[@]}"
+    if [[ -n "$scratch" ]]; then rm -rf "$scratch"; fi
+    exit 0
+fi
 clock_profile="$(python3 scripts/kernel_emulator_clock.py profile "$mode")"
 if [[ -n "$run_only" ]]; then
     python3 -B - "$mode" "$run_only" "$output_dir" <<'PYPATH'

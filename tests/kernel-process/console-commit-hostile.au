@@ -1,0 +1,284 @@
+module console_commit_hostile;
+import aurora.endpoint;
+import aurora.memory;
+import aurora.block;
+import service.files;
+import service.xfs;
+import service.console;
+import console.session_note;
+import console.protected_files;
+import console.protected_commands;
+import console.session_files;
+import console.file_namespace;
+import kernel.process_files;
+import std.binary;
+import std.binary_buffer;
+import storage.block_io;
+import storage.sector;
+import fs.xfs_mount;
+import fs.xfs_log;
+
+// Private ESP fixture, never the production owner. Bootstrap bytes are drained
+// only to reach source0 console controls; this program exposes no HostFiles
+// namespace. Every console mutation and readback uses the real ConsoleStore.
+// Storage boots perform a real read-only mount before reporting readiness; a
+// replacement incarnation starts its own mount from the captured boot profile.
+auto request_word(builtin::ServeSession& session, u64 offset) -> u64 {
+    u64 value = 0u64;
+    u64 byte = 0u64;
+    while (byte < 8u64) {
+        value = value | (u64(endpoint::byte(session, offset + byte)) << i64(byte * 8u64));
+        byte = byte + 1u64;
+    }
+    return value;
+}
+class WireBytes {
+    builtin::OwnedBytes bytes;
+public:
+    WireBytes(builtin::ByteRegion region, i64 count) : bytes(region.try_allocate(count)) {
+    }
+    auto ok() const -> bool {
+        return bytes.ok();
+    }
+    auto clear() -> bool {
+        i64 at = 0;
+        while (at < bytes.size()) {
+            if (!bytes.set(at, 0u8)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto set(i64 at, u8 value) -> bool {
+        return bytes.set(at, value);
+    }
+    auto at(i64 offset) const -> u8 {
+        return bytes.at(offset);
+    }
+    auto word(i64 offset, u64 value) -> bool {
+        i64 byte = 0;
+        while (byte < 8) {
+            if (!bytes.set(offset + byte, u8((value >> (byte * 8)) & 255u64))) {
+                return false;
+            }
+            byte = byte + 1;
+        }
+        return true;
+    }
+    auto read_word(i64 offset) const -> u64 {
+        const std::ByteReadResult result = std::read_le64(borrow_bytes(bytes), offset);
+        return result.value_or(18446744073709551615u64);
+    }
+    auto view(i64 count) const -> builtin::span<const u8> {
+        const builtin::span<const u8> all = borrow_bytes(bytes);
+        return all.subspan(0, count);
+    }
+};
+auto result_word(service::ConsoleStore& state, u64 offset) -> u64 {
+    u64 value = 0u64;
+    u64 byte = 0u64;
+    while (byte < 8u64) {
+        value = value | (u64(state.byte(offset + byte)) << i64(byte * 8u64));
+        byte = byte + 1u64;
+    }
+    return value;
+}
+
+auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const endpoint::Message initial = endpoint::exchange(session, "");
+    if (initial.status() != builtin::ServeStatus::request || initial.source() != 0u64 || initial.count() != 64u64
+        || request_word(session, 0u64) != 1u64) {
+        return builtin::HostExit::failure;
+    }
+    std::BinaryBuffer64 bootstrap = std::BinaryBuffer64();
+    i64 at = 0;
+    while (at < 64) {
+        bootstrap.write_u8(at, endpoint::byte(session, u64(at)));
+        at = at + 1;
+    }
+    if (!service::bootstrap_valid(bootstrap.bytes(0, 64))) {
+        return builtin::HostExit::failure;
+    }
+    const u64 volume_length = request_word(session, 8u64);
+    fs::XfsReadonlyProfile profile = fs::XfsReadonlyProfile::fresh_format;
+    if (request_word(session, 16u64) == 1u64) {
+        profile = fs::XfsReadonlyProfile::linux_6_12_x86_64_clean;
+    }
+    const u64 sectors = block::sector_count(blocks);
+    const u64 generation = block::volume_generation(blocks);
+    builtin::OwnedBytes cache = region.try_allocate(1536);
+    builtin::OwnedBytes scratch = region.try_allocate(512);
+    const fs::XfsLogTopology topology = fs::XfsLogTopology();
+    fs::XfsReadonlyMount mount = fs::XfsReadonlyMount(region, move(cache), sectors, profile, topology);
+    service::XfsFiles disk = service::XfsFiles(region, generation, sectors);
+    if (!scratch.ok()) {
+        disk.poison();
+    }
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::SessionNote note = console::SessionNote(empty);
+    const console::FileNamespace namespace_files = console::FileNamespace(empty);
+    const console::ProtectedFiles files = console::ProtectedFiles(namespace_files);
+    service::ConsoleStore state = service::ConsoleStore(region, note, files);
+    WireBytes request = WireBytes(region, 232);
+    WireBytes response = WireBytes(region, 312);
+    WireBytes query = WireBytes(region, 80);
+    if (!state.ok() || !request.ok() || !response.ok() || !query.ok() || !response.clear()) {
+        return builtin::HostExit::failure;
+    }
+    u64 copied = 0u64;
+    bool admitted = false;
+    u64 reply_count = 64u64;
+    while (true) {
+        u64 length = 0u64;
+        {
+            const endpoint::Message message = endpoint::exchange(session, response.view(i64(reply_count)));
+            if (message.status() != builtin::ServeStatus::request || message.source() != 0u64) {
+                return builtin::HostExit::failure;
+            }
+            length = message.count();
+        }
+        if (length < 64u64 || length > 65536u64) {
+            return builtin::HostExit::failure;
+        }
+        const u64 operation = request_word(session, 0u64);
+        const u64 id = request_word(session, 8u64);
+        const u64 offset = request_word(session, 16u64);
+        const u64 count = request_word(session, 24u64);
+        if (count != length - 64u64 || request_word(session, 32u64) != 0u64 || request_word(session, 40u64) != 0u64
+            || request_word(session, 48u64) != 0u64 || request_word(session, 56u64) != 0u64 || !response.clear()) {
+            return builtin::HostExit::failure;
+        }
+        reply_count = 64u64;
+        if (operation == 2u64 && !admitted && id == 0u64 && offset == copied && count <= volume_length - copied) {
+            copied = copied + count;
+        } else {
+            if (operation == 3u64 && !admitted && id == 0u64 && offset == 0u64 && count == 0u64 && copied
+                == volume_length) {
+                admitted = true;
+            } else {
+                if (operation == 6u64 && admitted && id == 0u64 && offset == 0u64 && count == 0u64) {
+                    return builtin::HostExit::success;
+                }
+                if (operation == 15u64 && admitted && id == 0u64 && offset == 0u64 && count == 0u64) {
+                    disk.check_generation(block::volume_generation(blocks));
+                    service::advance_xfs(disk, mount);
+                    while (disk.ok() && !disk.ready()) {
+                        if (!mount.needs_read()) {
+                            disk.poison();
+                        } else {
+                            const u64 lba = mount.requested_lba();
+                            const storage::SectorReadResult read = block::read_sector(blocks, lba);
+                            const storage::Sector512 sector = read.sector_or_zero();
+                            if (disk.check_generation(block::volume_generation(blocks))) {
+                                i64 byte = 0;
+                                while (byte < 512) {
+                                    const std::ByteReadResult value = sector.read_byte(byte);
+                                    scratch.set(byte, u8(value.value_or(0u64)));
+                                    byte = byte + 1;
+                                }
+                                mount.accept(lba, read.status(), borrow_bytes(scratch));
+                                service::advance_xfs(disk, mount);
+                            }
+                        }
+                    }
+                    // Match the real mount-control reply, never synthesize ready.
+                    u64 status = 2u64;
+                    if (disk.ready()) {
+                        status = 0u64;
+                    }
+                    response.word(0, status);
+                } else {
+                    if (!admitted || operation < 10u64 || operation > 14u64 || offset != 0u64 || count > 232u64
+                        || !request.clear()) {
+                        return builtin::HostExit::failure;
+                    }
+                    u64 at = 0u64;
+                    while (at < count) {
+                        request.set(i64(at), endpoint::byte(session, 64u64 + at));
+                        at = at + 1u64;
+                    }
+                    state.execute(operation, id, request.view(i64(count)));
+                    response.word(0, state.status());
+                    response.word(8, state.count());
+                    response.word(16, state.revision());
+                    reply_count = 64u64 + state.count();
+                    at = 0u64;
+                    while (at < state.count()) {
+                        response.set(i64(64u64 + at), state.byte(at));
+                        at = at + 1u64;
+                    }
+                    if ((operation == 12u64 || operation == 13u64) && state.status() == 0u64) {
+                        // Internal policy/readback failure is a canonical conflict,
+                        // not the deliberately lost or malformed acknowledgment.
+                        bool committed = false;
+                        query.clear();
+                        if (operation == 12u64 && count == 72u64 && state.count() == 0u64 && id < 18446744073709551615u64
+                            && state.revision() == id + 1u64) {
+                            const builtin::array<u8, 8> command = "cat note";
+                            i64 byte = 0;
+                            while (byte < 8) {
+                                query.set(byte, command[byte]);
+                                byte = byte + 1;
+                            }
+                            query.word(64, 8u64);
+                            state.execute(10u64, 0u64, query.view(72));
+                            committed = state.status() == 0u64 && state.count() == 80u64 && state.revision() == id + 1u64
+                                && result_word(state, 64u64) == request.read_word(64) && result_word(state, 72u64) == 2u64;
+                            byte = 0;
+                            while (committed && byte < 64) {
+                                committed = state.byte(u64(byte)) == request.at(byte);
+                                byte = byte + 1;
+                            }
+                            if (committed) {
+                                // Normal source exit after the real commit/readback,
+                                // before any replacement reply reaches the endpoint.
+                                return builtin::HostExit::success;
+                            }
+                        }
+                        if (operation == 13u64 && count == 232u64 && state.count() == 80u64) {
+                            const u64 name_size = request.read_word(64);
+                            const u64 revision = request.read_word(72);
+                            if (name_size >= 1u64 && name_size <= 8u64 && revision < 18446744073709551615u64) {
+                                const builtin::array<u8, 4> prefix = "cat ";
+                                i64 byte = 0;
+                                while (byte < 4) {
+                                    query.set(byte, prefix[byte]);
+                                    byte = byte + 1;
+                                }
+                                at = 0u64;
+                                while (at < name_size) {
+                                    query.set(i64(4u64 + at), request.at(i64(at)));
+                                    at = at + 1u64;
+                                }
+                                query.word(64, 4u64 + name_size);
+                                state.execute(11u64, 0u64, query.view(80));
+                                committed = state.status() == 0u64 && state.count() == 248u64 && result_word(state, 64u64)
+                                    == request.read_word(224) && result_word(state, 72u64) == 2u64 && result_word(state,
+                                    80u64) == 2u64 && result_word(state, 160u64) == revision + 1u64;
+                                byte = 0;
+                                while (committed && byte < 64) {
+                                    committed = state.byte(u64(byte)) == request.at(160 + byte);
+                                    byte = byte + 1;
+                                }
+                            }
+                            if (committed) {
+                                // Preserve the real successful replacement's outer
+                                // response and bytes, corrupt only its inner event.
+                                // The frontend must reject this exact incarnation.
+                                response.word(136, 2u64);
+                            }
+                        }
+                        if (!committed) {
+                            response.clear();
+                            response.word(0, 1u64);
+                            reply_count = 64u64;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return builtin::HostExit::failure;
+}

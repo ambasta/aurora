@@ -53,3 +53,93 @@ execution occurred. Source and decoded hashes for every added file are in
 All generated within-EOF unwritten, altered-size and mixed-record fixtures are
 synthetic CRC-correct test mutations. The authentic reserve inode is never
 silently resized or relabelled as a positive real-image unwritten read.
+
+## Fresh-format mounted-reader inputs
+
+The six `fresh-*.hex` slices were extracted from one new disposable regular-file
+image made with **mkfs.xfs 6.13.0** on 2026-10-29; mkfs and read-only xfs_db both
+exited zero. No Linux mount, physical disk or host boot configuration was used.
+The prototype contained a single `hello` regular file with this exact input:
+
+```text
+Aurora reads a real XFS file through its checked block backend.
+```
+
+There is one trailing LF. The prototype is `dummy`, `0 0`, `d--755 0 0`, then
+`hello ---644 0 0 PATH_TO_INPUT`, then `$`, each on its own line. Creation options:
+
+```sh
+mkfs.xfs -d file=1,name=NEW_IMAGE,size=512m -s size=512 \
+  -m crc=1,reflink=0,rmapbt=0,bigtime=0,inobtcount=0,uuid=5cdfd5a7-110e-4cd7-8e31-fc36b74c265f \
+  -i sparse=0,nrext64=0 -b size=4096 -p PROTOTYPE
+```
+
+The saved sectors are superblock LBA0, root inode LBA96 (inode96), regular inode
+LBA99 (inode99), file data LBA72, log header LBA524328 and unmount LBA524329.
+The complete 64-MiB log has exactly two nonzero sectors; all remaining log bytes
+were read and checked, not inferred from the two slices. The root names `hello`
+and its stored type is regular. `xfs-fresh-cat` read the original whole image and
+returned the exact prototype payload. Only the slices are versioned; tests
+reconstruct deliberately synthetic sparse inputs and never call them complete
+filesystems. Header/inode mutations are synthetic even when their CRC is repaired.
+
+This exact fresh record has `h_crc=0`; its complete content is admitted by a
+strict profile, not by pretending that zero is a verified log checksum. The
+Linux v6.13 clean-unmount semantics and format references are in `docs/xfs.md`.
+
+
+## Pinned Linux clean-log inputs
+
+The seven `linux-6.12-used-*.hex` slices are unchanged bytes from a new 512-MiB
+image made by `scripts/xfs_image.py`, then used inside an isolated QEMU guest
+running Debian's **Linux 6.12.107+deb13-cloud-amd64 (6.12.107-1), x86_64**.
+No host mount or physical device was involved. The one-CPU, 512-MiB guest had no
+NIC and mounted only that private image, with `logbufs=2,logbsize=32k`.
+
+The writer opened the existing `/hello` (no create), wrote 64 bytes at offset0
+with byte `i = (i * 37 + 11) % 256`, called `fsync`, and closed it. The guest
+then synced, unmounted XFS successfully and powered off. `/pattern` remained the
+original 9001-byte prototype input. Offline xfsprogs 6.13.0 `xfs_logprint -t`
+reported **CLEAN, head=tail=13**; `xfs_repair -n` completed. The Aurora pinned-clean
+consumer read both files exactly from the unchanged whole image. Its SHA256 was
+`870bd5bae972742d01d5fbcf92d3bf43a196a8d8d2d92b5b1031d563adb9e96d`
+before and after these read-only checks.
+
+Saved sectors: superblock0, root96, hello inode99, pattern inode100, hello data72;
+log prefix LBA524328 through524340 (13 sectors), and stale-clear header524341.
+The final UNMOUNT header is relative sector11, its body12; the following
+zero-cycle stale-clear headers are not commit records. The kernel's payload
+padding is nonzero and covered by the log CRC. SB LSN is `(1,9)`, hello inode LSN
+`(1,5)`, and the superblock version remains `0xb4a5`.
+
+The driver reconstructs **synthetic shortened-log inputs** from these slices.
+Cycle relocation, repaired-CRC bodies and all corruptions are explicitly
+synthetic, not Linux history or a genuine wrap qualification. A separate genuine
+new-inode image remains unsupported (ATTRBIT plus an attribute fork); it is not
+silently normalized into a positive.
+
+Whole-image wrap qualification separately continued one private image through
+two 70,000-write/fsync guest sessions, each followed by clean unmount. Iteration
+`j` writes byte `i = (i * 37 + j + 11) % 256`; `j` runs0..69999 in each session.
+The first image remained cycle1, CLEAN head92955 (fsyncs need not emit one log
+record each). The second has cycle2 sectors0..40590 and cycle1 thereafter;
+sector131071 is an older header whose payload wraps to sector0 with cycle2.
+Its latest UNMOUNT is header40589/body40590, CLEAN head=tail40591. Both files
+match the producer inputs through the hosted Aurora gate and `xfs_repair -n`
+completes. Final whole-image SHA256
+`924106b968f9ae0376c25b906d3c4d460dea0c45df1d8e23bfcac208b2b04148`
+is unchanged by these checks. These complete private histories are not replaced
+by the component driver's synthetic shortened logs or copied into the repository.
+
+
+The two `linux-6.12-dirty-*.hex` inputs come from a separate fresh image and the
+same one-write guest, followed by `fsync`, `sync`, and guest poweroff **without
+unmounting XFS**. The exact superblock and eight log sectors are retained (seven
+current-cycle sectors and the first stale-clear header). `xfs_logprint -t`
+reported **DIRTY, tail2/head7** with ordinary inode transactions; the Aurora
+pinned-clean reader returned `log_not_clean` and no bytes on the whole image.
+`xfs_repair -n` exited1 and warned about the un-replayed log; it was not a clean
+repair pass. Whole-image SHA256
+`14786e316d191c2a399460a116952a773d197e52efec5c0c74ccc4f153c6c7c6`
+was unchanged by those offline checks. The component row still reconstructs a
+synthetic shortened log and does not stand in for this genuine dirty history.

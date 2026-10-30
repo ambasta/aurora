@@ -42,8 +42,7 @@
     Serial::text("\r\n");
     U64 result = 0;
     call_execute(0, checksum ? 48 : count_words ? 32 : 16, 0, 0);
-    require(count_words || (caller_continuation.ordinary()->context && caller_continuation.ordinary()->ticks > 0),
-            "file caller live suspension");
+    require(count_words || caller_continuation.ordinary()->context, "file caller live suspension");
     U64 previous = 0;
     while (caller_continuation.ordinary()->context) {
         U64 ticket, epoch;

@@ -2,11 +2,20 @@
 #include "acpi.hpp"
 #include "apic-timer-io.hpp"
 #include "budget-transport.hpp"
-#include "process-files.hpp"
+#include "../round-robin-transport.hpp"
 #include "process-space.hpp"
+#include "image-snapshot.hpp"
+#ifdef AURORA_UEFI_NVME
+#include "nvme.hpp"
+#endif
 #include "../console.hpp"
 
+#ifdef AURORA_PRODUCTION
+#include "../console-uart.hpp"
+using Serial = aurora::console::Uart<aurora::hardware::Io, aurora::console::FifoTrigger::fourteen>;
+#else
 using aurora::hardware::Serial;
+#endif
 using U64 = std::uint64_t;
 namespace frames = aurora::uefi::frames;
 namespace process = aurora::uefi::process;
@@ -16,9 +25,18 @@ using aurora::uefi::Handoff;
 using aurora::uefi::KernelSpace;
 using aurora::uefi::PageTables;
 using aurora::uefi::ProcessSpace;
+using aurora::uefi::RunResult;
+using aurora::uefi::RunStatus;
 using Timer = aurora::uefi::LocalApicTimerIo;
 
 namespace {
+enum class XfsReadonlyProfile : U64 {
+    fresh_format,
+    linux_6_12_x86_64_clean
+};
+constexpr auto least(U64 a, U64 b) -> U64 {
+    return a < b ? a : b;
+}
 // Each table is far larger than the kernel stack; one boot owns one of each.
 constinit frames::Ranges ranges;
 constinit aurora::uefi::KernelSpace space;
@@ -72,6 +90,7 @@ auto bytes_of(std::string_view text) -> std::span<const std::byte> {
     return {reinterpret_cast<const std::byte *>(text.data()), text.size()};
 }
 
+#ifndef AURORA_PRODUCTION
 // Every free frame through the transient window: a distinct pattern written and
 // read back, then zero written and read back. Returns the frames scrubbed.
 auto scrub_all() -> U64 {
@@ -204,6 +223,8 @@ auto export_entry(std::span<const std::byte> volume, std::string_view path) -> v
     field("lines", lines);
     Serial::text("\r\n");
 }
+#endif
+
 } // namespace
 
 // The process entry, exit and drain (process-user.S).
@@ -211,6 +232,7 @@ extern U64 process_kernel_root asm("uefi_process_kernel_root") __attribute__((vi
 extern const std::byte drain_begin asm("uefi_process_drain_begin") __attribute__((visibility("hidden")));
 extern const std::byte drain_end asm("uefi_process_drain_end") __attribute__((visibility("hidden")));
 auto process_enter(const U64 *) -> U64 asm("uefi_process_enter") __attribute__((visibility("hidden")));
+auto process_resume(const U64 *, U64) -> U64 asm("uefi_process_resume") __attribute__((visibility("hidden")));
 auto process_handler(U64) -> U64 asm("uefi_process_handler") __attribute__((visibility("hidden")));
 auto process_drain() -> void asm("uefi_process_drain") __attribute__((visibility("hidden")));
 
@@ -227,6 +249,11 @@ class Running final {
 public:
     ProcessSpace *space = nullptr;
     U64 run = 0, flags = 0, initial = 0, remaining = 0, used = 0, calls = 0, memory_calls = 0, commits = 0, peak = 0;
+    std::array<U64, frame_words> *continuation = nullptr;
+    U64 quantum = 0, slice = 0, service = 0, block_generation = 0, block_sectors = 0, companion = 0;
+    U64 recovery_generation = 0, recovery_sectors = 0;
+    U64 mounted_generation = 0, mounted_sectors = 0;
+    bool external = false;
     [[nodiscard]] auto tick() const -> U64 {
         return flags & 8 ? long_tick_count : tick_count;
     }
@@ -234,7 +261,8 @@ public:
 // How the process ended, copied from its last kernel entry.
 class Outcome final {
 public:
-    bool exited = false, watchdog = false, invalid_call = false;
+    bool exited = false, watchdog = false, invalid_call = false, parked = false, exchange = false, request = false,
+         output = false, unavailable = false;
     process::TrapClass trap = process::TrapClass::kernel;
     U64 status = 0, vector = 0, error = 0, rip = 0, cr2 = 0, operation = 0;
 };
@@ -242,6 +270,17 @@ constinit Running running;
 constinit Outcome outcome;
 constinit U64 owned_arena = 0, kernel_root = 0;
 constinit bool draining = false;
+constinit aurora::uefi::ProcessOutput output_sink = nullptr;
+#ifdef AURORA_PRODUCTION
+constinit void *output_context = nullptr;
+constinit bool runtime_initialized = false, runtime_detached = false;
+#endif
+constinit bool runtime_disk_ready = false;
+constinit aurora::uefi::BootStorageSelection runtime_storage;
+constinit U64 next_run = 0;
+constinit bool output_error_stream = false;
+constinit RunStatus load_refusal = RunStatus::malformed;
+constinit U64 next_service_generation = 0;
 
 auto root() -> U64 {
     U64 value;
@@ -278,6 +317,7 @@ auto store(U64 address, U64 value, unsigned width) -> void {
     fail("kernel fault");
 }
 
+#ifndef AURORA_PRODUCTION
 // The LAPIC one-shot timer the watchdog charges, admitted against the copied
 // MADT, the final map and the CPU like the other timed images (console.cpp),
 // while the boot verifier still covers the whole kernel tree.
@@ -311,6 +351,8 @@ auto establish_timer(U64 arena, const Bytes &h) -> void {
         !Timer::initialize(Timer::read(0x30)))
         fail("private timer mapping");
 }
+
+#endif
 
 // GDT with user segments, the TSS (RSP0 and the double-fault IST stack), the
 // process IDT (INT 0x83 alone at DPL 3), SYSCALL disabled and FPU use trapping.
@@ -404,6 +446,7 @@ auto capture_shared(U64 arena) -> void {
         fail("shared kernel slots");
 }
 
+#ifndef AURORA_PRODUCTION
 // Base64 records of one print, read under the process root (process.md#output).
 auto print_stream(U64 stream, U64 buffer, U64 length) -> void {
     Serial::text(stream == 1 ? "AURORA_STDOUT:" : "AURORA_STDERR:");
@@ -420,93 +463,156 @@ auto print_stream(U64 stream, U64 buffer, U64 length) -> void {
     Serial::text("\r\n");
 }
 
-// The watchdog budget after one charged interrupt: resume, or end the process.
-auto charge_tick(U64 vector, U64 error, U64 rip, U64 cs) -> U64 {
-    if (!Timer::acknowledge())
-        kernel_fault(vector, error, rip, cs);
-    const auto encoded = aurora::uefi::language_budget_tick(running.initial, running.remaining, running.used);
-    const auto next = aurora::uefi::BudgetTransition::decode(encoded, running.initial, running.remaining, running.used);
-    if (!next)
-        fail("Aurora budget transition");
-    running.remaining = next->remaining();
-    running.used = next->used();
-    if (next->resume()) {
-        if (!Timer::arm(running.tick()))
-            fail("watchdog rearm");
-        return 0;
-    }
-    outcome.watchdog = true;
-    return 1;
+#endif
+
+auto charge_tick(U64 vector, U64 error, U64 rip, U64 cs, const volatile U64 *frame) -> U64;
+
+class Resident final {
+public:
+    std::optional<ProcessSpace> space;
+    Running state;
+    std::array<U64, frame_words> continuation{};
+    std::array<U64, 8> initial{};
+    bool started = false;
+};
+constinit std::array<Resident, KernelSpace::process_slots> residents;
+
+// A copied synchronous endpoint, not a namespace or backing store. Exactly
+// one transaction is outstanding. Source/transaction never come from a client.
+class Endpoint final {
+public:
+    static constexpr U64 capacity = 65536, window_bytes = 131136, request_offset = 64, reply_offset = 65600;
+    std::array<std::byte, capacity> bytes{};
+    U64 generation = 0, window = 0, transaction = 0, next = 0, source = 0, count = 0;
+    bool waiting = false, replied = false, delivery = false, completion = false, caller_cancelled = false;
+    std::optional<std::size_t> caller;
+    process::KernelCall call{};
+    U64 written = 0, request_operation = 0, invalid_reply_operation = 0;
+};
+constinit Endpoint endpoint;
+constinit std::optional<aurora::uefi::ImageSnapshot> snapshot;
+constinit Running loader_budget;
+constinit bool loading_image = false;
+#ifdef AURORA_UEFI_NVME
+constinit U64 next_block_generation = 0;
+#endif
+constinit U64 block_service = 0, block_generation = 0, block_sectors = 0;
+// This separate boot role is never set by ordinary load_image/run or Serve.
+// The recovery composition will mint it only after its private image is admitted.
+constinit U64 recovery_owner = 0, recovery_root = 0, recovery_generation = 0, recovery_sectors = 0;
+constinit U64 mounted_owner = 0, mounted_root = 0, mounted_generation = 0, mounted_sectors = 0, mounted_service = 0;
+#ifdef AURORA_PROCESS_FIXTURE
+constinit U64 recovery_cut_case = 0, mounted_cut_case = 0;
+constinit bool mounted_owner_termination = false;
+#endif
+constinit bool recovery_completed = false;
+constinit std::array<std::byte, 512> block_copy{};
+
+auto save_frame(const volatile U64 *frame) -> void {
+    if (!running.continuation)
+        fail("missing process continuation");
+    for (std::size_t word = 0; word < frame_words; ++word)
+        (*running.continuation)[word] = frame[word];
+    outcome.parked = true;
 }
 
-// The file service's storage: the running process's frames (charged to its
-// quota) through the kernel's transient window.
-class KernelStore final {
-public:
-    ProcessSpace *process = nullptr;
-    [[nodiscard]] auto take() -> std::optional<U64> {
-        return process->file_frame();
+// Partial LAPIC counts belong to the outgoing process. Voluntary exchanges
+// never renew a quantum; even a zero-count handoff consumes at least one count.
+auto charge_counts(Running &state, U64 count) -> bool {
+    while (count && state.remaining) {
+        if (!state.quantum || state.quantum > state.tick())
+            fail("watchdog partial accounting");
+        const auto charged = count < state.quantum ? count : state.quantum;
+        state.quantum -= charged;
+        count -= charged;
+        if (!state.quantum) {
+            const auto encoded = aurora::uefi::language_budget_tick(state.initial, state.remaining, state.used);
+            const auto next =
+                aurora::uefi::BudgetTransition::decode(encoded, state.initial, state.remaining, state.used);
+            if (!next)
+                fail("Aurora budget transition");
+            state.remaining = next->remaining();
+            state.used = next->used();
+            state.quantum = state.tick();
+        }
     }
-    [[nodiscard]] auto give(U64 frame) -> bool {
-        return process->drop_file_frame(frame);
+    return state.remaining != 0;
+}
+auto elapsed(U64 count) -> void {
+    if (running.service && (endpoint.caller || loading_image) && !endpoint.caller_cancelled) {
+        auto &caller = endpoint.caller ? residents[*endpoint.caller].state : loader_budget;
+        if (!charge_counts(caller, count))
+            endpoint.caller_cancelled = true;
     }
-    [[nodiscard]] auto charge(U64 count) -> bool {
-        return process->charge_files(count);
+    if (!charge_counts(running, count)) {
+        outcome.watchdog = true;
+        outcome.parked = false;
+        outcome.exited = false;
     }
-    [[nodiscard]] auto uncharge(U64 count) -> bool {
-        return process->uncharge_files(count);
+}
+auto arm_slice() -> void {
+    U64 count = running.quantum;
+    if (running.service && (endpoint.caller || loading_image) && !endpoint.caller_cancelled) {
+        const auto caller = endpoint.caller ? residents[*endpoint.caller].state.quantum : loader_budget.quantum;
+        if (caller < count)
+            count = caller;
     }
-    [[nodiscard]] auto charged() const -> U64 {
-        return process->charged();
+    running.slice = count;
+    if (!Timer::arm(static_cast<std::uint32_t>(count)))
+        fail("watchdog arm");
+}
+auto charge_tick(U64 vector, U64 error, U64 rip, U64 cs, const volatile U64 *frame) -> U64 {
+    if (!running.slice || !Timer::acknowledge())
+        kernel_fault(vector, error, rip, cs);
+    elapsed(running.slice);
+    running.slice = 0;
+    if (outcome.watchdog)
+        return 1;
+    if (running.continuation) {
+        save_frame(frame);
+        return 1;
     }
-    [[nodiscard]] auto quota() const -> U64 {
-        return process->quota();
+    arm_slice();
+    return 0;
+}
+
+// Every resident's unallocated quota stays reserved, including mappings that
+// have never been touched. Physical free frames alone would overcommit them.
+auto available_frames() -> U64 {
+    U64 available = table.free();
+    for (const auto &resident : residents) {
+        if (!resident.space)
+            continue;
+        const auto &held = *resident.space;
+        if (held.held() > held.quota() || held.quota() - held.held() > available)
+            fail("resident quota accounting");
+        available -= held.quota() - held.held();
     }
-    [[nodiscard]] auto charged_files() const -> U64 {
-        return process->file_charge();
-    }
-    [[nodiscard]] auto read_word(U64 frame, U64 index) -> U64 {
-        auto *words = index < 512 ? space.open(frame) : nullptr;
-        if (!words)
-            return 0;
-        const auto value = reinterpret_cast<volatile U64 *>(words)[index];
-        space.close();
-        return value;
-    }
-    [[nodiscard]] auto write_word(U64 frame, U64 index, U64 value) -> bool {
-        auto *words = index < 512 ? space.open(frame) : nullptr;
-        if (!words)
+    return available;
+}
+
+// Complete lifecycle audit, not a per-call whole-RAM scan. The table checks its
+// per-owner counters against every frame; the aggregate must equal precisely
+// the resident owners. Each root's own walk checks all its mappings.
+auto audit_residents() -> bool {
+    U64 allocated = 0;
+    if (snapshot) {
+        if (!snapshot->verify() || snapshot->held() != table.allocated(snapshot->owner()))
             return false;
-        reinterpret_cast<volatile U64 *>(words)[index] = value;
-        space.close();
-        return true;
+        allocated = snapshot->held();
     }
-    [[nodiscard]] auto copy_in(U64 frame, U64 offset, std::span<const std::byte> bytes) -> bool {
-        auto *words = offset <= frames::page && bytes.size() <= frames::page - offset ? space.open(frame) : nullptr;
-        if (!words)
+    for (auto &resident : residents) {
+        if (!resident.space)
+            continue;
+        if (!resident.space->verify() || resident.space->held() > table.allocated() - allocated)
             return false;
-        auto *target = reinterpret_cast<volatile std::byte *>(words) + offset;
-        for (std::size_t at = 0; at < bytes.size(); ++at)
-            target[at] = bytes[at];
-        space.close();
-        return true;
+        allocated += resident.space->held();
     }
-    [[nodiscard]] auto copy_out(U64 frame, U64 offset, std::span<std::byte> bytes) -> bool {
-        auto *words = offset <= frames::page && bytes.size() <= frames::page - offset ? space.open(frame) : nullptr;
-        if (!words)
-            return false;
-        const auto *source = reinterpret_cast<volatile const std::byte *>(words) + offset;
-        for (std::size_t at = 0; at < bytes.size(); ++at)
-            bytes[at] = source[at];
-        space.close();
-        return true;
-    }
-};
-constinit KernelStore file_store;
-constinit aurora::uefi::FileService<KernelStore> files;
+    const auto audit = table.audit();
+    return audit.consistent && audit.allocated == allocated;
+}
 // The kernel's copy of a call's path, read from the process before any
 // decision sees it.
-constinit std::array<std::byte, process::file_path_limit + 1> path_copy{};
 
 // A process buffer the call reads (or writes) under its root
 // (ProcessSpace::access): nullopt ends the process as an invalid call.
@@ -522,69 +628,411 @@ auto user_bytes(U64 address, U64 length, bool write) -> std::optional<std::byte 
     return reinterpret_cast<std::byte *>(address);
 }
 
-// A file call (process.md#files): RAX becomes 0, a count or a negative
-// HostStatus; the result record is written for the opens and create_output.
-// False for a path or buffer the process cannot lend: the process ends as an
-// invalid call.
-auto file_call(const process::KernelCall &call, volatile U64 *frame) -> bool {
-    using Action = process::CallAction;
-    const auto action = static_cast<Action>(call.action);
-    const auto path_call = action == Action::open_directory || action == Action::open_beneath ||
-                           action == Action::open_file || action == Action::create_output;
-    std::optional<std::byte *> record;
-    std::span<const std::byte> path;
-    if (path_call) {
-        record = user_bytes(call.record, 48, true);
-        // A path above the limit is never read: it arrives empty, which the
-        // policy refuses as invalid_path in the same order.
-        const auto readable = call.length <= process::file_path_limit;
-        const auto source = readable ? user_bytes(call.base, call.length, false) : std::optional<std::byte *>{nullptr};
-        if (!record || !source)
-            return false;
-        if (readable) {
-            for (U64 at = 0; at < call.length; ++at)
-                path_copy[at] = (*source)[at];
-            path = {path_copy.data(), call.length};
-        }
+// The only constructor of a DMA read context sits behind authenticated process
+// state, not behind a caller-selected generation/root. Cache hits pass this
+// same boundary. The broker receives no user pointer.
+} // namespace
+#ifdef AURORA_UEFI_NVME
+namespace aurora::uefi {
+class ProcessBlockBroker final {
+public:
+    static auto read(U64 lba, std::span<std::byte, 512> output) -> NvmeReadStatus {
+        if (!running.space || !running.service || running.service != block_service || !running.block_generation ||
+            running.block_generation != block_generation || running.block_sectors != block_sectors ||
+            root() != running.space->root() || !space.closed())
+            fail("block authority");
+        U64 flags;
+        asm volatile("pushfq; popq %0" : "=r"(flags));
+        if (flags & (1ULL << 9))
+            fail("block interrupt state");
+        const auto sectors = nvme_sector_count();
+        // Quarantine is absorbing. The original grant remains authenticated,
+        // but conveys no usable backend and is never refreshed after failure.
+        if (!sectors)
+            return NvmeReadStatus::unavailable;
+        if (sectors != block_sectors)
+            fail("block extent changed");
+        if (lba >= sectors)
+            return NvmeReadStatus::out_of_range;
+        const NvmeReadContext context(running.space->root(), running.block_generation);
+        const auto result = nvme_read_sector(context, lba, output);
+        if (!space.closed() || root() != running.space->root())
+            fail("block window restoration");
+        return result;
     }
-    aurora::uefi::FileService<KernelStore>::Result result;
-    if (action == Action::read) {
-        const auto chunk = user_bytes(call.base, process::file_chunk, true);
-        if (!chunk)
-            return false;
-        result =
-            files.read(call.value, call.length, std::span<std::byte, process::file_chunk>{*chunk, process::file_chunk});
-    } else if (action == Action::write) {
-        const auto bytes = user_bytes(call.base, call.length, false);
+};
+class ProcessMountedBroker final {
+    [[nodiscard]] static auto context() -> NvmeMountedContext {
+        if (!running.space || !running.service || running.service != mounted_service || !running.mounted_generation ||
+            running.mounted_generation != mounted_generation || running.mounted_sectors != mounted_sectors ||
+            running.space->owner() != mounted_owner || running.space->root() != mounted_root ||
+            root() != mounted_root || !space.closed())
+            fail("mounted authority");
+        U64 flags;
+        asm volatile("pushfq; popq %0" : "=r"(flags));
+        if (flags & (1ULL << 9))
+            fail("mounted interrupt state");
+        const auto sectors = nvme_mounted_sector_count();
+        if (sectors && sectors != mounted_sectors)
+            fail("mounted extent changed");
+        return NvmeMountedContext(mounted_root, mounted_generation);
+    }
+    static auto restored() -> void {
+        if (!space.closed() || root() != mounted_root)
+            fail("mounted window restoration");
+    }
+
+#ifdef AURORA_PROCESS_FIXTURE
+    static auto cut(NvmeReadStatus status, U64 operation, U64 lba = 0) -> void {
+        if (status != NvmeReadStatus::success || !mounted_cut_case)
+            return;
+        const auto ordinal = operation == 18 ? nvme_mounted_admitted_writes() : nvme_mounted_admitted_flushes();
+        if (mounted_cut_case == 40 && operation == 19 && ordinal == 5) {
+            Serial::text("AURORA_MOUNTED_OWNER_LOSS:");
+            field("generation", mounted_generation);
+            field("writes", nvme_mounted_admitted_writes());
+            field("flushes", nvme_mounted_admitted_flushes());
+            Serial::text("\r\n");
+            mounted_owner_termination = true;
+            return;
+        }
+        const bool selected =
+            (mounted_cut_case >= 18 && mounted_cut_case <= 33 && operation == 18 && ordinal == mounted_cut_case - 17) ||
+            (mounted_cut_case >= 34 && mounted_cut_case <= 38 && operation == 19 && ordinal == mounted_cut_case - 33);
+        if (!selected)
+            return;
+        // Suspend only this closed fixture after acknowledged backend completion
+        // and restored mappings. This does not model torn writes or power loss.
+        Serial::text("AURORA_MOUNTED_CUT:");
+        field("case", mounted_cut_case);
+        field("operation", operation);
+        field("ordinal", ordinal);
+        field("lba", lba);
+        field("generation", mounted_generation);
+        field("writes", nvme_mounted_admitted_writes());
+        field("flushes", nvme_mounted_admitted_flushes());
+        Serial::text("\r\n");
+        aurora::hardware::Io::write(0xf4, 0x12);
+        for (;;)
+            asm volatile("cli; hlt");
+    }
+#endif
+
+public:
+    [[nodiscard]] static auto read(U64 lba, std::span<std::byte, 512> output) -> NvmeReadStatus {
+        const auto result = nvme_mounted_read(context(), lba, output);
+        restored();
+        return result;
+    }
+    [[nodiscard]] static auto write(U64 lba, std::span<const std::byte, 512> input) -> NvmeReadStatus {
+        const auto result = nvme_mounted_write(context(), lba, input);
+        restored();
+#ifdef AURORA_PROCESS_FIXTURE
+        cut(result, 18, lba);
+#endif
+        return result;
+    }
+    [[nodiscard]] static auto flush() -> NvmeReadStatus {
+        const auto result = nvme_mounted_flush(context());
+        restored();
+#ifdef AURORA_PROCESS_FIXTURE
+        cut(result, 19);
+#endif
+        if (result == NvmeReadStatus::success) {
+            Serial::text("AURORA_MOUNTED_FENCE:");
+            field("generation", mounted_generation);
+            field("writes", nvme_mounted_admitted_writes());
+            field("flushes", nvme_mounted_admitted_flushes());
+            Serial::text("\r\n");
+        }
+        return result;
+    }
+    [[nodiscard]] static auto budget() -> unsigned {
+        const auto result = nvme_mounted_budget(context());
+        restored();
+        return result;
+    }
+};
+class ProcessRecoveryBroker final {
+    [[nodiscard]] static auto context() -> NvmeRecoveryContext {
+        if (!running.space || running.service || !running.recovery_generation ||
+            running.recovery_generation != recovery_generation || running.recovery_sectors != recovery_sectors ||
+            running.space->owner() != recovery_owner || running.space->root() != recovery_root ||
+            root() != recovery_root || !space.closed())
+            fail("recovery authority");
+        U64 flags;
+        asm volatile("pushfq; popq %0" : "=r"(flags));
+        if (flags & (1ULL << 9))
+            fail("recovery interrupt state");
+        const auto sectors = nvme_recovery_sector_count();
+        if (sectors && sectors != recovery_sectors)
+            fail("recovery extent changed");
+        return NvmeRecoveryContext(recovery_root, recovery_generation);
+    }
+    static auto restored() -> void {
+        if (!space.closed() || root() != recovery_root)
+            fail("recovery window restoration");
+    }
+
+#ifdef AURORA_PROCESS_FIXTURE
+    static auto cut(NvmeReadStatus status, U64 operation, U64 lba = 0) -> void {
+        if (status != NvmeReadStatus::success || !recovery_cut_case)
+            return;
+        const auto ordinal = operation == 18 ? nvme_recovery_admitted_writes() : nvme_recovery_admitted_flushes();
+        const bool selected = (recovery_cut_case >= 13 && recovery_cut_case <= 15 && operation == 19 &&
+                               ordinal == recovery_cut_case - 12) ||
+                              (recovery_cut_case == 16 && operation == 18 && ordinal == 1);
+        if (!selected)
+            return;
+        // The real source program is suspended only after acknowledged backend
+        // completion and restoration. This is not a physical power-loss model.
+        Serial::text("AURORA_RECOVERY_CUT:");
+        field("case", recovery_cut_case);
+        field("operation", operation);
+        field("ordinal", ordinal);
+        field("lba", lba);
+        field("generation", recovery_generation);
+        field("writes", nvme_recovery_admitted_writes());
+        field("flushes", nvme_recovery_admitted_flushes());
+        Serial::text("\r\n");
+        aurora::hardware::Io::write(0xf4, 0x12);
+        for (;;)
+            asm volatile("cli; hlt");
+    }
+#endif
+
+public:
+    [[nodiscard]] static auto read(U64 lba, std::span<std::byte, 512> output) -> NvmeReadStatus {
+        const auto result = nvme_recovery_read(context(), lba, output);
+        restored();
+        return result;
+    }
+    [[nodiscard]] static auto write(U64 lba, std::span<const std::byte, 512> input) -> NvmeReadStatus {
+        const auto result = nvme_recovery_write(context(), lba, input);
+        restored();
+#ifdef AURORA_PROCESS_FIXTURE
+        cut(result, 18, lba);
+#endif
+        return result;
+    }
+    [[nodiscard]] static auto flush() -> NvmeReadStatus {
+        const auto result = nvme_recovery_flush(context());
+        restored();
+#ifdef AURORA_PROCESS_FIXTURE
+        cut(result, 19);
+#endif
+        return result;
+    }
+    [[nodiscard]] static auto budget() -> unsigned {
+        const auto result = nvme_recovery_budget(context());
+        restored();
+        return result;
+    }
+};
+} // namespace aurora::uefi
+#endif
+namespace {
+auto writable_block_call(volatile U64 *frame, bool mounted) -> bool {
+    const auto operation = frame[frame_rax];
+#ifndef AURORA_UEFI_NVME
+    static_cast<void>(mounted);
+#endif
+    // Copy the complete sector through the normal checked user range. The
+    // wrapper's stage count is not inspected or trusted by this boundary.
+    if (operation == 17 || operation == 18) {
+        const auto bytes = user_bytes(frame[frame_rdi], block_copy.size(), operation == 17);
         if (!bytes)
             return false;
-        result = files.write(call.value, {*bytes, call.length});
-    } else if (action == Action::create_output) {
-        result = files.create(path);
-    } else if (action == Action::close) {
-        result = files.close(call.value);
-    } else if (action == Action::commit) {
-        result = files.commit(call.value);
-    } else if (action == Action::discard) {
-        result = files.discard(call.value);
+        for (U64 at = 0; at < block_copy.size(); ++at)
+            block_copy[at] = operation == 18 ? (*bytes)[at] : std::byte{};
+        U64 status = 3;
+#ifdef AURORA_UEFI_NVME
+        status = mounted
+                     ? static_cast<U64>(operation == 17
+                                            ? aurora::uefi::ProcessMountedBroker::read(frame[frame_rsi], block_copy)
+                                            : aurora::uefi::ProcessMountedBroker::write(frame[frame_rsi], block_copy))
+                     : static_cast<U64>(operation == 17
+                                            ? aurora::uefi::ProcessRecoveryBroker::read(frame[frame_rsi], block_copy)
+                                            : aurora::uefi::ProcessRecoveryBroker::write(frame[frame_rsi], block_copy));
+#endif
+        if (operation == 17) {
+            for (U64 at = 0; at < block_copy.size(); ++at)
+                (*bytes)[at] = status ? std::byte{} : block_copy[at];
+        }
+        for (auto &byte : block_copy)
+            byte = std::byte{};
+        frame[frame_rax] = status;
+        frame[frame_rdx] = operation == 17 && status == 0 ? 512 : 0;
     } else {
-        result = files.open(action == Action::open_directory ? 0
-                            : action == Action::open_beneath ? 1
-                                                             : 2,
-                            call.value,
-                            path);
+        U64 result = operation == 20 ? 0 : 3;
+#ifdef AURORA_UEFI_NVME
+        result = mounted ? (operation == 20 ? aurora::uefi::ProcessMountedBroker::budget()
+                                            : static_cast<U64>(aurora::uefi::ProcessMountedBroker::flush()))
+                         : (operation == 20 ? aurora::uefi::ProcessRecoveryBroker::budget()
+                                            : static_cast<U64>(aurora::uefi::ProcessRecoveryBroker::flush()));
+#endif
+        frame[frame_rax] = result;
+        frame[frame_rdx] = 0;
     }
-    if (result.broken)
-        fail("file service");
-    if (record)
-        for (U64 word = 0; word < 6; ++word)
-            store(reinterpret_cast<U64>(*record) + 8 * word, result.record[word], 8);
-    frame[frame_rax] = result.value;
+    return true;
+}
+auto recovery_call(volatile U64 *frame) -> bool {
+    const auto operation = frame[frame_rax];
+    if (!running.recovery_generation || running.service || frame[frame_rdx] != running.recovery_generation ||
+        frame[frame_r10] || (operation >= 19 && (frame[frame_rdi] || frame[frame_rsi])))
+        return false;
+    return writable_block_call(frame, false);
+}
+auto mounted_call(volatile U64 *frame) -> bool {
+    const auto operation = frame[frame_rax];
+    if (!running.mounted_generation || !running.service || frame[frame_rdx] != running.mounted_generation ||
+        frame[frame_r10] || (operation >= 19 && (frame[frame_rdi] || frame[frame_rsi])))
+        return false;
+    return writable_block_call(frame, true);
+}
+auto block_read(volatile U64 *frame) -> bool {
+    if (frame[frame_r10] || frame[frame_rdx] != running.block_generation ||
+        (running.block_generation && !running.service))
+        return false;
+    const auto destination = user_bytes(frame[frame_rdi], block_copy.size(), true);
+    if (!destination)
+        return false;
+    for (auto &byte : block_copy)
+        byte = std::byte{0};
+    U64 status = 3;
+#ifdef AURORA_UEFI_NVME
+    if (running.block_generation)
+        status = static_cast<U64>(aurora::uefi::ProcessBlockBroker::read(frame[frame_rsi], block_copy));
+#endif
+    if (status)
+        for (auto &byte : block_copy)
+            byte = std::byte{0};
+    for (U64 at = 0; at < block_copy.size(); ++at)
+        (*destination)[at] = block_copy[at];
+    frame[frame_rax] = status;
+    frame[frame_rdx] = status == 0 ? block_copy.size() : 0;
+    return true;
+}
+
+auto endpoint_exchange(volatile U64 *frame) -> bool {
+    const U64 window = frame[frame_rdi], count = frame[frame_rsi], generation = frame[frame_rdx],
+              transaction = frame[frame_r10];
+    if (!running.service || generation != running.service || generation != endpoint.generation ||
+        count > Endpoint::capacity || endpoint.waiting || endpoint.replied ||
+        (endpoint.window && endpoint.window != window) || transaction != endpoint.transaction ||
+        (!transaction && count))
+        return false;
+    const auto bytes = user_bytes(window, Endpoint::window_bytes, true);
+    if (!bytes)
+        return false;
+    if (transaction) {
+        for (U64 at = 0; at < count; ++at)
+            endpoint.bytes[at] = (*bytes)[Endpoint::reply_offset + at];
+        endpoint.count = count;
+        endpoint.replied = true;
+    }
+    endpoint.window = window;
+    endpoint.waiting = true;
+    outcome.exchange = true;
+    save_frame(frame);
+    return true;
+}
+auto message_header(U64 operation, U64 id, U64 offset, U64 count) -> void {
+    endpoint.request_operation = operation;
+    for (U64 at = 0; at < 64; ++at)
+        endpoint.bytes[at] = std::byte{0};
+    aurora::uefi::put(endpoint.bytes, 0, operation);
+    aurora::uefi::put(endpoint.bytes, 8, id);
+    aurora::uefi::put(endpoint.bytes, 16, offset);
+    aurora::uefi::put(endpoint.bytes, 24, count);
+    endpoint.count = 64 + count;
+}
+// Copy and validate all caller authority before parking. Neither this decoded
+// call nor any message field can choose the endpoint or reply destination.
+auto file_request(const process::KernelCall &call, volatile U64 *frame) -> bool {
+    using Action = process::CallAction;
+    const auto action = static_cast<Action>(call.action);
+    const bool path = action == Action::open_directory || action == Action::open_beneath ||
+                      action == Action::open_file || action == Action::create_output;
+    if (endpoint.caller || !endpoint.generation || !endpoint.waiting || endpoint.replied)
+        return false;
+    const U64 operation = action == Action::open_directory  ? 16
+                          : action == Action::open_beneath  ? 17
+                          : action == Action::open_file     ? 18
+                          : action == Action::read          ? 19
+                          : action == Action::close         ? 20
+                          : action == Action::create_output ? 21
+                          : action == Action::write         ? 22
+                          : action == Action::commit        ? 23
+                                                            : 24;
+    U64 length = 0;
+    std::optional<std::byte *> source;
+    if (path) {
+        if (!user_bytes(call.record, 48, true))
+            return false;
+        if (call.length <= process::file_path_limit) {
+            source = user_bytes(call.base, call.length, false);
+            if (!source)
+                return false;
+            length = call.length;
+        }
+    } else if (action == Action::read) {
+        if (!user_bytes(call.base, process::file_chunk, true))
+            return false;
+    } else if (action == Action::write) {
+        source = user_bytes(call.base, call.length, false);
+        if (!source)
+            return false;
+        length = call.length < Endpoint::capacity - 64 ? call.length : Endpoint::capacity - 64;
+    }
+    message_header(operation, call.value, action == Action::read ? call.length : 0, length);
+    for (U64 at = 0; at < length; ++at)
+        endpoint.bytes[64 + at] = (*source)[at];
+    endpoint.call = call;
+    endpoint.written = length;
+    endpoint.caller = 1;
+    endpoint.caller_cancelled = false;
+    outcome.request = true;
+    save_frame(frame);
     return true;
 }
 
 // One kernel call: 0 resumes the process with RAX set, 1 ends it.
 auto kernel_call(volatile U64 *frame) -> U64 {
+    if (frame[frame_rax] >= 17 && frame[frame_rax] <= 20) {
+        const auto operation = frame[frame_rax];
+        if (mounted_call(frame) || recovery_call(frame)) {
+#ifdef AURORA_PROCESS_FIXTURE
+            if (mounted_owner_termination) {
+                mounted_owner_termination = false;
+                outcome.exited = true;
+                outcome.status = 1;
+                return 1;
+            }
+#endif
+            return 0;
+        }
+        outcome.invalid_call = true;
+        outcome.operation = operation;
+        outcome.rip = frame[frame_rip];
+        return 1;
+    }
+    if (frame[frame_rax] == 16) {
+        if (block_read(frame))
+            return 0;
+        outcome.invalid_call = true;
+        outcome.operation = 16;
+        outcome.rip = frame[frame_rip];
+        return 1;
+    }
+    if (frame[frame_rax] == 15) {
+        if (endpoint_exchange(frame))
+            return 1;
+        outcome.invalid_call = true;
+        outcome.operation = 15;
+        outcome.rip = frame[frame_rip];
+        return 1;
+    }
     const auto decoded =
         process::call(frame[frame_rax], frame[frame_rdi], frame[frame_rsi], frame[frame_rdx], frame[frame_r10]);
     if (!decoded)
@@ -601,16 +1049,32 @@ auto kernel_call(volatile U64 *frame) -> U64 {
         outcome.status = decoded->value;
         return 1;
     }
-    if (action == process::CallAction::print) {
+    if (action == process::CallAction::print && !running.service) {
         if (const auto bytes = user_bytes(decoded->base, decoded->length, false)) {
+            if (output_sink && running.external && !running.service) {
+                for (U64 at = 0; at < decoded->length; ++at)
+                    endpoint.bytes[at] = (*bytes)[at];
+                endpoint.count = decoded->length;
+                output_error_stream = decoded->value == 2;
+                outcome.output = true;
+                save_frame(frame);
+                return 1;
+            }
+#ifndef AURORA_PRODUCTION
             print_stream(decoded->value, reinterpret_cast<U64>(*bytes), decoded->length);
             frame[frame_rax] = 0;
             return 0;
+#endif
         }
     }
-    if ((action == process::CallAction::read || action >= process::CallAction::open_directory) &&
-        file_call(*decoded, frame))
-        return 0;
+    if (action == process::CallAction::read || action >= process::CallAction::open_directory) {
+        if (!running.service) {
+            if (running.external) {
+                if (file_request(*decoded, frame))
+                    return 1;
+            }
+        }
+    }
     // The memory service (process.md#memory); a call naming no mapping, or
     // one whose length differs, ends the process like any invalid call.
     if (action == process::CallAction::map || action == process::CallAction::remap ||
@@ -642,7 +1106,7 @@ auto kernel_call(volatile U64 *frame) -> U64 {
 // frame is the exact RSP0 frame under its root, which the Aurora policy then
 // verifies; it ends only that process (result 1) or resumes it (0). The timer
 // drain is the one kernel-mode interrupt admitted; anything else stops.
-auto dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("aurora_exception_dispatch")
+auto dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("uefi_process_exception_dispatch")
     __attribute__((visibility("hidden")));
 auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
     const auto begin = reinterpret_cast<U64>(&drain_begin), end = reinterpret_cast<U64>(&drain_end);
@@ -667,7 +1131,7 @@ auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
     if (!kind || *kind == process::TrapClass::kernel)
         kernel_fault(vector, error, rip, cs);
     if (*kind == process::TrapClass::timer)
-        return charge_tick(vector, error, rip, cs);
+        return charge_tick(vector, error, rip, cs, words);
     if (*kind == process::TrapClass::call)
         return kernel_call(words);
     // A first touch of a mapping's absent page commits a zeroed, already
@@ -695,14 +1159,23 @@ auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
 
 namespace {
 auto end_record(U64 run) -> void {
-    Serial::text("AURORA_PROCESS_END:");
-    field("run", run);
+#ifdef AURORA_PRODUCTION
+    if (!running.recovery_generation && !running.mounted_generation)
+        return;
+#endif
+    Serial::text(running.companion ? std::string_view{"AURORA_FILE_SERVICE_END:"}
+                                   : std::string_view{"AURORA_PROCESS_END:"});
+    field("run", running.companion ? running.companion : run);
+    if (running.companion)
+        field("generation", running.service);
     if (outcome.exited) {
         Serial::text(" reason=exit");
         field("status", outcome.status);
     } else if (outcome.watchdog) {
         Serial::text(" reason=watchdog");
         field("ticks", running.used);
+    } else if (outcome.unavailable) {
+        Serial::text(" reason=service_lost");
     } else if (outcome.invalid_call) {
         Serial::text(" reason=call");
         field("operation", outcome.operation);
@@ -718,6 +1191,7 @@ auto end_record(U64 run) -> void {
     Serial::text("\r\n");
 }
 
+#ifndef AURORA_PRODUCTION
 // Fixture: the load walk rejects each single-entry edit, each undone before
 // the next: a no-execute code leaf, a code leaf aliasing the argument page's
 // frame, an extra leaf after the argument block and a user bit on the shared
@@ -767,50 +1241,12 @@ auto walk_cases(ProcessSpace &process_space, U64 code, U64 block, U64 run) -> vo
     Serial::text("\r\n");
 }
 
-// Framed base64 export records of one committed overlay file
-// (process.md#export), its path encoded byte by byte (process.md#files).
-auto export_file(U64 record) -> bool {
-    const auto size = files.record(record).size;
-    bool encoded = true;
-    const auto path = [&]() {
-        return files.path(record, [&](std::uint8_t byte) {
-            const auto text = process::path_text(byte);
-            encoded = encoded && text;
-            for (unsigned i = 0; text && i < text->count; ++i)
-                Serial::put(static_cast<std::uint8_t>(text->characters[i]));
-        });
-    };
-    Serial::text("AURORA_EXPORT_BEGIN: path=");
-    if (!path() || !encoded)
-        return false;
-    field("bytes", size);
-    Serial::text("\r\n");
-    U64 lines = 0;
-    std::array<std::byte, 57> line{};
-    for (U64 offset = 0; offset < size; offset += line.size()) {
-        const auto count = aurora::uefi::least(line.size(), size - offset);
-        if (!files.bytes(record, offset, {line.data(), count}))
-            return false;
-        Serial::text("AURORA_EXPORT_DATA: ");
-        for (U64 at = 0; at < count; at += 3) {
-            const auto group = process::base64_group({line.data(), count}, at);
-            if (!group)
-                return false;
-            for (unsigned i = 0; i < 4; ++i)
-                Serial::put(static_cast<std::uint8_t>(*group >> (8 * i)));
-        }
-        Serial::text("\r\n");
-        ++lines;
-    }
-    Serial::text("AURORA_EXPORT_END: path=");
-    if (!path() || !encoded)
-        return false;
-    field("lines", lines);
-    Serial::text("\r\n");
-    return true;
-}
+#endif
 
 auto refuse(U64 run, std::string_view reason) -> void {
+    load_refusal = reason == "quota"     ? RunStatus::quota
+                   : reason == "missing" ? RunStatus::missing
+                                         : RunStatus::malformed;
     Serial::text("AURORA_PROCESS_REJECTED:");
     field("run", run);
     Serial::text(" reason=");
@@ -818,44 +1254,54 @@ auto refuse(U64 run, std::string_view reason) -> void {
     Serial::text("\r\n");
 }
 
-// Load, run and release one process of the run list.
-auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, const process::RunEntry &entry, U64 run)
-    -> void {
-    const auto path = runs.subspan(entry.path, entry.path_bytes);
-    const auto arguments = runs.subspan(entry.arguments, entry.argument_bytes);
-    Serial::text("AURORA_PROCESS_RUN:");
-    field("run", run);
-    Serial::text(" path=");
-    for (const auto byte : path)
-        Serial::put(std::to_integer<std::uint8_t>(byte));
-    field("ticks", entry.ticks);
-    Serial::text("\r\n");
-    const auto image = process::volume_lookup(view, path);
-    if (!image)
-        return refuse(run, "missing");
+// Map a complete immutable admitted source. A transient loader snapshot, if
+// present, is released before this root becomes an auditable resident.
+auto load_image(std::span<const std::byte> view,
+                std::span<const std::byte> source,
+                std::span<const std::byte> arguments,
+                const process::RunEntry &entry,
+                U64 run,
+                std::size_t slot,
+                bool preemptible,
+                bool external = false,
+                U64 service = 0,
+                bool grant_block = false,
+                U64 companion = 0,
+                bool grant_mounted = false) -> bool {
+    auto &resident = residents[slot];
+    if (resident.space || resident.started)
+        fail("resident slot already owned");
+    static_cast<void>(view);
+    const auto image = std::optional<std::span<const std::byte>>{source};
     const auto admitted = process::elf_admit(*image);
     if (!admitted)
         fail("Aurora ELF admission");
-    if (*admitted != process::ElfVerdict::valid)
-        return refuse(run, name(elf_names, static_cast<U64>(*admitted)));
+    if (*admitted != process::ElfVerdict::valid) {
+        refuse(run, name(elf_names, static_cast<U64>(*admitted)));
+        return false;
+    }
     const auto layout = process::layout(*image, shared.reserved_first, shared.reserved_end, arguments.size());
     if (!layout)
         fail("Aurora process layout");
-    if (*layout != process::LayoutVerdict::valid)
-        return refuse(run, name(layout_names, static_cast<U64>(*layout)));
+    if (*layout != process::LayoutVerdict::valid) {
+        refuse(run, name(layout_names, static_cast<U64>(*layout)));
+        return false;
+    }
     // The load and the memory service are charged against frames free now.
-    const auto budget = process::memory_budget(*image, arguments.size(), shared.slots, entry.quota, table.free());
+    const auto budget = process::memory_budget(*image, arguments.size(), shared.slots, entry.quota, available_frames());
     if (!budget)
         fail("Aurora memory budget");
-    if (budget->verdict != static_cast<U64>(process::BudgetVerdict::valid))
-        return refuse(run, "quota");
-    ProcessSpace process_space{space,
-                               table,
-                               ranges,
-                               space.mappings(ranges.frames()),
-                               shared,
-                               space.process_records(),
-                               frames::first_owner + run};
+    if (budget->verdict != static_cast<U64>(process::BudgetVerdict::valid)) {
+        refuse(run, "quota");
+        return false;
+    }
+    auto &process_space = resident.space.emplace(space,
+                                                 table,
+                                                 ranges,
+                                                 space.mappings(ranges.frames()),
+                                                 shared,
+                                                 space.process_records(slot),
+                                                 frames::first_owner + run);
     if (!process_space.begin())
         fail("process root");
     U64 regions = 0, stack_top = 0, block = 0;
@@ -877,29 +1323,317 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
             fail("process mapping");
     }
     const auto entry_point = process::elf_entry(*image);
+    if (snapshot) {
+        if (snapshot->owner() != process_space.owner() || !snapshot->release())
+            fail("loader snapshot release");
+        snapshot.reset();
+    }
     if (!process_space.budget(*budget) || !stack_top || !block || !process_space.executable(entry_point, 1) ||
         !process_space.verify())
         fail("process load walk");
+#ifndef AURORA_PRODUCTION
     if (entry.flags & 2)
         walk_cases(process_space, entry_point, block, run);
-    Serial::text("AURORA_PROCESS_LOADED:");
-    field("run", run);
+#endif
+    Serial::text(companion ? "AURORA_FILE_SERVICE_LOADED:" : "AURORA_PROCESS_LOADED:");
+    field("run", companion ? companion : run);
+    if (companion)
+        field("generation", service);
     field("regions", regions);
     field("pages", process_space.leaves());
     field("tables", process_space.tables());
     field("quota", budget->quota - budget->charged);
+    if (preemptible) {
+        field("owner", process_space.owner());
+        field("root", process_space.root());
+    }
     Serial::text("\r\n");
-    // The initial stack ends in a zero qword for programs that read one.
-    const U64 context[] = {entry_point, stack_top - 16, block, arguments.size(), process_space.root()};
-    running = Running{&process_space, run, entry.flags, entry.ticks, entry.ticks, 0, 0, 0, 0};
+    // Initial entry and retained continuation are both kernel-owned. A slot
+    // identity is never user-provided; owners advance with the run ordinal.
+    U64 read_generation = 0, read_sectors = 0, write_generation = 0, write_sectors = 0;
+#ifdef AURORA_UEFI_NVME
+    if (grant_block && service && aurora::uefi::nvme_sector_count()) {
+        if (next_block_generation == ~U64{0})
+            fail("block generation exhausted");
+        read_generation = ++next_block_generation;
+        read_sectors = aurora::uefi::nvme_sector_count();
+        block_service = service;
+        block_generation = read_generation;
+        block_sectors = read_sectors;
+    }
+    if (grant_mounted) {
+        if (!service || grant_block || mounted_generation || next_block_generation == ~U64{0} ||
+            !aurora::uefi::nvme_mounted_sector_count())
+            fail("mounted grant admission");
+        write_generation = ++next_block_generation;
+        write_sectors = aurora::uefi::nvme_mounted_sector_count();
+        mounted_owner = process_space.owner();
+        mounted_root = process_space.root();
+        mounted_generation = write_generation;
+        mounted_sectors = write_sectors;
+        mounted_service = service;
+        Serial::text("AURORA_MOUNTED_GRANTED:");
+        field("owner", mounted_owner);
+        field("root", mounted_root);
+        field("generation", mounted_generation);
+        field("service", mounted_service);
+        field("sectors", mounted_sectors);
+        Serial::text("\r\n");
+    }
+#else
+    static_cast<void>(grant_block);
+    static_cast<void>(grant_mounted);
+#endif
+    resident.initial = {entry_point,
+                        stack_top - 16,
+                        block,
+                        arguments.size(),
+                        process_space.root(),
+                        service,
+                        write_generation ? write_generation : read_generation,
+                        write_generation ? write_sectors : read_sectors};
+    resident.state = Running{&process_space, run, entry.flags, entry.ticks, entry.ticks, 0, 0, 0, 0};
+    resident.state.continuation = preemptible ? &resident.continuation : nullptr;
+    resident.state.quantum = resident.state.tick();
+    resident.state.service = service;
+    resident.state.block_generation = read_generation;
+    resident.state.block_sectors = read_sectors;
+    resident.state.mounted_generation = write_generation;
+    resident.state.mounted_sectors = write_sectors;
+    resident.state.external = external;
+    resident.state.companion = companion;
+    if (!audit_residents())
+        fail("resident admission audit");
+    return true;
+}
+
+#ifndef AURORA_PRODUCTION
+// Load a boot-volume program without changing its current fixture interface.
+auto load_one(std::span<const std::byte> view,
+              std::span<const std::byte> runs,
+              const process::RunEntry &entry,
+              U64 run,
+              std::size_t slot,
+              bool preemptible,
+              bool external = false,
+              U64 service = 0,
+              bool grant_block = false) -> bool {
+    auto &resident = residents[slot];
+    if (resident.space || resident.started)
+        fail("resident slot already owned");
+    const auto path = runs.subspan(entry.path, entry.path_bytes);
+    const auto arguments = runs.subspan(entry.arguments, entry.argument_bytes);
+    Serial::text("AURORA_PROCESS_RUN:");
+    field("run", run);
+    Serial::text(" path=");
+    for (const auto byte : path)
+        Serial::put(std::to_integer<std::uint8_t>(byte));
+    field("ticks", entry.ticks);
+    Serial::text("\r\n");
+    const auto image = process::volume_lookup(view, path);
+    if (!image) {
+        refuse(run, "missing");
+        return false;
+    }
+    return load_image(view, *image, arguments, entry, run, slot, preemptible, external, service, grant_block);
+}
+
+#endif
+
+auto retire_resident(std::size_t slot) -> bool {
+    auto &resident = residents[slot];
+    running = resident.state;
+    running.space = nullptr;
+    end_record(resident.state.run);
+    auto &process_space = *resident.space;
+    const bool writer = resident.state.recovery_generation != 0;
+    const bool mounted_writer = resident.state.mounted_generation != 0;
+    bool sealed_writer = false;
+#ifdef AURORA_UEFI_NVME
+    if (mounted_writer) {
+        aurora::uefi::nvme_mounted_abandon();
+        if (!resident.state.service || resident.state.service != mounted_service ||
+            resident.state.mounted_generation != mounted_generation ||
+            resident.state.mounted_sectors != mounted_sectors || process_space.owner() != mounted_owner ||
+            process_space.root() != mounted_root || root() != kernel_root || !space.closed())
+            fail("mounted retirement authority");
+    }
+    if (writer) {
+        if (resident.state.service || resident.state.recovery_generation != recovery_generation ||
+            resident.state.recovery_sectors != recovery_sectors || process_space.owner() != recovery_owner ||
+            process_space.root() != recovery_root || root() != kernel_root || !space.closed()) {
+            aurora::uefi::nvme_recovery_abandon();
+            fail("recovery retirement authority");
+        }
+        const bool success = outcome.exited && !outcome.status && !outcome.watchdog && !outcome.invalid_call &&
+                             !outcome.unavailable && !outcome.parked;
+        sealed_writer = success && aurora::uefi::nvme_recovery_seal();
+        if (!sealed_writer)
+            aurora::uefi::nvme_recovery_abandon();
+    }
+#endif
+    const auto cleanup_failure = [&](std::string_view reason) {
+#ifdef AURORA_UEFI_NVME
+        if (mounted_writer)
+            aurora::uefi::nvme_mounted_abandon();
+        if (writer)
+            aurora::uefi::nvme_recovery_abandon();
+#endif
+        fail(reason);
+    };
+    if (!process_space.verify())
+        cleanup_failure("process exit walk");
+    const auto memory = process_space.memory();
+    const auto peak = process_space.charged() > running.peak ? process_space.charged() : running.peak;
+    const auto released = process_space.release();
+    if (!released)
+        cleanup_failure("process release");
+    resident.space.reset();
+    if (!audit_residents())
+        cleanup_failure("resident release audit");
+#ifdef AURORA_PRODUCTION
+    if (writer || mounted_writer) {
+#endif
+        Serial::text(running.companion ? std::string_view{"AURORA_FILE_SERVICE_RELEASED:"}
+                                       : std::string_view{"AURORA_PROCESS_RELEASED:"});
+        field("run", running.companion ? running.companion : resident.state.run);
+        if (running.companion)
+            field("generation", running.service);
+        field("frames", *released);
+        field("memory", memory);
+        field("calls", running.memory_calls);
+        field("commits", running.commits);
+        field("peak", peak);
+        Serial::text("\r\n");
+#ifdef AURORA_PRODUCTION
+    }
+#endif
+    // Volatile scrubbing prevents continuation authority or arguments from
+    // surviving slot reuse, even when ordinary dead stores are optimized out.
+    for (auto &word : resident.continuation)
+        *static_cast<volatile U64 *>(&word) = 0;
+    for (auto &word : resident.initial)
+        *static_cast<volatile U64 *>(&word) = 0;
+    if (resident.state.service && resident.state.service == block_service)
+        block_service = block_generation = block_sectors = 0;
+    // The role remains visible throughout real address-space release and
+    // continuation scrubbing. It is not cleared to bypass failure cleanup.
+    const auto retired_generation = resident.state.recovery_generation;
+    if (writer)
+        recovery_owner = recovery_root = recovery_generation = recovery_sectors = 0;
+    if (mounted_writer) {
+#ifdef AURORA_UEFI_NVME
+        Serial::text("AURORA_MOUNTED_RETIRED:");
+        field("generation", mounted_generation);
+        field("writes", aurora::uefi::nvme_mounted_admitted_writes());
+        field("flushes", aurora::uefi::nvme_mounted_admitted_flushes());
+        Serial::text(" disk=unavailable\r\n");
+#endif
+        mounted_owner = mounted_root = mounted_generation = mounted_sectors = mounted_service = 0;
+    }
+    resident.state = {};
+    resident.started = false;
+#ifdef AURORA_UEFI_NVME
+    if (writer) {
+        recovery_completed = sealed_writer && aurora::uefi::nvme_recovery_retired();
+        if (!recovery_completed)
+            aurora::uefi::nvme_recovery_abandon();
+        Serial::text("AURORA_RECOVERY_RETIRED:");
+        field("generation", retired_generation);
+        field("sealed", sealed_writer);
+        field("readonly", recovery_completed);
+        // On sealed success every admitted operation completed: submission,
+        // completion, guard or Flush failure is absorbing before promotion.
+        field("admitted_writes", aurora::uefi::nvme_recovery_admitted_writes());
+        field("admitted_flushes", aurora::uefi::nvme_recovery_admitted_flushes());
+        Serial::text("\r\n");
+    }
+#else
+    static_cast<void>(sealed_writer);
+    static_cast<void>(retired_generation);
+#endif
+    return true;
+}
+
+// Copies run only while the supervisor owns execution. The selected root is
+// already fully admitted and is restored before any other process can enter.
+auto deliver_before_enter(std::size_t slot) -> void {
+    if (!(running.service && endpoint.delivery) && !(slot == 1 && endpoint.completion))
+        return;
+    asm volatile("mov %0, %%cr3" : : "r"(running.space->root()) : "memory");
+    if (running.service && endpoint.delivery) {
+        const auto target = user_bytes(endpoint.window, Endpoint::window_bytes, true);
+        if (!target)
+            fail("endpoint window changed while parked");
+        for (U64 at = 0; at < 64; ++at)
+            (*target)[at] = std::byte{0};
+        store(endpoint.window, endpoint.count, 8);
+        store(endpoint.window + 8, endpoint.source, 8);
+        store(endpoint.window + 16, endpoint.transaction, 8);
+        store(endpoint.window + 24, 1, 8);
+        for (U64 at = 0; at < endpoint.count; ++at)
+            (*target)[Endpoint::request_offset + at] = endpoint.bytes[at];
+        residents[slot].continuation[frame_rax] = 0;
+        residents[slot].continuation[frame_rdx] = endpoint.count;
+        endpoint.delivery = false;
+        endpoint.waiting = false;
+    } else {
+        const Bytes reply{endpoint.bytes};
+        const auto status = reply.get(0), count = reply.get(8);
+        const auto action = static_cast<process::CallAction>(endpoint.call.action);
+        if (action == process::CallAction::read && !status) {
+            const auto target = user_bytes(endpoint.call.base, process::file_chunk, true);
+            if (!target)
+                fail("parked read destination");
+            for (U64 at = 0; at < count; ++at)
+                (*target)[at] = endpoint.bytes[64 + at];
+        }
+        if (endpoint.call.record) {
+            if (!user_bytes(endpoint.call.record, 48, true))
+                fail("parked file result");
+            for (U64 word = 0; word < 6; ++word)
+                store(endpoint.call.record + word * 8, reply.get(16 + word * 8), 8);
+        }
+        residents[slot].continuation[frame_rax] = status ? 0 - status : count;
+        endpoint.completion = false;
+    }
+    asm volatile("mov %0, %%cr3" : : "r"(kernel_root) : "memory");
+}
+
+// One entry or resumption. A timer park returns to this kernel loop before
+// another process can enter, preserving the single saved kernel continuation.
+auto run_resident(std::size_t slot) -> bool {
+    auto &resident = residents[slot];
+    if (!resident.space || !resident.state.remaining || running.space || root() != kernel_root)
+        fail("resident activation");
+    running = resident.state;
     outcome = Outcome{};
-    file_store.process = &process_space;
-    if (!files.begin(view, file_store))
-        fail("file service start");
-    if (!Timer::arm(running.tick()))
-        fail("watchdog arm");
-    if (process_enter(context) != 1 || root() != kernel_root || !Timer::stop())
+    arm_slice();
+    deliver_before_enter(slot);
+    if (resident.started && !resident.state.external) {
+        Serial::text("AURORA_PROCESS_RESUMED:");
+        field("run", resident.state.run);
+        field("ticks", resident.state.used);
+        Serial::text("\r\n");
+    }
+    const auto result = resident.started ? process_resume(resident.continuation.data(), resident.space->root())
+                                         : process_enter(resident.initial.data());
+    if (result != 1 || root() != kernel_root)
         fail("process exit");
+    const U64 current = running.slice ? Timer::read(0x390) : 0;
+    if (!Timer::stop())
+        fail("process timer stop");
+    if (running.slice) {
+        if (current > running.slice)
+            fail("watchdog current count");
+        // An expiration latched between the sample and stop belongs to this
+        // outgoing slice. Its later drain acknowledges only, never charges twice.
+        const U64 consumed = Timer::pending() ? running.slice : running.slice - current;
+        elapsed(consumed ? consumed : 1);
+        running.slice = 0;
+    }
+    resident.started = true;
+    resident.state = running;
     running.space = nullptr;
     if (Timer::pending()) {
         draining = true;
@@ -907,38 +1641,744 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
     }
     if (draining || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
         fail("timer drain");
-    end_record(run);
-    if (!process_space.verify())
-        fail("process exit walk");
-    // The run's committed files leave over serial; then the overlay is gone.
-    if (!files.finish([&](U64 record) {
-            return export_file(record);
-        }))
-        fail("file service finish");
-    file_store.process = nullptr;
-    const auto memory = process_space.memory();
-    const auto peak = process_space.charged() > running.peak ? process_space.charged() : running.peak;
-    const auto released = process_space.release();
-    const auto audit = table.audit();
-    if (!released || !audit.consistent || audit.allocated)
-        fail("process release");
-    Serial::text("AURORA_PROCESS_RELEASED:");
-    field("run", run);
-    field("frames", *released);
-    field("memory", memory);
-    field("calls", running.memory_calls);
-    field("commits", running.commits);
-    field("peak", peak);
-    Serial::text("\r\n");
+    if (outcome.parked) {
+        if (!resident.state.external) {
+            Serial::text("AURORA_PROCESS_PARKED:");
+            field("run", resident.state.run);
+            field("ticks", resident.state.used);
+            Serial::text("\r\n");
+        }
+        return false;
+    }
+    return retire_resident(slot);
 }
+
+// One bounded request/reply round trip. The service budget is per operation,
+// not renewed by its own timer parks. Bootstrap and teardown use the same cap.
+auto exchange_request(U64 source) -> bool {
+    if (!residents[0].space || !endpoint.waiting || endpoint.delivery || endpoint.count > Endpoint::capacity ||
+        endpoint.next == ~U64{0})
+        return false;
+    endpoint.source = source;
+    endpoint.transaction = ++endpoint.next;
+    endpoint.replied = false;
+    endpoint.delivery = true;
+    auto &server = residents[0].state;
+    server.remaining = server.initial;
+    server.used = 0;
+    server.quantum = server.tick();
+    while (residents[0].space && !endpoint.replied)
+        static_cast<void>(run_resident(0));
+    return residents[0].space && endpoint.waiting && endpoint.replied;
+}
+auto control_request(U64 operation, U64 id = 0, U64 offset = 0, std::span<const std::byte> payload = {}) -> bool {
+    if (endpoint.caller || (loading_image && endpoint.caller_cancelled) || payload.size() > Endpoint::capacity - 64)
+        return false;
+    message_header(operation, id, offset, payload.size());
+    for (U64 at = 0; at < payload.size(); ++at)
+        endpoint.bytes[64 + at] = payload[at];
+    if (!exchange_request(0) || (loading_image && endpoint.caller_cancelled))
+        return false;
+    bool valid = endpoint.count == 64;
+    for (U64 at = 0; valid && at < 64; ++at)
+        valid = endpoint.bytes[at] == std::byte{0};
+    if (!valid) {
+        if (!endpoint.invalid_reply_operation)
+            endpoint.invalid_reply_operation = operation;
+        return false;
+    }
+    endpoint.replied = false;
+    return true;
+}
+// The external service is not trusted to write a caller's memory. Admit its
+// copied result shape before selecting the kernel-owned original destination.
+auto file_reply_valid() -> bool {
+    if (endpoint.count < 64 || endpoint.count > 64 + process::file_chunk)
+        return false;
+    const Bytes reply{endpoint.bytes};
+    const U64 status = reply.get(0), count = reply.get(8);
+    if (status > 9 || count > process::file_chunk || endpoint.count != 64 + count)
+        return false;
+    const auto action = static_cast<process::CallAction>(endpoint.call.action);
+    if (status || action == process::CallAction::close || action == process::CallAction::write ||
+        action == process::CallAction::commit || action == process::CallAction::discard) {
+        for (U64 at = 8; at < 64; ++at)
+            if (endpoint.bytes[at] != std::byte{0})
+                return false;
+        return endpoint.count == 64;
+    }
+    if (action == process::CallAction::read) {
+        for (U64 at = 16; at < 64; ++at)
+            if (endpoint.bytes[at] != std::byte{0})
+                return false;
+        return true;
+    }
+    const U64 id = reply.get(16), size = reply.get(24), device = reply.get(32), inode = reply.get(40),
+              directory_device = reply.get(48), directory_inode = reply.get(56), slot = id & 63;
+    if (count || id < 65 || size > 0x7fffffffffffffffULL || device > 3)
+        return false;
+    if (action == process::CallAction::create_output) {
+        const bool disk_output = mounted_generation && mounted_service == endpoint.generation &&
+                                 residents[0].state.mounted_generation == mounted_generation && device == 3 &&
+                                 slot >= 41 && slot <= 56 && !size && inode && directory_device == 3 && directory_inode;
+        return disk_output || (device <= 2 && slot >= 33 && slot <= 36 && !size && ((device == 0) == (inode == 0)) &&
+                               directory_device == 1 && directory_inode >= 65536);
+    }
+    return ((device == 3 && slot >= 41 && slot <= 56) || (device >= 1 && device <= 2 && slot >= 1 && slot <= 32)) &&
+           inode && !directory_device && !directory_inode;
+}
+// Preserve the first checked malformed response through best-effort close.
+// This records a kernel-selected operation, never a reply-supplied identity.
+auto admit_file_reply() -> bool {
+    if (file_reply_valid())
+        return true;
+    if (!endpoint.invalid_reply_operation)
+        endpoint.invalid_reply_operation = endpoint.request_operation;
+    return false;
+}
+auto client_request() -> bool {
+    const U64 client = residents[1].state.run;
+    for (;;) {
+        if (!exchange_request(client) || !admit_file_reply())
+            return false;
+        if (endpoint.caller_cancelled)
+            break;
+        const Bytes reply{endpoint.bytes};
+        if (reply.get(0) || endpoint.call.action != static_cast<U64>(process::CallAction::write) ||
+            endpoint.written == endpoint.call.length)
+            break;
+        // A raw 64 KiB write needs two bounded messages. The client remains
+        // parked and cannot mutate this already-validated source between them.
+        const U64 remaining = endpoint.call.length - endpoint.written;
+        if (remaining > 64 || root() != kernel_root)
+            fail("file write continuation");
+        auto &client_space = *residents[1].space;
+        const auto address = endpoint.call.base + endpoint.written;
+        asm volatile("mov %0, %%cr3" : : "r"(client_space.root()) : "memory");
+        if (client_space.access(address, remaining, false) != ProcessSpace::Access::granted)
+            fail("parked write source");
+        message_header(22, endpoint.call.value, 0, remaining);
+        const auto *source = reinterpret_cast<const volatile std::byte *>(address);
+        for (U64 at = 0; at < remaining; ++at)
+            endpoint.bytes[64 + at] = source[at];
+        asm volatile("mov %0, %%cr3" : : "r"(kernel_root) : "memory");
+        endpoint.written += remaining;
+    }
+    endpoint.replied = false;
+    endpoint.caller.reset();
+    endpoint.completion = !endpoint.caller_cancelled;
+    return true;
+}
+enum class ServiceFailure {
+    observe,
+    invalid_reply,
+    consumer_rejected,
+    exited,
+    watchdog,
+    invalid_call,
+    fault,
+    caller_expired,
+    unavailable
+};
+class ServiceLoss final {
+public:
+    ServiceFailure kind;
+    U64 detail;
+};
+auto observe_service_loss(ServiceFailure kind) -> ServiceLoss {
+    if (kind != ServiceFailure::observe)
+        return {kind, 0};
+    if (endpoint.invalid_reply_operation)
+        return {ServiceFailure::invalid_reply, endpoint.invalid_reply_operation};
+    if (residents[0].space)
+        return {endpoint.caller_cancelled ? ServiceFailure::caller_expired : ServiceFailure::unavailable, 0};
+    // A naturally retired server leaves its authenticated running identity and
+    // terminal outcome here. A failed load has no such execution evidence.
+    if (!endpoint.generation || running.service != endpoint.generation)
+        return {ServiceFailure::unavailable, 0};
+    if (outcome.exited)
+        return {ServiceFailure::exited, outcome.status};
+    if (outcome.watchdog)
+        return {ServiceFailure::watchdog, running.used};
+    if (outcome.invalid_call)
+        return {ServiceFailure::invalid_call, outcome.operation};
+    if (!outcome.parked && !outcome.unavailable)
+        return {ServiceFailure::fault, outcome.vector};
+    return {ServiceFailure::unavailable, 0};
+}
+auto service_lost(ServiceLoss loss) -> void {
+    runtime_disk_ready = false;
+    Serial::text("AURORA_FILE_SERVICE_LOST:");
+    field("generation", endpoint.generation);
+    field("transaction", endpoint.transaction);
+    switch (loss.kind) {
+    case ServiceFailure::invalid_reply:
+        Serial::text(" cause=invalid_reply");
+        field("operation", loss.detail);
+        break;
+    case ServiceFailure::consumer_rejected:
+        Serial::text(" cause=consumer_rejected");
+        break;
+    case ServiceFailure::exited:
+        Serial::text(" cause=exit");
+        field("status", loss.detail);
+        break;
+    case ServiceFailure::watchdog:
+        Serial::text(" cause=watchdog");
+        field("ticks", loss.detail);
+        break;
+    case ServiceFailure::invalid_call:
+        Serial::text(" cause=call");
+        field("operation", loss.detail);
+        break;
+    case ServiceFailure::fault:
+        Serial::text(" cause=fault");
+        field("vector", loss.detail);
+        break;
+    case ServiceFailure::caller_expired:
+        Serial::text(" cause=caller_expired");
+        break;
+    default:
+        Serial::text(" cause=unavailable");
+        break;
+    }
+    Serial::text(" volatile_data=lost\r\n");
+    endpoint.generation = 0;
+    endpoint.invalid_reply_operation = 0;
+    block_service = block_generation = block_sectors = 0;
+    endpoint.waiting = endpoint.replied = endpoint.delivery = endpoint.completion = false;
+    endpoint.caller.reset();
+    for (auto &byte : endpoint.bytes)
+        *static_cast<volatile std::byte *>(&byte) = std::byte{0};
+}
+
+auto discard_snapshot() -> void {
+    if (snapshot) {
+        if (!snapshot->release())
+            fail("loader snapshot rollback");
+        snapshot.reset();
+    }
+}
+auto abandon_service(ServiceFailure failure = ServiceFailure::observe) -> void {
+    // Capture the actual server result before forced client/server retirement
+    // replaces the shared outcome. The cause is diagnostic, never authority.
+    const auto loss = observe_service_loss(failure);
+    // No process may see a late reply or a writable staging alias after loss.
+    loading_image = false;
+    endpoint.caller.reset();
+    endpoint.completion = false;
+    discard_snapshot();
+    for (std::size_t slot : {std::size_t{1}, std::size_t{0}}) {
+        if (!residents[slot].space)
+            continue;
+        outcome = {};
+        outcome.unavailable = true;
+        static_cast<void>(retire_resident(slot));
+    }
+    service_lost(loss);
+}
+
+#ifdef AURORA_UEFI_NVME
+// Shared one-way writer execution; only admitted boot compositions may call it.
+auto finish_recovery(U64 baseline) -> bool {
+    auto &resident = residents[0];
+    if (!resident.space || resident.started || resident.state.service || resident.state.block_generation ||
+        next_block_generation == ~U64{0})
+        fail("recovery mint state");
+    recovery_owner = resident.space->owner();
+    recovery_root = resident.space->root();
+    recovery_generation = ++next_block_generation;
+    recovery_sectors = aurora::uefi::nvme_recovery_sector_count();
+    resident.state.recovery_generation = recovery_generation;
+    resident.state.recovery_sectors = recovery_sectors;
+    resident.initial[6] = recovery_generation;
+    resident.initial[7] = recovery_sectors;
+    Serial::text("AURORA_RECOVERY_GRANTED:");
+    field("owner", recovery_owner);
+    field("root", recovery_root);
+    field("generation", recovery_generation);
+    field("sectors", recovery_sectors);
+    Serial::text("\r\n");
+    while (resident.space)
+        static_cast<void>(run_resident(0));
+    if (table.free() != baseline || recovery_owner || recovery_root || recovery_generation || recovery_sectors ||
+        !audit_residents()) {
+        aurora::uefi::nvme_recovery_abandon();
+        fail("recovery cleanup");
+    }
+    Serial::text("AURORA_RECOVERY_CLEANUP:");
+    field("free", table.free());
+    Serial::text("\r\n");
+    return recovery_completed && aurora::uefi::nvme_sector_count();
+}
+#endif
+
+auto file_start_refused(bool mounted_attempt) -> bool {
+#ifdef AURORA_UEFI_NVME
+    if (mounted_attempt)
+        aurora::uefi::nvme_mounted_abandon();
+#else
+    static_cast<void>(mounted_attempt);
+#endif
+    return false;
+}
+auto start_file_service(std::span<const std::byte> volume) -> bool {
+    constexpr std::string_view arguments{"file-service\0", 13};
+    if (residents[0].space || residents[1].space || snapshot || next_service_generation == ~U64{0} ||
+        next_run >= 0xffffffffULL - frames::first_owner)
+        return false;
+    // The attempt is consumed before image lookup or admission. A failed or
+    // retired owner can restart RAM service, never reacquire this writer.
+    const bool mounted_attempt = runtime_storage.claim_mounted();
+    bool mounted_entry = false;
+#ifdef AURORA_UEFI_NVME
+    mounted_entry = mounted_attempt && aurora::uefi::nvme_mounted_sector_count();
+#else
+    static_cast<void>(mounted_attempt);
+#endif
+    const auto path =
+        mounted_entry ? std::string_view{"bin/file-service-mounted", 24} : std::string_view{"bin/file-service", 16};
+    loader_budget = {};
+    loader_budget.initial = loader_budget.remaining = 128;
+    loader_budget.quantum = loader_budget.tick();
+    loading_image = true;
+    endpoint.generation = ++next_service_generation;
+    runtime_disk_ready = false;
+    endpoint.window = endpoint.transaction = endpoint.source = endpoint.count = 0;
+    endpoint.request_operation = endpoint.invalid_reply_operation = 0;
+    endpoint.waiting = endpoint.replied = endpoint.delivery = endpoint.completion = endpoint.caller_cancelled = false;
+    const auto image = process::volume_lookup(volume, bytes_of(path));
+    process::RunEntry entry{};
+    entry.ticks = 64;
+    entry.quota = 32768;
+    if (!image || !load_image(volume,
+                              *image,
+                              bytes_of(arguments),
+                              entry,
+                              ++next_run,
+                              0,
+                              true,
+                              true,
+                              endpoint.generation,
+                              runtime_storage.block() && !runtime_storage.mounted(),
+                              0,
+                              mounted_entry)) {
+        return file_start_refused(mounted_attempt);
+    }
+    while (residents[0].space && !endpoint.waiting)
+        static_cast<void>(run_resident(0));
+    if (!residents[0].space || !control_request(1, volume.size(), runtime_storage.readonly_profile()))
+        return file_start_refused(mounted_attempt);
+    for (U64 offset = 0; offset < volume.size();) {
+        const U64 count = least(Endpoint::capacity - 64, volume.size() - offset);
+        if (!control_request(2, 0, offset, volume.subspan(offset, count)))
+            return file_start_refused(mounted_attempt);
+        offset += count;
+    }
+    if (!control_request(3))
+        return file_start_refused(mounted_attempt);
+    if (runtime_storage.block()) {
+        // One bounded startup admission scans the complete supported log. It
+        // is not charged to a future client or renewed by sector reads. Normal
+        // runtime budgets are restored exactly once after the copied result.
+        loader_budget = {};
+        loader_budget.flags = 8;
+        loader_budget.initial = loader_budget.remaining = 16;
+        loader_budget.quantum = loader_budget.tick();
+        auto &server = residents[0].state;
+        server.flags = 8;
+        server.initial = 16;
+        message_header(15, 0, 0, 0);
+        const bool received = exchange_request(0) && !endpoint.caller_cancelled;
+        bool valid = received && endpoint.count == 64;
+        const U64 status = valid ? Bytes{endpoint.bytes}.get(0) : 3;
+        valid = valid && (status == 0 || status == 2);
+        for (U64 at = 8; valid && at < 64; ++at)
+            valid = endpoint.bytes[at] == std::byte{0};
+        if (!valid) {
+            if (received && !endpoint.invalid_reply_operation)
+                endpoint.invalid_reply_operation = 15;
+            return file_start_refused(mounted_attempt);
+        }
+        endpoint.replied = false;
+        runtime_disk_ready = status == 0;
+#ifdef AURORA_UEFI_NVME
+        if (mounted_entry) {
+            if (server.mounted_generation != mounted_generation || server.service != mounted_service ||
+                endpoint.generation != mounted_service || endpoint.source ||
+                residents[0].space->owner() != mounted_owner || residents[0].space->root() != mounted_root)
+                fail("mounted startup authority");
+            if (!runtime_disk_ready || !aurora::uefi::nvme_mounted_arm()) {
+                aurora::uefi::nvme_mounted_abandon();
+                runtime_disk_ready = false;
+            } else {
+                Serial::text("AURORA_MOUNTED_ARMED:");
+                field("generation", mounted_generation);
+                Serial::text("\r\n");
+            }
+        }
+#endif
+        server.flags = 0;
+        server.initial = server.remaining = 64;
+        server.used = 0;
+        server.quantum = server.tick();
+    }
+    loading_image = false;
+    Serial::text("AURORA_FILE_SERVICE_READY:");
+    field("generation", endpoint.generation);
+    if (runtime_storage.block())
+        Serial::text(runtime_disk_ready ? std::string_view{" disk=ready", 11}
+                                        : std::string_view{" disk=unavailable", 17});
+    Serial::text("\r\n");
+    return true;
+}
+
+#ifndef AURORA_PRODUCTION
+// Every legacy golden describes an independent namespace. Its companion is
+// the same source service as production, with a fresh incarnation per case;
+// only client ordinals stay stable. The admitted list has at most64 entries,
+// so companion owners64+ordinal cannot alias any client owner in this boot.
+auto start_companion(std::span<const std::byte> volume, U64 client) -> bool {
+    if (client == 0 || client > 64 || residents[0].space || residents[1].space || next_service_generation == ~U64{0})
+        return false;
+    endpoint = {};
+    endpoint.generation = ++next_service_generation;
+    loader_budget = {};
+    loader_budget.initial = loader_budget.remaining = 128;
+    loader_budget.quantum = loader_budget.tick();
+    loading_image = true;
+    constexpr std::string_view path = "bin/file-service", arguments{"file-service\0", 13};
+    const auto image = process::volume_lookup(volume, bytes_of(path));
+    process::RunEntry entry{};
+    entry.ticks = 64;
+    entry.quota = 32768;
+    if (!image ||
+        !load_image(
+            volume, *image, bytes_of(arguments), entry, 64 + client, 0, true, true, endpoint.generation, false, client))
+        return false;
+    while (residents[0].space && !endpoint.waiting)
+        static_cast<void>(run_resident(0));
+    if (!residents[0].space || !control_request(1, volume.size()))
+        return false;
+    for (U64 offset = 0; offset < volume.size();) {
+        const auto count = least(Endpoint::capacity - 64, volume.size() - offset);
+        if (!control_request(2, 0, offset, volume.subspan(offset, count)))
+            return false;
+        offset += count;
+    }
+    if (!control_request(3))
+        return false;
+    loading_image = false;
+    return true;
+}
+
+// The bounded supervisor export grant selects one immutable committed record
+// only after authenticated client cleanup. The service owns all metadata;
+// kernel validation admits a copied wire shape, never an overlay namespace.
+constinit std::array<std::byte, process::file_path_limit + 1> export_name{};
+auto export_request(U64 operation, U64 record, U64 offset) -> std::optional<U64> {
+    if (endpoint.caller || endpoint.caller_cancelled)
+        return std::nullopt;
+    message_header(operation, record, offset, 0);
+    if (!exchange_request(0) || endpoint.caller_cancelled || endpoint.count < 64 || endpoint.count > 568)
+        return std::nullopt;
+    const Bytes reply{endpoint.bytes};
+    const auto status = reply.get(0), count = reply.get(8);
+    if (count > 504 || endpoint.count != 64 + count || (status && (status != 2 || operation != 7 || count)))
+        return std::nullopt;
+    for (U64 at = 16; at < 64; ++at)
+        if (endpoint.bytes[at] != std::byte{0})
+            return std::nullopt;
+    endpoint.replied = false;
+    return status ? ~U64{0} : count;
+}
+auto export_clock_begin() -> bool {
+    return loader_budget.remaining && loader_budget.quantum &&
+           Timer::arm(static_cast<std::uint32_t>(loader_budget.quantum));
+}
+auto export_clock_end() -> bool {
+    const auto remaining = Timer::read(0x390);
+    if (!Timer::stop() || remaining > loader_budget.quantum)
+        fail("export timer stop");
+    const auto charged = Timer::pending() ? loader_budget.quantum : loader_budget.quantum - remaining;
+    const bool available = charge_counts(loader_budget, charged ? charged : 1);
+    if (Timer::pending()) {
+        draining = true;
+        process_drain();
+    }
+    if (draining || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
+        fail("export timer drain");
+    return available;
+}
+auto export_path(U64 length) -> bool {
+    for (U64 at = 0; at < length; ++at) {
+        const auto text = process::path_text(std::to_integer<std::uint8_t>(export_name[at]));
+        if (!text)
+            return false;
+        for (unsigned i = 0; i < text->count; ++i)
+            Serial::put(static_cast<std::uint8_t>(text->characters[i]));
+    }
+    return true;
+}
+auto export_committed() -> bool {
+    // The prior client is already retired and its authenticated cleanup has
+    // completed; this supervisor-only export has an independent finite budget.
+    endpoint.caller_cancelled = false;
+    loader_budget = {};
+    loader_budget.flags = 8;
+    loader_budget.initial = loader_budget.remaining = 16;
+    loader_budget.quantum = loader_budget.tick();
+    loading_image = true;
+    for (U64 record = 0; record < 64; ++record) {
+        const auto selected = export_request(7, record, 0);
+        if (!selected)
+            return false;
+        if (*selected == ~U64{0})
+            continue;
+        if (*selected != 16)
+            return false;
+        const Bytes metadata{endpoint.bytes};
+        const auto length = metadata.get(64), size = metadata.get(72);
+        if (!length || length > process::file_path_limit || size > process::file_output_limit)
+            return false;
+        for (U64 offset = 0; offset < length;) {
+            const auto count = export_request(8, 0, offset);
+            if (!count || *count != least(504, length - offset))
+                return false;
+            for (U64 at = 0; at < *count; ++at) {
+                const auto byte = endpoint.bytes[64 + at];
+                if (byte == std::byte{0})
+                    return false;
+                export_name[offset + at] = byte;
+            }
+            offset += *count;
+        }
+        if (!export_clock_begin())
+            return false;
+        Serial::text("AURORA_EXPORT_BEGIN: path=");
+        if (!export_path(length))
+            fail("export path encoding");
+        field("bytes", size);
+        Serial::text("\r\n");
+        if (!export_clock_end())
+            return false;
+        U64 lines = 0, filled = 0;
+        std::array<std::byte, 57> line{};
+        for (U64 offset = 0; offset < size;) {
+            const auto count = export_request(9, 0, offset);
+            if (!count || *count != least(504, size - offset) || !export_clock_begin())
+                return false;
+            for (U64 at = 0; at < *count; ++at) {
+                line[filled++] = endpoint.bytes[64 + at];
+                if (filled == line.size() || offset + at + 1 == size) {
+                    Serial::text("AURORA_EXPORT_DATA: ");
+                    for (U64 first = 0; first < filled; first += 3) {
+                        const auto group = process::base64_group({line.data(), filled}, first);
+                        if (!group)
+                            fail("export data encoding");
+                        for (unsigned i = 0; i < 4; ++i)
+                            Serial::put(static_cast<std::uint8_t>(*group >> (8 * i)));
+                    }
+                    Serial::text("\r\n");
+                    filled = 0;
+                    ++lines;
+                }
+            }
+            offset += *count;
+            if (!export_clock_end())
+                return false;
+        }
+        if (filled || !export_clock_begin())
+            return false;
+        Serial::text("AURORA_EXPORT_END: path=");
+        if (!export_path(length))
+            fail("export path encoding");
+        field("lines", lines);
+        Serial::text("\r\n");
+        if (!export_clock_end())
+            return false;
+    }
+    loading_image = false;
+    return true;
+}
+auto run_file_client() -> bool {
+    while (residents[1].space) {
+        if (run_resident(1))
+            break;
+        if (outcome.request) {
+            if (!client_request())
+                return false;
+            if (endpoint.caller_cancelled) {
+                outcome = {};
+                outcome.watchdog = true;
+                static_cast<void>(retire_resident(1));
+                break;
+            }
+        }
+    }
+    endpoint.caller.reset();
+    endpoint.completion = endpoint.replied = false;
+    return true;
+}
+auto run_independent(std::span<const std::byte> view, std::span<const std::byte> runs) -> U64 {
+    U64 count = 0;
+    for (;;) {
+        const auto entry = process::run(runs, count);
+        if (!entry)
+            fail("independent client entry");
+        if (!entry->found)
+            break;
+        ++count;
+        if (!start_companion(view, count) || !control_request(4, count)) {
+            abandon_service();
+            fail("companion startup");
+        }
+        if (load_one(view, runs, *entry, count, 1, true, true) && !run_file_client()) {
+            abandon_service();
+            fail("companion request");
+        }
+        if (!control_request(5, count) || !export_committed()) {
+            abandon_service();
+            fail("companion cleanup/export");
+        }
+        message_header(6, 0, 0, 0);
+        if (exchange_request(0) || residents[0].space || !outcome.exited || outcome.status) {
+            abandon_service();
+            fail("companion shutdown");
+        }
+        endpoint = {};
+        if (!audit_residents())
+            fail("companion final audit");
+    }
+    return count;
+}
+
+// The first run is a kernel-designated server, never a role selected by its
+// argv or exported symbols. The remaining entries are ordinary HostFiles
+// clients. Committed files live only in that server's private ByteRegion.
+auto run_external(std::span<const std::byte> view,
+                  std::span<const std::byte> runs,
+                  bool disk = false,
+                  U64 first = 0,
+                  U64 limit = ~U64{0},
+                  bool recover = false,
+                  XfsReadonlyProfile profile = XfsReadonlyProfile::fresh_format,
+                  bool mounted = false) -> U64 {
+    if (residents[0].space || residents[1].space || next_service_generation == ~U64{0})
+        fail("file service restart state");
+    const auto service = process::run(runs, first);
+    if (!service || !service->found)
+        fail("file service run entry");
+    if (mounted) {
+        if (next_run < first)
+            next_run = first;
+        if (!runtime_storage.select(true, 3) || !start_file_service(view))
+            fail("mounted file service startup");
+    } else {
+        endpoint = {};
+        endpoint.generation = ++next_service_generation;
+        if (!load_one(view, runs, *service, first + 1, 0, true, true, endpoint.generation, disk))
+            fail("file service load");
+        while (residents[0].space && !endpoint.waiting)
+            static_cast<void>(run_resident(0));
+        if (!residents[0].space || !control_request(1, view.size(), static_cast<U64>(profile)))
+            fail("file service startup");
+        for (U64 offset = 0; offset < view.size();) {
+            const auto count = least(Endpoint::capacity - 64, view.size() - offset);
+            if (!control_request(2, 0, offset, view.subspan(offset, count)))
+                fail("file service boot copy");
+            offset += count;
+        }
+        if (!control_request(3))
+            fail("file service volume admission");
+        Serial::text("AURORA_FILE_SERVICE_READY:");
+        field("generation", endpoint.generation);
+        field("owner", residents[0].space->owner());
+        field("block_generation", residents[0].state.block_generation);
+        field("block_sectors", residents[0].state.block_sectors);
+        Serial::text("\r\n");
+    }
+    U64 count = first + 1;
+    for (; count < limit;) {
+        const auto entry = process::run(runs, count);
+        if (!entry)
+            fail("external client entry");
+        if (!entry->found)
+            break;
+        ++count;
+        if (!load_one(view, runs, *entry, count, 1, true, true))
+            continue;
+        if (!control_request(4, count)) {
+            abandon_service();
+            if (recover)
+                return count;
+            fail("file service client admission");
+        }
+        if (!run_file_client()) {
+            abandon_service();
+            if (recover)
+                return count;
+            fail("external file service terminated");
+        }
+        if (!control_request(5, count)) {
+            abandon_service();
+            if (recover)
+                return count;
+            fail("file service client cleanup");
+        }
+    }
+    message_header(6, 0, 0, 0);
+    if (exchange_request(0) || residents[0].space || !outcome.exited || outcome.status) {
+        abandon_service();
+        if (recover)
+            return count;
+        fail("file service shutdown");
+    }
+    endpoint.generation = 0;
+    if (!audit_residents())
+        fail("file service final audit");
+    Serial::text("AURORA_FILE_SERVICE_OK:");
+    field("clients", count - first - 1);
+    field("transactions", endpoint.next);
+    Serial::text("\r\n");
+    return count;
+}
+
+#ifdef AURORA_UEFI_NVME
+// Only the recovery fixture cases call this private composition. Its first admitted boot
+// image is the recovery program; a pathname, argv or ELF type never mints it.
+auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> runs) -> bool {
+    const auto entry = process::run(runs, 0);
+    const auto baseline = table.free();
+    if (!entry || !entry->found || residents[0].space || residents[1].space || endpoint.generation ||
+        recovery_generation || recovery_completed || !aurora::uefi::nvme_recovery_sector_count())
+        fail("recovery composition");
+    if (!load_one(view, runs, *entry, 1, 0, true, true))
+        return false;
+    return finish_recovery(baseline);
+}
+#endif
 
 // The row's run list, runs/<case> in the volume, run in order.
 [[noreturn]] auto run_list(U64 arena, std::span<const std::byte> view, U64 selected) -> void {
+    U64 run_case = selected;
+#ifdef AURORA_PROCESS_FIXTURE
+    if (selected >= 13 && selected <= 16) {
+        recovery_cut_case = selected;
+        run_case = 12; // Exactly the ordinary recovery program and run list.
+    }
+    if (selected >= 18 && selected <= 38) {
+        mounted_cut_case = selected;
+        run_case = 17; // The same mounted service and ordinary client.
+    }
+    if (selected == 40)
+        mounted_cut_case = selected;
+#endif
     char path[] = "runs/000";
     std::size_t length = 5;
     for (U64 scale = 100; scale; scale /= 10)
-        if (selected >= scale || scale == 1)
-            path[length++] = static_cast<char>('0' + selected / scale % 10);
+        if (run_case >= scale || scale == 1)
+            path[length++] = static_cast<char>('0' + run_case / scale % 10);
     const auto runs = process::volume_lookup(view, bytes_of({path, length}));
     if (!runs)
         fail("run list lookup");
@@ -952,14 +2392,83 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
     install_architecture(arena);
     capture_shared(arena);
     process_kernel_root = kernel_root;
+    const bool paired = selected == 7;
     U64 count = 0;
-    for (;; ++count) {
+    if (selected >= 1 && selected <= 6)
+        count = run_independent(view, *runs);
+    if (selected == 8)
+        count = run_external(view, *runs);
+    if (selected == 10) {
+        const auto baseline = table.free();
+        count = run_external(view, *runs, true, 0, 2, true);
+        if (count != 2 || residents[0].space || residents[1].space || endpoint.generation || table.free() != baseline ||
+            !audit_residents())
+            fail("block grant loss cleanup");
+        count = run_external(view, *runs, true, count);
+    }
+    if (selected == 11)
+        count = run_external(view, *runs, true, 0, ~U64{0}, false, XfsReadonlyProfile::linux_6_12_x86_64_clean);
+#ifdef AURORA_UEFI_NVME
+    if (run_case == 12 || run_case == 41) {
+        if (!run_recovery(view, *runs))
+            fail("recovery not completed");
+        // A successful exit and flush do not establish a filesystem mount.
+        // A fresh Serve process independently performs the unchanged RO gate.
+        count = run_external(view, *runs, true, 1, ~U64{0}, false, XfsReadonlyProfile::linux_6_12_x86_64_clean);
+    }
+#endif
+    if (run_case == 17 || run_case == 39)
+        count = run_external(view, *runs, true, 0, ~U64{0}, false, XfsReadonlyProfile::linux_6_12_x86_64_clean, true);
+    if (selected == 40) {
+        const auto baseline = table.free();
+        count = run_external(view, *runs, true, 0, 2, true, XfsReadonlyProfile::linux_6_12_x86_64_clean, true);
+        if (count != 2 || residents[0].space || residents[1].space || endpoint.generation || mounted_generation ||
+            table.free() != baseline || !audit_residents())
+            fail("mounted owner loss cleanup");
+        count =
+            run_external(view, *runs, true, count, ~U64{0}, false, XfsReadonlyProfile::linux_6_12_x86_64_clean, true);
+    }
+    if (selected == 9) {
+        const auto baseline = table.free();
+        // Each closed pair deliberately loses a designated raw endpoint. Its
+        // next pair starts a new incarnation, never replays the failed request.
+        for (; count < 20;) {
+            const auto end = count + 2;
+            count = run_external(view, *runs, false, count, end, true);
+            if (count != end || residents[0].space || residents[1].space || endpoint.generation ||
+                table.free() != baseline || !audit_residents())
+                fail("file service loss cleanup");
+        }
+        count = run_external(view, *runs, false, count);
+    }
+    for (; selected == 7;) {
         const auto entry = process::run(*runs, count);
         if (!entry)
             fail("Aurora run entry");
         if (!entry->found)
             break;
-        run_one(view, *runs, *entry, count + 1);
+        const auto width = paired ? KernelSpace::process_slots : 1;
+        for (std::size_t slot = 0; slot < width; ++slot) {
+            const auto next = slot == 0 ? entry : process::run(*runs, count);
+            if (!next)
+                fail("Aurora run entry");
+            if (!next->found)
+                break;
+            ++count;
+            static_cast<void>(load_one(view, *runs, *next, count, slot, paired));
+        }
+        U64 cursor = 0;
+        for (;;) {
+            const U64 eligible = (residents[0].space ? 1 : 0) | (residents[1].space ? 2 : 0);
+            const auto encoded = aurora::ipc::language_round_robin_next(cursor, eligible);
+            const auto selected = aurora::ipc::RoundRobinSelection::decode(encoded, cursor, eligible);
+            if (!selected)
+                fail("Aurora resident selection");
+            if (!selected->selected())
+                break;
+            cursor = selected->next();
+            static_cast<void>(run_resident(selected->client()));
+        }
     }
     Serial::text("AURORA_PROCESS_RUNS_OK:");
     field("runs", count);
@@ -969,14 +2478,22 @@ auto run_one(std::span<const std::byte> view, std::span<const std::byte> runs, c
     for (;;)
         asm volatile("cli; hlt");
 }
+#endif
+
 } // namespace
 
-auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
+namespace {
+constinit std::optional<KernelSpace::Plan> runtime_plan;
+auto initialize_process(U64 arena, const Bytes &h, U64 selected, bool timer_ready) -> std::span<const std::byte> {
     owned_arena = arena;
     kernel_root = h.get(88);
-    const auto selected = h.get(Handoff::case_word);
-    if (selected)
+#ifndef AURORA_PRODUCTION
+    if (selected && !timer_ready)
         establish_timer(arena, h);
+#else
+    if (!timer_ready)
+        fail("production timer was not admitted");
+#endif
     const auto map =
         std::span<const std::byte>{reinterpret_cast<const std::byte *>(arena + Handoff::map_offset), h.get(32)};
     const auto volume = h.get(Handoff::volume_word), bytes = h.get(Handoff::volume_bytes_word);
@@ -1008,7 +2525,8 @@ auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
     if (width < 32 || width > 52 || (last.first_page + last.pages) * frames::page > (U64{1} << width) ||
         volume + volume_pages * frames::page > (U64{1} << width))
         fail("frame inventory beyond the physical width");
-    const auto plan = KernelSpace::plan(ranges.frames(), volume_pages, KernelSpace::process_pages);
+    const auto record_pages = KernelSpace::process_pages * (selected ? KernelSpace::process_slots : 1);
+    const auto plan = KernelSpace::plan(ranges.frames(), volume_pages, record_pages);
     const PageTables tables{arena + Handoff::tables_offset, static_cast<std::size_t>(h.get(96))};
     if (!plan || !space.bind(arena + Handoff::tables_offset, tables.window_slot()) ||
         !space.build(ranges, *plan, volume))
@@ -1041,13 +2559,362 @@ auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
     field("bytes", bytes);
     field("pages", volume_pages);
     Serial::text("\r\n");
+    runtime_plan = *plan;
+    return view;
+}
+} // namespace
+
+#ifndef AURORA_PRODUCTION
+auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
+    const auto selected = h.get(Handoff::case_word);
+    const auto view = initialize_process(arena, h, selected, false);
     if (selected)
         run_list(arena, view, selected);
     frame_cases(h.get(96));
-    space_cases(*plan, h.get(96));
+    space_cases(*runtime_plan, h.get(96));
     export_entry(view, exported);
     Serial::text("AURORA_PROCESS_OK\r\n");
     aurora::hardware::Io::write(0xf4, 0x10);
     for (;;)
         asm volatile("cli; hlt");
 }
+#endif
+#ifdef AURORA_PRODUCTION
+namespace {
+auto loader_call(U64 client, U64 operation, U64 id = 0, U64 offset = 0, std::span<const std::byte> payload = {})
+    -> bool {
+    if (payload.size() > Endpoint::capacity - 64 || endpoint.caller || endpoint.caller_cancelled)
+        return false;
+    message_header(operation, id, offset, payload.size());
+    for (U64 at = 0; at < payload.size(); ++at)
+        endpoint.bytes[64 + at] = payload[at];
+    endpoint.call = {};
+    endpoint.call.action = operation == 18   ? static_cast<U64>(process::CallAction::open_file)
+                           : operation == 19 ? static_cast<U64>(process::CallAction::read)
+                                             : static_cast<U64>(process::CallAction::close);
+    if (!exchange_request(client) || !admit_file_reply())
+        return false;
+    endpoint.replied = false;
+    return !endpoint.caller_cancelled;
+}
+// This boot-global attempt is independent of the source file owner's lifetime.
+// No service restart or ordinary run path may select or reload the writer.
+auto prepare_recovery(std::span<const std::byte> volume) -> void {
+    if (!runtime_storage.claim_recovery())
+        return;
+#ifdef AURORA_UEFI_NVME
+    constexpr std::string_view path = "bin/xfs-recover", arguments{"xfs-recover\0", 12};
+    const auto baseline = table.free();
+    const auto image = process::volume_lookup(volume, bytes_of(path));
+    process::RunEntry entry{};
+    entry.ticks = 16;
+    entry.flags = 8;
+    entry.quota = 16384;
+    if (residents[0].space || residents[1].space || endpoint.generation || recovery_generation || recovery_completed ||
+        !image || next_run >= 0xffffffffULL - frames::first_owner || !aurora::uefi::nvme_recovery_sector_count() ||
+        !load_image(volume, *image, bytes_of(arguments), entry, ++next_run, 0, true, true) ||
+        !finish_recovery(baseline)) {
+        aurora::uefi::nvme_recovery_abandon();
+        Serial::text("AURORA_PROCESS_RECOVERY: refused disk=unavailable\r\n");
+    } else {
+        Serial::text("AURORA_PROCESS_RECOVERY: complete readonly\r\n");
+    }
+#else
+    static_cast<void>(volume);
+#endif
+}
+auto load_committed(std::span<const std::byte> volume,
+                    U64 client,
+                    std::span<const std::byte> path,
+                    std::span<const std::byte> arguments) -> RunStatus {
+    loader_budget = {};
+    loader_budget.initial = loader_budget.remaining = 128;
+    loader_budget.quantum = loader_budget.tick();
+    loading_image = true;
+    endpoint.caller_cancelled = false;
+    if (!loader_call(client, 18, 0, 0, path))
+        return RunStatus::unavailable;
+    const Bytes opened{endpoint.bytes};
+    if (opened.get(0))
+        return opened.get(0) == 2 ? RunStatus::missing : RunStatus::unavailable;
+    const U64 id = opened.get(16), size = opened.get(24);
+    RunStatus status = RunStatus::malformed;
+    if (size && size <= aurora::uefi::ImageSnapshot::limit) {
+        const U64 cost = aurora::uefi::ImageSnapshot::cost(size);
+        if (cost > available_frames()) {
+            status = RunStatus::quota;
+        } else {
+            snapshot.emplace(space, table, ranges, space.mappings(ranges.frames()), frames::first_owner + client, size);
+            if (!snapshot->begin())
+                fail("loader snapshot allocation");
+            auto target = snapshot->writable();
+            U64 offset = 0;
+            while (offset < size) {
+                if (!loader_call(client, 19, id, offset)) {
+                    status = RunStatus::unavailable;
+                    break;
+                }
+                const Bytes reply{endpoint.bytes};
+                const U64 count = reply.get(8);
+                if (reply.get(0) || !count || count > size - offset) {
+                    status = RunStatus::unavailable;
+                    break;
+                }
+                for (U64 at = 0; at < count; ++at)
+                    target[offset + at] = endpoint.bytes[64 + at];
+                offset += count;
+            }
+            if (offset == size && !snapshot->seal())
+                fail("loader snapshot seal");
+            if (offset != size) {
+                discard_snapshot();
+            }
+        }
+    }
+    if (!loader_call(client, 20, id))
+        return RunStatus::unavailable;
+    if (Bytes{endpoint.bytes}.get(0))
+        return RunStatus::unavailable;
+    loading_image = false;
+    if (!snapshot)
+        return status;
+    process::RunEntry entry{};
+    entry.ticks = 128;
+    if (!load_image(volume, snapshot->bytes(), arguments, entry, client, 1, true, true)) {
+        discard_snapshot();
+        return load_refusal;
+    }
+    return RunStatus::exited; // Loaded, not yet executed.
+}
+[[gnu::noinline]] auto deliver_output() -> bool {
+    if (!output_sink || !Timer::irq_off() || root() != kernel_root || Timer::read(0x390) ||
+        !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false) || endpoint.count > Endpoint::capacity)
+        fail("process output ownership");
+    const bool delivered = output_sink(output_context, output_error_stream, {endpoint.bytes.data(), endpoint.count});
+    if (delivered)
+        residents[1].continuation[frame_rax] = 0;
+    return delivered;
+}
+auto execute_command(std::span<const std::byte> volume,
+                     std::span<const std::byte> path,
+                     std::span<const std::byte> arguments) -> RunResult {
+    if (!residents[0].space && !start_file_service(volume)) {
+        abandon_service();
+        return {};
+    }
+    if (next_run >= 0xffffffffULL - frames::first_owner)
+        return {};
+    const U64 client = ++next_run;
+    if (!control_request(4, client)) {
+        abandon_service();
+        return {};
+    }
+    RunResult result{load_committed(volume, client, path, arguments), 0};
+    loading_image = false;
+    if (result.status == RunStatus::unavailable) {
+        abandon_service();
+        return result;
+    }
+    if (residents[1].space) {
+        for (;;) {
+            if (run_resident(1)) {
+                result.status = outcome.exited     ? RunStatus::exited
+                                : outcome.watchdog ? RunStatus::watchdog
+                                                   : RunStatus::fault;
+                result.value = outcome.exited ? outcome.status : outcome.vector;
+                break;
+            }
+            if (outcome.output && !deliver_output()) {
+                outcome = {};
+                outcome.invalid_call = true;
+                outcome.operation = 2;
+                static_cast<void>(retire_resident(1));
+                result.status = RunStatus::output_failed;
+                break;
+            }
+            if (outcome.request) {
+                if (!client_request()) {
+                    abandon_service();
+                    return {};
+                }
+                if (endpoint.caller_cancelled) {
+                    outcome = {};
+                    outcome.watchdog = true;
+                    static_cast<void>(retire_resident(1));
+                    result.status = RunStatus::watchdog;
+                    break;
+                }
+            }
+        }
+    }
+    endpoint.caller.reset();
+    endpoint.completion = endpoint.replied = false;
+    if (!control_request(5, client)) {
+        abandon_service();
+        return {};
+    }
+    return result;
+}
+} // namespace
+
+namespace {
+auto enter_runtime(U64 arena, const Bytes &handoff) -> bool {
+    if (!Timer::irq_off() || root() != handoff.get(88) || running.space || residents[1].space || snapshot ||
+        Timer::read(0x390) || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
+        return false;
+#ifdef AURORA_UEFI_NVME
+    const bool selected_block = handoff.get(Handoff::composition_word) == 4;
+#else
+    constexpr bool selected_block = false;
+#endif
+    const auto profile_word = handoff.get(Handoff::readonly_profile_word);
+    if (!runtime_storage.select(selected_block, profile_word))
+        return false;
+    if (!runtime_initialized) {
+        // This selection belongs to the admitted boot, not the current service
+        // incarnation. Owner loss cannot reset or silently change its profile.
+        static_cast<void>(initialize_process(arena, handoff, 8, true));
+        runtime_initialized = true;
+        capture_shared(arena);
+        process_kernel_root = kernel_root;
+    } else {
+        if (!runtime_detached || arena != owned_arena || root() != kernel_root || !space.attach(ranges))
+            fail("process runtime reattach");
+        runtime_detached = false;
+        if (!space.verify(table, ranges, handoff.get(96)) || !audit_residents())
+            fail("process runtime attachment audit");
+    }
+    install_architecture(arena);
+    prepare_recovery(space.volume(handoff.get(Handoff::volume_bytes_word)));
+    return true;
+}
+auto leave_runtime(const Bytes &handoff) -> void {
+    if (running.space || residents[1].space || snapshot || endpoint.caller || endpoint.delivery ||
+        endpoint.completion || Timer::read(0x390) || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false) ||
+        !audit_residents() || !space.verify(table, ranges, handoff.get(96)) || !space.detach())
+        fail("process runtime return audit");
+    runtime_detached = true;
+}
+} // namespace
+
+auto aurora::uefi::run_program(U64 arena,
+                               const Bytes &handoff,
+                               std::span<const std::byte> path,
+                               std::span<const std::byte> arguments,
+                               ProcessOutput output,
+                               void *context) -> RunResult {
+    if (!output || path.empty() || path.size() > process::file_path_limit || arguments.empty() ||
+        arguments.size() > 65536 || !enter_runtime(arena, handoff))
+        return {};
+    output_sink = output;
+    output_context = context;
+    const auto result = execute_command(space.volume(handoff.get(Handoff::volume_bytes_word)), path, arguments);
+    output_sink = nullptr;
+    output_context = nullptr;
+    leave_runtime(handoff);
+    return result;
+}
+
+auto aurora::uefi::prepare_programs(U64 arena, const Bytes &handoff) -> bool {
+    bool ready = false;
+    if (handoff.get(Handoff::composition_word) == 4 && enter_runtime(arena, handoff)) {
+        if (!residents[0].space && !start_file_service(space.volume(handoff.get(Handoff::volume_bytes_word))))
+            abandon_service();
+        ready = residents[0].space && runtime_disk_ready;
+        leave_runtime(handoff);
+    }
+    Serial::text(ready ? std::string_view{"AURORA_PROCESS_DISK: ready"}
+                       : std::string_view{"AURORA_PROCESS_DISK: unavailable"});
+    Serial::text(runtime_storage.mounted() ? std::string_view{" mounted\r\n"} : std::string_view{" readonly\r\n"});
+    return ready;
+}
+
+auto aurora::uefi::console_request(U64 arena,
+                                   const Bytes &handoff,
+                                   ConsoleOperation operation,
+                                   U64 expected_generation,
+                                   U64 expected_note_revision,
+                                   std::span<const std::byte> request,
+                                   std::span<std::byte> response) -> ConsoleResult {
+    const auto code = static_cast<U64>(operation);
+    const U64 input_size = code == 10 ? 72 : code == 11 ? 80 : code == 12 ? 72 : code == 13 ? 232 : 0;
+    const U64 output_size = code == 10 ? 80 : code == 11 ? 248 : code == 13 ? 80 : 0;
+    if (code < 10 || code > 14 || request.size() != input_size || response.size() != output_size ||
+        (code >= 12 && !expected_generation) || (code == 12 ? !expected_note_revision : expected_note_revision != 0))
+        return {ConsoleStatus::malformed, 0, 0};
+    for (auto &byte : response)
+        byte = std::byte{0};
+    if (!enter_runtime(arena, handoff))
+        return {};
+    ConsoleResult result;
+    if (expected_generation && expected_generation != endpoint.generation) {
+        result = {endpoint.generation ? ConsoleStatus::conflict : ConsoleStatus::unavailable, endpoint.generation, 0};
+        leave_runtime(handoff);
+        return result;
+    }
+    if (!residents[0].space &&
+        (expected_generation || !start_file_service(space.volume(handoff.get(Handoff::volume_bytes_word))))) {
+        abandon_service();
+        leave_runtime(handoff);
+        return {};
+    }
+    loader_budget = {};
+    loader_budget.initial = loader_budget.remaining = 128;
+    loader_budget.quantum = loader_budget.tick();
+    loading_image = true;
+    endpoint.caller_cancelled = false;
+    message_header(code, expected_note_revision, 0, request.size());
+    for (U64 at = 0; at < request.size(); ++at)
+        endpoint.bytes[64 + at] = request[at];
+    const bool received = exchange_request(0) && !endpoint.caller_cancelled;
+    bool valid = received && endpoint.count >= 64;
+    const Bytes reply{endpoint.bytes};
+    const U64 status = valid ? reply.get(0) : 3, count = valid ? reply.get(8) : 0, revision = valid ? reply.get(16) : 0;
+    valid = valid && status <= 2 && count == (status ? 0 : output_size) && endpoint.count == 64 + count;
+    for (U64 at = 24; valid && at < 64; ++at)
+        valid = endpoint.bytes[at] == std::byte{0};
+    if (status)
+        valid = valid && revision == 0;
+    else if (code == 10)
+        valid = valid && revision != 0;
+    else if (code == 12)
+        valid = valid && expected_note_revision != ~U64{0} && revision == expected_note_revision + 1;
+    else
+        valid = valid && revision == 0;
+    loading_image = false;
+    if (!valid) {
+        if (received && !endpoint.invalid_reply_operation)
+            endpoint.invalid_reply_operation = code;
+        abandon_service();
+    } else {
+        result = {status == 0   ? ConsoleStatus::success
+                  : status == 1 ? ConsoleStatus::conflict
+                                : ConsoleStatus::malformed,
+                  endpoint.generation,
+                  revision};
+        for (U64 at = 0; at < count; ++at)
+            response[at] = endpoint.bytes[64 + at];
+        endpoint.replied = false;
+    }
+    leave_runtime(handoff);
+    return result;
+}
+
+auto aurora::uefi::reject_program_service(U64 arena, const Bytes &handoff, U64 expected_generation) -> ConsoleStatus {
+    if (!expected_generation)
+        return ConsoleStatus::malformed;
+    if (!enter_runtime(arena, handoff))
+        return ConsoleStatus::unavailable;
+    ConsoleStatus result = ConsoleStatus::unavailable;
+    if (residents[0].space && endpoint.generation) {
+        result = ConsoleStatus::conflict;
+        if (endpoint.generation == expected_generation) {
+            abandon_service(ServiceFailure::consumer_rejected);
+            result = ConsoleStatus::success;
+        }
+    }
+    leave_runtime(handoff);
+    return result;
+}
+
+#endif

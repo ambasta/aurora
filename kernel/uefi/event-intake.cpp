@@ -38,13 +38,14 @@ enum class Failure : U64 {
     evidence,
     output,
     authority,
-    final_state
+    final_state,
+    invalidation
 };
 // The case (0 denial, 1 success, 2 overflow, 3 command error) arrives in the
 // fw_cfg fixture file before any device is touched.
 U64 selector{};
 [[nodiscard]] auto control_value() -> U64 {
-    return selector == 3 ? 0x1005 : 5;
+    return selector == 0 || selector == 3 ? 0x1005 : 5;
 }
 [[nodiscard]] auto edu_command_value() -> U64 {
     return selector == 3 ? 2 : 6;
@@ -211,13 +212,16 @@ public:
 }
 [[nodiscard]] auto fixed_profile(const std::array<U64, 12> &value) -> bool {
     if ((value[9] & ~iommu_event::status_mask) || value[0] != (address(backing.device_table.data()) | 1) ||
-        value[1] != (selector == 3 ? address(backing.command_ring.data()) | (8ULL << 56) : 0) ||
+        value[1] != (selector == 0 || selector == 3 ? address(backing.command_ring.data()) | (8ULL << 56) : 0) ||
         value[2] != (address(iommu_event::BootLifetimeRing::identity()) | (8ULL << 56)) ||
         value[3] != control_value() || value[4] != 0x29d3 || value[7] >= 4096 || value[7] % 16 || value[8] >= 4096 ||
         value[8] % 16 || (value[10] & 1))
         return false;
-    return selector == 3 ? value[5] == 0 && value[6] == 16 && value[10] == 0 && value[11] == 0
-                         : value[5] == 0 && value[6] == 0 && (value[9] & 16) == 0 && value[10] == 2 && value[11] == 4;
+    if (selector == 3)
+        return value[5] == 0 && value[6] == 16 && value[10] == 0 && value[11] == 0;
+    const auto command_head = selector == 0 ? EventInvalidation::command_bytes : 0;
+    return value[5] == command_head && value[6] == command_head && (value[9] & 16) == (selector == 0 ? 16U : 0U) &&
+           value[10] == 2 && value[11] == 4;
 }
 
 auto copy_ring(std::array<std::byte, 4096> &destination) -> void {
@@ -322,12 +326,13 @@ auto establish_backing() -> void {
     auto *bytes = reinterpret_cast<std::byte *>(&backing);
     for (std::size_t index = 0; index < sizeof(backing); ++index)
         bytes[index] = std::byte{0};
-    put(backing.device_table,
-        Policy::requester * 32,
-        address(backing.page_table.data()) | 3 | (1ULL << 9) | Policy::read_permission | Policy::write_permission);
-    put(backing.device_table, Policy::requester * 32 + 8, Policy::domain);
-    put(backing.page_table, 3 * 8, address(backing.secret.data()) | 1 | Policy::write_permission);
-    put(backing.page_table, 4 * 8, address(backing.target.data()) | 1 | Policy::read_permission);
+    require(backing.initialize_device_table(address(backing.page_table.data())), Failure::backing);
+    put(backing.page_table,
+        3 * 8,
+        address(backing.secret.data()) | 1 | Policy::write_permission | (selector == 0 ? Policy::read_permission : 0));
+    put(backing.page_table,
+        4 * 8,
+        address(backing.target.data()) | 1 | Policy::read_permission | (selector == 0 ? Policy::write_permission : 0));
     put(backing.page_table,
         5 * 8,
         address(backing.helper.data()) | 1 | Policy::read_permission | Policy::write_permission);
@@ -347,6 +352,8 @@ auto establish_backing() -> void {
         }
         put(*pages[page], 0x100, values[page], 4);
     }
+    if (selector == 0)
+        put(backing.secret, 0x100, 0x7d5b3917, 4);
     set_phase(Phase::initialized);
 }
 
@@ -362,7 +369,7 @@ auto publish_profile() -> void {
     require(RegisterWindow::write(iommu_base, 8, address(backing.device_table.data()) | 1) &&
                 RegisterWindow::write(iommu_base + 0x10, 8, terminal.ring | (8ULL << 56)),
             Failure::publication);
-    if (selector == 3)
+    if (selector == 0 || selector == 3)
         require(RegisterWindow::write(iommu_base + 8, 8, address(backing.command_ring.data()) | (8ULL << 56)),
                 Failure::publication);
     require(RegisterWindow::write(iommu_base + 0x18, 8, control_value()), Failure::publication);
@@ -401,6 +408,55 @@ auto transfer(U64 iova, bool write) -> void {
     require(completed && edu_read(0x90, value) && value == 4, Failure::readiness);
     ++terminal.dma_completed;
 }
+// Establish that both translations actually worked before restricting them.
+// EDU completion is only emulated producer quiet; every allocation stays pinned.
+auto revoke_profile() -> void {
+    transfer(Policy::secret_iova, false);
+    transfer(Policy::sink_iova, true);
+    terminal.prime_read = Bytes{backing.sink}.get(0x100, 4);
+    transfer(Policy::helper_iova, false);
+    transfer(Policy::target_iova, true);
+    terminal.prime_write = Bytes{backing.target}.get(0x100, 4);
+    require(terminal.prime_read == 0x7d5b3917 && terminal.prime_write == 0x192b4d6f, Failure::invalidation);
+    put(backing.page_table, 3 * 8, address(backing.secret.data()) | 1 | Policy::write_permission);
+    put(backing.page_table, 4 * 8, address(backing.target.data()) | 1 | Policy::read_permission);
+    EventInvalidation batch{backing.command_ring, address(backing.command_ring.data())};
+    U64 head{}, tail{}, status{}, event_head{}, event_tail{};
+    require(iommu_read(0x2000, head) && iommu_read(0x2008, tail) && iommu_read(0x2020, status) &&
+                iommu_read(0x2010, event_head) && iommu_read(0x2018, event_tail) && !event_head && !event_tail &&
+                batch.prepare(head, tail, status),
+            Failure::invalidation);
+    // Consume publication before MMIO. Failure/timeout has no retry, reset,
+    // cancellation, scrub or page release path.
+    terminal.invalidation_submitted = 1;
+    require(RegisterWindow::write(iommu_base + 0x2008, 8, EventInvalidation::command_bytes), Failure::invalidation);
+    for (U64 attempt = 0; attempt < Policy::readiness_attempts; ++attempt) {
+        ++terminal.invalidation_reads;
+        require(iommu_read(0x2000, head) && iommu_read(0x2008, tail) && iommu_read(0x2020, status) &&
+                    iommu_read(0x2010, event_head) && iommu_read(0x2018, event_tail),
+                Failure::invalidation);
+        const auto result = batch.observe(head, tail, status, event_head, event_tail);
+        require(result != EventInvalidation::Result::failed, Failure::invalidation);
+        if (result == EventInvalidation::Result::complete) {
+            terminal.invalidation_completed = 1;
+            break;
+        }
+        asm volatile("pause" : : : "memory");
+    }
+    if (!terminal.invalidation_completed) {
+        static_cast<void>(batch.expire());
+        fail(Failure::invalidation);
+    }
+    terminal.invalidation_store = Bytes{backing.command_ring}.get(EventInvalidation::completion_offset);
+    require(terminal.invalidation_store == EventInvalidation::nonce, Failure::invalidation);
+    // Fresh secret differs from the permitted prime and helper in every byte.
+    // A denied read must not expose it, even if an old translation was cached.
+    put(backing.secret, 0x100, 0xe8c6a482, 4);
+    put(backing.target, 0x100, 0xa7856341, 4);
+    put(backing.sink, 0x100, 0x7896b4d2, 4);
+    asm volatile("mfence" : : : "memory");
+}
+
 auto produce() -> void {
     if (selector == 3) {
         require(phase == Phase::producing && RegisterWindow::write(iommu_base + 0x2008, 8, 16), Failure::producer);
@@ -417,6 +473,8 @@ auto produce() -> void {
         }
         require(stopped, Failure::readiness);
     } else {
+        if (selector == 0)
+            revoke_profile();
         transfer(Policy::helper_iova, false);
         if (selector == 0) {
             transfer(Policy::secret_iova, false);
@@ -526,7 +584,7 @@ using Entry = iommu_event::Entry<EventSession, ConsoleSession, ServicePlatform>;
                 terminal.before_data[page * 36 + 20 + index] != std::byte(0x50 + index))
                 return false;
     const unsigned count = selector == 0 ? 2 : selector == 1 ? 0 : selector == 2 ? 255 : 1;
-    if (raw[8] != count * 16 || raw[9] != (selector == 2 ? 0xb : selector == 1 ? 8 : 0xa))
+    if (raw[8] != count * 16 || raw[9] != (selector == 0 ? 0x1a : selector == 2 ? 0xb : selector == 1 ? 8 : 0xa))
         return false;
     for (unsigned index = 0; index < 256; ++index) {
         U64 first = Policy::poison_word0 | index, second = Policy::poison_word1 | (index * 16);
@@ -587,7 +645,7 @@ auto event_output(const void *grant, U64 generation, U64 byte) -> U64 {
     require(!begun && phase == Phase::cold && !iommu_event::BootLifetimeRing::exposed(), Failure::entry);
     begun = true;
     terminal.magic = 0x41554556494e5431ULL;
-    terminal.version = 1;
+    terminal.version = 2;
     using fw_cfg::Fixture;
     const auto fixture = fw_cfg::FwCfg::read(Fixture::event_denial, Fixture::event_command_error);
     require(fixture.has_value(), Failure::entry);
@@ -635,6 +693,12 @@ auto event_output(const void *grant, U64 generation, U64 byte) -> U64 {
             Failure::output);
     publish_profile();
     produce();
+    require(emit("AURORA_IOMMU_INVALIDATION: prime-read=") && hex(terminal.prime_read) && emit(" prime-write=") &&
+                hex(terminal.prime_write) && emit(" submitted=") && hex(terminal.invalidation_submitted) &&
+                emit(" completed=") && hex(terminal.invalidation_completed) && emit(" reads=") &&
+                hex(terminal.invalidation_reads) && emit(" store=") && hex(terminal.invalidation_store) &&
+                emit(" retained=boot\r\n"),
+            Failure::output);
     require(capture(false), Failure::evidence);
     require(report_evidence(false), Failure::output);
     // Preserve both raw evidence and failed protected/sink bytes before judging

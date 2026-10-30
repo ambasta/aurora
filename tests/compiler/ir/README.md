@@ -123,3 +123,8 @@ ABI programs are loops over call shapes (about 1.2 MB of module text), so they
 are not stored. `abi_programs.py NAME OUT` writes each as one case file; Meson
 generates them once per build and passes the file to the directory's test and
 to its native ABI runner (`--air`).
+
+The sector-value native runner assembles and links one runtime-selected driver
+for its Report/Block call shapes, owned snapshots and padded-layout cases. Each
+case runs in a fresh process; handwritten boundaries check the complete payload,
+status, hidden-register contract, disjoint storage and canaries.
