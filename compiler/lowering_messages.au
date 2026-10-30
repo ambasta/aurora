@@ -222,7 +222,7 @@ export namespace compiler_lowering {
             return say(session, "move requires an owning value");
         }
         if (reason == LoweringError::borrowed_object_ownership_transfer) {
-            return say(session, "borrowed object parameters cannot transfer ownership");
+            return say(session, "borrowed object parameters cannot be copied or transferred by value");
         }
         if (reason == LoweringError::move_const_owner) {
             return say(session, "cannot move a const owner");
@@ -732,7 +732,8 @@ export namespace compiler_lowering {
             return say(session, "service capability must be the leading exclusive parameter");
         }
         if (reason == LoweringError::borrowed_function_boundary) {
-            say(session, "borrowed functions require one to four leading concrete owning-class references, or ");
+            say(session,
+                "borrowed functions require one plain concrete class reference, one to four owning-class references, or ");
             say(session, "one mutable OwnedValues reference; builtin and multiple roots require a scalar or ");
             return say(session, "enum result");
         }

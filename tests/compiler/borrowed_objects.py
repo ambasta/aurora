@@ -110,6 +110,94 @@ class BorrowCases(BufferSuite):
             super().reject(name, source, diagnostic or True)
 
 
+def plain_borrowing_cases(suite):
+    helpers = (
+        HELPERS
+        + """
+class PlainCounter {
+    i64 value;
+public:
+    PlainCounter(i64 initial) : value(initial) {}
+    auto get() const -> i64 { return value; }
+    auto add(i64 amount) -> bool { value = value + amount; return true; }
+    auto snapshot() const -> Count { const Count result = Count(value); return result; }
+};
+auto plain_read(const PlainCounter& value) -> i64 { return value.get(); }
+auto plain_add(PlainCounter& value, i64 amount) -> bool { return value.add(amount); }
+auto plain_forward(PlainCounter& value, i64 amount) -> i64 {
+    const i64 before = plain_read(value);
+    if (!plain_add(value, amount)) { return -1; }
+    return plain_read(value) - before;
+}
+auto plain_snapshot(const PlainCounter& value) -> Count {
+    const Count result = value.snapshot(); return result;
+}
+auto plain_tail(PlainCounter& value, i64 amount) -> i64 { value.add(amount); return value.get(); }
+auto plain_shared(const PlainCounter& value, i64 other) -> i64 { return value.get() + other; }
+auto plain_copy_value(PlainCounter value) -> i64 { return value.get(); }
+auto count_reference(const Count& value) -> i64 { return value.get(); }
+class PlainNested {
+public:
+    Count inner;
+    PlainNested(Count value) : inner(value) {}
+    auto get() const -> i64 { return inner.get(); }
+};
+auto nested_read(const PlainNested& value) -> i64 { return value.get(); }
+"""
+    )
+    body = """
+PlainCounter first = PlainCounter(10);
+PlainCounter second = PlainCounter(20);
+i64 at = 0;
+while (at < 3) {
+    if (plain_forward(first, 1) != 1) { return 0; }
+    at = at + 1;
+}
+if (flag == 0) { plain_add(second, 9); } else { plain_forward(second, 9); }
+const PlainCounter copied = first;
+const Count snapshot = plain_snapshot(first);
+if (plain_shared(first, plain_read(first)) != 26 || count_reference(snapshot) != 13) { return 0; }
+if (plain_copy_value(copied) != 13) { return 0; }
+const PlainNested nested = PlainNested(snapshot);
+if (nested_read(nested) != 13) { return 0; }
+return plain_read(first) + plain_read(second);
+"""
+    exe = suite.compile("plain-complete-roots-and-forwarding", program(body, helpers))
+    suite.run(exe, 0, 0, 0, 42, 0, 0)
+    suite.run(exe, 0, 1, 0, 42, 0, 0)
+    declarations = {
+        "plain-multiple-roots": "auto bad(PlainCounter& first,const PlainCounter& second)->i64{return 0;}",
+        "plain-mixed-owning-roots": "auto bad(std::ByteBuffer& first,PlainCounter& second)->i64{return 0;}",
+        "plain-mixed-service": "auto bad(PlainCounter& first,builtin::ConsoleSession& second)->i64{return 0;}",
+        "plain-region-tail": "auto bad(PlainCounter& first,builtin::ByteRegion region)->i64{return 0;}",
+        "plain-formal-copy": (
+            "auto bad(const PlainCounter& value)->i64{const PlainCounter copy=value;return copy.get();}"
+        ),
+        "plain-formal-value-argument": "auto bad(const PlainCounter& value)->i64{return plain_copy_value(value);}",
+        "plain-formal-return": "auto bad(const PlainCounter& value)->PlainCounter{return value;}",
+        "plain-formal-rebind": "auto bad(PlainCounter& value)->i64{value=PlainCounter(1);return 0;}",
+        "plain-formal-move": "auto bad(PlainCounter& value)->PlainCounter{return move(value);}",
+        "plain-formal-private-read": "auto bad(const PlainCounter& value)->i64{return value.value;}",
+        "plain-formal-const-escalation": "auto bad(const PlainCounter& value)->bool{return plain_add(value,1);}",
+    }
+    for name, declaration in declarations.items():
+        suite.reject(name, program("return 0;", helpers + declaration))
+    bodies = {
+        "plain-frozen-later-read": "plain_tail(value, value.get());",
+        "plain-frozen-later-copy": "plain_tail(value, plain_copy_value(value));",
+        "plain-shared-later-mutation": "plain_shared(value, plain_forward(value,1));",
+        "plain-temporary-root": "plain_read(PlainCounter(1));",
+        "plain-projected-root": (
+            "const Count count=Count(1);PlainNested nested=PlainNested(count);count_reference(nested.inner);"
+        ),
+        "plain-wrong-nominal": "const Count other=Count(1);plain_read(other);",
+        "plain-incomplete-root": "PlainCounter missing;plain_read(missing);",
+        "plain-const-local-mutation": "const PlainCounter frozen=PlainCounter(1);plain_add(frozen,1);",
+    }
+    for name, rejected in bodies.items():
+        suite.reject(name, program("PlainCounter value=PlainCounter(1);" + rejected + "return 0;", helpers))
+
+
 def borrowing_cases(suite):
     body = (
         CREATE
@@ -517,7 +605,7 @@ def bounded_borrowing_cases(suite):
             (
                 "move-formal",
                 f"std::ByteBuffer taken = move(r{ordinal}); return 0;",
-                "borrowed object parameters cannot transfer ownership",
+                "borrowed object parameters cannot be copied or transferred by value",
             ),
             (
                 "private-field",
@@ -534,7 +622,7 @@ def bounded_borrowing_cases(suite):
     suite.reject(
         "bounded-five-roots",
         program("return 0;", HELPERS + f"auto bad({five}) -> i64 {{ return 0; }}"),
-        "borrowed functions require one to four leading concrete owning-class references",
+        "borrowed functions require one plain concrete class reference, one to four owning-class references",
     )
     seven = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(7))
     suite.reject(
@@ -890,7 +978,7 @@ def rejection_cases(suite):
     body_diagnostics = {
         "formal-const-escalation": "mutable borrowed parameter requires a mutable owning object",
         "formal-const-method-mutation": "mutable method requires a mutable receiver",
-        "formal-move-to-local": "borrowed object parameters cannot transfer ownership",
+        "formal-move-to-local": "borrowed object parameters cannot be copied or transferred by value",
         "formal-implicit-copy": "owning class cannot be copied; use move(named_local)",
         "formal-whole-assignment": "assignment requires a mutable scalar local",
         "formal-drop": "unknown function 'drop'",
@@ -921,7 +1009,7 @@ def rejection_cases(suite):
         "borrowed-owning-result": "auto bad(std::ByteBuffer& input) -> std::ByteBuffer { return move(input); }",
         "borrowed-reference-result": "auto bad(std::ByteBuffer& input) -> std::ByteBuffer& { return input; }",
         "borrowed-span-result": f"auto bad(const std::ByteBuffer& input) -> {SPAN} {{ return input.bytes(); }}",
-        "nonowning-class-reference": "auto bad(Count& input) -> i64 { return input.get(); }",
+        "multiple-plain-class-references": "auto bad(Count& first, Count& second) -> i64 { return first.get(); }",
         "scalar-reference": "auto bad(i64& input) -> i64 { return input; }",
         "builtin-owner-reference": "auto bad(builtin::OwnedBytes& input) -> i64 { return input.size(); }",
         "const-builtin-owner-reference": "auto bad(const builtin::OwnedBytes& input) -> i64 { return input.size(); }",
@@ -947,7 +1035,9 @@ def rejection_cases(suite):
     declaration_diagnostic = (
         "borrowed parameters require a supported leading ownership reference signature on an ordinary function"
     )
-    result_diagnostic = "borrowed functions require one to four leading concrete owning-class references"
+    result_diagnostic = (
+        "borrowed functions require one plain concrete class reference, one to four owning-class references"
+    )
     later_diagnostic = "borrowed-function tails require scalar or enum values"
     signature_diagnostics = {
         "nonleading-borrow": declaration_diagnostic,
@@ -958,7 +1048,7 @@ def rejection_cases(suite):
         "borrowed-owning-result": result_diagnostic,
         "borrowed-reference-result": "expected '{'",
         "borrowed-span-result": "only scalar function results or scalar-field class values are supported",
-        "nonowning-class-reference": result_diagnostic,
+        "multiple-plain-class-references": result_diagnostic,
         "scalar-reference": declaration_diagnostic,
         "builtin-owner-reference": declaration_diagnostic,
         "const-builtin-owner-reference": declaration_diagnostic,
@@ -1054,6 +1144,7 @@ def main():
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="aurora-borrowed-objects-") as temporary:
         suite = BorrowCases(args.compiler.resolve(strict=True), args.artifacts or Path(temporary), args.smoke)
+        plain_borrowing_cases(suite)
         borrowing_cases(suite)
         paired_borrowing_cases(suite)
         bounded_borrowing_cases(suite)

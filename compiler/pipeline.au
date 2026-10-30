@@ -108,7 +108,8 @@ export namespace compiler_ir_metadata {
         value.typed(r == MetadataError::borrowed_result, "borrowed formal cannot have resource or borrowed result");
         value.typed(r == MetadataError::borrowed_parameters, "borrowed roots count toward six parameters");
         value.typed(r == MetadataError::borrowed_root_type, "borrowed root requires a canonical named class type");
-        value.typed(r == MetadataError::borrowed_root_class, "borrowed root requires a complete concrete owning class");
+        value.typed(r == MetadataError::borrowed_root_class,
+            "borrowed root requires a complete concrete owning class or a single supported plain class");
         value.typed(r == MetadataError::borrowed_root_count, "borrowed root count exceeds the explicit formal prefix");
         value.typed(r == MetadataError::borrowed_root_values,
             "multi-root borrowed signature requires scalar or enum values");

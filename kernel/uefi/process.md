@@ -14,7 +14,7 @@ The decisions are Aurora (`examples/kernel-process.au` over
 and the existing `interrupt_budget`), reached through the private bridge
 `process-entry.S`. The build checks every argument record, result class and
 enum against the compiler's ABI facts (`PROCESS_POLICY_ABI` in
-`scripts/meson_aurora_assembly.py`). Trusted C++ still owns resident lifecycle and cumulative budget state,
+`scripts/meson_aurora_assembly.py`). Trusted C++ still owns resident lifecycle,
 endpoint/transaction records and persistent-service startup/loss policy, as well
 as firmware file reads, page-table writes/walks, CR3, frame-record storage and
 free-list head, range and memory records, bounded messages, LAPIC and output. `services/service/files.au` owns filesystem tables, records and
@@ -55,7 +55,7 @@ the endpoint identity, copied bytes and physical accounting. Loader/control and
 fixture consumers still pump the same transport primitives natively.
 
 This removes the native production command loop, not the resident scheduler,
-accounting or persistent owner policy. Native effect receipts authenticate the
+physical resource accounting or persistent owner policy. Native effect receipts authenticate the
 live grant/generation, prevent reentry and duplicate physical effects, and keep
 pending I/O distinct from command decisions. The grant is revoked before return
 to the console. The retained source frame stays on the supervisor stack while
@@ -241,6 +241,31 @@ failed command is never replayed. A subsequent command may start a fresh service
 incarnation after explicit volatile-loss reporting. The combined production
 image, return-to-prompt and same-boot build/link/run still require actual guest
 qualification; the API's presence is not that result.
+
+### Retained source budget roots
+
+`kernel.process_budget::BudgetLedger` is the sole owner of each resident's
+allowance, charged ticks, partial quantum and next-message profile. The loader
+has a separate root shared across its whole bounded operation. A native
+noncopyable wrapper retains opaque aligned storage initialized by a source
+factory; a copied class value is not execution authority. `Running` copies only
+the binding, never a second allowance tuple. Single leading plain-class loans
+use complete-object lifetime facts, distinct from resource ownership.
+
+Each source access is synchronous, allocation/effect-free, IRQ-excluded and
+nonreentrant. No loan survives LAPIC operations, CPL3 entry, device I/O or a
+callback. This is the single-CPU maskable-interrupt contract; no NMI path enters
+the ledger. The dedicated object must have no imports, and the whole-image
+call-cycle and stack checks still apply. These are bounded artifact guarantees,
+not a general language effect system. Native code retains measured/armed timer
+counts and authenticated process identities, not source policy fields.
+
+A new transport transaction restarts only the server's configured allowance;
+parks and request continuation never renew it or the caller. Mounted startup
+can configure the next message without erasing current diagnostics if admission
+fails. Voluntary zero-count progress consumes one count in source. Retirement
+captures immutable terminal ticks with run/service identity before stopping and
+scrubbing the root; those observations cannot resume execution.
 
 ### Retained file service
 

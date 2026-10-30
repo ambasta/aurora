@@ -591,10 +591,10 @@ end
 @@ -12,0 +14 @@
 +  receiver Buffer true true
 
-; CASE: borrowed formal cannot name copyable class
+; CASE: plain formal cannot call different nominal class
 ; BASE: borrowed formal cannot be missing root metadata
 ; RUN: verify
-; EXPECT-ERROR: borrowed root requires a complete concrete owning class
+; EXPECT-ERROR: forwarded receiver nominal class mismatch
 @@ -11,0 +12 @@
 +  params [(class Word)]
 

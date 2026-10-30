@@ -1,0 +1,194 @@
+; CASE: plain complete local and forwarded roots
+; RUN: emit
+; RUN: stack-facts
+layout Plain [i64]
+fields Plain [(i64 0 1 false)]
+storage Plain [0] [0] 8 8 8
+function plain_entry
+  result i64
+  params [(class Plain)]
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 i64
+  object 8 Plain false
+  object 16 Plain true
+  object 24 Plain false
+    BindObjectParameter 0 8 Plain
+    BeginObject 16
+    CopyObject 8 16
+    EndObject 8
+    AcquireObjectLoan 1 16 true
+    BorrowedCall plain_forward [(16 1 -1)]
+    ReleaseObjectLoan 1
+    BeginObject 24
+    CopyObject 16 24
+    AcquireObjectLoan 2 24
+    BorrowedCall plain_read [(24 2 -1)]
+    ReleaseObjectLoan 2
+    EndObject 24
+    EndObject 16
+    Return
+end
+function plain_forward
+  result i64
+  params [(class Plain)]
+  frame 0
+  roots 1
+  rootmut 1
+    AcquireObjectLoan 1 0 true
+    BorrowedCall plain_mutate [(0 1 -1)]
+    ReleaseObjectLoan 1
+    Return
+end
+function plain_mutate
+  result i64
+  params [(class Plain)]
+  frame 0
+  roots 1
+  rootmut 1
+    MethodCall plain_write
+    Return
+end
+function plain_read
+  result i64
+  params [(class Plain)]
+  frame 0
+  roots 1
+  rootmut 0
+    MethodCall plain_get
+    Return
+end
+function plain_write
+  result i64
+  frame 0
+  receiver Plain true false
+    Constant 41
+    ReceiverStore 0
+    ReceiverLoad 0
+    Return
+end
+function plain_get
+  result i64
+  frame 0
+  receiver Plain false false
+    ReceiverLoad 0
+    Return
+end
+function plain_snapshot
+  result i64
+  params [(class Plain)]
+  frame 16
+  slot 8 i64
+  object 8 Plain false
+    BindObjectParameter 0 8 Plain
+    Load 8
+    EndObject 8
+    Return
+end
+
+; CASE: plain exclusive loan freezes scalar read
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -18,0 +19 @@
++    Load 16
+
+; CASE: plain exclusive loan freezes scalar write
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -18,0 +19,2 @@
++    Constant 42
++    Store 16
+
+; CASE: plain exclusive loan freezes local copy
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -18,0 +19,2 @@
++    BeginObject 24
++    CopyObject 16 24
+
+; CASE: plain copied call requires readonly snapshot
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: aggregate argument snapshot must be readonly
+@@ -18,0 +19 @@
++    AggregateCall plain_snapshot [16] 0
+
+; CASE: plain shared loan permits copied call argument
+; BASE: plain complete local and forwarded roots
+; RUN: emit
+@@ -23,0 +24 @@
++    AggregateCall plain_snapshot [24] 0
+
+; CASE: plain loan forbids lifetime end
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -18,0 +19 @@
++    EndObject 16
+
+; CASE: plain loan forbids independent method call
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -18,0 +19 @@
++    MethodCall plain_get 16
+
+; CASE: plain shared loan forbids mutable overlap
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -23,0 +24 @@
++    AcquireObjectLoan 3 24 true
+
+; CASE: plain const formal cannot upgrade
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -18 +18 @@
+-    AcquireObjectLoan 1 16 true
++    AcquireObjectLoan 1 16
+@@ -35 +35 @@
+-  rootmut 1
++  rootmut 0
+
+; CASE: plain helper does not gain private field access
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -56 +56 @@
+-    MethodCall plain_get
++    ReceiverLoad 0
+
+; CASE: plain local requires initialized complete value
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: copy source object not fully initialized
+@@ -16 +15,0 @@
+-    CopyObject 8 16
+
+; CASE: plain mutable loan requires mutable local
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -12 +12 @@
+-  object 16 Plain true
++  object 16 Plain false
+
+; CASE: plain borrowed formal cannot be extracted as value
+; BASE: plain complete local and forwarded roots
+; RUN: verify
+; EXPECT-ERROR: copy requires exact object slot
+@@ -53 +53,3 @@
+-  frame 0
++  frame 16
++  slot 8 i64
++  object 8 Plain false
+@@ -56 +58,3 @@
+-    MethodCall plain_get
++    BeginObject 8
++    CopyObject 0 8
++    EndObject 8

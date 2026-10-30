@@ -1,0 +1,23 @@
+zero_count a:create=1 a:charge=available a=1:16777216:0
+partial_tick a:create=1 a:charge=available a=1:1:0 a:charge=available a=1:16777216:1
+minimum_progress a:create=1 a:progress=available a=1:16777215:0
+exact_expiry a:create=1 a:charge=exhausted a=0:16777216:1 a:charge=exhausted a=0:16777216:1
+excess_count a:create=1 a:charge=exhausted a=0:16777216:2
+long_partial a:create=1 a:charge=available a=1:1:0 a:progress=available a=1:2147483648:1
+maximum_long a:create=1 a:charge=exhausted a=0:2147483648:128
+repeated_parks a:create=1 a:charge=available a:progress=available a:charge=available a=1:16777200:0
+configure_without_restart a:create=1 a:charge=available a:configure=1 a=0:16777215:2 a:charge=rejected a=0:16777215:2
+configured_restart a:create=1 a:charge=available a:configure=1 a:restart=1 a=1:2147483648:0
+mount_restore a:create=1 a:configure=1 a:restart=1 a:charge=available a:reset=1 a=1:16777216:0
+message_reset a:create=1 b:create=1 a:charge=available b:charge=available b:restart=1 a=1:16777216:1 b=1:16777216:0
+caller_expired a:create=1 b:create=1 a:charge=exhausted b:charge=available b:progress=available a=0:16777216:1 b=1:16777215:1
+loader_reconfigure a:create=1 a:charge=available a:reset=1 a:charge=available a:reset=1 a=1:16777216:0
+invalid_reconfigure a:create=1 a:charge=available a:configure=0 a:reset=0 a=1:16777216:1
+invalid_zero a:create=0
+invalid_limit a:create=0
+invalid_scale a:create=0
+slot_reuse a:create=1 a:charge=exhausted a:stop=1 a:create=1 a=1:2147483648:0
+before_create denied
+stopped denied
+not_excluded denied
+reentrant denied

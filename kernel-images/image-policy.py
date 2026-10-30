@@ -4,6 +4,7 @@ A Python literal (read with ast.literal_eval, never executed). Every rule whose
 `profiles` globs match a profile id (platform/mode) applies; lists merge.
   imports    - the complete set of symbols each generated Aurora object may import
   imports:STEM - further imports allowed only for the generated object STEM.o
+  import_free - generated object stems which must have no undefined imports
   reachable  - Aurora policy entry points the supervisor must actually call
   forbidden  - symbol globs the linked kernel image must not define
   callbacks  - reviewed indirect calls, "CALLER=CALLEE" C++ signature fragments;
@@ -45,6 +46,7 @@ RULES = [
     {
         "profiles": ["*"],
         "imports": [],
+        "import_free": ["budget-root"],
     },
     {
         "profiles": [
@@ -155,6 +157,22 @@ RULES = [
         "profiles": ["uefi/service-fixture"],
         "reachable": ["aurora_kernel_round_robin_next", "aurora_kernel_client_disposal"],
     },
+    # Retained source accounting is a real consumer, not unused ABI scaffolding.
+    {
+        "profiles": ["uefi/process-fixture", "uefi/production"],
+        "reachable": [
+            "__au_runtime_budget_create",
+            "__au_runtime_budget_reset",
+            "__au_runtime_budget_configure_next",
+            "__au_runtime_budget_restart",
+            "__au_runtime_budget_charge",
+            "__au_runtime_budget_progress",
+            "__au_runtime_budget_admitted",
+            "__au_runtime_budget_available",
+            "__au_runtime_budget_quantum",
+            "__au_runtime_budget_used",
+        ],
+    },
     # The process image's frame, map, volume, export, program, trap and run decisions stay in Aurora.
     {
         "profiles": ["uefi/process-fixture"],
@@ -185,7 +203,6 @@ RULES = [
             "__au_runtime_process_call",
             "__au_runtime_process_runs_admit",
             "__au_runtime_process_run",
-            "aurora_kernel_budget_tick",
             "aurora_kernel_round_robin_next",
         ],
     },

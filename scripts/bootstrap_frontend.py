@@ -56,6 +56,31 @@ def abi_record_owning(facts, symbol, ancestors=()):
     )
 
 
+def abi_record_plain(facts, symbol):
+    """Check pointer-free record dependencies without recursion or revisiting DAGs."""
+    records = facts["records"]
+    active, complete = set(), set()
+    pending = [(symbol, False)]
+    while pending:
+        name, leaving = pending.pop()
+        if leaving:
+            active.remove(name)
+            complete.add(name)
+            continue
+        if name in complete:
+            continue
+        if name in active or name not in records:
+            return False
+        active.add(name)
+        pending.append((name, True))
+        for field in records[name]["fields"]:
+            if field["kind"] == "class":
+                pending.append((field["type_name"], False))
+            elif field["kind"] not in ("i64", "u64", "u8", "bool", "enum"):
+                return False
+    return True
+
+
 def normalize_function_abi(facts, function):
     """Normalize exactly the selected paired predecessor and current root facts.
 
@@ -158,8 +183,9 @@ def normalize_function_abi(facts, function):
             ):
                 raise ValueError("invalid compiler ABI borrowed typed buffer")
             builtin_root = True
-        elif root["type_name"] not in records or not any(
-            field.get("kind") == "owner" for field in records[root["type_name"]]["fields"]
+        elif root["type_name"] not in records or not (
+            any(field.get("kind") == "owner" for field in records[root["type_name"]]["fields"])
+            or (version in (2, 3) and len(roots) == 1 and abi_record_plain(facts, root["type_name"]))
         ):
             raise ValueError("invalid compiler ABI borrowed root lane")
     if builtin_root and (

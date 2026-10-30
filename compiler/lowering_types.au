@@ -961,6 +961,25 @@ export namespace compiler_lowering {
         }
         return scalar_descriptor(session, kind);
     }
+    auto plain_borrowed_type(compiler_resolver::Session& session, i64 type) -> bool {
+        if (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value || owning_type(session, type)) {
+            return false;
+        }
+        const i64 row = class_row(session, type);
+        if (row < 0) {
+            return false;
+        }
+        const OperandRow leaves = record_slice(session, row, OperandRole::LeafTypes);
+        i64 at = 0;
+        while (at < leaves.count() && session.good()) {
+            const i64 leaf = list_value(session, leaves, at);
+            if (!compiler_resolver::scalar_value_kind(tk(session, leaf))) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return session.good();
+    }
     auto check_boundary_type(compiler_resolver::Session& session, i64 type, i64 source) -> bool {
         if (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value) {
             return true;
@@ -1331,7 +1350,8 @@ export namespace compiler_lowering {
             }
             if (borrowed > 4 || borrowed_root_count(session, symbol) != borrowed || count == 0
                 || !parameter_borrowed(session, symbol, 0) || receiver >= 0 || constructor || instantiated
-                || (!borrowed_values && (!owning_type(session, first) || tk(session, first)
+                || (!borrowed_values && ((!owning_type(session, first) && (multiple_roots
+                || !plain_borrowed_type(session, first))) || tk(session, first)
                 != compiler_resolver::ResolvedTypeKind::class_value))
                 || (!compiler_resolver::scalar_value_kind(result_kind) && (multiple_roots || result_kind
                 != compiler_resolver::ResolvedTypeKind::class_value)) || owning_type(session, result)) {
@@ -1341,7 +1361,8 @@ export namespace compiler_lowering {
             while (at < borrowed && session.good()) {
                 const i64 type = parameter_type(session, symbol, at);
                 if (!parameter_borrowed(session, symbol, at) || (!borrowed_values && (tk(session, type)
-                    != compiler_resolver::ResolvedTypeKind::class_value || !owning_type(session, type)))) {
+                    != compiler_resolver::ResolvedTypeKind::class_value || (!owning_type(session, type)
+                    && (multiple_roots || !plain_borrowed_type(session, type)))))) {
                     return fail(session, LoweringError::borrowed_function_boundary, source);
                 }
                 if (!borrowed_values) {

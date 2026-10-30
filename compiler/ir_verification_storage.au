@@ -136,7 +136,8 @@ export namespace compiler_ir_verification {
         borrowed_owner,
         owned_object,
         owned_field,
-        object_loan
+        object_loan,
+        bound_plain_root
     };
     enum class ByteDisposition {
         pristine,
@@ -1063,6 +1064,16 @@ export namespace compiler_ir_verification {
         result.set_site(site);
         return result;
     }
+    // A complete initialized plain object supplied at a borrowed entry. This
+    // lifetime receipt carries no region, byte owner or resource disposition.
+    auto bound_plain_root_fact(i64 key) -> FactRow {
+        const SpanPayload inactive_span = SpanPayload(SpanOrigin::local_array, 0, 0, 0, 0);
+        const TypeKey inactive_type = TypeKey(0, -1);
+        const LoanPayload inactive_loan = LoanPayload(0, 0, inactive_type, false, false, -1);
+        const TokenRow token = empty_token();
+        const FactRow result = FactRow(FactKind::bound_plain_root, key, -1, token, inactive_span, inactive_loan);
+        return result;
+    }
     auto array_fact(i64 key, i64 site) -> FactRow {
         const SpanPayload inactive_span = SpanPayload(SpanOrigin::local_array, 0, 0, 0, 0);
         const TypeKey inactive_type = TypeKey(0, -1);
@@ -1153,6 +1164,9 @@ export namespace compiler_ir_verification {
         }
         if (kind == FactKind::object_loan) {
             return 8;
+        }
+        if (kind == FactKind::bound_plain_root) {
+            return 9;
         }
         return -1;
     }
@@ -1251,6 +1265,10 @@ export namespace compiler_ir_verification {
         const LoanPayload loan = fact.loan();
         const SpanPayload empty_span = SpanPayload(SpanOrigin::local_array, 0, 0, 0, 0);
         const LoanPayload empty_loan = LoanPayload(0, 0, TypeKey(0, -1), false, false, -1);
+        if (fact.kind() == FactKind::bound_plain_root && (fact.key() != 0 || fact.site() != 0 || fact.disposition()
+            != ByteDisposition::pristine || !token.same(empty_token()))) {
+            return false;
+        }
         if (kind <= 0 || !canonical_token(token)) {
             return false;
         }
