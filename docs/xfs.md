@@ -1032,7 +1032,7 @@ not disable the independent boot/overlay Store. Disk create/write operations
 are denied by the read-only owner; the nested extension below exposes supported
 files beneath admitted shortform directories.
 
-### Nested read-only traversal (qualification pending)
+### Nested read-only traversal
 
 The mount and source file owner now implement component-wise lookup beneath
 `/disk` through the same checked shortform parser. Each directory is a 512-byte
@@ -1063,9 +1063,10 @@ This extension does not widen mounted-write or recovery admission. The writer
 still admits only the existing root-level `/disk/hello` replacement in its
 fixed two-file profile, once per boot; nested writes and general allocation or
 namespace mutation remain unsupported. Recovery keeps its existing bounded
-root/inode transaction profiles. Focused component qualification of the nested service path passes; production
-guest and whole-build qualification remain pending; implementation alone is not a compatibility claim for
-arbitrary XFS directories or a general writable filesystem.
+root/inode transaction profiles. Component and production NVMe/GOP checks exercise nested reads, sibling module
+loading, compile/link/run, confinement and unchanged disk bytes. These checks
+establish the bounded profile, not arbitrary XFS directories or a general
+writable filesystem. Merge qualification and cost remain revision-specific.
 
 `examples/xfs-fresh-cat.au IMAGE ROOT_FILENAME` is a running, source-owned hosted
 consumer of this state machine through read-only `HostFiles` reads. Its operator
