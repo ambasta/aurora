@@ -1,0 +1,137 @@
+; CASE: lexical owner complete construction and in-place finish
+; RUN: emit
+; RUN: stack-facts
+; CHECK: __au_runtime_execution_finish
+layout CommandOwner [u64]
+fields CommandOwner [((26 __au_execution_lease) 0 0 false) (u64 0 1 false)]
+storage CommandOwner [16] [0 16] 32 16 32
+layout __au_execution_prep [(enum __au_exec_prepared) (enum __au_exec_status)]
+fields __au_execution_prep [((enum __au_exec_prepared) 0 1 false) ((enum __au_exec_status) 1 1 false)]
+storage __au_execution_prep [0 8] [0 8] 16 8 16
+enum __au_exec_prepared 3
+enum __au_exec_status 9
+enum __au_exec_effect 2
+enum __au_exec_finish 5
+function command_constructor
+  result i64
+  params [(26 __au_execution_lease)]
+  frame 32
+  receiver CommandOwner true true
+  service_resource 16 __au_execution_lease true
+  slot 24 (enum __au_exec_status)
+  slot 32 (enum __au_exec_prepared)
+  object 32 __au_execution_prep false
+    BindRetainedResourceParameter 0 16 0
+    InitializeBytesField 0 0 16
+    Constant 0 u64
+    ReceiverStore 1 u64
+    BeginObject 32
+    RetainedFieldOperation 0 0 0 32 0
+    EndObject 32
+    ReceiverLoad 1 u64
+    ReceiverStore 1 u64
+    Constant
+    Return
+end
+function command_finish
+  result (enum __au_exec_effect)
+  params []
+  frame 0
+  receiver CommandOwner true false true true
+    EnumConstant (enum __au_exec_finish) 0
+    RetainedFieldOperation 0 0 5 0 0
+    Return
+end
+function command_entry
+  result (enum __au_exec_effect)
+  params [25]
+  frame 64
+  service 16
+  service_resource 32 __au_execution_lease true
+  slot 48 u64
+  object 64 CommandOwner true
+    BindServiceParameter 0 16 9
+    IssueServiceResource 16 46 32 0
+    BeginObject 64
+    ResourceObjectCall command_constructor 64 32 0
+    ResourceObjectCall command_finish 64 0 0
+    EndObject 64
+    Return
+end
+
+; CASE: constructor cannot observe partial receiver
+; BASE: lexical owner complete construction and in-place finish
+; RUN: verify
+; EXPECT-ERROR: constructor cannot read receiver during initialization
+@@ -23 +22,0 @@
+-    ReceiverStore 1 u64
+
+; CASE: constructor cannot return incomplete receiver
+; BASE: lexical owner complete construction and in-place finish
+; RUN: verify
+; EXPECT-ERROR: constructor returns before all fields initialized
+@@ -23,6 +22,0 @@
+-    ReceiverStore 1 u64
+-    BeginObject 32
+-    RetainedFieldOperation 0 0 0 32 0
+-    EndObject 32
+-    ReceiverLoad 1 u64
+-    ReceiverStore 1 u64
+
+; CASE: constructor cannot consume field
+; BASE: lexical owner complete construction and in-place finish
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -25 +25 @@
+-    RetainedFieldOperation 0 0 0 32 0
++    RetainedFieldOperation 0 0 5 0 0
+
+; CASE: owner cannot be dropped live
+; BASE: lexical owner complete construction and in-place finish
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -53 +52,0 @@
+-    ResourceObjectCall command_finish 64 0 0
+
+; CASE: owner cannot finish twice
+; BASE: lexical owner complete construction and in-place finish
+; RUN: verify
+; EXPECT-ERROR: object loan requires complete live root
+@@ -53,0 +54 @@
++    ResourceObjectCall command_finish 64 0 0
+
+; CASE: owner pins lexical issuer
+; BASE: lexical owner complete construction and in-place finish
+; RUN: verify
+; EXPECT-ERROR: service resource issuer has a live resource
+@@ -52,0 +53 @@
++    AcquireServiceLoan 1 16 9
+
+; CASE: moved lease cannot be observed
+; BASE: lexical owner complete construction and in-place finish
+; RUN: verify
+; EXPECT-ERROR: service resource operation requires a live owner
+@@ -52,0 +53 @@
++    ServiceResourceOperation 32 2 0 0
+
+; CASE: constructor input cannot transfer twice
+; BASE: lexical owner complete construction and in-place finish
+; RUN: verify
+; EXPECT-ERROR: constructor resource field initialized more than once
+@@ -20,0 +21 @@
++    InitializeBytesField 0 0 16
+
+; CASE: consuming method must discharge field
+; BASE: lexical owner complete construction and in-place finish
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -38 +38 @@
+-    RetainedFieldOperation 0 0 5 0 0
++    EnumConstant (enum __au_exec_effect) 0
+
+; CASE: consumed receiver cannot read copied field
+; BASE: lexical owner complete construction and in-place finish
+; RUN: verify
+; EXPECT-ERROR: object loan field lacks live ownership
+@@ -38,0 +39 @@
++    ReceiverLoad 1 u64

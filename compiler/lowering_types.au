@@ -148,8 +148,30 @@ export namespace compiler_lowering {
         }
         return compiler_catalog::resource_retained(tm(session, type, 1));
     }
+    auto field_resource(compiler_resolver::Session& session, i64 type) -> bool {
+        return tk(session, type) == compiler_resolver::ResolvedTypeKind::service_resource
+            && compiler_catalog::resource_field_eligible(tm(session, type, 1));
+    }
+    auto resource_class(compiler_resolver::Session& session, i64 type) -> bool {
+        if (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value) {
+            return false;
+        }
+        const i64 nominal = tm(session, type, 1);
+        i64 at = 0;
+        while (at < field_total(session, nominal) && session.good()) {
+            const i64 field = field_type(session, nominal, at);
+            if (field_resource(session, field)) {
+                return true;
+            }
+            at = at + 1;
+        }
+        return false;
+    }
+    auto lexical_resource_class(compiler_resolver::Session& session, i64 type) -> bool {
+        return resource_class(session, type) && !retained_class(session, type);
+    }
     auto owning_field(compiler_resolver::Session& session, i64 type) -> bool {
-        return owner_storage(session, type) || retained_resource(session, type);
+        return owner_storage(session, type) || field_resource(session, type);
     }
     auto retained_class(compiler_resolver::Session& session, i64 type) -> bool {
         if (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value) {
@@ -306,7 +328,7 @@ export namespace compiler_lowering {
         i64 field_index = 0;
         while (field_index < count && session.good()) {
             const i64 field = field_type(session, nominal, field_index);
-            if (retained_resource(session, field)) {
+            if (field_resource(session, field)) {
                 retained_fields = retained_fields + 1;
             }
             if (owner_storage(session, field)) {
@@ -615,7 +637,7 @@ export namespace compiler_lowering {
                 }
                 i64 width = 32;
                 i64 owner_alignment = 8;
-                if (retained_resource(session, element)) {
+                if (field_resource(session, element)) {
                     width = 16;
                     owner_alignment = 16;
                 }
@@ -1288,18 +1310,18 @@ export namespace compiler_lowering {
         bool retained_constructor = false;
         if (constructor && receiver >= 0) {
             const i64 receiver_type = class_type(session, receiver);
-            retained_constructor = retained_class(session, receiver_type);
+            retained_constructor = resource_class(session, receiver_type);
         }
         if (sm(session, root, 9) == 2) {
             if (receiver < 0 || constructor || count != 0 || instantiated) {
                 return fail(session, LoweringError::method_parameter_type, source);
             }
             const i64 receiver_type = class_type(session, receiver);
-            if (!retained_class(session, receiver_type)) {
+            if (!resource_class(session, receiver_type)) {
                 return fail(session, LoweringError::method_result_type, source);
             }
         }
-        if (retained_class(session, result)) {
+        if (resource_class(session, result)) {
             return fail(session, LoweringError::resource_argument_type, source);
         }
         if (result_kind == compiler_resolver::ResolvedTypeKind::service_resource) {
@@ -1313,11 +1335,11 @@ export namespace compiler_lowering {
         while (at < count && session.good()) {
             const i64 type = parameter_type(session, symbol, at);
             if (tk(session, type) == compiler_resolver::ResolvedTypeKind::service_resource && !(retained_constructor
-                && at == 0 && count == 1 && retained_resource(session, type) && !parameter_borrowed(session, symbol, at)
+                && at == 0 && count == 1 && field_resource(session, type) && !parameter_borrowed(session, symbol, at)
                 && !parameter_const(session, symbol, at))) {
                 return fail(session, LoweringError::resource_argument_type, source);
             }
-            if (retained_class(session, type) && !parameter_borrowed(session, symbol, at)) {
+            if (resource_class(session, type) && !parameter_borrowed(session, symbol, at)) {
                 return fail(session, LoweringError::resource_argument_type, source);
             }
             if (!owned_element(session, type, source)) {
@@ -1486,7 +1508,7 @@ export namespace compiler_lowering {
                 return fail(session, LoweringError::resource_argument_type, source);
             }
             const i64 input = parameter_type(session, symbol, 0);
-            if (!retained_resource(session, input)) {
+            if (!field_resource(session, input)) {
                 return fail(session, LoweringError::resource_argument_type, source);
             }
         }

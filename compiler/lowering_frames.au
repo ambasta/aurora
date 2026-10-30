@@ -114,6 +114,11 @@ export namespace compiler_lowering {
         return compiler_resolver::declaration_kind(session, staged_symbol_3)
             == compiler_resolver::DeclarationKind::constructor;
     }
+    auto constructor_body_active(compiler_resolver::Session& session) -> bool {
+        const ContinuationRow root = session.continuation(0);
+        const i64 nominal = body_receiver_nominal(session);
+        return body_constructor(session) && nominal >= 0 && root.cursor() > field_total(session, nominal);
+    }
     auto nominal_type(compiler_resolver::Session& session, i64 nominal) -> i64 {
         return compiler_resolver::concrete_type(session, compiler_resolver::ResolvedTypeKind::class_value, nominal, -1,
             0);
@@ -195,7 +200,7 @@ export namespace compiler_lowering {
             return -1;
         }
         const i64 field = field_index(session, nominal, reference);
-        if (field >= 0 && body_constructor(session)) {
+        if (field >= 0 && body_constructor(session) && !constructor_body_active(session)) {
             return error(session, LoweringError::initializer_receiver_field_access, reference);
         }
         return field;

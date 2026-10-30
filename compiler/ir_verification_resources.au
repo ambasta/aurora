@@ -513,9 +513,9 @@ export namespace compiler_ir_verification {
             }
             const compiler_ir_metadata::FieldRow shape = m.field_at(shape_index);
             const compiler_ir_metadata::RawTypeRow shape_type = m.type_at(shape.type());
-            const i64 retained_kind = compiler_ir_metadata::retained_resource_kind(m, shape_type);
+            const i64 retained_kind = compiler_ir_metadata::field_resource_kind(m, shape_type);
             if (retained_kind >= 0) {
-                if (shape.array_flag() != 0 || !compiler_ir_metadata::retained_constructor(m,
+                if (shape.array_flag() != 0 || !compiler_ir_metadata::resource_constructor(m,
                     m.callable_at(w.callable())) || compiler_ir_instructions::service_resource_kind_at(m, w.callable(),
                     source) != retained_kind) {
                     return w.fail(first_error(
@@ -587,7 +587,7 @@ export namespace compiler_ir_verification {
                 return false;
             }
             const i64 nominal = slot_class(m, slot);
-            if (compiler_ir_metadata::retained_class(m, nominal)) {
+            if (compiler_ir_metadata::resource_class(m, nominal)) {
                 return w.fail(first_error(VerificationErrorFirst::owning_class_cannot_be_implicitly_copied));
             }
             if (!owned_object(w, m, s, base, nominal, AccessMode::write) || !copy_target(w, m, result, nominal)) {
@@ -990,8 +990,12 @@ export namespace compiler_ir_verification {
         const compiler_ir_metadata::RawTypeRow result = m.type_at(types.begin());
         const i64 result_base = transfer_value(s, id, 3);
         if (transfer_receiver(m, target_id) && root <= 0) {
+            if (root == 0 && transfer_constructor(m, w.callable()) && !lexical_constructor_complete(w, m)) {
+                return w.fail(second_error(
+                    VerificationErrorSecond::constructor_cannot_read_receiver_during_initialization));
+            }
             const ControlRow control = w.control();
-            if (compiler_ir_metadata::retained_class(m, control.receiver_class()) && !live_owned_root(w, m, root)) {
+            if (compiler_ir_metadata::resource_class(m, control.receiver_class()) && !live_owned_root(w, m, root)) {
                 return false;
             }
         }
@@ -1010,6 +1014,11 @@ export namespace compiler_ir_verification {
                 }
             } else {
                 if (root > 0) {
+                    const i64 slot_index = exact_slot(m, w.callable(), 11, root);
+                    if (slot_index >= 0 && compiler_ir_metadata::resource_class(m, slot_class(m, slot_index))
+                        && !live_owned_root(w, m, root)) {
+                        return false;
+                    }
                     if (!transfer_has(w, FactKind::object, root)) {
                         return w.fail(second_error(
                             VerificationErrorSecond::method_receiver_outside_active_object_lifetime));

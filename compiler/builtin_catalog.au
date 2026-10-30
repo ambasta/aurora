@@ -638,7 +638,7 @@ export namespace compiler_catalog {
         return kind == 2;
     }
     auto resource_field_eligible(i64 kind) -> bool {
-        return resource_retained(kind);
+        return kind == 0 || resource_retained(kind);
     }
     auto resource_issuer(i64 kind) -> i64 {
         if (kind >= 0 && kind < 2) {

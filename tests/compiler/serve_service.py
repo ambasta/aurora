@@ -879,6 +879,103 @@ __au_runtime_group_entry:
             f"auto h({bootstrap})->u64{{return 0u64;}}auto f({bootstrap})->u64{{h(b);"
             f"{bootlease} lease=b.begin();{bootfinish}return 0u64;}}"
         )
+        # The source operation owns a lexical lease, not a retained process.
+        # Positive execution of this shape belongs to kernel-process-execution;
+        # these checks exercise admission and expression-order obligations.
+        command_head = (
+            f"class Command{{{lease} lease;u64 state;public:"
+            f"Command({lease} input):lease(move(input)),state(0u64){{"
+            "const builtin::ExecutionPrep prepared=lease.preparation();"
+            "if(prepared.state==builtin::ExecPrepared::loaded){state=1u64;}}"
+        )
+        command_methods = (
+            "auto value() const->u64{return state;}"
+            "auto finish() && ->u64{const u64 result=state;"
+            "lease.finish(builtin::ExecFinish::complete);return result;}"
+        )
+        command_class = command_head + command_methods + "};"
+        command_create = f"{lease} lease=e.prepare();Command command=Command(move(lease));"
+        for label, body in (
+            ("ordinary", "command.value();return move(command).finish();"),
+            ("nested-consume", "return sum(7u64,move(command).finish());"),
+        ):
+            source.write_text(
+                "module command_admitted;"
+                + command_class
+                + "auto sum(u64 first,u64 second)->u64{return first+second;}"
+                + f"auto f({execution})->u64{{{command_create}{body}}}"
+            )
+            result = run([compiler, "--check", source])
+            need(result.returncode == 0, f"command-{label}: {result.stderr!r}")
+        command_bodies = {
+            "drop": "return 0u64;",
+            "copy": "Command copy=command;return move(command).finish();",
+            "raw-field": "command.lease.cancel();return move(command).finish();",
+            "double-finish": "move(command).finish();return move(command).finish();",
+            "stale-read": "move(command).finish();return command.value();",
+            "ordinary-finish": "return command.finish();",
+            "pinned-remint": f"{lease} other=e.prepare();return move(command).finish();",
+            "pinned-forward": "forward(e);return move(command).finish();",
+            "spent-forward": "move(command).finish();return forward(e);",
+            "nested-later-read": "return sum(move(command).finish(),command.value());",
+            "nested-double-finish": "return sum(move(command).finish(),move(command).finish());",
+            "conditional-finish": "if(command.value()==0u64){return move(command).finish();}return 0u64;",
+        }
+        command_helpers = (
+            f"auto forward({execution})->u64{{return 0u64;}}auto sum(u64 first,u64 second)->u64{{return first+second;}}"
+        )
+        for label, body in command_bodies.items():
+            invalid["command-" + label] = (
+                command_class + command_helpers + f"auto f({execution})->u64{{{command_create}{body}}}"
+            )
+        for label, head in {
+            "partial-read": command_head.replace("state(0u64)", "state(value())"),
+            "missing-field": command_head.replace(",state(0u64)", ""),
+            "duplicate-field": command_head.replace("state(0u64)", "state(0u64),state(1u64)"),
+            "field-copy": command_head.replace("lease(move(input))", "lease(input)"),
+            "consume-in-constructor": command_head.replace(
+                "const builtin::ExecutionPrep",
+                "lease.finish(builtin::ExecFinish::complete);const builtin::ExecutionPrep",
+            ),
+            "consume-before-constructor-return": command_head.replace(
+                "state=1u64;}}", "state=1u64;}lease.finish(builtin::ExecFinish::complete);}"
+            ),
+            "move-field-in-constructor": command_head.replace(
+                "const builtin::ExecutionPrep", f"{lease} stolen=move(lease);const builtin::ExecutionPrep"
+            ),
+            "consuming-helper-in-constructor": command_head.replace(
+                "const builtin::ExecutionPrep", "finish();const builtin::ExecutionPrep"
+            ),
+            "explicit-constructor-return": command_head.replace("state=1u64;}}", "state=1u64;}return;}"),
+            "constructor-field-escape": command_head.replace("state=1u64;}}", "state=1u64;}return move(lease);}"),
+            "conditional-consume-in-constructor": command_head.replace(
+                "state=1u64;", "state=1u64;lease.finish(builtin::ExecFinish::complete);"
+            ),
+        }.items():
+            invalid["command-" + label] = (
+                head
+                + command_methods
+                + "};"
+                + f"auto f({execution})->u64{{{command_create}return move(command).finish();}}"
+            )
+        invalid["command-borrowed-finalize"] = command_class.replace("finish() &&", "finish()")
+        invalid["command-live-terminal-return"] = command_class.replace(
+            "lease.finish(builtin::ExecFinish::complete);", ""
+        )
+        invalid["command-borrowed-consuming-call"] = (
+            command_class + "auto f(Command& command)->u64{return move(command).finish();}"
+        )
+        invalid["command-const-consuming-call"] = (
+            command_class + "auto f(const Command& command)->u64{return move(command).finish();}"
+        )
+        invalid["command-plain-constructor-body"] = (
+            "class Plain{u64 value;public:Plain(u64 input):value(input){value=2u64;}};"
+        )
+        invalid["command-byte-constructor-body"] = (
+            "class Bytes{builtin::OwnedBytes bytes;u64 value;public:"
+            "Bytes(builtin::ByteRegion region,builtin::OwnedBytes input):bytes(move(input)),value(0u64)"
+            "{value=2u64;}};"
+        )
         resident = "builtin::ResidentSlot"
         resident_head = f"class Owner{{{resident} slot;public:Owner({resident} input):slot(move(input)){{}}"
         terminal = "auto finish() && ->builtin::ExecEffect{return slot.finish();}"
@@ -925,14 +1022,20 @@ __au_runtime_group_entry:
         invalid["resident-nested-owner"] = (
             resident_head + terminal + "};class Nested{Owner owner;public:Nested(Owner input):owner(input){}};"
         )
+        invalid["resident-constructor-body"] = (
+            resident_head.replace("slot(move(input)){}", "slot(move(input)){slot.prepare();}") + terminal + "};"
+        )
         for label, code in invalid.items():
-            if label.startswith("resident-"):
+            if label.startswith(("resident-", "command-")):
                 code += "auto witness()->u64{return 0u64;}"
             source.write_text("module rejected;" + code)
             target = ["--target", "aurora"] if label.startswith(("writer-", "readonly-")) else []
             result = run([compiler, *target, "--check", source])
             need(result.returncode == 1 and b"error AU" in result.stderr, f"{label}: {result.stderr!r}")
-            if label.startswith(("bootstrap-", "resident-", "lease-parameter-")) or label == "execution-cross-issue":
+            if (
+                label.startswith(("bootstrap-", "resident-", "command-", "lease-parameter-"))
+                or label == "execution-cross-issue"
+            ):
                 need(b"error AU9001" not in result.stderr, f"{label}: internal failure is not semantic rejection")
             if label in ("bootstrap-cross-issue", "bootstrap-cross-move", "execution-cross-issue"):
                 expected, actual = "ExecutionLease", "ServiceBootstrapLease"

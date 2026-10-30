@@ -129,6 +129,14 @@ export namespace compiler_ir_verification {
             }
             at = w.next_fact(at);
         }
+        at = w.first_fact(FactKind::resident_field);
+        while (at >= 0 && fact_kind_at(w, at, FactKind::resident_field)) {
+            const FactRow field = w.fact_at(at);
+            if (field.key() > 0 && field.site() == issuer && field.disposition() == ByteDisposition::live) {
+                return true;
+            }
+            at = w.next_fact(at);
+        }
         return false;
     }
     auto service_issuer_available(VerificationWorkspace& w, i64 issuer) -> bool {
@@ -272,6 +280,10 @@ export namespace compiler_ir_verification {
             const FactRow input = semantic_fact(FactKind::resident_input, offset, -1, id, ByteDisposition::live, empty);
             return w.fact_set(input) && w.clear_current();
         }
+        if (transfer_constructor(m, w.callable()) && !lexical_constructor_complete(w, m)) {
+            return w.fail(second_error(
+                VerificationErrorSecond::constructor_cannot_read_receiver_during_initialization));
+        }
         const i64 ordinal = transfer_value(s, id, 1);
         const i64 method = transfer_value(s, id, 2);
         const i64 result_offset = transfer_value(s, id, 3);
@@ -290,6 +302,14 @@ export namespace compiler_ir_verification {
         }
         if (!owner_writable(w, s, 0, ordinal, mode)) {
             return false;
+        }
+        if (compiler_catalog::resource_method_parameters(kind, method) == 1) {
+            const TypeKey expected = transfer_catalogue_type(m, compiler_catalog::resource_method_parameter(kind,
+                method));
+            const ValueRow argument = current(w, expected);
+            if (!w.good()) {
+                return false;
+            }
         }
         const i64 result_type = compiler_catalog::resource_method_result(kind, method);
         const bool copied = compiler_ir_metadata::catalogue_kind(result_type) == 5;
@@ -319,6 +339,90 @@ export namespace compiler_ir_verification {
         const BoundsEvidence bounds = empty_bounds();
         const ValueRow result = ValueRow(type, bounds);
         return w.set_current(result);
+    }
+    auto transfer_resource_object_call(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const i64 target_id = transfer_target(m, s, id);
+        const compiler_ir_metadata::CallableRow target = m.callable_at(target_id);
+        const i64 root_offset = transfer_value(s, id, 1);
+        const i64 source = transfer_value(s, id, 2);
+        const i64 result = transfer_value(s, id, 3);
+        if (!transfer_has(w, FactKind::object, root_offset) || !owner_writable(w, s, root_offset, -2,
+            AccessMode::write)) {
+            return w.fail(second_error(VerificationErrorSecond::service_resource_requires_live_owner));
+        }
+        FactRow root = w.fact_find(FactKind::owned_object, root_offset, -1);
+        const bool constructor = compiler_ir_metadata::resource_constructor(m, target);
+        i64 issuer = 0;
+        if (constructor) {
+            if (root.disposition() != ByteDisposition::pristine || compiler_ir_initialization::object_was_constructed(w,
+                m, root_offset) != 0 || compiler_ir_initialization::object_pristine(w, m, root_offset) != 1
+                || !has_fact(w, FactKind::service_resource, source, -1)) {
+                return w.fail(second_error(VerificationErrorSecond::service_resource_requires_live_owner));
+            }
+            const FactRow resource = w.fact_find(FactKind::service_resource, source, -1);
+            issuer = resource.site();
+            const FactRow used = w.fact_find(FactKind::service_issuer_used, issuer, -1);
+            const compiler_ir_instructions::RawInstructionRow issuance = s.instruction_at(used.site());
+            const i64 kind = compiler_ir_instructions::service_resource_kind_at(m, w.callable(), source);
+            if (used.kind() != FactKind::service_issuer_used || used.site() <= 0 || issuance.form() != 85
+                || transfer_value(s, used.site(), 0) != issuer || transfer_value(s, used.site(), 3) != kind
+                || transfer_value(s, used.site(), 1) != compiler_catalog::resource_issue_operation(kind)
+                || w.service_unsuspended(issuer) != 1) {
+                return w.fail(second_error(VerificationErrorSecond::service_resource_provenance_mismatch));
+            }
+        } else {
+            if (!live_owned_root(w, m, root_offset) || compiler_ir_initialization::object_initialized(w, m, root_offset)
+                != 1) {
+                return w.fail(second_error(VerificationErrorSecond::service_resource_requires_live_owner));
+            }
+        }
+        i64 at = w.fact_lower_bound(FactKind::resident_field, root_offset, -1);
+        bool found = false;
+        while (at >= 0 && fact_key_at(w, at, FactKind::resident_field, root_offset)) {
+            FactRow field = w.fact_at(at);
+            ByteDisposition expected = ByteDisposition::live;
+            if (constructor) {
+                expected = ByteDisposition::pristine;
+            }
+            if (field.disposition() != expected) {
+                return w.fail(second_error(VerificationErrorSecond::service_resource_requires_live_owner));
+            }
+            if (constructor) {
+                field.set_disposition(ByteDisposition::live);
+                field.set_site(issuer);
+            } else {
+                field.set_disposition(ByteDisposition::consumed);
+            }
+            if (!w.fact_set(field)) {
+                return false;
+            }
+            found = true;
+            at = w.next_fact(at);
+        }
+        if (!found) {
+            return w.fail(second_error(VerificationErrorSecond::service_resource_provenance_mismatch));
+        }
+        if (constructor) {
+            const FactRow dead = service_origin_fact(FactKind::service_resource_dead, source, issuer);
+            root.set_disposition(ByteDisposition::live);
+            return w.fact_erase(FactKind::service_resource, source, -1) && w.fact_set(dead) && w.fact_set(root)
+                && compiler_ir_initialization::mark_object(w, m, root_offset) && w.clear_current();
+        }
+        root.set_disposition(ByteDisposition::consumed);
+        if (!w.fact_set(root)) {
+            return false;
+        }
+        const compiler_ir_metadata::IndexRange types = target.types();
+        const compiler_ir_metadata::RawTypeRow output = m.type_at(types.begin());
+        if (output.kind() == 5) {
+            if (!transfer_has(w, FactKind::object, result) || compiler_ir_initialization::object_was_constructed(w, m,
+                result) != 0 || compiler_ir_initialization::object_pristine(w, m, result) != 1) {
+                return w.fail(second_error(VerificationErrorSecond::service_observation_requires_pristine_sample));
+            }
+            return compiler_ir_initialization::mark_object(w, m, result) && w.clear_current();
+        }
+        return transfer_set_type(w, m, types.begin());
     }
     auto transfer_services(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {

@@ -285,8 +285,39 @@ export namespace compiler_ir_metadata {
         }
         return -1;
     }
+    auto field_resource_kind(const MetadataStore& store, RawTypeRow type) -> i64 {
+        const i64 kind = service_resource_kind(store, type);
+        if (kind >= 0 && compiler_catalog::resource_field_eligible(kind)) {
+            return kind;
+        }
+        return -1;
+    }
+    auto class_resource_kind(const MetadataStore& store, i64 nominal) -> i64 {
+        if (nominal < 0 || nominal >= store.class_count()) {
+            return -1;
+        }
+        const ClassResultRow result = store.result_at(nominal);
+        const IndexRange fields = result.fields();
+        i64 at = 0;
+        while (at < fields.count()) {
+            const FieldRow field = store.field_at(fields.begin() + at);
+            const i64 kind = field_resource_kind(store, store.type_at(field.type()));
+            if (kind >= 0) {
+                return kind;
+            }
+            at = at + 1;
+        }
+        return -1;
+    }
+    auto resource_class(const MetadataStore& store, i64 nominal) -> bool {
+        return class_resource_kind(store, nominal) >= 0;
+    }
+    auto lexical_resource_class(const MetadataStore& store, i64 nominal) -> bool {
+        const i64 kind = class_resource_kind(store, nominal);
+        return kind >= 0 && !compiler_catalog::resource_retained(kind);
+    }
     auto field_owner_kind(const MetadataStore& store, RawTypeRow type) -> bool {
-        return owner_kind(type) || retained_resource_kind(store, type) >= 0;
+        return owner_kind(type) || field_resource_kind(store, type) >= 0;
     }
     auto retained_class(const MetadataStore& store, i64 nominal) -> bool {
         if (nominal < 0 || nominal >= store.class_count()) {
@@ -812,7 +843,7 @@ export namespace compiler_ir_metadata {
                         if (field.array_flag() != 0 || field.length() != 0) {
                             return fail(store, MetadataError::owner_leaves);
                         }
-                        if (!owner_type(type) && retained_resource_kind(store, type) < 0) {
+                        if (!owner_type(type) && field_resource_kind(store, type) < 0) {
                             return fail(store, MetadataError::owner_field_type);
                         }
                     } else {
@@ -1413,7 +1444,7 @@ export namespace compiler_ir_metadata {
                     }
                 }
             }
-            if (retained_resource_kind(store, type) >= 0) {
+            if (field_resource_kind(store, type) >= 0) {
                 field_alignment = 16;
             }
             if (field_alignment != 1 && field_alignment != 8 && field_alignment != 16) {
@@ -1431,7 +1462,7 @@ export namespace compiler_ir_metadata {
                 if (owner_kind(type)) {
                     cursor = cursor + 32;
                 } else {
-                    cursor = cursor + compiler_catalog::resource_extent(retained_resource_kind(store, type));
+                    cursor = cursor + compiler_catalog::resource_extent(field_resource_kind(store, type));
                 }
             } else {
                 if (type.kind() == 5) {
@@ -1794,6 +1825,12 @@ export namespace compiler_ir_metadata {
         return callable_flag(row, masks.callable_receiver()) && receiver_flag(receiver, masks.receiver_constructor())
             && retained_class(store, find_class(store, receiver.name()));
     }
+    auto resource_constructor(const MetadataStore& store, CallableRow row) -> bool {
+        const FlagMasks masks = FlagMasks();
+        const ReceiverShape receiver = row.first_receiver();
+        return callable_flag(row, masks.callable_receiver()) && receiver_flag(receiver, masks.receiver_constructor())
+            && resource_class(store, find_class(store, receiver.name()));
+    }
     auto consuming_receiver(CallableRow row) -> bool {
         const FlagMasks masks = FlagMasks();
         return callable_flag(row, masks.callable_receiver()) && receiver_flag(row.first_receiver(),
@@ -2029,12 +2066,12 @@ export namespace compiler_ir_metadata {
     }
     auto verify_resource_signature(MetadataStore& store, CallableRow row) -> bool {
         const FlagMasks masks = FlagMasks();
-        if (retained_constructor(store, row)) {
+        if (resource_constructor(store, row)) {
             if (row.borrowed_root_count() != 0 || row.value_parameter_count() != 1) {
                 return fail(store, MetadataError::retained_signature);
             }
             const RawTypeRow input = store.type_at(row.value_parameter_begin());
-            if (retained_resource_kind(store, input) < 0) {
+            if (field_resource_kind(store, input) < 0) {
                 return fail(store, MetadataError::retained_signature);
             }
             const ReceiverShape receiver = row.first_receiver();
@@ -2044,7 +2081,7 @@ export namespace compiler_ir_metadata {
             while (at < fields.count()) {
                 const FieldRow field = store.field_at(fields.begin() + at);
                 const RawTypeRow type = store.type_at(field.type());
-                if (retained_resource_kind(store, type) >= 0 && !same_type(store, input, type)) {
+                if (field_resource_kind(store, type) >= 0 && !same_type(store, input, type)) {
                     return fail(store, MetadataError::retained_signature);
                 }
                 at = at + 1;
@@ -2113,7 +2150,7 @@ export namespace compiler_ir_metadata {
             return true;
         }
         if (type.kind() == 26) {
-            return (parameter && retained_constructor(store, row) && retained_resource_kind(store, type) >= 0)
+            return (parameter && resource_constructor(store, row) && field_resource_kind(store, type) >= 0)
                 || fail(store, MetadataError::resource_boundary);
         }
         if (resource_type(type)) {
@@ -2168,7 +2205,7 @@ export namespace compiler_ir_metadata {
             return fail(store, MetadataError::value_carrier);
         }
         const bool owning = owning_class(store, class_index);
-        if (retained_class(store, class_index)) {
+        if (resource_class(store, class_index)) {
             return fail(store, MetadataError::value_owner);
         }
         if (owning && (!resource || callable_flag(row, masks.callable_receiver()))) {
@@ -2206,7 +2243,7 @@ export namespace compiler_ir_metadata {
             }
         }
         if (receiver_flag(receiver, masks.receiver_consuming())) {
-            if (class_index < 0 || !retained_class(store, class_index) || !receiver_flag(receiver,
+            if (class_index < 0 || !resource_class(store, class_index) || !receiver_flag(receiver,
                 masks.receiver_mutable()) || receiver_flag(receiver, masks.receiver_constructor())
                 || row.borrowed_root_count() != 0 || row.value_parameter_count() != 0 || callable_flag(row,
                 masks.callable_span_summary())) {

@@ -640,8 +640,12 @@ public:
             field(out, "previous", row[3]);
             if (row[4] != -1)
                 out += " expression=" + expression(row[4]);
-            if (row[5] != -1)
-                out += " target=" + expression(row[5]);
+            if (row[5] != -1) {
+                if (static_cast<SyntaxKind>(row[0]) == SyntaxKind::constructor)
+                    field(out, "constructor_body", row[5]);
+                else
+                    out += " target=" + expression(row[5]);
+            }
             if (row[6] != -1) {
                 require(types[row[6]][7] == 3 && types[row[6]][6] == row[1], "declared type has another owner");
                 out += " type=" + type(row[6]);

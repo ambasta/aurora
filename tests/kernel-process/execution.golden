@@ -57,3 +57,5 @@ use_after_finish denied
 reissue_after_finish denied
 unsettled_finish denied
 release_during_finish denied
+cancel_inert_quota_close_failed unavailable:0 prepare,cancel,finish:complete
+output_failure_service_lost unavailable:0 prepare,advance,output,cancel,finish:service_lost

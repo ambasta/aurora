@@ -382,7 +382,7 @@ export namespace compiler_ir_verification {
                     return false;
                 }
                 const i64 nominal = slot_class(m, slot);
-                if (compiler_ir_metadata::retained_class(m, nominal)) {
+                if (compiler_ir_metadata::resource_class(m, nominal)) {
                     if (!resident_fields_settled(w, base, false)) {
                         return false;
                     }
@@ -450,7 +450,7 @@ export namespace compiler_ir_verification {
                 if (!w.good()) {
                     return false;
                 }
-                if (transfer_constructor(m, w.callable())) {
+                if (transfer_constructor(m, w.callable()) && !lexical_constructor_complete(w, m)) {
                     return w.fail(first_error(
                         VerificationErrorFirst::constructor_cannot_project_receiver_during_initialization));
                 }
@@ -684,8 +684,13 @@ export namespace compiler_ir_verification {
             if (!w.good()) {
                 return false;
             }
+            const ControlRow control = w.control();
+            if (!transfer_constructor(m, w.callable()) && compiler_ir_metadata::resource_class(m,
+                control.receiver_class()) && !live_owned_root(w, m, 0)) {
+                return false;
+            }
             if (form == 32) {
-                if (transfer_constructor(m, w.callable())) {
+                if (transfer_constructor(m, w.callable()) && !lexical_constructor_complete(w, m)) {
                     return w.fail(second_error(
                         VerificationErrorSecond::constructor_cannot_read_receiver_during_initialization));
                 }
@@ -700,8 +705,9 @@ export namespace compiler_ir_verification {
             if (!transfer_mutable_receiver(m, w.callable())) {
                 return w.fail(second_error(VerificationErrorSecond::write_through_const_receiver));
             }
+            const bool complete_body = lexical_constructor_complete(w, m);
             const i64 prior = compiler_ir_initialization::write_receiver_field(w, m, ordinal);
-            if (transfer_constructor(m, w.callable()) && initialization_flag(prior, 2)) {
+            if (transfer_constructor(m, w.callable()) && !complete_body && initialization_flag(prior, 2)) {
                 return w.fail(second_error(VerificationErrorSecond::constructor_field_initialized_more_than_once));
             }
             return w.good();

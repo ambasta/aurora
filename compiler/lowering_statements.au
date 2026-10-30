@@ -235,6 +235,9 @@ export namespace compiler_lowering {
         return finish_statement(session, true);
     }
     auto begin_return(compiler_resolver::Session& session, i64 frame_id) -> bool {
+        if (body_constructor(session)) {
+            return fail(session, LoweringError::borrowed_object_ownership_transfer, -1);
+        }
         ContinuationRow frame = session.continuation(frame_id);
         const i64 node = compiler_resolver::sw(session, frame.cursor(), 3);
         const compiler_resolver::SyntaxRow syntax = session.syntax(node);
@@ -305,7 +308,7 @@ export namespace compiler_lowering {
             return -1;
         }
         const i64 field = field_index(session, nominal, reference);
-        if (field >= 0 && body_constructor(session)) {
+        if (field >= 0 && body_constructor(session) && !constructor_body_active(session)) {
             const OperandRow absent = scalar(OperandRole::NoDiagnosticValue, 0);
             fail_synthetic(session, LoweringError::initializer_receiver_field_access, reference, absent, absent);
             return -1;

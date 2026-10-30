@@ -78,6 +78,15 @@ escaping child handle, automatic destructor, asynchronous task or general init
 contract. Explicit cancellation drains already-dispatched work under existing
 budgets and does not claim rollback or replay.
 
+The synchronous command now groups its lease and phase/result state in one
+source-owned CommandExecution, replacing the separate copyable session value.
+A lexical owning constructor establishes all fields before its body reads the
+authentic preparation; ordinary borrowed progress and explicit consuming finish
+keep the issuer pinned until finalization. This is ownership of a command
+operation, including refusals and close obligations, not a retained child handle
+or asynchronous supervisor. General escaping ownership remains a separate
+contract rather than an extension of the temporary execution loan.
+
 The complete file-owner bootstrap sequence now has its own source consumer:
 `ServiceBootstrapLease` resolves one unpublished startup through initial Serve,
 volume admission and optional disk readiness. Its explicit consuming publication

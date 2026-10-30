@@ -155,7 +155,7 @@ export namespace compiler_air {
             && out.word("i34,i6,i35 i2,i23,i6 i2,i23,i36 i2,i23,i35 i22,i6 i2,j23 i2,j23 i2,j23 i2,j23 i2,j23 i2 ")
             && out.word("i1,i2 i1,i2 c,i34,l37,i6,i26 i2 i24,i23,i22 i22,i6 i1,i2,n i2 i4,i38,b39,j23 i4 ")
             && out.word(
-            "c,r,l21,i6,l8 i2,i6 i2,i5,i6,i105 i22,i6,i105 i19,i106,i6,i105 i1,i2,i105 i24,i23,i106,i6,i105 ");
+            "c,r,l21,i6,l8 i2,i6 i2,i5,i6,i105 i22,i6,i105 i19,i106,i6,i105 i1,i2,i105 i24,i23,i106,i6,i105 c,i26,i22,i6 ");
     }
     // Enumerator spellings: service kinds, service operations, then the unary,
     // binary, comparison and query operations.
@@ -168,7 +168,7 @@ export namespace compiler_air {
             && out.word("Size PublicFieldCount ");
     }
     // Line keywords: end, the function header fields, the frame slot kinds, then
-    // the module declarations. A line's code is its form, or 90 + its keyword.
+    // the module declarations. A line's code is its form, or 91 + its keyword.
     auto keywords(compiler_ir_listing::Listing& out) -> bool {
         return out.word("end result params frame scope receiver roots rootmut spanfield ")
             && out.word("slot object array span service region bytes values spanvalues ")
@@ -223,9 +223,9 @@ export namespace compiler_air {
         builtin::OwnedValues<compiler_ir_metadata::IndexRow> functions;
         // The tokenizer's open brackets, and the list nesting of item expansion.
         builtin::OwnedValues<compiler_ir_metadata::IndexRow> stack;
-        // Spellings: words 0..89 forms, 90..111 type kinds, 112..201 codecs
-        // (compiled: their fields follow the sorted line words), 202..237
-        // enumerators, 238..264 line keywords, 265..381 forms and keywords in
+        // Spellings: words 0..90 forms, 91..112 type kinds, 113..203 codecs
+        // (compiled: their fields follow the sorted line words), 204..239
+        // enumerators, 240..266 line keywords, 267..384 forms and keywords in
         // name order (extra: the line code), then the codec fields.
         builtin::OwnedValues<Token> words;
         i64 textSize;
@@ -566,7 +566,7 @@ export namespace compiler_air {
             return result;
         }
         auto words_ready() const -> bool {
-            return wordSize == 265;
+            return wordSize == 267;
         }
         // A word or key spelled exactly expected.
         auto is(i64 token, builtin::span<const u8> expected) const -> bool {
@@ -627,10 +627,10 @@ export namespace compiler_air {
         // is the line code.
         auto sort_forms() -> bool {
             i64 form = 0;
-            while (form < 90 + 27 && good()) {
+            while (form < 91 + 27 && good()) {
                 i64 spelled = form;
-                if (form >= 90) {
-                    spelled = 238 + form - 90;
+                if (form >= 91) {
+                    spelled = 240 + form - 91;
                 }
                 const Token value = word_at(spelled);
                 const Token sorted = Token(0, value.first(), value.count(), form);
@@ -642,7 +642,7 @@ export namespace compiler_air {
                 }
                 i64 at = wordSize;
                 bool shifting = true;
-                while (shifting && at > 265) {
+                while (shifting && at > 267) {
                     const Token previous = words.at(at - 1);
                     shifting = compare_text(previous.first(), previous.count(), value.first(), value.count()) > 0;
                     if (shifting) {
@@ -656,7 +656,7 @@ export namespace compiler_air {
             }
             return good();
         }
-        // A line's form or 90 + its keyword (see keywords()), or -1.
+        // A line's form or 91 + its keyword (see keywords()), or -1.
         auto code(i64 token) const -> i64 {
             const Token value = token_at(token);
             if (value.kind() != 0) {
@@ -665,8 +665,8 @@ export namespace compiler_air {
             if (value.extra() > 0) {
                 return value.extra() - 1;
             }
-            i64 low = 265;
-            i64 high = 265 + 117;
+            i64 low = 267;
+            i64 high = 267 + 118;
             while (low < high) {
                 const i64 middle = low + (high - low) / 2;
                 const Token candidate = word_at(middle);
@@ -677,7 +677,7 @@ export namespace compiler_air {
                 }
             }
             const Token found = word_at(low);
-            if (low < 265 + 117 && compare_text(found.first(), found.count(), value.first(), value.count()) == 0) {
+            if (low < 267 + 118 && compare_text(found.first(), found.count(), value.first(), value.count()) == 0) {
                 return found.extra();
             }
             return -1;
@@ -695,7 +695,7 @@ export namespace compiler_air {
         // An instruction line's form, or -1.
         auto form(i64 token) const -> i64 {
             const i64 found = code(token);
-            if (found >= 90) {
+            if (found >= 91) {
                 return -1;
             }
             return found;
@@ -704,8 +704,8 @@ export namespace compiler_air {
         // the sorted words, with the word holding their range and prefix size.
         auto compile_codecs() -> bool {
             i64 form = 0;
-            while (form < 90 && good()) {
-                const Token codec = word_at(112 + form);
+            while (form < 91 && good()) {
+                const Token codec = word_at(113 + form);
                 const i64 begin = wordSize;
                 i64 prefix = 0;
                 i64 at = 0;
@@ -738,13 +738,13 @@ export namespace compiler_air {
                     }
                 }
                 const Token compiled = Token(0, begin, wordSize - begin, prefix);
-                words.set(112 + form, compiled);
+                words.set(113 + form, compiled);
                 form = form + 1;
             }
             return good();
         }
         auto codec_at(i64 form) const -> Token {
-            return word_at(112 + form);
+            return word_at(113 + form);
         }
 
         // ---- values
@@ -819,16 +819,16 @@ export namespace compiler_air {
             if (value.kind() == 0 && value.extra() > 0) {
                 return value.extra() - 1;
             }
-            const i64 found = lookup(token, 90, 22);
+            const i64 found = lookup(token, 91, 22);
             if (value.kind() == 0 && found >= 0) {
                 const Token cached = Token(0, value.first(), value.count(), found + 1);
                 set_token(token, cached);
                 return found;
             }
-            return enumerator(token, 90, 22);
+            return enumerator(token, 91, 22);
         }
         auto operation(i64 token, i64 table) -> i64 {
-            return enumerator(token, 202 + enumeration_first(table), enumeration_size(table));
+            return enumerator(token, 204 + enumeration_first(table), enumeration_size(table));
         }
         // A word or string node.
         auto name(i64 token) -> bool {
@@ -1583,21 +1583,21 @@ export namespace compiler_air {
         // One line inside a function: 1 handled, 2 its end, 0 a failure.
         auto function_line(i64 line) -> i64 {
             const i64 found = cache_code(line);
-            if (found >= 0 && found < 90) {
+            if (found >= 0 && found < 91) {
                 if (!add_line(line)) {
                     return 0;
                 }
                 return 1;
             }
-            if (found == 90) {
+            if (found == 91) {
                 if (!arity(line, 1, 1)) {
                     return 0;
                 }
                 return 2;
             }
             i64 field = 0;
-            if (found >= 91 && found <= 98) {
-                field = found - 90;
+            if (found >= 92 && found <= 99) {
+                field = found - 91;
             }
             if (field != 0) {
                 i64 maximum = 2;
@@ -1612,10 +1612,10 @@ export namespace compiler_air {
                 return 1;
             }
             i64 ordinal = -1;
-            if (found >= 99 && found <= 107) {
-                ordinal = found - 99;
+            if (found >= 100 && found <= 108) {
+                ordinal = found - 100;
             }
-            if (found == 116) {
+            if (found == 117) {
                 ordinal = 9;
             }
             if (ordinal < 0 || !slot_line(line, ordinal, slot_arity(ordinal))) {
@@ -1630,7 +1630,7 @@ export namespace compiler_air {
         }
         auto module_line(i64 line) -> bool {
             const i64 found = cache_code(line);
-            if (found == 108) {
+            if (found == 109) {
                 if (!arity(line, 2, 2) || !name(node(line, 1)) || !add_entry(6, 0, node(line, 1), functionSize, line)
                     || !add_function() || !add_line(node(line, 1))) {
                     return false;
@@ -1642,26 +1642,26 @@ export namespace compiler_air {
                 }
                 return good();
             }
-            if (found == 109) {
+            if (found == 110) {
                 return declaration(line, 3, 0);
             }
-            if (found == 110) {
+            if (found == 111) {
                 return declaration(line, 3, 1);
             }
-            if (found == 111) {
+            if (found == 112) {
                 return declaration(line, 7, 2);
             }
-            if (found == 112) {
+            if (found == 113) {
                 return declaration(line, 2, 3);
             }
-            if (found == 113) {
+            if (found == 114) {
                 return arity(line, 4, 4) && add_entry(1, 0, -1, integer(node(line, 1)), line);
             }
-            if (found == 114) {
+            if (found == 115) {
                 viewsLine = line;
                 return arity(line, 2, 2);
             }
-            if (found == 115) {
+            if (found == 116) {
                 return arity(line, 3, 3) && name(node(line, 1)) && add_entry(4, 0, node(line, 1), 0, line);
             }
             return fail();
@@ -1716,7 +1716,7 @@ export namespace compiler_air {
                         if (!module_line(at)) {
                             return false;
                         }
-                        inside = code(at) == 108;
+                        inside = code(at) == 109;
                     }
                 }
                 at = stop + 1;

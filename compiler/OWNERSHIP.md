@@ -13,9 +13,10 @@ value, including an inert preparation failure, must be consumed explicitly by
 `finish()` before normal return or scope exit. `cancel()` does not consume it,
 and the compiler never inserts implicit finalization.
 
-The first supported surface is a mutable standalone local initialized by its
-issuer or by `move(named_local)`. Fields, parameters, returned owners, borrowed
-owner helpers, copies and reflection are excluded. A live lease pins its exact
+A mutable standalone local is initialized by its issuer or by
+`move(named_local)`. ExecutionLease additionally supports the lexical owning-class
+contract below. Other fields, general owner parameters/returns, borrowed owner
+helpers, copies and reflection are excluded. A live lease pins its exact
 issuer; moving the lease preserves that binding. Issuance spends the issuer's
 single opportunity permanently, even after finalization. Forwarding the issuer
 to a synchronous helper also spends the caller's opportunity, whether or not the
@@ -29,8 +30,8 @@ boundary in [command orchestration](SERVICES.md#command-orchestration).
 A catalogue field policy separately admits `builtin::ResidentSlot` as one private
 resource field in a concrete owning class. Its origin is a trusted native owned
 input, not a ByteRegion allocation or a lexical service issuer. An empty physical
-slot still has a live finalization obligation. Temporary service leases remain
-field-ineligible. Copied scalar/class fields may accompany the slot; multiple
+slot still has a live finalization obligation. Lexical ExecutionLease fields use
+the separate contract below; ServiceBootstrapLease remains field-ineligible. Copied scalar/class fields may accompany the slot; multiple
 retained resources, byte-owner mixing and nested owning classes are not admitted.
 
 A complete-constructor entry receives fresh stable destination storage and one
@@ -50,10 +51,43 @@ including a failed result, must discharge the obligation; `EndObject` cannot
 silently finalize it. Traps remain fail-stop. Results are scalar or copied data.
 Ordinary methods and root helpers borrow synchronously and cannot consume fields.
 
-Ordinary source `move(owner).finish()` invocation is deliberately not yet admitted:
-there is no general source mint/construction caller for these retained roots.
+Ordinary source construction and `move(owner).finish()` invocation remain
+unavailable for retained roots: there is no source mint for their native inputs.
 The constructor and consuming body are executable source through their admitted
 native entries, not an implicit destructor or an async ownership facility.
+
+## Lexical command-operation owners
+
+A concrete class may contain one private ExecutionLease field plus copied fields.
+The class owns a synchronous command operation, including failed preparation and
+client-close obligations, not an escaping child process. Construction transfers
+one named lease into the field and preserves its exact lexical issuer; the object
+pins that issuer until explicit consuming finalization. Mixing byte or retained
+owners, nesting owning classes, and general owner argument/return escape remain
+unsupported.
+
+Construction has two phases. Declaration-order field initializers initialize every
+field exactly once without reading the partial receiver. Only then may the
+constructor body borrow the complete receiver, observe authentic preparation and
+update copied fields. The body cannot consume, move or escape the receiver or its
+lease. Every normal return preserves complete initialization and live ownership
+with the original issuer. Independent IR verification checks these conditions;
+a frontend phase marker alone cannot authorize a partial receiver. Traps remain
+fail-stop, without partial-construction unwinding. Byte-owner constructors retain
+their empty-body policy; retained-native constructors remain empty and inactive
+until their admitted native activation.
+
+Borrowed methods advance or explicitly cancel the operation. The ordinary source
+call `move(named_local).finish()` consumes the mutable local receiver in place,
+with no arguments or outstanding loan, and returns scalar or copied data. The
+consuming method must discharge its lease on every normal return. Neither scope
+exit nor a destructor inserts cancellation, draining or finalization. Source and
+IR checks reject missing consumption, repeated use, issuer release/forwarding or
+reminting while pinned, and later use after a move within the same expression.
+`CommandExecution` is the concrete consumer: its caller visibly drains bounded
+progress before consuming finish; native authentication and physical cleanup are
+unchanged. No asynchronous loan, arbitrary owning factory or retained child API
+is added.
 
 ## Runtime-sized byte ownership
 

@@ -264,7 +264,8 @@ export namespace compiler_parser {
     // type/binding, borrow and const qualifier; end locates admission
     // after the binding. Initializers use token/expression. Callable nodes use
     // token=name, type=result, other=parameters, body=block (or constructor
-    // initializer list), and receiver qualifier (0 mutable, 1 const, 2 consuming). Field nodes use token=type
+    // initializer list), target=optional constructor block, and receiver qualifier
+    // (0 mutable, 1 const, 2 consuming). Field nodes use token=type
     // start, type/binding, and end after the semicolon. Preambles use token/binding
     // for the module name interval, body for imports and the interface qualifier.
     // Enums use token=name and body=cases. Import/case lists use token/end/previous.
@@ -531,14 +532,24 @@ export namespace compiler_parser {
         }
         auto append_syntax(SyntaxNode value) -> i64 {
             error = ArenaFailure::invalid;
+            i64 target_limit = used;
+            if (value.kind() == SyntaxKind::constructor) {
+                target_limit = syntax_count;
+            }
             if (!syntax_nodes.ok() || value.kind() == SyntaxKind::invalid || value.token() < 0 || value.end()
                 <= value.token() || value.previous() < -1 || value.previous() >= syntax_count || value.expression() < -1
-                || value.expression() >= used || value.target() < -1 || value.target() >= used || value.type() < -1
-                || value.type() >= type_count || value.binding() < -1 || value.body() < -1 || value.body()
+                || value.expression() >= used || value.target() < -1 || value.target() >= target_limit || value.type()
+                < -1 || value.type() >= type_count || value.binding() < -1 || value.body() < -1 || value.body()
                 >= syntax_count || value.other() < -1 || value.other() >= syntax_count || value.borrow_site() < -1
                 || value.mutable_binding() < 0 || value.mutable_binding() > 2 || (value.mutable_binding() == 2
                 && value.kind() != SyntaxKind::method) || syntax_count == 9223372036854775807) {
                 return -1;
+            }
+            if (value.kind() == SyntaxKind::constructor && value.target() >= 0) {
+                const SyntaxNode block = syntax_at(value.target());
+                if (block.kind() != SyntaxKind::block) {
+                    return -1;
+                }
             }
             if (syntax_count == syntax_nodes.size()) {
                 i64 next = 8;

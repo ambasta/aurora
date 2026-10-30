@@ -35,9 +35,15 @@ observations, bounded output/request effects, explicit cancellation and a consum
 with an unfinished lease is rejected. Finishing never refunds the issuer's one
 preparation opportunity.
 
-The ordinary scalar session retains sequencing and terminal status/value, not
-execution authority. The separately authenticated private lease binding retains
-actual native resource and pending-I/O evidence. Native preparation still starts
+One local move-only `CommandExecution` now owns that lease together with its
+phase and terminal status/value; there is no separately copyable command ledger.
+Its ordinary source constructor first initializes every field, then reads the
+lease's authentic preparation in its fully initialized body. The contained lease
+pins the original issuer until `move(command).finish()` consumes the operation
+in place. Borrowed progress/cancel calls cannot extract or consume the field.
+This is synchronous operation ownership, including refused loads and close
+obligations, not an escaping or retained child-process API. The separately
+authenticated private lease binding retains actual native resource and pending-I/O evidence. Native preparation still starts
 the file owner and loads the committed image. A terminal advance means native
 retirement already happened; source copies its result before cleanup can replace
 the shared trap observation. Every lease is explicitly finished, including inert

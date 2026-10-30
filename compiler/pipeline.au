@@ -1461,7 +1461,7 @@ export namespace compiler_pipeline {
             compiler_ir_metadata::MapCounts(0, 0, 0, 0, 0));
     }
     auto call_form(i64 form) -> bool {
-        return form == 4 || form == 19 || form == 20 || form == 38 || form == 75 || form == 83;
+        return form == 4 || form == 19 || form == 20 || form == 38 || form == 75 || form == 83 || form == 90;
     }
     auto call_count(const compiler_ir_instructions::InstructionStore& instructions) -> i64 {
         i64 result = 0;
@@ -1508,6 +1508,9 @@ export namespace compiler_pipeline {
             return false;
         }
         const i64 nominal = compiler_ir_metadata::find_class(metadata, receiver.name());
+        if (!compiler_ir_metadata::retained_class(metadata, nominal)) {
+            return false;
+        }
         i64 at = 0;
         while (at < metadata.callable_count()) {
             const compiler_ir_metadata::CallableRow root = metadata.callable_at(at);

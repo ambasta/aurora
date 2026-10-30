@@ -391,6 +391,9 @@ export namespace compiler_lowering_projection {
         if (form == compiler_lowering::InstructionForm::RetainedFieldOperation) {
             return InstructionShape(89, 28200045464u64);
         }
+        if (form == compiler_lowering::InstructionForm::ResourceObjectCall) {
+            return InstructionShape(90, 12946695u64);
+        }
         return InstructionShape(-1, 0u64);
     }
     // The known schema role selects a balanced scalar decision tree. Only a
