@@ -5,6 +5,8 @@ import aurora.compiler.x86_helpers;
 import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_metadata_storage;
 import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.builtin_catalog;
+import aurora.compiler.resolution_kinds;
 
 // Calls and copied objects consume the same admitted durable rows as the other
 // emitter families. No observation vector or native layout authority is rebuilt.
@@ -937,6 +939,101 @@ export namespace compiler_x86 {
     }
     // Service-origin owners have a private descriptor, never scalar source
     // values. Admission has proved exact issuer provenance and linear lifetime.
+    auto resource_runtime_symbol(EmitWorkspace& w, i64 resource, i64 method) -> i64 {
+        const i64 count = compiler_catalog::resource_runtime_byte(resource, method, -1);
+        if (count < 1 || count > 64) {
+            w.fail();
+            return -1;
+        }
+        builtin::array<u8, 64> bytes = {
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8
+        };
+        i64 at = 0;
+        while (at < count) {
+            const i64 byte = compiler_catalog::resource_runtime_byte(resource, method, at);
+            if (byte < 0 || byte > 255) {
+                w.fail();
+                return -1;
+            }
+            bytes[at] = u8(byte);
+            at = at + 1;
+        }
+        const builtin::span<const u8> all = borrow_bytes(bytes);
+        return w.intern_runtime(all.subspan(0, count));
+    }
+    auto resource_result_maximum(i64 type) -> i64 {
+        const compiler_resolver::ResolvedTypeKind kind = compiler_catalog::type_kind(type);
+        if (kind == compiler_resolver::ResolvedTypeKind::bool_value) {
+            return 1;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::enum_value) {
+            return compiler_catalog::member_count(type) - 1;
+        }
+        return -1;
+    }
     auto emit_service_resource(EmitWorkspace& w, ObjectWorkspace& o,
         const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
@@ -952,6 +1049,7 @@ export namespace compiler_x86 {
             emit_store_imm(w, o, 0, second, false);
             return w.ok();
         }
+        const i64 resource = operand_value(store, instruction, 3);
         emit_load(w, o, first, Register::rdi, false);
         emit_load(w, o, second, Register::rsi, false);
         const i64 result = operand_value(store, instruction, 2);
@@ -961,7 +1059,7 @@ export namespace compiler_x86 {
             emit_store_imm(w, o, 0, target, false);
             emit_store_imm(w, o, 0, epoch, false);
             emit_lea(w, o, target, Register::rdx);
-            const i64 symbol = w.intern_runtime("__au_runtime_execution_prepare");
+            const i64 symbol = resource_runtime_symbol(w, resource, -1);
             emit_call_runtime(w, o, symbol);
             // Even an inert refusal owns one authenticated finalization lease.
             emit_alu_mem_imm(w, o, AluOp::compare, 0, target);
@@ -971,55 +1069,46 @@ export namespace compiler_x86 {
             return w.ok();
         }
         const i64 method = operand_value(store, instruction, 1);
-        if (method == 0 || method == 1) {
-            i64 bytes = 16;
-            if (method == 1) {
-                bytes = 24;
-            }
-            i64 byte = 0;
-            while (byte < bytes) {
-                const i64 address = w.pack_address(0, result - byte);
+        const i64 type = compiler_catalog::resource_method_result(resource, method);
+        const i64 symbol = resource_runtime_symbol(w, resource, method);
+        if (compiler_catalog::type_kind(type) == compiler_resolver::ResolvedTypeKind::class_value) {
+            const i64 fields = compiler_catalog::member_count(type);
+            i64 field = 0;
+            while (field < fields) {
+                const i64 address = w.pack_address(0, result - field * 8);
                 emit_store_imm(w, o, 0, address, false);
-                byte = byte + 8;
+                field = field + 1;
             }
             const i64 address = w.pack_address(0, result);
             emit_lea(w, o, address, Register::rdx);
-            i64 symbol = w.intern_runtime("__au_runtime_execution_preparation");
-            i64 maximum = 2;
-            if (method == 1) {
-                symbol = w.intern_runtime("__au_runtime_execution_advance");
-                maximum = 3;
-            }
             emit_call_runtime(w, o, symbol);
-            emit_alu_mem_imm(w, o, AluOp::compare, maximum, address);
-            emit_branch(w, o, 7, 4, 0);
-            const i64 status = w.pack_address(0, result - 8);
-            emit_alu_mem_imm(w, o, AluOp::compare, 8, status);
-            emit_branch(w, o, 7, 4, 0);
+            field = 0;
+            while (field < fields) {
+                const i64 field_type = compiler_catalog::field_type(type, field);
+                const i64 maximum = resource_result_maximum(field_type);
+                if (maximum >= 0) {
+                    const i64 field_address = w.pack_address(0, result - field * 8);
+                    emit_alu_mem_imm(w, o, AluOp::compare, maximum, field_address);
+                    emit_branch(w, o, 7, 4, 0);
+                }
+                field = field + 1;
+            }
             return w.ok();
         }
-        i64 symbol = w.intern_runtime("__au_runtime_execution_output");
-        i64 arguments = 2;
-        i64 maximum = 1;
-        if (method == 3) {
-            symbol = w.intern_runtime("__au_runtime_execution_request");
-            maximum = 4;
-        }
-        if (method == 4) {
-            symbol = w.intern_runtime("__au_runtime_execution_cancel");
-            maximum = 2;
-        }
-        if (method == 5) {
-            symbol = w.intern_runtime("__au_runtime_execution_finish");
+        const i64 arguments = 2 + compiler_catalog::resource_method_parameters(resource, method);
+        if (arguments == 3) {
             emit_mov_rr(w, o, Register::rax, Register::rdx);
-            arguments = 3;
         }
         emit_call_runtime(w, o, symbol);
-        if (method == 5) {
+        if (compiler_catalog::resource_method_effect(resource, method) == 2) {
             // Native finalization consumes on every normal return. Clear the
             // moved-from physical descriptor before checking its copied result.
             emit_store_imm(w, o, 0, first, false);
             emit_store_imm(w, o, 0, second, false);
+        }
+        const i64 maximum = resource_result_maximum(type);
+        if (maximum < 0) {
+            return w.fail();
         }
         emit_service_completion(w, o, symbol, arguments, maximum);
         return w.ok();

@@ -10,7 +10,7 @@ import aurora.compiler.lowering_kinds;
 export namespace compiler_x86 {
     auto service_type_kind(i64 kind) -> bool {
         return kind == 14 || kind == 15 || kind == 16 || kind == 18 || kind == 19 || kind == 20 || kind == 22 || kind
-            == 23 || kind == 24 || kind == 25;
+            == 23 || kind == 24 || kind == 25 || kind == 27;
     }
     // The zeroed session block the hosted entry reserves for the Linux binding
     // and lends to it as the HostFiles grant. Every HostFiles primitive checks

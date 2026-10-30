@@ -1094,7 +1094,8 @@ export namespace compiler_lowering {
         i64 at = 0;
         while (at < count && session.good()) {
             const compiler_resolver::ResolvedTypeKind kind = parameter_kind(session, symbol, at);
-            if (kind == compiler_resolver::ResolvedTypeKind::execution_effects) {
+            if (kind == compiler_resolver::ResolvedTypeKind::execution_effects || kind
+                == compiler_resolver::ResolvedTypeKind::bootstrap_effects) {
                 return false;
             }
             process = process || kind == compiler_resolver::ResolvedTypeKind::host_files || kind

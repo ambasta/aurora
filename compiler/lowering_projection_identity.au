@@ -9,6 +9,7 @@ import aurora.compiler.ir_metadata_storage;
 import aurora.compiler.syntax_arena;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.lexer;
+import aurora.compiler.builtin_catalog;
 
 // Readonly conversion of identities already chosen by resolution/lowering.
 // Display spelling is checked but never stored; durable names are linkage bytes.
@@ -66,6 +67,14 @@ export namespace compiler_lowering_projection {
                     if (candidate >= 0) {
                         length = candidate;
                     }
+                }
+            }
+            if (row.kind() == compiler_resolver::MetaTag::concrete_type && row.type_kind()
+                == compiler_resolver::ResolvedTypeKind::service_resource) {
+                const i64 type = compiler_catalog::resource_type(row.word(1));
+                length = compiler_catalog::type_native_byte(type, -1);
+                if (length < 0) {
+                    return -1;
                 }
             }
             total = sum(total, length);
@@ -301,8 +310,8 @@ export namespace compiler_lowering_projection {
         if (kind == compiler_resolver::ResolvedTypeKind::host_files) {
             return 22;
         }
-        if (kind == compiler_resolver::ResolvedTypeKind::service_resource) {
-            return 26;
+        if (kind == compiler_resolver::ResolvedTypeKind::bootstrap_effects) {
+            return 27;
         }
         if (kind == compiler_resolver::ResolvedTypeKind::execution_effects) {
             return 25;
@@ -322,6 +331,22 @@ export namespace compiler_lowering_projection {
         }
         return workspace.push_work(identity) && workspace.push_work(0) && workspace.push_work(0)
             && workspace.push_work(-1);
+    }
+    auto resource_type_name(ProjectionWorkspace& workspace, i64 resource) -> bool {
+        const i64 type = compiler_catalog::resource_type(resource);
+        const i64 length = compiler_catalog::type_native_byte(type, -1);
+        if (length <= 0 || !workspace.start_text()) {
+            return workspace.fail();
+        }
+        i64 at = 0;
+        while (at < length) {
+            const i64 byte = compiler_catalog::type_native_byte(type, at);
+            if (byte < 0 || byte > 255 || !workspace.append_text(u8(byte))) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        return workspace.finish_text();
     }
     auto complete_type(ProjectionWorkspace& workspace, i64 identity) -> bool {
         const IdentityCache cached = workspace.cache(identity);
@@ -366,85 +391,99 @@ export namespace compiler_lowering_projection {
                     if (!workspace.set_cache(current, active)) {
                         return false;
                     }
-                    const i64 scalar = scalar_kind(kind);
-                    if (scalar >= 0) {
-                        const compiler_ir_metadata::RawTypeRow type = compiler_ir_metadata::RawTypeRow(scalar,
-                            compiler_ir_metadata::ByteRange(workspace.name_size(), 0),
-                            compiler_ir_metadata::RawTypeTail(0, 0, 0u64, 0u64, 0u64));
-                        const IdentityCache done = IdentityCache(2, cached.name(), type);
+                    if (kind == compiler_resolver::ResolvedTypeKind::service_resource) {
+                        if (!resource_type_name(workspace, row.word(1))) {
+                            return false;
+                        }
+                        const compiler_ir_metadata::RawTypeRow resource = compiler_ir_metadata::RawTypeRow(26,
+                            workspace.name_result(), compiler_ir_metadata::RawTypeTail(0, 0, 0u64, 0u64, 0u64));
+                        const IdentityCache done = IdentityCache(2, cached.name(), resource);
                         if (!workspace.set_cache(current, done) || !workspace.truncate_work(frame)) {
                             return false;
                         }
                     } else {
-                        if (kind == compiler_resolver::ResolvedTypeKind::class_value || kind
-                            == compiler_resolver::ResolvedTypeKind::enum_value) {
-                            i64 metadata_kind = 5;
-                            if (row.word(1) < 0) {
-                                if (row.word(1) == -1 || row.word(1) == -9223372036854775807 - 1
-                                    || !resolve_name(session, workspace, -row.word(1) - 2, 3)) {
-                                    return workspace.fail();
-                                }
-                            } else {
-                                i64 domain = 1;
-                                if (kind == compiler_resolver::ResolvedTypeKind::enum_value) {
-                                    domain = 2;
-                                    metadata_kind = 9;
-                                }
-                                if (!resolve_name(session, workspace, row.word(1), domain)) {
-                                    return false;
-                                }
-                            }
-                            const compiler_ir_metadata::RawTypeRow type = compiler_ir_metadata::RawTypeRow(
-                                metadata_kind, workspace.name_result(), compiler_ir_metadata::RawTypeTail(0, 0, 0u64,
-                                0u64, 0u64));
-                            const IdentityCache waiting = IdentityCache(1, cached.name(), type);
-                            if (!workspace.set_cache(current, waiting)) {
+                        const i64 scalar = scalar_kind(kind);
+                        if (scalar >= 0) {
+                            const compiler_ir_metadata::RawTypeRow type = compiler_ir_metadata::RawTypeRow(scalar,
+                                compiler_ir_metadata::ByteRange(workspace.name_size(), 0),
+                                compiler_ir_metadata::RawTypeTail(0, 0, 0u64, 0u64, 0u64));
+                            const IdentityCache done = IdentityCache(2, cached.name(), type);
+                            if (!workspace.set_cache(current, done) || !workspace.truncate_work(frame)) {
                                 return false;
                             }
-                            if (row.word(1) < 0) {
-                                if (!complete_type(workspace, current)) {
-                                    return false;
-                                }
-                            } else {
-                                const compiler_resolver::MetaRow nominal = session.view_meta(row.word(1));
-                                i64 instance = -1;
-                                if (nominal.native_mode() == compiler_resolver::NativeMode::sealed_builtin) {
-                                    const compiler_resolver::MetaRow descriptor = session.view_meta(nominal.word(8));
-                                    if (descriptor.kind() != compiler_resolver::MetaTag::context
-                                        || !validate_prefix(session, workspace, descriptor.word(1))) {
+                        } else {
+                            if (kind == compiler_resolver::ResolvedTypeKind::class_value || kind
+                                == compiler_resolver::ResolvedTypeKind::enum_value) {
+                                i64 metadata_kind = 5;
+                                if (row.word(1) < 0) {
+                                    if (row.word(1) == -1 || row.word(1) == -9223372036854775807 - 1
+                                        || !resolve_name(session, workspace, -row.word(1) - 2, 3)) {
                                         return workspace.fail();
                                     }
                                 } else {
-                                    if (!validate_prefix(session, workspace, nominal.word(3))) {
+                                    i64 domain = 1;
+                                    if (kind == compiler_resolver::ResolvedTypeKind::enum_value) {
+                                        domain = 2;
+                                        metadata_kind = 9;
+                                    }
+                                    if (!resolve_name(session, workspace, row.word(1), domain)) {
                                         return false;
                                     }
-                                    instance = nominal.word(9);
-                                    if (instance >= 0) {
-                                        const compiler_resolver::MetaRow arguments = session.view_meta(instance);
-                                        if (arguments.kind() != compiler_resolver::MetaTag::instance
-                                            || arguments.word(1) < 1 || arguments.word(1) > 2) {
-                                            return workspace.fail();
-                                        }
-                                    }
                                 }
-                                if (instance < 0) {
+                                const compiler_ir_metadata::RawTypeRow type = compiler_ir_metadata::RawTypeRow(
+                                    metadata_kind, workspace.name_result(), compiler_ir_metadata::RawTypeTail(0, 0,
+                                    0u64, 0u64, 0u64));
+                                const IdentityCache waiting = IdentityCache(1, cached.name(), type);
+                                if (!workspace.set_cache(current, waiting)) {
+                                    return false;
+                                }
+                                if (row.word(1) < 0) {
                                     if (!complete_type(workspace, current)) {
                                         return false;
                                     }
                                 } else {
-                                    if (!workspace.set_work(frame + 1, 1) || !workspace.set_work(frame + 3, instance)) {
-                                        return false;
+                                    const compiler_resolver::MetaRow nominal = session.view_meta(row.word(1));
+                                    i64 instance = -1;
+                                    if (nominal.native_mode() == compiler_resolver::NativeMode::sealed_builtin) {
+                                        const compiler_resolver::MetaRow descriptor = session.view_meta(nominal.word(
+                                            8));
+                                        if (descriptor.kind() != compiler_resolver::MetaTag::context
+                                            || !validate_prefix(session, workspace, descriptor.word(1))) {
+                                            return workspace.fail();
+                                        }
+                                    } else {
+                                        if (!validate_prefix(session, workspace, nominal.word(3))) {
+                                            return false;
+                                        }
+                                        instance = nominal.word(9);
+                                        if (instance >= 0) {
+                                            const compiler_resolver::MetaRow arguments = session.view_meta(instance);
+                                            if (arguments.kind() != compiler_resolver::MetaTag::instance
+                                                || arguments.word(1) < 1 || arguments.word(1) > 2) {
+                                                return workspace.fail();
+                                            }
+                                        }
+                                    }
+                                    if (instance < 0) {
+                                        if (!complete_type(workspace, current)) {
+                                            return false;
+                                        }
+                                    } else {
+                                        if (!workspace.set_work(frame + 1, 1) || !workspace.set_work(frame + 3,
+                                            instance)) {
+                                            return false;
+                                        }
                                     }
                                 }
-                            }
-                        } else {
-                            if (kind != compiler_resolver::ResolvedTypeKind::array_value && kind
-                                != compiler_resolver::ResolvedTypeKind::owned_values && kind
-                                != compiler_resolver::ResolvedTypeKind::value_span) {
-                                return workspace.fail();
-                            }
-                            if (!workspace.set_work(frame + 1, 2) || !push_type(workspace, row.word(2), base)) {
-                                return false;
+                            } else {
+                                if (kind != compiler_resolver::ResolvedTypeKind::array_value && kind
+                                    != compiler_resolver::ResolvedTypeKind::owned_values && kind
+                                    != compiler_resolver::ResolvedTypeKind::value_span) {
+                                    return workspace.fail();
+                                }
+                                if (!workspace.set_work(frame + 1, 2) || !push_type(workspace, row.word(2), base)) {
+                                    return false;
+                                }
                             }
                         }
                     }

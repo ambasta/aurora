@@ -78,6 +78,15 @@ escaping child handle, automatic destructor, asynchronous task or general init
 contract. Explicit cancellation drains already-dispatched work under existing
 budgets and does not claim rollback or replay.
 
+The complete file-owner bootstrap sequence now has its own source consumer:
+`ServiceBootstrapLease` resolves one unpublished startup through initial Serve,
+volume admission and optional disk readiness. Its explicit consuming publication
+requires native authenticated receipts; the existing incarnation root remains
+the sole lifetime policy. This establishes a real readiness dependency without
+introducing a generic init manager, escaping service owner or larger process
+capacity. General composition must still specify dependency failure, restart
+bounds and cancellation authority rather than importing PID1 conventions.
+
 The Serve-authorized Aurora service owns boot-volume copies, namespace/handle
 state and retained mutable RAM files. The kernel authenticates incarnations and
 copies bounded requests/replies; the legacy kernel file store is removed.

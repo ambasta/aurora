@@ -559,8 +559,8 @@ export namespace compiler_resolver {
     // the Console, Display and IommuEvent service bits.
     auto admission() -> compiler_parser::AdmissionConfig {
         return compiler_parser::AdmissionConfig(64, 512,
-            compiler_catalog::execution_groups(compiler_catalog::service_groups(true, true, true, true, true, true),
-            true), 1, 2, 4);
+            compiler_catalog::bootstrap_groups(compiler_catalog::execution_groups(compiler_catalog::service_groups(true,
+            true, true, true, true, true), true), true), 1, 2, 4);
     }
     // Lexes the whole source, then parses and admits it as a module in the
     // cleared arena, whose last syntax node is then the module root. As in the

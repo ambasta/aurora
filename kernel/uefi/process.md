@@ -320,6 +320,40 @@ loans and an import-free object. No loan crosses process/device/cleanup effects.
 This is bounded service lifecycle policy, not a general async child capability,
 restart manager, scheduler or init system.
 
+### Source-owned bootstrap
+
+`kernel.service_bootstrap` sequences one unpublished file-owner startup: initial
+Serve, volume declaration, bounded copied chunks, seal, optional storage admission
+and final readiness publication. Its local cursor and phase replace the native
+startup loop. The retained incarnation root still owns generation, readiness,
+loss and later-operation restart admission; this bootstrap is not a second
+service-lifetime state machine.
+
+A separate sealed `ServiceBootstrapEffects` grant issues one linear
+`ServiceBootstrapLease`. Every result, including an image refusal, must be
+explicitly finalized. The lease is confined to the invocation and authenticates
+one unpublished generation; it cannot stop an arbitrary ready owner. Native
+code retains physical load/transport evidence, exact once-consumed replies and
+cleanup effects, not a duplicate source cursor. Publication requires actual
+initial Serve and successful volume-seal evidence, plus the exact optional
+storage-admission reply. A copied disposition is not that evidence.
+
+Pending progress runs at most one server step and never renews an allowance.
+The existing loader budget, per-message server budget and optional long-tick
+storage profile are unchanged. Normal accounting is restored before publication.
+A mounted writer is armed only in consuming publication, after its physical
+owner/root/generation checks and immediately before the retained root becomes
+ready; failed arming leaves RAM usable with disk unavailable. Abandonment settles
+an unpublished, unarmed owner through logical loss, physical retirement and the
+existing cleanup audit, preserving an observed failure over a healthy explicit
+consumer rejection. No request is replayed and no writer grant is reminted.
+
+The nested bootstrap grant is distinct from the outer command grant and cannot
+reenter it. Complete image callgraph and stack admission cover the retained
+source frames and trap path under the existing supervisor stack limit. This is
+a concrete dependency/readiness protocol, not general init, asynchronous startup,
+more resident slots or a public escaping service-instance capability.
+
 ### Retained file service
 
 Case 8 designates one `services/file-service.au` ELF as the file owner and runs

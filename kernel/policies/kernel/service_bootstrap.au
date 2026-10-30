@@ -1,0 +1,162 @@
+export module kernel.service_bootstrap;
+
+export namespace kernel {
+    enum class BootstrapPhase {
+        initial_wait,
+        begin,
+        begin_wait,
+        copy,
+        copy_wait,
+        seal,
+        seal_wait,
+        storage,
+        storage_wait,
+        publish,
+        failed
+    };
+
+    // This copied plan retains protocol ordering, not execution authority. The
+    // separate linear lease owns publication or unpublished-owner cleanup.
+    class BootstrapPlan {
+        BootstrapPhase phase;
+        u64 volume_bytes;
+        u64 chunk_bytes;
+        u64 cursor;
+        bool storage_required;
+    public:
+        BootstrapPlan(builtin::BootstrapPreparation prepared) : phase(BootstrapPhase::initial_wait),
+            volume_bytes(prepared.volume_bytes), chunk_bytes(prepared.chunk_bytes), cursor(0u64),
+            storage_required(prepared.storage_required) {
+        }
+        auto admit(builtin::BootstrapPreparation prepared) -> bool {
+            if (!prepared.loaded || chunk_bytes == 0u64) {
+                phase = BootstrapPhase::failed;
+            }
+            return phase != BootstrapPhase::failed;
+        }
+        auto active() const -> bool {
+            return phase != BootstrapPhase::publish && phase != BootstrapPhase::failed;
+        }
+        auto waiting() const -> bool {
+            return phase == BootstrapPhase::initial_wait || phase == BootstrapPhase::begin_wait || phase
+                == BootstrapPhase::copy_wait || phase == BootstrapPhase::seal_wait || phase
+                == BootstrapPhase::storage_wait;
+        }
+        auto action() const -> BootstrapPhase {
+            return phase;
+        }
+        auto offset() const -> u64 {
+            return cursor;
+        }
+        auto staged(builtin::BootstrapEffect result) -> bool {
+            if (result != builtin::BootstrapEffect::staged) {
+                phase = BootstrapPhase::failed;
+                return false;
+            }
+            if (phase == BootstrapPhase::begin) {
+                phase = BootstrapPhase::begin_wait;
+                return true;
+            }
+            if (phase == BootstrapPhase::copy) {
+                phase = BootstrapPhase::copy_wait;
+                return true;
+            }
+            if (phase == BootstrapPhase::seal) {
+                phase = BootstrapPhase::seal_wait;
+                return true;
+            }
+            if (phase == BootstrapPhase::storage) {
+                phase = BootstrapPhase::storage_wait;
+                return true;
+            }
+            phase = BootstrapPhase::failed;
+            return false;
+        }
+        auto advanced(builtin::BootstrapProgress result) -> bool {
+            if (result == builtin::BootstrapProgress::failed || !waiting()) {
+                phase = BootstrapPhase::failed;
+                return false;
+            }
+            if (result == builtin::BootstrapProgress::pending) {
+                return true;
+            }
+            if (phase == BootstrapPhase::initial_wait) {
+                phase = BootstrapPhase::begin;
+                return true;
+            }
+            if (phase == BootstrapPhase::begin_wait) {
+                phase = BootstrapPhase::seal;
+                if (cursor < volume_bytes) {
+                    phase = BootstrapPhase::copy;
+                }
+                return true;
+            }
+            if (phase == BootstrapPhase::copy_wait) {
+                u64 count = volume_bytes - cursor;
+                if (count > chunk_bytes) {
+                    count = chunk_bytes;
+                }
+                cursor = cursor + count;
+                phase = BootstrapPhase::seal;
+                if (cursor < volume_bytes) {
+                    phase = BootstrapPhase::copy;
+                }
+                return true;
+            }
+            if (phase == BootstrapPhase::seal_wait) {
+                phase = BootstrapPhase::publish;
+                if (storage_required) {
+                    phase = BootstrapPhase::storage;
+                }
+                return true;
+            }
+            if (phase == BootstrapPhase::storage_wait) {
+                phase = BootstrapPhase::publish;
+                return true;
+            }
+            phase = BootstrapPhase::failed;
+            return false;
+        }
+        auto disposition() const -> builtin::BootstrapFinish {
+            if (phase == BootstrapPhase::publish) {
+                return builtin::BootstrapFinish::publish;
+            }
+            return builtin::BootstrapFinish::abandon;
+        }
+    };
+
+    auto bootstrap_service(builtin::ServiceBootstrapEffects& effects) -> builtin::BootstrapResult {
+        builtin::ServiceBootstrapLease lease = effects.begin();
+        const builtin::BootstrapPreparation prepared = lease.preparation();
+        BootstrapPlan plan = BootstrapPlan(prepared);
+        plan.admit(prepared);
+        while (plan.active()) {
+            if (plan.waiting()) {
+                const builtin::BootstrapProgress progress = lease.advance();
+                plan.advanced(progress);
+            } else {
+                const BootstrapPhase action = plan.action();
+                if (action == BootstrapPhase::begin) {
+                    const builtin::BootstrapEffect result = lease.begin_volume();
+                    plan.staged(result);
+                }
+                if (action == BootstrapPhase::copy) {
+                    const u64 offset = plan.offset();
+                    const builtin::BootstrapEffect result = lease.copy_volume(offset);
+                    plan.staged(result);
+                }
+                if (action == BootstrapPhase::seal) {
+                    const builtin::BootstrapEffect result = lease.seal_volume();
+                    plan.staged(result);
+                }
+                if (action == BootstrapPhase::storage) {
+                    const builtin::BootstrapEffect result = lease.admit_storage();
+                    plan.staged(result);
+                }
+            }
+        }
+        const builtin::BootstrapFinish disposition = plan.disposition();
+        const builtin::BootstrapResult result = lease.finish(disposition);
+        return result;
+    }
+}

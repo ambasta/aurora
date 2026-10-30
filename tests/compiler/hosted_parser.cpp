@@ -2674,9 +2674,9 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(id)}}, Reason::service_loan_identity});
         services.push_back({{{release(id)}}, Reason::service_release});
     }
-    // Kinds 0..9 are closed; legacy service operations stop at 45.
+    // Kinds 0..10 are closed; legacy service operations stop at 45.
     // Issuance uses its own form, and retired issuer operations remain invalid.
-    for (const auto kind : {std::int64_t{-1}, std::int64_t{10}, INT64_MAX}) {
+    for (const auto kind : {std::int64_t{-1}, std::int64_t{11}, INT64_MAX}) {
         services.push_back({{{acquire(1, 16, kind)}}, Reason::service_loan_root});
         services.push_back({{{release(1, kind)}}, Reason::service_release});
         services.push_back({{{operation(1, kind)}}, Reason::service_operation_kind});
@@ -3063,7 +3063,7 @@ void rawAdmission() {
         const auto parsed = arena.parse(source, Stop::module_definition);
         require(parsed[0] == wire(Status::success), "raw group fixture failed grammar");
         const auto result = arena.admit(source, parsed[1], {64, 512, groups, 1, 2, 4});
-        const bool allowed = groups >= 0 && (groups & 4295034879LL) == groups;
+        const bool allowed = groups >= 0 && (groups & 4295041023LL) == groups;
         require(result[0] == wire(allowed ? AdmissionStatus::success : AdmissionStatus::invalid),
                 "parser group policy lost closed full-width admission");
         arena.finish();

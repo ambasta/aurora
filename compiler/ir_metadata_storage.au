@@ -42,7 +42,8 @@ export namespace compiler_ir_metadata {
         ReadOnlyBlock,
         WritableBlock,
         ExecutionEffects,
-        ExecutionLease
+        ServiceResource,
+        ServiceBootstrapEffects
     };
     // Each reason's message is in pipeline.au (compiler_ir_metadata::metadata_text).
     enum class MetadataError {
@@ -179,7 +180,8 @@ export namespace compiler_ir_metadata {
         host_fields,
         execution_layout,
         execution_fields,
-        service_resource_slot
+        service_resource_slot,
+        bootstrap_layout
     };
     class ByteRange {
         i64 firstByte;
@@ -324,6 +326,9 @@ export namespace compiler_ir_metadata {
         }
         auto service_execution() const -> u64 {
             return 512u64;
+        }
+        auto service_bootstrap() const -> u64 {
+            return 1024u64;
         }
         auto service_writer() const -> u64 {
             return 256u64;

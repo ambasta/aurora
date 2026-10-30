@@ -1,0 +1,61 @@
+refused unavailable begin,finish:abandon
+zero_capacity unavailable begin,finish:abandon
+empty_volume ready begin,advance,volume,advance,seal,advance,finish:publish
+one_byte ready begin,advance,volume,advance,copy:0,advance,seal,advance,finish:publish
+exact_chunk ready begin,advance,volume,advance,copy:0,advance,seal,advance,finish:publish
+chunk_plus_one ready begin,advance,volume,advance,copy:0,advance,copy:65472,advance,seal,advance,finish:publish
+small_chunks ready begin,advance,volume,advance,copy:0,advance,copy:2,advance,copy:4,advance,seal,advance,finish:publish
+maximal_chunk_arithmetic ready begin,advance,volume,advance,copy:0,advance,seal,advance,finish:publish
+initial_pending ready begin,advance,advance,advance,volume,advance,seal,advance,finish:publish
+initial_loss unavailable begin,advance,advance,finish:abandon
+volume_stage_refused unavailable begin,advance,volume,finish:abandon
+volume_bad_reply unavailable begin,advance,volume,advance,finish:abandon
+volume_pending ready begin,advance,volume,advance,advance,seal,advance,finish:publish
+copy_stage_refused unavailable begin,advance,volume,advance,copy:0,finish:abandon
+copy_bad_reply unavailable begin,advance,volume,advance,copy:0,advance,finish:abandon
+partial_copy_loss unavailable begin,advance,volume,advance,copy:0,advance,copy:65472,advance,advance,finish:abandon
+copy_pending_cursor ready begin,advance,volume,advance,copy:0,advance,advance,advance,copy:2,advance,advance,seal,advance,finish:publish
+seal_stage_refused unavailable begin,advance,volume,advance,seal,finish:abandon
+seal_bad_reply unavailable begin,advance,volume,advance,seal,advance,finish:abandon
+seal_pending ready begin,advance,volume,advance,seal,advance,advance,finish:publish
+storage_ready ready begin,advance,volume,advance,copy:0,advance,seal,advance,storage,advance,finish:publish
+storage_pending ready begin,advance,volume,advance,seal,advance,storage,advance,advance,advance,finish:publish
+storage_stage_refused unavailable begin,advance,volume,advance,seal,advance,storage,finish:abandon
+storage_bad_reply unavailable begin,advance,volume,advance,seal,advance,storage,advance,finish:abandon
+stale denied
+forged denied
+zero_generation denied
+duplicate_open denied
+released denied
+not_quiet denied
+cross_issuer denied
+cross_lease denied
+reverse_cross_lease denied
+reenter denied
+release_inside denied
+invalid_finish denied
+issuer_as_owner denied
+forged_owner denied
+stale_owner denied
+release_live denied
+second_begin denied
+owner_reentry denied
+double_finish denied
+use_after_finish denied
+reissue_after_finish denied
+unsettled_finish denied
+release_during_finish denied
+volume_zero_reply ready
+copy_zero_reply ready
+seal_zero_reply ready
+storage_zero_reply ready
+storage_unavailable_reply disk_unavailable
+seal_status_refused invalid
+storage_bad_status invalid
+storage_high_status invalid
+storage_high_status_end invalid
+seal_reserved_tail invalid
+storage_reserved_tail invalid
+reply_short invalid
+reply_oversized invalid
+reply_unknown_operation invalid

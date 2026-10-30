@@ -88,8 +88,66 @@ extern "C" Word __au_runtime_execution_finish(Word identity, Word generation, Wo
         std::abort();
     return mode == 15 ? 2 : mode == 16 ? Word{1} << 32 : 0;
 }
+class BootstrapPreparation {
+public:
+    Word loaded, volume_bytes, chunk_bytes, storage_required;
+};
+void authenticate_bootstrap(Word identity, Word generation, unsigned expected, bool issuer = false) {
+    if (identity != (issuer ? 0x424f4f54495353ULL : 0x424f4f544c4541ULL) || generation != 92 || calls++ != expected)
+        std::abort();
+}
+extern "C" void __au_runtime_service_bootstrap_begin(Word identity, Word generation, Grant *result) {
+    authenticate_bootstrap(identity, generation, 0, true);
+    *result = {mode == 111 ? 0 : 0x424f4f544c4541ULL, mode == 112 ? 0 : generation};
+}
+extern "C" void
+__au_runtime_service_bootstrap_preparation(Word identity, Word generation, BootstrapPreparation *result) {
+    authenticate_bootstrap(identity, generation, 1);
+    *result = {mode == 101   ? 2
+               : mode == 102 ? Word{1} << 32
+               : mode == 117 ? 0
+                             : 1,
+               UINT64_MAX,
+               42,
+               mode == 103   ? 2
+               : mode == 104 ? Word{1} << 32
+               : mode == 117 ? 0
+                             : 1};
+}
+extern "C" Word __au_runtime_service_bootstrap_begin_volume(Word identity, Word generation) {
+    authenticate_bootstrap(identity, generation, 2);
+    return mode == 105 ? 2 : mode == 106 ? Word{1} << 32 : mode == 113 ? 1 : 0;
+}
+extern "C" Word __au_runtime_service_bootstrap_copy_volume(Word identity, Word generation, Word offset) {
+    authenticate_bootstrap(identity, generation, 3);
+    if (offset != UINT64_MAX)
+        std::abort();
+    return mode == 113 ? 1 : 0;
+}
+extern "C" Word __au_runtime_service_bootstrap_seal_volume(Word identity, Word generation) {
+    authenticate_bootstrap(identity, generation, 4);
+    return mode == 113 ? 1 : 0;
+}
+extern "C" Word __au_runtime_service_bootstrap_admit_storage(Word identity, Word generation) {
+    authenticate_bootstrap(identity, generation, 5);
+    return mode == 113 ? 1 : 0;
+}
+extern "C" Word __au_runtime_service_bootstrap_advance(Word identity, Word generation) {
+    authenticate_bootstrap(identity, generation, 6);
+    return mode == 107 ? 3 : mode == 108 ? Word{1} << 32 : mode == 114 ? 0 : mode == 115 ? 2 : 1;
+}
+extern "C" Word __au_runtime_service_bootstrap_finish(Word identity, Word generation, Word disposition) {
+    authenticate_bootstrap(identity, generation, 7);
+    if (disposition != 0)
+        std::abort();
+    return mode == 109 ? 2 : mode == 110 ? Word{1} << 32 : mode == 116 ? 1 : 0;
+}
 int main(int argc, char **argv) {
     mode = argc == 2 ? std::atoi(argv[1]) : 0;
+    if (mode >= 100) {
+        const Grant grant{0x424f4f54495353ULL, 92};
+        return checked_group_entry(&grant) == 42 && calls == 8 ? 0 : 1;
+    }
     const Grant grant{0x45584543555445ULL, 91};
     return checked_group_entry(&grant) == 42 && calls == (mode == 17 ? 9u : 7u) ? 0 : 1;
 }

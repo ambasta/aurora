@@ -1,0 +1,8 @@
+module kernel_service_bootstrap;
+import kernel.service_bootstrap;
+
+// A nested synchronous source invocation owns the entire startup protocol.
+auto process_bootstrap_service(builtin::ServiceBootstrapEffects& effects) -> builtin::BootstrapResult {
+    const builtin::BootstrapResult result = kernel::bootstrap_service(effects);
+    return result;
+}

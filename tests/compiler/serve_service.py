@@ -209,11 +209,35 @@ __au_runtime_group_entry:
             == {"ready": 0, "cancelled": 1, "service_lost": 2, "pending": 3, "cancel_requested": 4},
             "ExecRequest preserves expiry and pending cases, appending explicit cancellation",
         )
+        bootstrap_entry = next(
+            row for row in execution_facts["functions"].values() if row.get("source_name") == "bootstrap_entry"
+        )
+        need(
+            bootstrap_entry["parameters"]
+            == [{"offset": 0, "bytes": 16, "kind": "service", "type_name": "builtin::ServiceBootstrapEffects"}],
+            "ServiceBootstrapEffects distinct nominal entry ABI",
+        )
+        bootstrap_prep = execution_facts["records"]["__au_bootstrap_preparation"]
+        need(
+            bootstrap_prep["size"] == 32
+            and bootstrap_prep["alignment"] == 8
+            and [field["offset"] for field in bootstrap_prep["fields"]] == [0, 8, 16, 24],
+            "BootstrapPreparation physical layout",
+        )
+        need(
+            execution_facts["enums"]["__au_bootstrap_progress"]["cases"] == {"pending": 0, "complete": 1, "failed": 2},
+            "BootstrapProgress exact closed cases",
+        )
         emitted = assembly.read_text()
         symbol = next(
             name
             for name in re.findall(r"^\.local\s+(\S+)", emitted, re.MULTILINE)
             if name.endswith("_d15execution_entry")
+        )
+        bootstrap_symbol = next(
+            name
+            for name in re.findall(r"^\.local\s+(\S+)", emitted, re.MULTILINE)
+            if name.endswith("_d15bootstrap_entry")
         )
         assembly.write_text(
             emitted
@@ -225,7 +249,14 @@ __au_runtime_group_entry:
     pushq %rbp
     movq %rsp,%rbp
     movq %rdi,%r11
+    movabsq $0x424f4f54495353,%rax
+    cmpq %rax,(%rdi)
+    je .Lbootstrap_entry
     call {symbol}
+    jmp .Lentry_done
+.Lbootstrap_entry:
+    call {bootstrap_symbol}
+.Lentry_done:
     leave
     ret
 .size __au_runtime_group_entry,.-__au_runtime_group_entry
@@ -249,10 +280,11 @@ __au_runtime_group_entry:
             ]
         )
         need(result.returncode == 0, result.stderr.decode())
-        for mode in range(25):
+        for mode in [*range(25), *range(100, 118)]:
             result = run([binary, mode])
             need(
-                result.returncode == (0 if mode == 0 or 17 <= mode <= 22 else -signal.SIGILL),
+                result.returncode
+                == (0 if mode == 0 or 17 <= mode <= 22 or mode == 100 or 113 <= mode <= 117 else -signal.SIGILL),
                 f"execution mode {mode}: {result.returncode}",
             )
 
@@ -814,11 +846,52 @@ __au_runtime_group_entry:
             f"auto f({execution})->u64{{while(probe(e)){{return 0u64;}}"
             f"{lease} lease=e.prepare();{finish}return 0u64;}}"
         )
+        bootstrap = "builtin::ServiceBootstrapEffects& b"
+        bootlease = "builtin::ServiceBootstrapLease"
+        bootfinish = "lease.finish(builtin::BootstrapFinish::abandon);"
+        invalid["bootstrap-cross-issue"] = f"auto f({bootstrap})->u64{{{lease} lease=b.begin();return 0u64;}}"
+        invalid["execution-cross-issue"] = f"auto f({execution})->u64{{{bootlease} lease=e.prepare();return 0u64;}}"
+        invalid["bootstrap-cross-move"] = (
+            f"auto f({bootstrap})->u64{{{bootlease} lease=b.begin();{lease} other=move(lease);return 0u64;}}"
+        )
+        invalid["bootstrap-live-return"] = f"auto f({bootstrap})->u64{{{bootlease} lease=b.begin();return 0u64;}}"
+        invalid["bootstrap-second-issue"] = (
+            f"auto f({bootstrap})->u64{{{bootlease} lease=b.begin();{bootfinish}{bootlease} next=b.begin();"
+            "next.finish(builtin::BootstrapFinish::abandon);return 0u64;}"
+        )
+        invalid["bootstrap-wrong-finish"] = (
+            f"auto f({bootstrap})->u64{{{bootlease} lease=b.begin();"
+            "lease.finish(builtin::ExecFinish::complete);return 0u64;}"
+        )
+        invalid["bootstrap-wrong-copy-offset"] = (
+            f"auto f({bootstrap})->u64{{{bootlease} lease=b.begin();lease.copy_volume(0);{bootfinish}return 0u64;}}"
+        )
+        invalid["bootstrap-cross-method"] = (
+            f"auto f({bootstrap})->u64{{{bootlease} lease=b.begin();lease.cancel();{bootfinish}return 0u64;}}"
+        )
+        invalid["bootstrap-cross-report"] = (
+            f"auto f({bootstrap})->u64{{{bootlease} lease=b.begin();"
+            f"const builtin::ExecutionPrep result=lease.preparation();{bootfinish}return 0u64;}}"
+        )
+        invalid["bootstrap-main"] = f"auto main({bootstrap})->u64{{return 0u64;}}"
+        invalid["bootstrap-mixed"] = f"auto f({bootstrap},{execution})->u64{{return 0u64;}}"
+        invalid["bootstrap-forward-then-issue"] = (
+            f"auto h({bootstrap})->u64{{return 0u64;}}auto f({bootstrap})->u64{{h(b);"
+            f"{bootlease} lease=b.begin();{bootfinish}return 0u64;}}"
+        )
         for label, code in invalid.items():
             source.write_text("module rejected;" + code)
             target = ["--target", "aurora"] if label.startswith(("writer-", "readonly-")) else []
             result = run([compiler, *target, "--check", source])
             need(result.returncode == 1 and b"error AU" in result.stderr, f"{label}: {result.stderr!r}")
+            if label.startswith("bootstrap-") or label == "execution-cross-issue":
+                need(b"error AU9001" not in result.stderr, f"{label}: internal failure is not semantic rejection")
+            if label in ("bootstrap-cross-issue", "bootstrap-cross-move", "execution-cross-issue"):
+                expected, actual = "ExecutionLease", "ServiceBootstrapLease"
+                if label == "execution-cross-issue":
+                    expected, actual = actual, expected
+                diagnostic = f"error AU3001: expected builtin::{expected}, got builtin::{actual}\n".encode()
+                need(result.stderr.endswith(diagnostic), f"{label}: {result.stderr!r}")
             if label in ("missing", "extra"):
                 need(
                     result.stderr.count(b"error AU") == 1
@@ -826,7 +899,7 @@ __au_runtime_group_entry:
                     f"{label}: expected method arity diagnostic, got {result.stderr!r}",
                 )
         print(
-            "PASS Serve: source/IR, endpoint, block, writer and execution effects, 76 hostile runtime traps, "
+            "PASS Serve: source/IR, endpoint, block, writer and execution effects, 88 hostile runtime traps, "
             f"eight catalogues, {len(invalid)} rejections"
         )
 

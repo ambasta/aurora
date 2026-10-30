@@ -2243,21 +2243,20 @@ export namespace compiler_ir_instructions {
             && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + name.count() - 11,
             11), "_n0__d4main");
     }
-    auto service_resource_slot(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 offset) -> bool {
+    auto service_resource_kind_at(const compiler_ir_metadata::MetadataStore& metadata, i64 callable,
+        i64 offset) -> i64 {
         const i64 index = entry_slot(metadata, callable, 28, offset);
         if (index < 0) {
-            return false;
-        }
-        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(index);
-        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
-        return slot.mutable_value() == 1 && compiler_ir_metadata::plain_type(type, 26);
-    }
-    auto service_resource_issuer(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 offset) -> i64 {
-        if (!service_resource_slot(metadata, callable, offset)) {
             return -1;
         }
-        // The admitted nominal RawType26 maps to the closed catalog's resource0.
-        return compiler_catalog::resource_issuer(0);
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(index);
+        if (slot.mutable_value() != 1) {
+            return -1;
+        }
+        return compiler_ir_metadata::service_resource_kind(metadata, metadata.type_at(slot.type()));
+    }
+    auto service_resource_issuer(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 offset) -> i64 {
+        return compiler_catalog::resource_issuer(service_resource_kind_at(metadata, callable, offset));
     }
     auto verify_service_resource_instruction(InstructionStore& store,
         const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 instruction, u64 result_enums) -> bool {
@@ -2300,62 +2299,74 @@ export namespace compiler_ir_instructions {
             }
             at = at + 1;
         }
-        if (call_value(store, instruction, count - 1) != 0) {
+        const i64 resource_kind = call_value(store, instruction, count - 1);
+        if (resource_kind < 0 || resource_kind >= compiler_catalog::resource_count()) {
             return fail(store, InstructionError::service_resource_shape);
         }
         const i64 root = call_value(store, instruction, 0);
         if (form == 85) {
-            const i64 issuer_kind = service_resource_issuer(metadata, callable, call_value(store, instruction, 2));
+            const i64 destination = call_value(store, instruction, 2);
+            const i64 issuer_kind = compiler_catalog::resource_issuer(resource_kind);
             if (issuer_kind < 0 || !service_entry_matches(store, metadata, callable, root, issuer_kind)
-                || call_value(store, instruction, 1) != 46 || !service_resource_slot(metadata, callable,
-                call_value(store, instruction, 2))) {
+                || call_value(store, instruction, 1) != compiler_catalog::resource_issue_operation(resource_kind)
+                || service_resource_kind_at(metadata, callable, destination) != resource_kind) {
                 return fail(store, InstructionError::service_resource_shape);
             }
             return true;
         }
-        if (!service_resource_slot(metadata, callable, root)) {
+        if (service_resource_kind_at(metadata, callable, root) != resource_kind) {
             return fail(store, InstructionError::service_resource_shape);
         }
         if (form == 86) {
             const i64 destination = call_value(store, instruction, 1);
-            if (root == destination || !service_resource_slot(metadata, callable, destination)) {
+            if (root == destination || service_resource_kind_at(metadata, callable, destination) != resource_kind) {
                 return fail(store, InstructionError::service_resource_shape);
             }
             return true;
         }
         const i64 method = call_value(store, instruction, 1);
         const i64 result = call_value(store, instruction, 2);
-        if (method < 0 || method > 5) {
+        if (method < 0 || method >= compiler_catalog::resource_method_count(resource_kind)) {
             return fail(store, InstructionError::service_resource_shape);
         }
-        if (method < 2) {
+        const i64 parameters = compiler_catalog::resource_method_parameters(resource_kind, method);
+        if (parameters < 0 || parameters > 1) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        if (parameters == 1) {
+            const i64 type = compiler_catalog::resource_method_parameter(resource_kind, method);
+            const i64 kind = compiler_ir_metadata::catalogue_kind(type);
+            if ((kind != 0 && kind != 1 && kind != 7 && kind != 9 && kind != 10) || (kind == 9
+                && compiler_ir_metadata::catalogue_nominal(metadata, type) < 0)) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+        }
+        const i64 result_type = compiler_catalog::resource_method_result(resource_kind, method);
+        const i64 result_kind = compiler_ir_metadata::catalogue_kind(result_type);
+        const i64 effect = compiler_catalog::resource_method_effect(resource_kind, method);
+        if (effect < 0 || effect > 2) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        if (result_kind == 5) {
             const i64 index = entry_slot(metadata, callable, 11, result);
             if (index < 0) {
                 return fail(store, InstructionError::service_resource_shape);
             }
             const compiler_ir_metadata::SlotRow slot = metadata.slot_at(index);
             const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
-            if ((method == 0 && !compiler_ir_metadata::named(metadata, type.name(), "__au_execution_prep")) || (method
-                == 1 && !compiler_ir_metadata::named(metadata, type.name(), "__au_execution_step"))) {
+            if (!compiler_ir_metadata::catalogue_type_matches(metadata, type, result_type)) {
                 return fail(store, InstructionError::service_resource_shape);
             }
         } else {
-            u64 required = 16u64;
-            if (method == 3) {
-                required = 32u64;
-            }
-            if (method == 4) {
-                required = 128u64;
-            }
-            if (method == 5) {
-                required = 80u64;
-            }
-            if (result != 0 || (result_enums & required) != required) {
+            if (result != 0 || (result_kind != 0 && result_kind != 1 && result_kind != 7 && result_kind != 9
+                && result_kind != 10) || (result_kind == 9 && compiler_ir_metadata::catalogue_nominal(metadata,
+                result_type) < 0)) {
                 return fail(store, InstructionError::service_resource_shape);
             }
         }
         return true;
     }
+
     auto verify_service_instruction(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 instruction, u64 result_enums) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
@@ -2373,7 +2384,7 @@ export namespace compiler_ir_instructions {
         }
         if (form == 2) { // ReleaseServiceLoan: the executed path decides which loan is live and called.
             const i64 kind = call_value(store, instruction, 1);
-            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 9) {
+            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 10) {
                 return fail(store, InstructionError::service_release);
             }
             return true;

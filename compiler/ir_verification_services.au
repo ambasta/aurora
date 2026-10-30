@@ -8,6 +8,7 @@ import aurora.compiler.ir_instructions;
 import aurora.compiler.ir_instruction_storage;
 import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.builtin_catalog;
 
 export namespace compiler_ir_verification {
     auto transfer_service_result(const compiler_ir_metadata::MetadataStore& m, i64 operation) -> TypeKey {
@@ -19,17 +20,6 @@ export namespace compiler_ir_verification {
                 && compiler_ir_metadata::named(m, name, "__au_display_put_result")) || (operation == 4
                 && compiler_ir_metadata::named(m, name, "__au_event_ack_result")) || (operation == 7
                 && compiler_ir_metadata::named(m, name, "__au_port_write_result"))) {
-                return TypeKey(9, at);
-            }
-            at = at + 1;
-        }
-        return TypeKey(-1, -1);
-    }
-    auto transfer_execution_finish_type(const compiler_ir_metadata::MetadataStore& m) -> TypeKey {
-        i64 at = 0;
-        while (at < m.enum_count()) {
-            const compiler_ir_metadata::EnumRow row = m.enum_at(at);
-            if (compiler_ir_metadata::named(m, row.name(), "__au_exec_finish")) {
                 return TypeKey(9, at);
             }
             at = at + 1;
@@ -157,18 +147,23 @@ export namespace compiler_ir_verification {
         }
         return w.good();
     }
-    auto transfer_resource_result(const compiler_ir_metadata::MetadataStore& m, i64 method) -> TypeKey {
-        i64 at = 0;
-        while (at < m.enum_count()) {
-            const compiler_ir_metadata::EnumRow row = m.enum_at(at);
-            if (((method == 2 || method == 5) && compiler_ir_metadata::named(m, row.name(), "__au_exec_effect"))
-                || (method == 3 && compiler_ir_metadata::named(m, row.name(), "__au_exec_request")) || (method == 4
-                && compiler_ir_metadata::named(m, row.name(), "__au_exec_cancel"))) {
-                return TypeKey(9, at);
-            }
-            at = at + 1;
+    auto transfer_catalogue_type(const compiler_ir_metadata::MetadataStore& m, i64 type) -> TypeKey {
+        const i64 kind = compiler_ir_metadata::catalogue_kind(type);
+        i64 nominal = -1;
+        if (kind == 5 || kind == 9) {
+            nominal = compiler_ir_metadata::catalogue_nominal(m, type);
         }
-        return TypeKey(-1, -1);
+        return TypeKey(kind, nominal);
+    }
+    auto resource_issuing_service(i64 issuer) -> bool {
+        i64 resource = 0;
+        while (resource < compiler_catalog::resource_count()) {
+            if (compiler_catalog::resource_issuer(resource) == issuer) {
+                return true;
+            }
+            resource = resource + 1;
+        }
+        return false;
     }
     auto transfer_service_resource(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
@@ -194,13 +189,15 @@ export namespace compiler_ir_verification {
         }
         const FactRow resource = w.fact_find(FactKind::service_resource, root, -1);
         const i64 issuer = resource.site();
+        const i64 resource_kind = compiler_ir_instructions::service_resource_kind_at(m, w.callable(), root);
         const i64 issuer_kind = compiler_ir_instructions::service_resource_issuer(m, w.callable(), root);
         const FactRow used = w.fact_find(FactKind::service_issuer_used, issuer, -1);
         const compiler_ir_instructions::RawInstructionRow issuance = s.instruction_at(used.site());
         if (issuer_kind < 0 || used.kind() != FactKind::service_issuer_used || used.site() <= 0 || issuance.form() != 85
-            || transfer_value(s, used.site(), 0) != issuer || transfer_value(s, used.site(), 1) != 46
-            || transfer_value(s, used.site(), 3) != 0 || !compiler_ir_instructions::service_entry_matches(s, m,
-            w.callable(), issuer, issuer_kind) || w.service_unsuspended(issuer) != 1) {
+            || transfer_value(s, used.site(), 0) != issuer || transfer_value(s, used.site(), 1)
+            != compiler_catalog::resource_issue_operation(resource_kind) || transfer_value(s, used.site(), 3)
+            != resource_kind || !compiler_ir_instructions::service_entry_matches(s, m, w.callable(), issuer,
+            issuer_kind) || w.service_unsuspended(issuer) != 1) {
             return w.fail(second_error(VerificationErrorSecond::service_resource_provenance_mismatch));
         }
         if (form == 86) {
@@ -214,7 +211,18 @@ export namespace compiler_ir_verification {
                 && w.clear_current();
         }
         const i64 method = transfer_value(s, id, 1);
-        if (method < 2) {
+        const i64 result_type = compiler_catalog::resource_method_result(resource_kind, method);
+        const i64 parameter_count = compiler_catalog::resource_method_parameters(resource_kind, method);
+        if (parameter_count == 1) {
+            const i64 parameter = compiler_catalog::resource_method_parameter(resource_kind, method);
+            const TypeKey argument_type = transfer_catalogue_type(m, parameter);
+            const ValueRow argument = current(w, argument_type);
+            if (!w.good()) {
+                return false;
+            }
+        }
+        const bool copied_result = compiler_ir_metadata::catalogue_kind(result_type) == 5;
+        if (copied_result) {
             const i64 base = transfer_value(s, id, 2);
             if (!transfer_has(w, FactKind::object, base)) {
                 return w.fail(second_error(VerificationErrorSecond::service_observation_requires_pristine_sample));
@@ -234,22 +242,22 @@ export namespace compiler_ir_verification {
                 return w.fail(second_error(
                     VerificationErrorSecond::service_observation_cannot_overwrite_initialized_sample_storage));
             }
-            return compiler_ir_initialization::mark_object(w, m, base) && w.clear_current();
-        }
-        if (method == 5) {
-            const TypeKey disposition = transfer_execution_finish_type(m);
-            const ValueRow argument = current(w, disposition);
-            if (!w.good()) {
+            if (!compiler_ir_initialization::mark_object(w, m, base)) {
                 return false;
             }
+        }
+        if (compiler_catalog::resource_method_effect(resource_kind, method) == 2) {
             const FactRow dead = service_origin_fact(FactKind::service_resource_dead, root, issuer);
             if (!w.fact_erase(FactKind::service_resource, root, -1) || !w.fact_set(dead)) {
                 return false;
             }
         }
-        const TypeKey result_type = transfer_resource_result(m, method);
+        if (copied_result) {
+            return w.clear_current();
+        }
+        const TypeKey result_key = transfer_catalogue_type(m, result_type);
         const BoundsEvidence bounds = empty_bounds();
-        const ValueRow result = ValueRow(result_type, bounds);
+        const ValueRow result = ValueRow(result_key, bounds);
         return w.set_current(result);
     }
     auto transfer_services(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
@@ -265,7 +273,7 @@ export namespace compiler_ir_verification {
         if (form == 1) {
             const i64 issuer = transfer_value(s, id, 1);
             const i64 kind = transfer_value(s, id, 2);
-            if (kind == 9) {
+            if (resource_issuing_service(kind)) {
                 if (!service_issuer_available(w, issuer)) {
                     return false;
                 }

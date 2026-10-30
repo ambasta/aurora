@@ -124,7 +124,7 @@ def validate_native_abi(facts, source):
             return dict(bytes=56, kind="span")
         if source in ("builtin::CallSession", "builtin::ConsoleSession"):
             return dict(bytes=16, kind="service")
-        if source in ("builtin::ServeSession", "builtin::ExecutionEffects"):
+        if source in ("builtin::ServeSession", "builtin::ExecutionEffects", "builtin::ServiceBootstrapEffects"):
             return dict(bytes=16, kind="service", type_name=source)
         group = (
             "enums"
@@ -157,6 +157,10 @@ def validate_native_abi(facts, source):
                 "__au_exec_request",
                 "__au_exec_finish",
                 "__au_exec_cancel",
+                "__au_bootstrap_effect",
+                "__au_bootstrap_progress",
+                "__au_bootstrap_finish",
+                "__au_bootstrap_result",
             )
             else "records"
         )
@@ -453,6 +457,23 @@ def validate_native_abi(facts, source):
                 ["console::ProtectedFiles", "console::FileSelection", "std::BinaryBuffer64", "i64"],
                 "FileMutation",
             )
+
+    if "# SERVICE_BOOTSTRAP_ABI:" in source:
+        enum("__au_bootstrap_effect", "staged failed")
+        enum("__au_bootstrap_progress", "pending complete failed")
+        enum("__au_bootstrap_finish", "publish abandon")
+        enum("__au_bootstrap_result", "ready unavailable")
+        record(
+            "__au_bootstrap_preparation",
+            32,
+            [
+                ("loaded", "bool", 0),
+                ("volume_bytes", "u64", 0),
+                ("chunk_bytes", "u64", 0),
+                ("storage_required", "bool", 0),
+            ],
+        )
+        entry("process_bootstrap_service", ["builtin::ServiceBootstrapEffects"], "__au_bootstrap_result")
 
     if "# EXECUTION_POLICY_ABI:" in source:
         enum("__au_exec_status", "exited fault watchdog missing malformed quota unavailable output_failed cancelled")

@@ -2446,17 +2446,14 @@ export namespace compiler_air {
             emit_type(reader, metadata, spelled, nominal, type, fill);
         }
         if (ordinal == 9) {
-            // Preserve a hostile unknown resource kind in the otherwise-zero
-            // length lane; independent slot admission requires canonical kind0.
-            length = reader.integer(reader.node(line, 2));
             mutable_value = reader.boolean(reader.node(line, 3));
             type = reader.count(1);
-            const compiler_ir_metadata::RawTypeRow value = compiler_ir_metadata::RawTypeRow(26,
-                compiler_ir_metadata::ByteRange(0, 0), compiler_ir_metadata::RawTypeTail(0, 0, 0u64, 0u64, 0u64));
-            if (fill && !metadata.ingress_type(type, value)) {
-                return reader.fail();
+            const i64 spelled = reader.node(line, 2);
+            i64 nominal = 26;
+            if (reader.kind(spelled) == 3) {
+                nominal = -1;
             }
-            reader.advance(1, 1);
+            emit_type(reader, metadata, spelled, nominal, type, fill);
         }
         if (ordinal == 1) {
             mutable_value = reader.boolean(reader.node(line, 3));
