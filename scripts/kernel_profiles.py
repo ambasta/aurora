@@ -1244,6 +1244,7 @@ def uefi_profile(profile_mode, flags):
         (process, "process-policy", "process", "process", ["kernel/policies", "library"]),
         (process, "budget-root", "budget-root", "budget-root", ["kernel/policies"]),
         (process, "service-root", "service-root", "service-root", ["kernel/policies"]),
+        (process, "service-bootstrap", "service-bootstrap", "service-bootstrap", ["kernel/policies"]),
         (profile_mode == "production", "execution", "execution", "execution", ["kernel/policies"]),
     ):
         if enabled:

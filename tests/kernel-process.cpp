@@ -14,6 +14,7 @@
 //                                 (files.cases), one fresh service per line
 // stdout is compared with the golden file beside the cases.
 #include "../kernel/execution-session.hpp"
+#include "../kernel/service-bootstrap.hpp"
 #include "../kernel/retained-budget.hpp"
 #include "../kernel/retained-service.hpp"
 #include "../kernel/uefi/frames.hpp"
@@ -1103,6 +1104,276 @@ auto execution_mode(const char *cases) -> int {
     return 0;
 }
 
+namespace bootstrap_fixture {
+namespace bootstrap = aurora::bootstrap;
+using U64 = std::uint64_t;
+constexpr const char *effects[] = {"staged", "failed"};
+constexpr const char *progress[] = {"pending", "complete", "failed"};
+constexpr const char *finishes[] = {"publish", "abandon"};
+constexpr const char *results[] = {"ready", "unavailable"};
+std::vector<std::vector<std::string>> script;
+std::size_t cursor{};
+std::string trace;
+bootstrap::Argument argument{};
+bootstrap::Lease lease{};
+unsigned calls{}, expected_calls{};
+bool quiet = true, authority_only = false, reenter = false, release_inside = false;
+bool owner_reentry = false, unsettled = false, finish_release = false;
+
+auto next(const char *operation, std::size_t fields) -> const std::vector<std::string> & {
+    ++calls;
+    if (cursor == script.size() || script[cursor].size() != fields || script[cursor][0] != operation)
+        usage("unexpected bootstrap effect: " + std::string{operation});
+    if (!trace.empty())
+        trace += ',';
+    trace += operation;
+    return script[cursor++];
+}
+class Transport {
+public:
+    class Binding {
+    public:
+        bool finished = false;
+    };
+    static auto begin(Binding &) -> bootstrap::Preparation;
+    static auto begin_volume(Binding &) -> bootstrap::Effect {
+        return static_cast<bootstrap::Effect>(execution_fixture::named(next("volume", 2)[1], effects));
+    }
+    static auto copy_volume(Binding &, U64 offset) -> bootstrap::Effect {
+        const auto &row = next("copy", 3);
+        if (offset != number(row[1]))
+            usage("unexpected bootstrap copy cursor");
+        trace += ':' + row[1];
+        return static_cast<bootstrap::Effect>(execution_fixture::named(row[2], effects));
+    }
+    static auto seal_volume(Binding &) -> bootstrap::Effect {
+        return static_cast<bootstrap::Effect>(execution_fixture::named(next("seal", 2)[1], effects));
+    }
+    static auto admit_storage(Binding &) -> bootstrap::Effect {
+        return static_cast<bootstrap::Effect>(execution_fixture::named(next("storage", 2)[1], effects));
+    }
+    static auto advance(Binding &) -> bootstrap::Progress;
+    static auto finish(Binding &, bootstrap::Finish) -> bootstrap::Result;
+    static auto settled(const Binding &binding) -> bool {
+        return binding.finished && !unsettled;
+    }
+};
+class Platform {
+public:
+    static auto quiet() -> bool {
+        return bootstrap_fixture::quiet;
+    }
+    [[noreturn]] static auto fail() -> void {
+        std::_Exit(calls == expected_calls ? 77 : 78);
+    }
+};
+using Session = bootstrap::Session<Transport, Platform>;
+auto Transport::begin(Binding &) -> bootstrap::Preparation {
+    if (reenter || release_inside || authority_only) {
+        ++calls;
+        if (reenter)
+            static_cast<void>(Session::begin(argument.grant, argument.generation));
+        if (release_inside)
+            Session::release(argument);
+        return {0, 0, 1, 0};
+    }
+    const auto &row = next("begin", 5);
+    const auto loaded = number(row[1]), storage = number(row[4]);
+    if (loaded > 1 || storage > 1)
+        usage("noncanonical bootstrap fixture boolean");
+    return {loaded, number(row[2]), number(row[3]), storage};
+}
+auto Transport::advance(Binding &) -> bootstrap::Progress {
+    if (owner_reentry) {
+        ++calls;
+        static_cast<void>(Session::preparation(lease.binding, lease.generation));
+        usage("bootstrap owner accepted reentry");
+    }
+    return static_cast<bootstrap::Progress>(execution_fixture::named(next("advance", 2)[1], progress));
+}
+auto Transport::finish(Binding &binding, bootstrap::Finish disposition) -> bootstrap::Result {
+    if (authority_only) {
+        ++calls;
+        if (finish_release)
+            Session::release(argument);
+        binding.finished = true;
+        return bootstrap::Result::unavailable;
+    }
+    const auto &row = next("finish", 3);
+    if (static_cast<U64>(disposition) != execution_fixture::named(row[1], finishes))
+        usage("unexpected bootstrap disposition");
+    trace += ':' + row[1];
+    binding.finished = true;
+    return static_cast<bootstrap::Result>(execution_fixture::named(row[2], results));
+}
+auto denial(const std::string &kind) -> void {
+    const auto old = Session::open();
+    Session::release(old);
+    argument = Session::open();
+    const auto child = fork();
+    if (child < 0)
+        usage("bootstrap fixture fork failed");
+    if (!child) {
+        calls = expected_calls = 0;
+        if (kind == "stale")
+            static_cast<void>(Session::begin(old.grant, old.generation));
+        else if (kind == "forged")
+            static_cast<void>(Session::begin(reinterpret_cast<const void *>(1), argument.generation));
+        else if (kind == "zero_generation")
+            static_cast<void>(Session::begin(argument.grant, 0));
+        else if (kind == "duplicate_open")
+            static_cast<void>(Session::open());
+        else if (kind == "released") {
+            Session::release(argument);
+            static_cast<void>(Session::begin(argument.grant, argument.generation));
+        } else if (kind == "not_quiet") {
+            quiet = false;
+            static_cast<void>(Session::begin(argument.grant, argument.generation));
+        } else if (kind == "cross_issuer" || kind == "cross_lease") {
+            const auto foreign = execution_fixture::Session::open();
+            if (kind == "cross_issuer")
+                static_cast<void>(Session::begin(foreign.grant, foreign.generation));
+            execution_fixture::authority_only = true;
+            const auto owner = execution_fixture::Session::prepare(foreign.grant, foreign.generation);
+            static_cast<void>(Session::advance(owner.binding, owner.generation));
+        } else if (kind == "reenter" || kind == "release_inside") {
+            expected_calls = 1;
+            reenter = kind == "reenter";
+            release_inside = kind == "release_inside";
+            static_cast<void>(Session::begin(argument.grant, argument.generation));
+        } else {
+            authority_only = true;
+            lease = Session::begin(argument.grant, argument.generation);
+            expected_calls = 1;
+            if (kind == "invalid_finish")
+                static_cast<void>(Session::finish(lease.binding, lease.generation, 2));
+            else if (kind == "issuer_as_owner")
+                static_cast<void>(Session::advance(argument.grant, argument.generation));
+            else if (kind == "forged_owner")
+                static_cast<void>(Session::advance(reinterpret_cast<const void *>(1), lease.generation));
+            else if (kind == "stale_owner")
+                static_cast<void>(Session::preparation(lease.binding, old.generation));
+            else if (kind == "reverse_cross_lease") {
+                execution_fixture::calls = execution_fixture::expected_calls = 0;
+                static_cast<void>(execution_fixture::Session::preparation(lease.binding, lease.generation));
+            } else if (kind == "release_live")
+                Session::release(argument);
+            else if (kind == "second_begin")
+                static_cast<void>(Session::begin(argument.grant, argument.generation));
+            else if (kind == "owner_reentry") {
+                expected_calls = 2;
+                owner_reentry = true;
+                static_cast<void>(Session::advance(lease.binding, lease.generation));
+            } else {
+                expected_calls = 2;
+                unsettled = kind == "unsettled_finish";
+                finish_release = kind == "release_during_finish";
+                static_cast<void>(Session::finish(lease.binding, lease.generation, 1));
+                if (kind == "double_finish")
+                    static_cast<void>(Session::finish(lease.binding, lease.generation, 1));
+                else if (kind == "use_after_finish")
+                    static_cast<void>(Session::preparation(lease.binding, lease.generation));
+                else if (kind == "reissue_after_finish")
+                    static_cast<void>(Session::begin(argument.grant, argument.generation));
+                else
+                    usage("unknown bootstrap denial");
+            }
+        }
+        std::_Exit(1);
+    }
+    int status{};
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status) != 77)
+        usage("bootstrap authority denial failed");
+    Session::release(argument);
+}
+} // namespace bootstrap_fixture
+
+extern "C" auto __au_runtime_process_bootstrap_service(const aurora::bootstrap::Argument *) -> std::uint64_t;
+extern "C" auto __au_runtime_service_bootstrap_begin(const void *grant,
+                                                     std::uint64_t generation,
+                                                     aurora::bootstrap::Lease *result) -> void {
+    *result = bootstrap_fixture::Session::begin(grant, generation);
+}
+extern "C" auto __au_runtime_service_bootstrap_preparation(const void *binding,
+                                                           std::uint64_t generation,
+                                                           aurora::bootstrap::Preparation *result) -> void {
+    *result = bootstrap_fixture::Session::preparation(binding, generation);
+}
+extern "C" auto __au_runtime_service_bootstrap_begin_volume(const void *binding, std::uint64_t generation)
+    -> std::uint64_t {
+    return bootstrap_fixture::Session::begin_volume(binding, generation);
+}
+extern "C" auto __au_runtime_service_bootstrap_copy_volume(const void *binding,
+                                                           std::uint64_t generation,
+                                                           std::uint64_t offset) -> std::uint64_t {
+    return bootstrap_fixture::Session::copy_volume(binding, generation, offset);
+}
+extern "C" auto __au_runtime_service_bootstrap_seal_volume(const void *binding, std::uint64_t generation)
+    -> std::uint64_t {
+    return bootstrap_fixture::Session::seal_volume(binding, generation);
+}
+extern "C" auto __au_runtime_service_bootstrap_admit_storage(const void *binding, std::uint64_t generation)
+    -> std::uint64_t {
+    return bootstrap_fixture::Session::admit_storage(binding, generation);
+}
+extern "C" auto __au_runtime_service_bootstrap_advance(const void *binding, std::uint64_t generation) -> std::uint64_t {
+    return bootstrap_fixture::Session::advance(binding, generation);
+}
+extern "C" auto __au_runtime_service_bootstrap_finish(const void *binding,
+                                                      std::uint64_t generation,
+                                                      std::uint64_t disposition) -> std::uint64_t {
+    return bootstrap_fixture::Session::finish(binding, generation, disposition);
+}
+
+auto bootstrap_mode(const char *cases) -> int {
+    namespace fixture = bootstrap_fixture;
+    std::ifstream input{cases};
+    if (!input)
+        usage("cannot read bootstrap cases");
+    for (std::string line; std::getline(input, line);) {
+        if (line.empty() || line.starts_with('#'))
+            continue;
+        std::istringstream row{line};
+        std::string name, token;
+        row >> name;
+        fixture::script.clear();
+        fixture::cursor = fixture::calls = 0;
+        fixture::trace.clear();
+        while (row >> token) {
+            std::vector<std::string> fields;
+            std::istringstream part{token};
+            for (std::string field; std::getline(part, field, ':');)
+                fields.push_back(field);
+            fixture::script.push_back(std::move(fields));
+        }
+        if (fixture::script.size() == 1 && fixture::script[0].size() == 2 && fixture::script[0][0] == "deny") {
+            fixture::denial(fixture::script[0][1]);
+            std::cout << name << " denied\n";
+            continue;
+        }
+        if (fixture::script.size() == 1 && fixture::script[0].size() == 5 && fixture::script[0][0] == "reply") {
+            const auto &fields = fixture::script[0];
+            const auto operation = number(fields[1]), length = number(fields[2]);
+            const auto offset = number(fields[3]), value = number(fields[4]);
+            std::array<std::byte, 65> bytes{};
+            if (length > bytes.size() || offset >= bytes.size() || value > 255)
+                usage("invalid bootstrap reply test input");
+            bytes[offset] = std::byte(value);
+            const auto result = aurora::bootstrap::inspect_reply(operation, {bytes.data(), length});
+            constexpr const char *names[] = {"invalid", "ready", "disk_unavailable"};
+            std::cout << name << ' ' << names[static_cast<std::size_t>(result)] << '\n';
+            continue;
+        }
+        fixture::argument = fixture::Session::open();
+        const auto result = __au_runtime_process_bootstrap_service(&fixture::argument);
+        fixture::Session::release(fixture::argument);
+        if (fixture::cursor != fixture::script.size() || result >= std::size(fixture::results))
+            usage("bootstrap script not consumed or invalid result");
+        std::cout << name << ' ' << fixture::results[result] << ' ' << fixture::trace << '\n';
+    }
+    return 0;
+}
+
 namespace budget_fixture {
 using U64 = std::uint64_t;
 bool excluded = true, reenter = false;
@@ -1400,6 +1671,8 @@ auto service_incarnation_mode(const char *cases) -> int {
 } // namespace
 
 auto main(int argc, char **argv) -> int {
+    if (argc == 3 && std::string{argv[1]} == "bootstrap")
+        return bootstrap_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "service-incarnation")
         return service_incarnation_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "budget")

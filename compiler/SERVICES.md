@@ -781,3 +781,45 @@ relation against the nominal resource slot and immutable entry binding. Allocato
 tokens, spans and object-loan payloads remain empty for these tags. This preserves
 the existing 192-byte FactRow and 200-byte ActiveFact instead of imposing a new
 payload cost on unrelated resources; no extra workspace pool or limit is needed.
+
+## File-service bootstrap
+
+`builtin::ServiceBootstrapEffects&` is a distinct private singleton issuer.
+Its `begin()` returns `builtin::ServiceBootstrapLease`, using the same
+explicit-finalization rules as ExecutionLease. Every result, including failed
+loading, must be finished. A lease resolves one unpublished startup, not the
+lifetime of an already-ready service. It cannot be stored, returned, copied,
+passed as an owner parameter, or substituted for ExecutionLease.
+
+The closed operations are:
+
+- `preparation()` returns `BootstrapPreparation`: `loaded: bool`,
+  `volume_bytes: u64`, `chunk_bytes: u64`, `storage_required: bool`.
+- `begin_volume()`, `copy_volume(u64 offset)`, `seal_volume()` and
+  `admit_storage()` return `BootstrapEffect::{staged, failed}`.
+- `advance()` returns `BootstrapProgress::{pending, complete, failed}`.
+- Consuming `finish(BootstrapFinish::{publish, abandon})` returns
+  `BootstrapResult::{ready, unavailable}`. Requested publication is not proof
+  of readiness; native authenticated receipts and physical identity govern it.
+
+The source owns protocol ordering and chunk progress. Copied offsets, observations
+and dispositions convey no capability. The bound native adapter stages only the
+named operation, authenticates completion, and preserves the existing startup
+and per-message allowances. Its distinct grant cannot reenter a suspended
+ExecutionEffects operation. Normal finalization settles the unpublished startup
+or publishes readiness into the retained ServiceIncarnation root.
+
+Issuer kind 10 and operation 51 append existing identities. The descriptor remains
+16 bytes, aligned to 16. Native symbols use `__au_runtime_service_bootstrap_` with
+the method name; `begin` and `preparation` use output pointers in RDX, the latter
+writing a 32-byte copied record. Other operations return checked scalar enums;
+`copy_volume` and `finish` take their sole argument in RDX. Both boolean report
+fields are checked at full qword width, including reserved bytes.
+
+Resource identity is catalogue-driven throughout resolution, lowering and
+independent IR. RawType26 uses exactly `__au_execution_lease` or
+`__au_service_bootstrap_lease` as its canonical nominal name with zero tails;
+empty names and alternate spellings are rejected. Slot28 and instruction
+forms 85–87 retain their shapes. Moves, issuance and method results must match
+that exact resource kind and its catalogue issuer, rather than only the shared
+physical descriptor size. Neither concrete type rows nor verifier facts grow.

@@ -1,5 +1,7 @@
 export module aurora.compiler.ir_metadata;
 import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.builtin_catalog;
+import aurora.compiler.resolution_kinds;
 
 // Independent verification of the actual native Module import. Raw prefixes
 // stay immutable; only normalized fields, offsets, storage and results append.
@@ -99,6 +101,93 @@ export namespace compiler_ir_metadata {
             at = at + 1;
         }
         return true;
+    }
+    // Pure catalogue spelling is independent of resolver storage or aliases.
+    auto catalogue_name(const MetadataStore& store, ByteRange name, i64 type) -> bool {
+        const i64 length = compiler_catalog::type_native_byte(type, -1);
+        if (length <= 0 || name.count() != length) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < length) {
+            if (store.byte_at(name.begin() + at) != compiler_catalog::type_native_byte(type, at)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto catalogue_kind(i64 type) -> i64 {
+        if (type < 0 || type >= compiler_catalog::type_count()) {
+            return -1;
+        }
+        const compiler_resolver::ResolvedTypeKind kind = compiler_catalog::type_kind(type);
+        if (kind == compiler_resolver::ResolvedTypeKind::i64_value) {
+            return 0;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::u64_value) {
+            return 7;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::u8_value) {
+            return 10;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::bool_value) {
+            return 1;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::class_value) {
+            return 5;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::enum_value) {
+            return 9;
+        }
+        return -1;
+    }
+    auto catalogue_type_matches(const MetadataStore& store, RawTypeRow row, i64 type) -> bool {
+        const i64 kind = catalogue_kind(type);
+        if (kind < 0 || row.kind() != kind || !canonical_tail(row)) {
+            return false;
+        }
+        if (kind == 5 || kind == 9) {
+            return catalogue_name(store, row.name(), type);
+        }
+        const ByteRange name = row.name();
+        return name.count() == 0;
+    }
+    auto catalogue_nominal(const MetadataStore& store, i64 type) -> i64 {
+        const i64 kind = catalogue_kind(type);
+        i64 at = 0;
+        if (kind == 9) {
+            while (at < store.enum_count()) {
+                const EnumRow row = store.enum_at(at);
+                if (catalogue_name(store, row.name(), type)) {
+                    return at;
+                }
+                at = at + 1;
+            }
+        }
+        if (kind == 5) {
+            while (at < store.class_count()) {
+                const ClassRow row = store.class_at(at);
+                if (catalogue_name(store, row.name(), type)) {
+                    return at;
+                }
+                at = at + 1;
+            }
+        }
+        return -1;
+    }
+    auto service_resource_kind(const MetadataStore& store, RawTypeRow type) -> i64 {
+        if (type.kind() != 26 || !canonical_tail(type)) {
+            return -1;
+        }
+        i64 kind = 0;
+        while (kind < compiler_catalog::resource_count()) {
+            if (catalogue_name(store, type.name(), compiler_catalog::resource_type(kind))) {
+                return kind;
+            }
+            kind = kind + 1;
+        }
+        return -1;
     }
     auto find_class(const MetadataStore& store, ByteRange name) -> i64 {
         i64 begin = 0;
@@ -1074,6 +1163,42 @@ export namespace compiler_ir_metadata {
         }
         return true;
     }
+    auto sealed_bootstrap_results(MetadataStore& store) -> bool {
+        const i64 index = catalogue_nominal(store, 49);
+        if (index >= 0) {
+            const ClassRow row = store.class_at(index);
+            const ClassResultRow layout = store.result_at(index);
+            const IndexRange leaves = row.leaves();
+            const IndexRange fields = layout.fields();
+            const i64 count = compiler_catalog::member_count(49);
+            if (count != 4 || leaves.count() != count || fields.count() != count) {
+                return fail(store, MetadataError::bootstrap_layout);
+            }
+            i64 at = 0;
+            while (at < count) {
+                const RawTypeRow leaf = store.type_at(leaves.begin() + at);
+                const FieldRow field = store.field_at(fields.begin() + at);
+                const RawTypeRow type = store.type_at(field.type());
+                if (!catalogue_type_matches(store, leaf, compiler_catalog::field_type(49, at)) || field.array_flag()
+                    != 0 || field.first_leaf() != at || field.length() != 1 || !same_type(store, leaf, type)) {
+                    return fail(store, MetadataError::bootstrap_layout);
+                }
+                at = at + 1;
+            }
+        }
+        i64 type = 50;
+        while (type <= 53) {
+            const i64 nominal = catalogue_nominal(store, type);
+            if (nominal >= 0) {
+                const EnumRow row = store.enum_at(nominal);
+                if (row.cases() != compiler_catalog::member_count(type)) {
+                    return fail(store, MetadataError::service_enum);
+                }
+            }
+            type = type + 1;
+        }
+        return true;
+    }
     auto sealed_host_results(MetadataStore& store) -> bool {
         const FlagMasks masks = FlagMasks();
         i64 at = 0;
@@ -1165,11 +1290,11 @@ export namespace compiler_ir_metadata {
             && sealed_enum(store, "__au_display_put_result", 2, false) && sealed_enum(store, "__au_display_completion",
             2, false) && sealed_enum(store, "__au_port_write_result", 1, false) && sealed_enum(store, "__au_host_exit",
             3, false) && sealed_enum(store, "__au_host_status", 10, false) && sealed_enum(store, "__au_host_stream", 2,
-            false) && sealed_host_results(store) && sealed_execution_results(store) && sealed_enum(store,
-            "__au_exec_prepared", 3, false) && sealed_enum(store, "__au_exec_status", 9, false) && sealed_enum(store,
-            "__au_exec_step", 4, false) && sealed_enum(store, "__au_exec_effect", 2, false) && sealed_enum(store,
-            "__au_exec_request", 5, false) && sealed_enum(store, "__au_exec_finish", 5, false) && sealed_enum(store,
-            "__au_exec_cancel", 3, false);
+            false) && sealed_host_results(store) && sealed_execution_results(store) && sealed_bootstrap_results(store)
+            && sealed_enum(store, "__au_exec_prepared", 3, false) && sealed_enum(store, "__au_exec_status", 9, false)
+            && sealed_enum(store, "__au_exec_step", 4, false) && sealed_enum(store, "__au_exec_effect", 2, false)
+            && sealed_enum(store, "__au_exec_request", 5, false) && sealed_enum(store, "__au_exec_finish", 5, false)
+            && sealed_enum(store, "__au_exec_cancel", 3, false);
     }
 
     // Children are complete before this computation starts. Offsets come only
@@ -1550,9 +1675,13 @@ export namespace compiler_ir_metadata {
     }
     auto service_type(RawTypeRow type) -> bool {
         return type.kind() == 14 || type.kind() == 15 || type.kind() == 16 || type.kind() == 18 || type.kind() == 19
-            || type.kind() == 20 || type.kind() == 22 || type.kind() == 23 || type.kind() == 24 || type.kind() == 25;
+            || type.kind() == 20 || type.kind() == 22 || type.kind() == 23 || type.kind() == 24 || type.kind() == 25
+            || type.kind() == 27;
     }
     auto service_kind(RawTypeRow type) -> i64 {
+        if (type.kind() == 27) {
+            return 10;
+        }
         if (type.kind() == 14) {
             return 0;
         }
@@ -1655,6 +1784,9 @@ export namespace compiler_ir_metadata {
     }
     auto service_bit(RawTypeRow type) -> u64 {
         const FlagMasks masks = FlagMasks();
+        if (type.kind() == 27) {
+            return masks.service_bootstrap();
+        }
         if (type.kind() == 14) {
             return masks.service_console();
         }
@@ -1742,10 +1874,10 @@ export namespace compiler_ir_metadata {
         if (at > 2 || (kinds != masks.service_console() && kinds != masks.service_display() && kinds
             != masks.service_iommu() && kinds != masks.service_call() && kinds != masks.service_port() && kinds
             != masks.service_serve() && kinds != masks.service_host() && kinds != masks.service_block() && kinds
-            != masks.service_writer() && kinds != masks.service_execution() && kinds != (masks.service_serve()
-            | masks.service_writer()) && kinds != (masks.service_serve() | masks.service_block()) && kinds
-            != (masks.service_console() | masks.service_display()) && kinds != (masks.service_console()
-            | masks.service_iommu()))) {
+            != masks.service_writer() && kinds != masks.service_execution() && kinds != masks.service_bootstrap()
+            && kinds != (masks.service_serve() | masks.service_writer()) && kinds != (masks.service_serve()
+            | masks.service_block()) && kinds != (masks.service_console() | masks.service_display()) && kinds
+            != (masks.service_console() | masks.service_iommu()))) {
             return fail(store, MetadataError::service_group);
         }
         const i64 region = service_region_index(store, row);
@@ -2570,7 +2702,10 @@ export namespace compiler_ir_metadata {
         while (at < slots.count()) {
             const SlotRow slot = store.slot_at(slots.begin() + at);
             const RawTypeRow type = store.type_at(slot.type());
-            if (!plain_type(type, 26) || slot.mutable_value() != 1 || slot.offset() % 16 != 0) {
+            const i64 kind = service_resource_kind(store, type);
+            if (kind < 0 || compiler_catalog::resource_extent(kind) != 16
+                || !compiler_catalog::resource_explicit_finish(kind) || slot.mutable_value() != 1 || slot.offset() % 16
+                != 0) {
                 return fail(store, MetadataError::service_resource_slot);
             }
             at = at + 1;

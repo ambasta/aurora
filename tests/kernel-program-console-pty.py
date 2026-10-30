@@ -1257,6 +1257,10 @@ def production_case_volume(source, programs, directory, service_case=None):
     if service_case:
         if service_case == "console-commit":
             replacement = (programs / "console-commit-hostile-aurora").read_bytes()
+        elif service_case == "bootstrap-serve":
+            # Its default fixed file-service argv reaches the existing invalid
+            # initial Serve call; no executable or selector bytes are patched.
+            replacement = (programs / "process-isolation-6").read_bytes()
         else:
             replacement = snapshot_service_program(
                 programs / "process-isolation-6", 12 if service_case == "snapshot-read" else 13
@@ -1294,7 +1298,7 @@ def main():
     parser.add_argument("--program-cases", type=Path, help="existing hostile program build products; private ESP only")
     parser.add_argument(
         "--service-case",
-        choices=("snapshot-read", "snapshot-close", "console-commit"),
+        choices=("snapshot-read", "snapshot-close", "console-commit", "bootstrap-serve"),
         help="private designated-service payload using --program-cases build products",
     )
     args = parser.parse_args()
@@ -1602,6 +1606,42 @@ def main():
             receive(b"aurora> ", 0)
             tty.setraw(master)
             if args.service_case:
+                if args.service_case == "bootstrap-serve":
+                    for generation in (1, 2):
+                        part = run_command("run bin/sort", "file service unavailable").decode("ascii")
+                        need(
+                            re.findall(r"AURORA_PROCESS_LOADED: run=(\d+) regions=", part) == [str(generation)]
+                            and "AURORA_PROCESS_REJECTED:" not in part
+                            and "invalid executable" not in part,
+                            "Initial Serve failure must follow actual owner ELF admission, with no client load",
+                        )
+                        need(
+                            re.findall(
+                                r"AURORA_FILE_SERVICE_LOST: generation=(\d+) transaction=0 "
+                                r"cause=call operation=15 volatile_data=lost\n",
+                                part,
+                            )
+                            == [str(generation)]
+                            and part.count("AURORA_FILE_SERVICE_LOST:") == 1
+                            and "AURORA_FILE_SERVICE_READY:" not in part,
+                            "Unpublished owner must lose exactly its authenticated generation before readiness",
+                        )
+                        # Returning here passed the native all-frame owner audit
+                        # and absent-incarnation cleanup, not a fixture bypass.
+                        command_upper(b"healthy after bootstrap loss\n", "HEALTHY AFTER BOOTSTRAP LOSS")
+                    text = bytes(transcript).decode("ascii")
+                    need(
+                        text.count("AURORA_PROCESS_LOADED:") == 2
+                        and text.count("AURORA_FILE_SERVICE_LOST:") == 2
+                        and "AURORA_FILE_SERVICE_READY:" not in text
+                        and "AURORA_PROCESS_FAIL" not in text
+                        and "AURORA_PROCESS_KERNEL_FAULT" not in text,
+                        "Failed bootstrap must settle once without replay, leaked owner or fabricated readiness",
+                    )
+                    metrics["bootstrap_serve_refusal"] = True
+                    finish_session()
+                    print("PASS: initial Serve refusal, settled unpublished owners and fresh-generation retry")
+                    return
                 if args.service_case.startswith("snapshot-"):
                     operation = 19 if args.service_case == "snapshot-read" else 20
                     for generation in (1, 2):

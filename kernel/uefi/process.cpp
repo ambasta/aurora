@@ -11,6 +11,7 @@
 #endif
 #include "../console.hpp"
 #include "../execution-session.hpp"
+#include "../service-bootstrap.hpp"
 
 #ifdef AURORA_PRODUCTION
 #include "../console-uart.hpp"
@@ -34,6 +35,9 @@ using Timer = aurora::uefi::LocalApicTimerIo;
 auto source_execute(const aurora::execution::Argument *, aurora::execution::Result *)
     -> void asm("__au_runtime_process_execute_command") __attribute__((visibility("hidden")));
 #endif
+
+auto source_bootstrap_service(const aurora::bootstrap::Argument *) -> U64 asm("__au_runtime_process_bootstrap_service")
+    __attribute__((visibility("hidden")));
 
 namespace {
 enum class XfsReadonlyProfile : U64 {
@@ -1969,10 +1973,9 @@ auto discard_snapshot() -> void {
         snapshot.reset();
     }
 }
-auto abandon_service(ServiceFailure failure = ServiceFailure::observe) -> void {
-    // Capture the actual server result before forced client/server retirement
+auto abandon_service_observed(ServiceLoss loss) -> void {
+    // The caller freezes the actual server result before forced retirement
     // replaces the shared outcome. The cause is diagnostic, never authority.
-    const auto loss = observe_service_loss(failure);
     const auto phase = service_root.phase();
     const U64 generation = phase == aurora::service::Phase::absent ? 0 : service_root.generation();
     if (generation) {
@@ -1999,6 +2002,10 @@ auto abandon_service(ServiceFailure failure = ServiceFailure::observe) -> void {
     service_lost(frozen, generation);
     if (generation)
         acknowledge_service_cleanup(generation);
+}
+
+auto abandon_service(ServiceFailure failure = ServiceFailure::observe) -> void {
+    abandon_service_observed(observe_service_loss(failure));
 }
 
 #ifdef AURORA_UEFI_NVME
@@ -2036,100 +2043,236 @@ auto finish_recovery(U64 baseline) -> bool {
 }
 #endif
 
-auto file_start_refused(bool mounted_attempt) -> bool {
-#ifdef AURORA_UEFI_NVME
-    if (mounted_attempt)
-        aurora::uefi::nvme_mounted_abandon();
-#else
-    static_cast<void>(mounted_attempt);
-#endif
-    return false;
-}
-auto start_file_service(std::span<const std::byte> volume, U64 generation) -> bool {
-    constexpr std::string_view arguments{"file-service\0", 13};
-    if (residents[0].space || residents[1].space || snapshot || !generation ||
-        service_root.phase() != aurora::service::Phase::starting || service_root.generation() != generation ||
-        next_run >= 0xffffffffULL - frames::first_owner)
-        return false;
-    // The attempt is consumed before image lookup or admission. A failed or
-    // retired owner can restart RAM service, never reacquire this writer.
-    const bool mounted_attempt = runtime_storage.claim_mounted();
-    bool mounted_entry = false;
-    bool disk_ready = false;
-#ifdef AURORA_UEFI_NVME
-    mounted_entry = mounted_attempt && aurora::uefi::nvme_mounted_sector_count();
-#else
-    static_cast<void>(mounted_attempt);
-#endif
-    const auto path =
-        mounted_entry ? std::string_view{"bin/file-service-mounted", 24} : std::string_view{"bin/file-service", 16};
-    reset_loader(128);
-    loading_image = true;
-    endpoint.generation = generation;
-    endpoint.window = endpoint.transaction = endpoint.source = endpoint.count = 0;
-    endpoint.request_operation = endpoint.invalid_reply_operation = 0;
-    endpoint.waiting = endpoint.replied = endpoint.delivery = endpoint.completion = endpoint.caller_cancelled = false;
-    const auto image = process::volume_lookup(volume, bytes_of(path));
-    process::RunEntry entry{};
-    entry.ticks = 64;
-    entry.quota = 32768;
-    if (!image || !load_image(volume,
-                              *image,
-                              bytes_of(arguments),
-                              entry,
-                              ++next_run,
-                              0,
-                              true,
-                              true,
-                              endpoint.generation,
-                              runtime_storage.block() && !runtime_storage.mounted(),
-                              0,
-                              mounted_entry)) {
-        return file_start_refused(mounted_attempt);
+// One physical startup binding. These are authenticated effect receipts, not
+// an alternative bootstrap phase or copy cursor; sequencing lives in Aurora.
+class ServiceBootstrapTransport final {
+    static inline std::span<const std::byte> volume_;
+    static inline U64 generation_ = 0;
+    static auto require(bool valid) -> void {
+        if (!valid)
+            fail("service bootstrap effect state");
     }
-    while (residents[0].space && !endpoint.waiting)
-        static_cast<void>(run_resident(0));
-    if (!residents[0].space || !control_request(1, volume.size(), runtime_storage.readonly_profile()))
-        return file_start_refused(mounted_attempt);
-    for (U64 offset = 0; offset < volume.size();) {
-        const U64 count = least(Endpoint::capacity - 64, volume.size() - offset);
-        if (!control_request(2, 0, offset, volume.subspan(offset, count)))
-            return file_start_refused(mounted_attempt);
-        offset += count;
+
+public:
+    class Binding final {
+    public:
+        std::span<const std::byte> volume;
+        U64 generation = 0, run = 0, owner = 0, root = 0;
+        U64 pending_operation = 0, pending_transaction = 0;
+        bool mounted_attempt = false, mounted_entry = false, storage_required = false;
+        bool initial_receipt = false, seal_receipt = false, storage_receipt = false, disk_ready = false;
+        bool failed = false;
+        ServiceLoss loss{ServiceFailure::unavailable, 0};
+    };
+    static auto bound(const Binding &binding) -> bool {
+        return binding.generation && service_root.phase() == aurora::service::Phase::starting &&
+               service_root.generation() == binding.generation && endpoint.generation == binding.generation &&
+               residents[0].space && residents[0].state.service == binding.generation &&
+               residents[0].state.run == binding.run && residents[0].space->owner() == binding.owner &&
+               residents[0].space->root() == binding.root && !residents[1].space && !snapshot;
     }
-    if (!control_request(3))
-        return file_start_refused(mounted_attempt);
-    if (runtime_storage.block()) {
-        // One bounded startup admission scans the complete supported log. It
-        // is not charged to a future client or renewed by sector reads. Normal
-        // runtime budgets are restored exactly once after the copied result.
+    static auto failed(Binding &binding) -> void {
+        if (!binding.failed) {
+            binding.loss = observe_service_loss(ServiceFailure::observe);
+            binding.failed = true;
+        }
+    }
+    static auto bind(std::span<const std::byte> volume, U64 generation) -> void {
+        require(volume_.empty() && !generation_ && !volume.empty() && generation &&
+                service_root.phase() == aurora::service::Phase::starting && service_root.generation() == generation);
+        volume_ = volume;
+        generation_ = generation;
+    }
+    static auto unbind() -> void {
+        require(generation_ && !loading_image && !residents[1].space && !snapshot && !endpoint.caller);
+        volume_ = {};
+        generation_ = 0;
+    }
+    static auto begin(Binding &binding) -> aurora::bootstrap::Preparation {
+        require(generation_ && !residents[0].space && !residents[1].space && !snapshot &&
+                service_root.phase() == aurora::service::Phase::starting && service_root.generation() == generation_);
+        binding.volume = volume_;
+        binding.generation = generation_;
+        binding.storage_required = runtime_storage.block();
+        if (next_run >= 0xffffffffULL - frames::first_owner) {
+            failed(binding);
+            return {};
+        }
+        binding.mounted_attempt = runtime_storage.claim_mounted();
+#ifdef AURORA_UEFI_NVME
+        binding.mounted_entry = binding.mounted_attempt && aurora::uefi::nvme_mounted_sector_count();
+#endif
+        const auto path = binding.mounted_entry ? std::string_view{"bin/file-service-mounted", 24}
+                                                : std::string_view{"bin/file-service", 16};
+        constexpr std::string_view arguments{"file-service\0", 13};
+        reset_loader(128);
+        loading_image = true;
+        endpoint.generation = binding.generation;
+        endpoint.window = endpoint.transaction = endpoint.source = endpoint.count = 0;
+        endpoint.request_operation = endpoint.invalid_reply_operation = 0;
+        endpoint.waiting = endpoint.replied = endpoint.delivery = endpoint.completion = endpoint.caller_cancelled =
+            false;
+        const auto image = process::volume_lookup(binding.volume, bytes_of(path));
+        process::RunEntry entry{};
+        entry.ticks = 64;
+        entry.quota = 32768;
+        if (!image || !load_image(binding.volume,
+                                  *image,
+                                  bytes_of(arguments),
+                                  entry,
+                                  ++next_run,
+                                  0,
+                                  true,
+                                  true,
+                                  binding.generation,
+                                  runtime_storage.block() && !runtime_storage.mounted(),
+                                  0,
+                                  binding.mounted_entry)) {
+            failed(binding);
+            return {};
+        }
+        binding.run = residents[0].state.run;
+        binding.owner = residents[0].space->owner();
+        binding.root = residents[0].space->root();
+        return {1, binding.volume.size(), Endpoint::capacity - 64, binding.storage_required ? U64{1} : U64{0}};
+    }
+    static auto stage(Binding &binding, U64 operation, U64 id, U64 offset, std::span<const std::byte> payload = {})
+        -> aurora::bootstrap::Effect {
+        using aurora::bootstrap::Effect;
+        require(!binding.failed && binding.initial_receipt && !binding.pending_operation &&
+                payload.size() <= Endpoint::capacity - 64);
+        if (!bound(binding) || endpoint.caller_cancelled) {
+            failed(binding);
+            return Effect::failed;
+        }
+        require(endpoint.waiting && !endpoint.delivery && !endpoint.replied && !endpoint.caller);
+        message_header(operation, id, offset, payload.size());
+        for (U64 at = 0; at < payload.size(); ++at)
+            endpoint.bytes[64 + at] = payload[at];
+        if (!begin_exchange(0)) {
+            failed(binding);
+            return Effect::failed;
+        }
+        binding.pending_operation = operation;
+        binding.pending_transaction = endpoint.transaction;
+        return Effect::staged;
+    }
+    static auto begin_volume(Binding &binding) -> aurora::bootstrap::Effect {
+        require(!binding.seal_receipt && !binding.storage_receipt);
+        return stage(binding, 1, binding.volume.size(), runtime_storage.readonly_profile());
+    }
+    static auto copy_volume(Binding &binding, U64 offset) -> aurora::bootstrap::Effect {
+        require(!binding.seal_receipt && !binding.storage_receipt && offset < binding.volume.size());
+        const U64 count = least(Endpoint::capacity - 64, binding.volume.size() - offset);
+        return stage(binding, 2, 0, offset, binding.volume.subspan(offset, count));
+    }
+    static auto seal_volume(Binding &binding) -> aurora::bootstrap::Effect {
+        require(!binding.seal_receipt && !binding.storage_receipt);
+        return stage(binding, 3, 0, 0);
+    }
+    static auto admit_storage(Binding &binding) -> aurora::bootstrap::Effect {
+        require(!binding.failed && binding.storage_required && binding.seal_receipt && !binding.storage_receipt &&
+                !binding.pending_operation);
+        if (!bound(binding) || endpoint.caller_cancelled) {
+            failed(binding);
+            return aurora::bootstrap::Effect::failed;
+        }
         reset_loader(16, 1);
-        auto &server = residents[0].state;
-        if (!server.budget->configure_next(16, 1))
+        if (!residents[0].state.budget->configure_next(16, 1))
             fail("mounted startup budget profile");
-        message_header(15, 0, 0, 0);
-        const bool received = exchange_request(0) && !endpoint.caller_cancelled;
-        bool valid = received && endpoint.count == 64;
-        const U64 status = valid ? Bytes{endpoint.bytes}.get(0) : 3;
-        valid = valid && (status == 0 || status == 2);
-        for (U64 at = 8; valid && at < 64; ++at)
-            valid = endpoint.bytes[at] == std::byte{0};
-        if (!valid) {
-            if (received && !endpoint.invalid_reply_operation)
-                endpoint.invalid_reply_operation = 15;
-            return file_start_refused(mounted_attempt);
+        return stage(binding, 15, 0, 0);
+    }
+    static auto advance(Binding &binding) -> aurora::bootstrap::Progress {
+        using aurora::bootstrap::Progress;
+        require(!binding.failed);
+        if (!bound(binding) || endpoint.caller_cancelled) {
+            failed(binding);
+            return Progress::failed;
+        }
+        if (!binding.initial_receipt) {
+            require(!binding.pending_operation);
+            if (!endpoint.waiting)
+                static_cast<void>(run_resident(0));
+            if (!bound(binding) || endpoint.caller_cancelled) {
+                failed(binding);
+                return Progress::failed;
+            }
+            if (!endpoint.waiting)
+                return Progress::pending;
+            require(residents[0].started && endpoint.window && !endpoint.transaction && !endpoint.source &&
+                    !endpoint.replied && !endpoint.delivery && !endpoint.caller);
+            binding.initial_receipt = true;
+            return Progress::complete;
+        }
+        require(binding.pending_operation && binding.pending_transaction &&
+                endpoint.transaction == binding.pending_transaction && endpoint.source == 0);
+        const auto progress = advance_exchange();
+        if (progress == ExchangeProgress::failed || !bound(binding) || endpoint.caller_cancelled) {
+            failed(binding);
+            return Progress::failed;
+        }
+        if (progress == ExchangeProgress::pending)
+            return Progress::pending;
+        const U64 operation = binding.pending_operation;
+        const bool authenticated = endpoint.transaction == binding.pending_transaction && endpoint.source == 0 &&
+                                   endpoint.waiting && endpoint.replied && !endpoint.delivery && endpoint.count == 64;
+        const auto reply = authenticated ? aurora::bootstrap::inspect_reply(operation, {endpoint.bytes.data(), 64})
+                                         : aurora::bootstrap::Reply::invalid;
+        if (reply == aurora::bootstrap::Reply::invalid) {
+            if (!endpoint.invalid_reply_operation)
+                endpoint.invalid_reply_operation = operation;
+            failed(binding);
+            return Progress::failed;
         }
         endpoint.replied = false;
-        disk_ready = status == 0;
+        binding.pending_operation = binding.pending_transaction = 0;
+        if (operation == 3) {
+            require(!binding.seal_receipt);
+            binding.seal_receipt = true;
+        }
+        if (operation == 15) {
+            require(binding.seal_receipt && !binding.storage_receipt);
+            binding.storage_receipt = true;
+            binding.disk_ready = reply == aurora::bootstrap::Reply::ready;
+        }
+        return Progress::complete;
+    }
+    static auto finish(Binding &binding, aurora::bootstrap::Finish disposition) -> aurora::bootstrap::Result {
+        using namespace aurora::bootstrap;
+        require(binding.generation && service_root.phase() == aurora::service::Phase::starting &&
+                service_root.generation() == binding.generation);
+        if (disposition == Finish::abandon) {
+            ServiceLoss loss = binding.failed ? binding.loss : observe_service_loss(ServiceFailure::observe);
+            if (!binding.failed && bound(binding) && !endpoint.caller_cancelled && !endpoint.invalid_reply_operation)
+                loss = {ServiceFailure::consumer_rejected, 0};
 #ifdef AURORA_UEFI_NVME
-        if (mounted_entry) {
-            if (server.mounted_generation != mounted_generation || server.service != mounted_service ||
-                endpoint.generation != mounted_service || endpoint.source ||
-                residents[0].space->owner() != mounted_owner || residents[0].space->root() != mounted_root)
-                fail("mounted startup authority");
-            if (!disk_ready || !aurora::uefi::nvme_mounted_arm()) {
+            if (binding.mounted_attempt)
                 aurora::uefi::nvme_mounted_abandon();
-                disk_ready = false;
+#endif
+            abandon_service_observed(loss);
+            binding.pending_operation = binding.pending_transaction = 0;
+            binding.initial_receipt = binding.seal_receipt = binding.storage_receipt = false;
+            return Result::unavailable;
+        }
+        require(disposition == Finish::publish && !binding.failed && bound(binding) && binding.initial_receipt &&
+                binding.seal_receipt && (!binding.storage_required || binding.storage_receipt) &&
+                !binding.pending_operation && !endpoint.caller_cancelled && endpoint.waiting && !endpoint.replied &&
+                !endpoint.delivery && !endpoint.caller);
+        // Publication consumes the actual receipts once. The mounted broker is
+        // still unarmed until the normal budget is restored at this boundary.
+        binding.initial_receipt = binding.seal_receipt = binding.storage_receipt = false;
+        if (binding.storage_required && !residents[0].state.budget->reset(64, 0))
+            fail("mounted runtime budget profile");
+        loading_image = false;
+#ifdef AURORA_UEFI_NVME
+        if (binding.mounted_entry) {
+            const auto &server = residents[0].state;
+            require(server.mounted_generation == mounted_generation && server.service == mounted_service &&
+                    endpoint.generation == mounted_service && !endpoint.source &&
+                    residents[0].space->owner() == mounted_owner && residents[0].space->root() == mounted_root);
+            if (!binding.disk_ready || !aurora::uefi::nvme_mounted_arm()) {
+                aurora::uefi::nvme_mounted_abandon();
+                binding.disk_ready = false;
             } else {
                 Serial::text("AURORA_MOUNTED_ARMED:");
                 field("generation", mounted_generation);
@@ -2137,18 +2280,59 @@ auto start_file_service(std::span<const std::byte> volume, U64 generation) -> bo
             }
         }
 #endif
-        if (!server.budget->reset(64, 0))
-            fail("mounted runtime budget profile");
+        if (!service_root.mark_ready(binding.generation, binding.disk_ready))
+            fail("file service readiness");
+        Serial::text("AURORA_FILE_SERVICE_READY:");
+        field("generation", endpoint.generation);
+        if (binding.storage_required)
+            Serial::text(binding.disk_ready ? std::string_view{" disk=ready", 11}
+                                            : std::string_view{" disk=unavailable", 17});
+        Serial::text("\r\n");
+        return Result::ready;
     }
-    loading_image = false;
-    if (!service_root.mark_ready(generation, disk_ready))
-        fail("file service readiness");
-    Serial::text("AURORA_FILE_SERVICE_READY:");
-    field("generation", endpoint.generation);
-    if (runtime_storage.block())
-        Serial::text(disk_ready ? std::string_view{" disk=ready", 11} : std::string_view{" disk=unavailable", 17});
-    Serial::text("\r\n");
-    return true;
+    static auto settled(const Binding &binding) -> bool {
+        if (loading_image || residents[1].space || snapshot || endpoint.caller || endpoint.replied ||
+            endpoint.delivery || endpoint.completion || binding.pending_operation || binding.initial_receipt ||
+            binding.seal_receipt || binding.storage_receipt || !audit_residents())
+            return false;
+        const auto phase = service_root.phase();
+        if (phase == aurora::service::Phase::absent)
+            return !residents[0].space && !endpoint.generation && !endpoint.waiting;
+        return phase == aurora::service::Phase::ready && service_root.generation() == binding.generation &&
+               residents[0].space && residents[0].state.run == binding.run &&
+               residents[0].state.service == binding.generation && endpoint.generation == binding.generation &&
+               residents[0].space->owner() == binding.owner && residents[0].space->root() == binding.root &&
+               endpoint.waiting;
+    }
+};
+class ServiceBootstrapPlatform final {
+public:
+    static auto quiet() -> bool {
+        return Timer::irq_off() && root() == kernel_root && !running.space && !Timer::read(0x390) &&
+               Timer::quiet(0x100, false) && Timer::quiet(0x200, false);
+    }
+    [[noreturn]] static auto fail() -> void {
+        ::fail("service bootstrap grant");
+    }
+};
+using ServiceBootstrapSession = aurora::bootstrap::Session<ServiceBootstrapTransport, ServiceBootstrapPlatform>;
+
+auto start_file_service(std::span<const std::byte> volume, U64 generation) -> bool {
+    ServiceBootstrapTransport::bind(volume, generation);
+    const auto issuer = ServiceBootstrapSession::open();
+    const U64 result = source_bootstrap_service(&issuer);
+    ServiceBootstrapSession::release(issuer);
+    ServiceBootstrapTransport::unbind();
+    if (result > static_cast<U64>(aurora::bootstrap::Result::unavailable))
+        fail("service bootstrap result");
+    const bool ready = result == static_cast<U64>(aurora::bootstrap::Result::ready);
+    const bool published = service_root.phase() == aurora::service::Phase::ready &&
+                           service_root.generation() == generation && endpoint.generation == generation &&
+                           residents[0].space && residents[0].state.service == generation;
+    if (ready != published || (!ready && (service_root.phase() != aurora::service::Phase::absent ||
+                                          residents[0].space || endpoint.generation)))
+        fail("service bootstrap result disagrees with publication");
+    return ready;
 }
 
 // Source alone selects reuse/start/refusal. Native checks only the physical
@@ -3247,7 +3431,8 @@ public:
         using namespace aurora::execution;
         require(!volume_.empty() && !binding.client && !residents[1].space);
         if (!ensure_file_service(volume_)) {
-            abandon_service();
+            if (service_root.phase() != aurora::service::Phase::absent)
+                abandon_service();
             return {Prepared::service_lost, Status::unavailable};
         }
         if (next_run >= 0xffffffffULL - frames::first_owner)
@@ -3347,7 +3532,8 @@ auto aurora::uefi::run_program(U64 arena,
 auto aurora::uefi::prepare_programs(U64 arena, const Bytes &handoff) -> bool {
     bool ready = false;
     if (handoff.get(Handoff::composition_word) == 4 && enter_runtime(arena, handoff)) {
-        if (!ensure_file_service(space.volume(handoff.get(Handoff::volume_bytes_word))))
+        if (!ensure_file_service(space.volume(handoff.get(Handoff::volume_bytes_word))) &&
+            service_root.phase() != aurora::service::Phase::absent)
             abandon_service();
         ready = service_root.disk_ready(endpoint.generation);
         leave_runtime(handoff);
@@ -3383,7 +3569,7 @@ auto aurora::uefi::console_request(U64 arena,
             // is only the current physical binding reported to the consumer.
             result = {
                 endpoint.generation ? ConsoleStatus::conflict : ConsoleStatus::unavailable, endpoint.generation, 0};
-        } else {
+        } else if (service_root.phase() != aurora::service::Phase::absent) {
             abandon_service();
         }
         leave_runtime(handoff);
@@ -3482,3 +3668,48 @@ auto execution_finish(const void *grant, U64 generation, U64 disposition) -> U64
 }
 
 #endif
+
+// The bootstrap issuer is distinct from ExecutionSession even during nested
+// command preparation. These entry points are shared by production and the
+// existing mounted process fixtures that use actual production startup.
+auto service_bootstrap_begin(const void *, U64, aurora::bootstrap::Lease *)
+    -> void asm("__au_runtime_service_bootstrap_begin") __attribute__((visibility("hidden")));
+auto service_bootstrap_begin(const void *grant, U64 generation, aurora::bootstrap::Lease *result) -> void {
+    *result = ServiceBootstrapSession::begin(grant, generation);
+}
+auto service_bootstrap_preparation(const void *, U64, aurora::bootstrap::Preparation *)
+    -> void asm("__au_runtime_service_bootstrap_preparation") __attribute__((visibility("hidden")));
+auto service_bootstrap_preparation(const void *binding, U64 generation, aurora::bootstrap::Preparation *result)
+    -> void {
+    *result = ServiceBootstrapSession::preparation(binding, generation);
+}
+auto service_bootstrap_begin_volume(const void *, U64) -> U64 asm("__au_runtime_service_bootstrap_begin_volume")
+    __attribute__((visibility("hidden")));
+auto service_bootstrap_begin_volume(const void *binding, U64 generation) -> U64 {
+    return ServiceBootstrapSession::begin_volume(binding, generation);
+}
+auto service_bootstrap_copy_volume(const void *, U64, U64) -> U64 asm("__au_runtime_service_bootstrap_copy_volume")
+    __attribute__((visibility("hidden")));
+auto service_bootstrap_copy_volume(const void *binding, U64 generation, U64 value) -> U64 {
+    return ServiceBootstrapSession::copy_volume(binding, generation, value);
+}
+auto service_bootstrap_seal_volume(const void *, U64) -> U64 asm("__au_runtime_service_bootstrap_seal_volume")
+    __attribute__((visibility("hidden")));
+auto service_bootstrap_seal_volume(const void *binding, U64 generation) -> U64 {
+    return ServiceBootstrapSession::seal_volume(binding, generation);
+}
+auto service_bootstrap_admit_storage(const void *, U64) -> U64 asm("__au_runtime_service_bootstrap_admit_storage")
+    __attribute__((visibility("hidden")));
+auto service_bootstrap_admit_storage(const void *binding, U64 generation) -> U64 {
+    return ServiceBootstrapSession::admit_storage(binding, generation);
+}
+auto service_bootstrap_advance(const void *, U64) -> U64 asm("__au_runtime_service_bootstrap_advance")
+    __attribute__((visibility("hidden")));
+auto service_bootstrap_advance(const void *binding, U64 generation) -> U64 {
+    return ServiceBootstrapSession::advance(binding, generation);
+}
+auto service_bootstrap_finish(const void *, U64, U64) -> U64 asm("__au_runtime_service_bootstrap_finish")
+    __attribute__((visibility("hidden")));
+auto service_bootstrap_finish(const void *binding, U64 generation, U64 value) -> U64 {
+    return ServiceBootstrapSession::finish(binding, generation, value);
+}

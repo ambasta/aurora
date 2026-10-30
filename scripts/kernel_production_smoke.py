@@ -843,7 +843,7 @@ def main():
     # All hostile rows use the identical production kernel; only private ESP
     # payloads differ. Service rows exercise designated-owner failure, not a
     # rogue ordinary client or a production fault hook.
-    for service_case in (None, "snapshot-read", "snapshot-close", "console-commit"):
+    for service_case in (None, "snapshot-read", "snapshot-close", "console-commit", "bootstrap-serve"):
         command = pty_oracle + [
             "--mode",
             "program-console",

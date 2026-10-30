@@ -7,7 +7,8 @@ Current spans use the 56-byte tagged array/owner representation documented below
 ## Service-issued explicit-finalize owners
 
 Resource kinds declare their cleanup contract. Unlike automatically dropped byte
-owners, `builtin::ExecutionLease` is a service-issued linear local: every issued
+owners, `builtin::ExecutionLease` and `builtin::ServiceBootstrapLease` are
+service-issued linear locals: every issued
 value, including an inert preparation failure, must be consumed explicitly by
 `finish()` before normal return or scope exit. `cancel()` does not consume it,
 and the compiler never inserts implicit finalization.

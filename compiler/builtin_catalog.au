@@ -24,7 +24,8 @@ export namespace compiler_catalog {
         HostFiles,
         ReadOnlyBlock,
         WritableBlock,
-        ExecutionEffects
+        ExecutionEffects,
+        ServiceBootstrapEffects
     };
     enum class ServiceOperation {
         Next,
@@ -77,7 +78,8 @@ export namespace compiler_catalog {
         ExecutionAdvance,
         ExecutionOutput,
         ExecutionRequest,
-        ExecutionFinish
+        ExecutionFinish,
+        BootstrapBegin
     };
     // Catalog extents for the host's loose resolution quota.
     class Summary {
@@ -174,10 +176,19 @@ export namespace compiler_catalog {
     // 2 (Port), 3 (Serve) and 4 (HostFiles) only when admitted syntax names one
     // of their types.
     auto type_count() -> i64 {
-        return 47;
+        return 54;
     }
     auto type_kind(i64 type) -> compiler_resolver::ResolvedTypeKind {
-        if (type == 45) {
+        if (type == 47) {
+            return compiler_resolver::ResolvedTypeKind::bootstrap_effects;
+        }
+        if (type == 49) {
+            return compiler_resolver::ResolvedTypeKind::class_value;
+        }
+        if (type >= 50 && type <= 53) {
+            return compiler_resolver::ResolvedTypeKind::enum_value;
+        }
+        if (type == 45 || type == 48) {
             return compiler_resolver::ResolvedTypeKind::service_resource;
         }
         if (type == 46) {
@@ -246,6 +257,9 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::invalid;
     }
     auto type_family(i64 type) -> i64 {
+        if (type >= 47 && type < 54) {
+            return 8;
+        }
         if (type >= 36 && type < 47) {
             return 7;
         }
@@ -276,6 +290,15 @@ export namespace compiler_catalog {
     }
     // Field or case count of a nominal type.
     auto member_count(i64 type) -> i64 {
+        if (type == 49) {
+            return 4;
+        }
+        if (type == 51) {
+            return 3;
+        }
+        if (type == 50 || type == 52 || type == 53) {
+            return 2;
+        }
         if (type == 37 || type == 41 || type == 46) {
             return 3;
         }
@@ -328,6 +351,12 @@ export namespace compiler_catalog {
     }
     // Catalog type of a class field.
     auto field_type(i64 type, i64 field) -> i64 {
+        if (type == 49) {
+            if (field == 0 || field == 3) {
+                return 3;
+            }
+            return 1;
+        }
         if (type == 39 || type == 41) {
             if (field == 0) {
                 if (type == 39) {
@@ -378,6 +407,9 @@ export namespace compiler_catalog {
     // Words: full spelling, then for nominal types the native spelling and the
     // field or case names in declaration order. See use_word for begin/end.
     auto type_word(compiler_resolver::Session& session, i64 type, i64 part, i64 begin, i64 end) -> i64 {
+        if (type >= 47 && type < 54) {
+            return bootstrap_type_word(session, type, part, begin, end);
+        }
         if (type >= 36 && type < 47) {
             return execution_type_word(session, type, part, begin, end);
         }
@@ -538,10 +570,16 @@ export namespace compiler_catalog {
         return use_word(session, "builtin::HostChunk;__au_host_chunk;status;count;bytes", part, begin, end);
     }
 
-    // Service-issued resources are distinct from allocator-backed owners.
-    auto resource_kind(compiler_resolver::ResolvedTypeKind kind) -> i64 {
-        if (kind == compiler_resolver::ResolvedTypeKind::service_resource) {
+    // Resource identities are catalog ordinals, not per-family resolver kinds.
+    auto resource_count() -> i64 {
+        return 2;
+    }
+    auto resource_kind(i64 type) -> i64 {
+        if (type == 45) {
             return 0;
+        }
+        if (type == 48) {
+            return 1;
         }
         return -1;
     }
@@ -549,38 +587,66 @@ export namespace compiler_catalog {
         if (kind == 0) {
             return 45;
         }
+        if (kind == 1) {
+            return 48;
+        }
         return -1;
     }
     auto resource_issuer(i64 kind) -> i64 {
+        if (kind >= 0 && kind < resource_count()) {
+            return 9 + kind;
+        }
+        return -1;
+    }
+    auto resource_issue_operation(i64 kind) -> i64 {
         if (kind == 0) {
-            return 9;
+            return 46;
+        }
+        if (kind == 1) {
+            return 51;
         }
         return -1;
     }
     auto resource_extent(i64 kind) -> i64 {
-        if (kind == 0) {
+        if (kind >= 0 && kind < resource_count()) {
             return 16;
         }
         return 0;
     }
     auto resource_explicit_finish(i64 kind) -> bool {
-        return kind == 0;
+        return kind >= 0 && kind < resource_count();
     }
     auto resource_method_count(i64 kind) -> i64 {
-        if (kind == 0) {
-            return 6;
+        if (kind >= 0 && kind < resource_count()) {
+            return 6 + kind;
         }
         return 0;
     }
     auto resource_method_word(compiler_resolver::Session& session, i64 kind, i64 method, i64 begin, i64 end) -> i64 {
-        if (kind != 0) {
-            return -1;
+        if (kind == 0) {
+            return use_word(session, "preparation;advance;output;request;cancel;finish", method, begin, end);
         }
-        return use_word(session, "preparation;advance;output;request;cancel;finish", method, begin, end);
+        if (kind == 1) {
+            return use_word(session, "preparation;begin_volume;copy_volume;seal_volume;admit_storage;advance;finish",
+                method, begin, end);
+        }
+        return -1;
     }
     auto resource_method_result(i64 kind, i64 method) -> i64 {
-        if (kind != 0) {
+        if (method < 0 || method >= resource_method_count(kind)) {
             return -1;
+        }
+        if (kind == 1) {
+            if (method == 0) {
+                return 49;
+            }
+            if (method == 5) {
+                return 51;
+            }
+            if (method == 6) {
+                return 53;
+            }
+            return 50;
         }
         if (method == 0) {
             return 39;
@@ -597,7 +663,7 @@ export namespace compiler_catalog {
         return 42;
     }
     auto resource_method_parameters(i64 kind, i64 method) -> i64 {
-        if (kind == 0 && method == 5) {
+        if ((kind == 0 && method == 5) || (kind == 1 && (method == 2 || method == 6))) {
             return 1;
         }
         return 0;
@@ -606,23 +672,169 @@ export namespace compiler_catalog {
         if (kind == 0 && method == 5) {
             return 44;
         }
+        if (kind == 1 && method == 2) {
+            return 1;
+        }
+        if (kind == 1 && method == 6) {
+            return 52;
+        }
         return -1;
     }
-    // 0 observes, 1 mutates, 2 consumes; this is a closed catalogue property.
     auto resource_method_effect(i64 kind, i64 method) -> i64 {
-        if (kind != 0) {
+        if (method < 0 || method >= resource_method_count(kind)) {
             return -1;
         }
         if (method == 0) {
             return 0;
         }
-        if (method == 5) {
+        if (method == resource_method_count(kind) - 1) {
             return 2;
         }
         return 1;
     }
     auto operation_admitted(i64 operation) -> bool {
-        return operation >= 0 && operation < 47;
+        return (operation >= 0 && operation < 47) || operation == 51;
+    }
+    auto catalog_byte(builtin::span<const u8> name, i64 index) -> i64 {
+        if (index == -1) {
+            return name.size();
+        }
+        if (index < 0 || index >= name.size()) {
+            return -1;
+        }
+        return i64(name.at(index));
+    }
+    auto type_source_byte(i64 type, i64 index) -> i64 {
+        if (type == 45) {
+            return catalog_byte("builtin::ExecutionLease", index);
+        }
+        if (type == 48) {
+            return catalog_byte("builtin::ServiceBootstrapLease", index);
+        }
+        return -1;
+    }
+    auto type_native_byte(i64 type, i64 index) -> i64 {
+        if (type == 39) {
+            return catalog_byte("__au_execution_prep", index);
+        }
+        if (type == 41) {
+            return catalog_byte("__au_execution_step", index);
+        }
+        if (type == 42) {
+            return catalog_byte("__au_exec_effect", index);
+        }
+        if (type == 43) {
+            return catalog_byte("__au_exec_request", index);
+        }
+        if (type == 44) {
+            return catalog_byte("__au_exec_finish", index);
+        }
+        if (type == 45) {
+            return catalog_byte("__au_execution_lease", index);
+        }
+        if (type == 46) {
+            return catalog_byte("__au_exec_cancel", index);
+        }
+        if (type == 48) {
+            return catalog_byte("__au_service_bootstrap_lease", index);
+        }
+        if (type == 49) {
+            return catalog_byte("__au_bootstrap_preparation", index);
+        }
+        if (type == 50) {
+            return catalog_byte("__au_bootstrap_effect", index);
+        }
+        if (type == 51) {
+            return catalog_byte("__au_bootstrap_progress", index);
+        }
+        if (type == 52) {
+            return catalog_byte("__au_bootstrap_finish", index);
+        }
+        if (type == 53) {
+            return catalog_byte("__au_bootstrap_result", index);
+        }
+        return -1;
+    }
+    auto resource_runtime_byte(i64 kind, i64 method, i64 index) -> i64 {
+        if (kind == 0) {
+            if (method == -1) {
+                return catalog_byte("__au_runtime_execution_prepare", index);
+            }
+            if (method == 0) {
+                return catalog_byte("__au_runtime_execution_preparation", index);
+            }
+            if (method == 1) {
+                return catalog_byte("__au_runtime_execution_advance", index);
+            }
+            if (method == 2) {
+                return catalog_byte("__au_runtime_execution_output", index);
+            }
+            if (method == 3) {
+                return catalog_byte("__au_runtime_execution_request", index);
+            }
+            if (method == 4) {
+                return catalog_byte("__au_runtime_execution_cancel", index);
+            }
+            if (method == 5) {
+                return catalog_byte("__au_runtime_execution_finish", index);
+            }
+        }
+        if (kind == 1) {
+            if (method == -1) {
+                return catalog_byte("__au_runtime_service_bootstrap_begin", index);
+            }
+            if (method == 0) {
+                return catalog_byte("__au_runtime_service_bootstrap_preparation", index);
+            }
+            if (method == 1) {
+                return catalog_byte("__au_runtime_service_bootstrap_begin_volume", index);
+            }
+            if (method == 2) {
+                return catalog_byte("__au_runtime_service_bootstrap_copy_volume", index);
+            }
+            if (method == 3) {
+                return catalog_byte("__au_runtime_service_bootstrap_seal_volume", index);
+            }
+            if (method == 4) {
+                return catalog_byte("__au_runtime_service_bootstrap_admit_storage", index);
+            }
+            if (method == 5) {
+                return catalog_byte("__au_runtime_service_bootstrap_advance", index);
+            }
+            if (method == 6) {
+                return catalog_byte("__au_runtime_service_bootstrap_finish", index);
+            }
+        }
+        return -1;
+    }
+    auto bootstrap_type_word(compiler_resolver::Session& session, i64 type, i64 part, i64 begin, i64 end) -> i64 {
+        if (type == 47) {
+            return use_word(session, "builtin::ServiceBootstrapEffects", part, begin, end);
+        }
+        if (type == 48) {
+            return use_word(session, "builtin::ServiceBootstrapLease", part, begin, end);
+        }
+        if (type == 49) {
+            return use_word(session,
+                "builtin::BootstrapPreparation;__au_bootstrap_preparation;loaded;volume_bytes;chunk_bytes;storage_required",
+                part, begin, end);
+        }
+        if (type == 50) {
+            return use_word(session, "builtin::BootstrapEffect;__au_bootstrap_effect;staged;failed", part, begin, end);
+        }
+        if (type == 51) {
+            return use_word(session, "builtin::BootstrapProgress;__au_bootstrap_progress;pending;complete;failed", part,
+                begin, end);
+        }
+        if (type == 52) {
+            return use_word(session, "builtin::BootstrapFinish;__au_bootstrap_finish;publish;abandon", part, begin,
+                end);
+        }
+        if (type == 53) {
+            return use_word(session, "builtin::BootstrapResult;__au_bootstrap_result;ready;unavailable", part, begin,
+                end);
+        }
+        return -1;
     }
 
     // Scalar descriptors: concrete kind, public reflection identity and size.
@@ -671,9 +883,12 @@ export namespace compiler_catalog {
 
     // Sealed service operations, indexed by ServiceOperation.
     auto operation_count() -> i64 {
-        return 51;
+        return 52;
     }
     auto operation_kind(i64 operation) -> i64 {
+        if (operation == 51) {
+            return 10;
+        }
         if (operation >= 46 && operation < 51) {
             return 9;
         }
@@ -705,6 +920,9 @@ export namespace compiler_catalog {
     }
     // Catalog type of a capability kind.
     auto kind_type(i64 kind) -> i64 {
+        if (kind == 10) {
+            return 47;
+        }
         if (kind == 9) {
             return 36;
         }
@@ -727,6 +945,9 @@ export namespace compiler_catalog {
     }
     // Catalog type of the operation's result.
     auto operation_result(i64 operation) -> i64 {
+        if (operation == 51) {
+            return 48;
+        }
         if (operation == 46) {
             return 45;
         }
@@ -792,6 +1013,9 @@ export namespace compiler_catalog {
         return 0;
     }
     auto parameter_count(i64 operation) -> i64 {
+        if (operation == 51) {
+            return 0;
+        }
         if (operation >= 46 && operation < 50) {
             return 0;
         }
@@ -839,6 +1063,9 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::u64_value;
     }
     auto append_spelling(compiler_resolver::Session& session, i64 operation) -> i64 {
+        if (operation == 51) {
+            return use_word(session, "begin", 0, -1, 0);
+        }
         if (operation >= 46 && operation < 51) {
             return use_word(session, "prepare;advance;output;request;finish", operation - 46, -1, 0);
         }
@@ -940,6 +1167,15 @@ export namespace compiler_catalog {
     auto serve_writer_service_group() -> i64 {
         return 1024;
     }
+    auto bootstrap_service_group() -> i64 {
+        return 4096;
+    }
+    auto bootstrap_groups(i64 groups, bool bootstrap) -> i64 {
+        if (bootstrap) {
+            return groups + bootstrap_service_group();
+        }
+        return groups;
+    }
     auto execution_service_group() -> i64 {
         return 2048;
     }
@@ -997,7 +1233,8 @@ export namespace compiler_catalog {
         }
         texts = texts + operation_count();
         Summary result = Summary(type_count(), texts, texts * maximum_word(), members, operation_count(), parameters);
-        result.set_policy(scalar_count(), execution_groups(service_groups(true, true, true, true, true, true), true));
+        result.set_policy(scalar_count(), bootstrap_groups(execution_groups(service_groups(true, true, true, true, true,
+            true), true), true));
         return result;
     }
 }

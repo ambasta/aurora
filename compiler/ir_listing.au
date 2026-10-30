@@ -439,7 +439,7 @@ export namespace compiler_ir_listing {
         if (kind == 10 && (!out.byte(' ') || !type_text(out, table, metadata, row.type()))) {
             return false;
         }
-        if (kind == 11 || kind == 17 || kind == 27) {
+        if (kind == 11 || kind == 17 || kind == 27 || kind == 28) {
             const compiler_ir_metadata::RawTypeRow type = metadata.type_at(row.type());
             const compiler_ir_metadata::ByteRange name = type.name();
             if (!out.byte(' ') || !metadata_name(out, metadata, name.begin(), name.count())) {
@@ -449,7 +449,7 @@ export namespace compiler_ir_listing {
         if (kind == 12 && (!out.byte(' ') || !out.number(row.length()))) {
             return false;
         }
-        if (kind == 28 && !out.word(" 0 mutable")) {
+        if (kind == 28 && !out.word(" mutable")) {
             return false;
         }
         if ((kind == 11 || kind == 16) && row.mutable_value() != 0 && !out.word(" mutable")) {

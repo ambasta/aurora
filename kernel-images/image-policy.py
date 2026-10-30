@@ -233,6 +233,22 @@ RULES = [
             "aurora_kernel_round_robin_next",
         ],
     },
+    # Startup has a separate, unpublished-owner grant. Only this source object
+    # may drive its fixed authenticated effects; the retained root owns lifetime.
+    {
+        "profiles": ["uefi/production", "uefi/process-fixture"],
+        "imports:service-bootstrap": [
+            "__au_runtime_service_bootstrap_begin",
+            "__au_runtime_service_bootstrap_preparation",
+            "__au_runtime_service_bootstrap_begin_volume",
+            "__au_runtime_service_bootstrap_copy_volume",
+            "__au_runtime_service_bootstrap_seal_volume",
+            "__au_runtime_service_bootstrap_admit_storage",
+            "__au_runtime_service_bootstrap_advance",
+            "__au_runtime_service_bootstrap_finish",
+        ],
+        "reachable": ["__au_runtime_process_bootstrap_service"],
+    },
     # Production runs use the same source admission/memory decisions, but no
     # fixture run-list/export policy and only this copied supervisor output sink.
     {

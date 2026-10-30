@@ -1,0 +1,64 @@
+# Source startup ordering over the shared authenticated native lease adapter.
+# copy offsets and finish dispositions are checked, not merely displayed.
+refused begin:0:0:65472:0 finish:abandon:unavailable
+zero_capacity begin:1:1:0:0 finish:abandon:unavailable
+empty_volume begin:1:0:65472:0 advance:complete volume:staged advance:complete seal:staged advance:complete finish:publish:ready
+one_byte begin:1:1:65472:0 advance:complete volume:staged advance:complete copy:0:staged advance:complete seal:staged advance:complete finish:publish:ready
+exact_chunk begin:1:65472:65472:0 advance:complete volume:staged advance:complete copy:0:staged advance:complete seal:staged advance:complete finish:publish:ready
+chunk_plus_one begin:1:65473:65472:0 advance:complete volume:staged advance:complete copy:0:staged advance:complete copy:65472:staged advance:complete seal:staged advance:complete finish:publish:ready
+small_chunks begin:1:5:2:0 advance:complete volume:staged advance:complete copy:0:staged advance:complete copy:2:staged advance:complete copy:4:staged advance:complete seal:staged advance:complete finish:publish:ready
+maximal_chunk_arithmetic begin:1:18446744073709551615:18446744073709551615:0 advance:complete volume:staged advance:complete copy:0:staged advance:complete seal:staged advance:complete finish:publish:ready
+initial_pending begin:1:0:65472:0 advance:pending advance:pending advance:complete volume:staged advance:complete seal:staged advance:complete finish:publish:ready
+initial_loss begin:1:1:65472:0 advance:pending advance:failed finish:abandon:unavailable
+volume_stage_refused begin:1:1:65472:0 advance:complete volume:failed finish:abandon:unavailable
+volume_bad_reply begin:1:1:65472:0 advance:complete volume:staged advance:failed finish:abandon:unavailable
+volume_pending begin:1:0:65472:0 advance:complete volume:staged advance:pending advance:complete seal:staged advance:complete finish:publish:ready
+copy_stage_refused begin:1:1:65472:0 advance:complete volume:staged advance:complete copy:0:failed finish:abandon:unavailable
+copy_bad_reply begin:1:1:65472:0 advance:complete volume:staged advance:complete copy:0:staged advance:failed finish:abandon:unavailable
+partial_copy_loss begin:1:65473:65472:0 advance:complete volume:staged advance:complete copy:0:staged advance:complete copy:65472:staged advance:pending advance:failed finish:abandon:unavailable
+copy_pending_cursor begin:1:3:2:0 advance:complete volume:staged advance:complete copy:0:staged advance:pending advance:pending advance:complete copy:2:staged advance:pending advance:complete seal:staged advance:complete finish:publish:ready
+seal_stage_refused begin:1:0:65472:0 advance:complete volume:staged advance:complete seal:failed finish:abandon:unavailable
+seal_bad_reply begin:1:0:65472:0 advance:complete volume:staged advance:complete seal:staged advance:failed finish:abandon:unavailable
+seal_pending begin:1:0:65472:0 advance:complete volume:staged advance:complete seal:staged advance:pending advance:complete finish:publish:ready
+storage_ready begin:1:1:65472:1 advance:complete volume:staged advance:complete copy:0:staged advance:complete seal:staged advance:complete storage:staged advance:complete finish:publish:ready
+storage_pending begin:1:0:65472:1 advance:complete volume:staged advance:complete seal:staged advance:complete storage:staged advance:pending advance:pending advance:complete finish:publish:ready
+storage_stage_refused begin:1:0:65472:1 advance:complete volume:staged advance:complete seal:staged advance:complete storage:failed finish:abandon:unavailable
+storage_bad_reply begin:1:0:65472:1 advance:complete volume:staged advance:complete seal:staged advance:complete storage:staged advance:failed finish:abandon:unavailable
+stale deny:stale
+forged deny:forged
+zero_generation deny:zero_generation
+duplicate_open deny:duplicate_open
+released deny:released
+not_quiet deny:not_quiet
+cross_issuer deny:cross_issuer
+cross_lease deny:cross_lease
+reverse_cross_lease deny:reverse_cross_lease
+reenter deny:reenter
+release_inside deny:release_inside
+invalid_finish deny:invalid_finish
+issuer_as_owner deny:issuer_as_owner
+forged_owner deny:forged_owner
+stale_owner deny:stale_owner
+release_live deny:release_live
+second_begin deny:second_begin
+owner_reentry deny:owner_reentry
+double_finish deny:double_finish
+use_after_finish deny:use_after_finish
+reissue_after_finish deny:reissue_after_finish
+unsettled_finish deny:unsettled_finish
+release_during_finish deny:release_during_finish
+# Actual shared byte parser; binding/transaction authentication is separate.
+volume_zero_reply reply:1:64:0:0
+copy_zero_reply reply:2:64:0:0
+seal_zero_reply reply:3:64:0:0
+storage_zero_reply reply:15:64:0:0
+storage_unavailable_reply reply:15:64:0:2
+seal_status_refused reply:3:64:0:2
+storage_bad_status reply:15:64:0:1
+storage_high_status reply:15:64:1:1
+storage_high_status_end reply:15:64:7:1
+seal_reserved_tail reply:3:64:63:1
+storage_reserved_tail reply:15:64:8:1
+reply_short reply:3:63:0:0
+reply_oversized reply:15:65:0:0
+reply_unknown_operation reply:4:64:0:0

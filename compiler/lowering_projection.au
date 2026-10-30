@@ -359,14 +359,17 @@ export namespace compiler_lowering_projection {
         }
         if (kind == 28) {
             if (!expect(session, workspace, id, 1, compiler_lowering::OperandRole::ResourceKindId) || scalar(session,
-                id, 1) != 0 || !expect(session, workspace, id, 2, compiler_lowering::OperandRole::MutableValue)
+                id, 1) < 0 || !expect(session, workspace, id, 2, compiler_lowering::OperandRole::MutableValue)
                 || scalar(session, id, 2) != 1) {
                 return workspace.fail();
             }
+            if (!resource_type_name(workspace, scalar(session, id, 1))) {
+                return false;
+            }
             mutable_value = 1;
             type = workspace.count(1);
-            const compiler_ir_metadata::RawTypeRow value = compiler_ir_metadata::RawTypeRow(26,
-                compiler_ir_metadata::ByteRange(0, 0), compiler_ir_metadata::RawTypeTail(0, 0, 0u64, 0u64, 0u64));
+            const compiler_ir_metadata::RawTypeRow value = compiler_ir_metadata::RawTypeRow(26, workspace.name_result(),
+                compiler_ir_metadata::RawTypeTail(0, 0, 0u64, 0u64, 0u64));
             if (!workspace.set_type_result(value) || !emit_raw_type(workspace, metadata, type, fill)) {
                 return false;
             }

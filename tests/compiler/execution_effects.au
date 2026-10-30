@@ -37,3 +37,26 @@ auto execution_consume(builtin::ExecutionEffects& effects) -> u64 {
 auto execution_entry(builtin::ExecutionEffects& effects) -> u64 {
     return execution_consume(effects);
 }
+
+auto bootstrap_value(builtin::BootstrapPreparation prepared) -> u64 {
+    if (prepared.volume_bytes == 18446744073709551615u64 && prepared.chunk_bytes == 42u64) {
+        return 42u64;
+    }
+    return 1u64;
+}
+auto bootstrap_consume(builtin::ServiceBootstrapEffects& effects) -> u64 {
+    builtin::ServiceBootstrapLease initial = effects.begin();
+    builtin::ServiceBootstrapLease lease = move(initial);
+    const builtin::BootstrapPreparation prepared = lease.preparation();
+    const u64 result = bootstrap_value(prepared);
+    lease.begin_volume();
+    lease.copy_volume(18446744073709551615u64);
+    lease.seal_volume();
+    lease.admit_storage();
+    lease.advance();
+    lease.finish(builtin::BootstrapFinish::publish);
+    return result;
+}
+auto bootstrap_entry(builtin::ServiceBootstrapEffects& effects) -> u64 {
+    return bootstrap_consume(effects);
+}

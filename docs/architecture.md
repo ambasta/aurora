@@ -97,13 +97,15 @@ bounded user domains with checked return/fault handling, stale-handle rejection,
 page scrubbing and kernel-root restoration. BIOS and UEFI have distinct boot and
 execution paths.
 
-The UEFI test system adds copied request/reply IPC, interrupt-count budgets,
-service/client recovery and a two-client dispatcher. Its next-client and
-interrupt-budget decisions call small copied-value Aurora policies; authority
-checks and state commits remain in trusted code. Read-only firmware/device
-profiles and dormant IOMMU table models precede active drivers and DMA isolation.
-These are bounded mechanisms, with no general process API, SMP or qualified
-physical platform. See the [kernel contracts](../kernel/README.md).
+The UEFI system adds copied request/reply IPC, timer-bounded execution and
+service/client recovery. Retained Aurora roots own timer allowance accounting
+and file-service incarnation policy. Scoped linear leases give source command
+and bootstrap orchestration explicit finalization obligations; native adapters
+retain physical identity, transport, timer and cleanup effects. Bootstrap
+publication is backed by authenticated readiness receipts, not a copied success
+flag. These remain bounded synchronous mechanisms with two resident slots, not
+a general process API, service manager, SMP or qualified physical platform.
+See the [kernel contracts](../kernel/README.md).
 
 The compiler loads bounded module graphs from explicit roots with export and
 visibility checks. A Linux host adapter pins source/output directory authority,

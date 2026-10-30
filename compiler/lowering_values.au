@@ -528,6 +528,16 @@ export namespace compiler_lowering {
         const i64 staged_type_2 = compiler_resolver::mw(session, type, 2);
         return value_kind(session, staged_type_2) == compiler_resolver::ResolvedTypeKind::u8_value;
     }
+    auto service_resource_kind(compiler_resolver::Session& session, i64 type) -> i64 {
+        if (value_kind(session, type) != compiler_resolver::ResolvedTypeKind::service_resource) {
+            return -1;
+        }
+        const i64 resource = compiler_resolver::mw(session, type, 1);
+        if (resource < 0 || resource >= compiler_catalog::resource_count()) {
+            return -1;
+        }
+        return resource;
+    }
     auto is_service_resource(compiler_resolver::Session& session, i64 type) -> bool {
         return value_kind(session, type) == compiler_resolver::ResolvedTypeKind::service_resource;
     }
@@ -964,7 +974,8 @@ export namespace compiler_lowering {
             if (is_service_resource(session, type)) {
                 const i64 begin = session.operand_count();
                 put(session, OperandRole::Offset, offset);
-                put(session, OperandRole::ResourceKindId, compiler_catalog::resource_kind(kind));
+                const i64 resource = service_resource_kind(session, type);
+                put(session, OperandRole::ResourceKindId, resource);
                 put(session, OperandRole::MutableValue, 1);
                 emit_record(session, RecordKind::ServiceResourceSlot, begin);
             } else {

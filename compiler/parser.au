@@ -139,6 +139,9 @@ export namespace compiler_parser {
             if (service == 6) {
                 return 64;
             }
+            if (service == 10) {
+                return 1024;
+            }
             if (service == 9) {
                 return 512;
             }
@@ -537,11 +540,15 @@ namespace compiler_parser {
             138> names8 =
             "ExecutionEffects;ExecutionPrep;ExecutionStep;ExecPrepared;ExecStatus;ExecStep;ExecEffect;ExecRequest;ExecFinish;ExecutionLease;ExecCancel;";
         const builtin::span<const u8> words8 = borrow_bytes(names8);
-        return word_list_matches(source, token, words8) || word_list_matches(source, token, words7)
-            || word_list_matches(source, token, words0) || word_list_matches(source, token, words1)
-            || word_list_matches(source, token, words2) || word_list_matches(source, token, words3)
-            || word_list_matches(source, token, words4) || word_list_matches(source, token, words5)
-            || word_list_matches(source, token, words6);
+        const array<u8,
+            133> names9 =
+            "ServiceBootstrapEffects;ServiceBootstrapLease;BootstrapPreparation;BootstrapEffect;BootstrapProgress;BootstrapFinish;BootstrapResult;";
+        const builtin::span<const u8> words9 = borrow_bytes(names9);
+        return word_list_matches(source, token, words9) || word_list_matches(source, token, words8)
+            || word_list_matches(source, token, words7) || word_list_matches(source, token, words0)
+            || word_list_matches(source, token, words1) || word_list_matches(source, token, words2)
+            || word_list_matches(source, token, words3) || word_list_matches(source, token, words4)
+            || word_list_matches(source, token, words5) || word_list_matches(source, token, words6);
     }
     enum class TypeWord {
         invalid,
@@ -934,7 +941,9 @@ namespace compiler_parser {
                                                 62> host_samples =
                                                 "HostChunk;HostFileResult;HostDirectoryResult;HostOutputResult;";
                                             const builtin::span<const u8> host_words = borrow_bytes(host_samples);
-                                            const array<u8, 28> execution_samples = "ExecutionPrep;ExecutionStep;";
+                                            const array<u8,
+                                                49> execution_samples =
+                                                "ExecutionPrep;ExecutionStep;BootstrapPreparation;";
                                             const builtin::span<const u8> execution_words = borrow_bytes(
                                                 execution_samples);
                                             if (word_list_matches(source, token, execution_words)
@@ -3144,6 +3153,11 @@ namespace compiler_parser {
         if (word_matches(source, token, host_word, 0, 9)) {
             return AdmissionType(AdmissionKind::service, configuration.service_mask(6), token);
         }
+        const array<u8, 23> bootstrap_name = "ServiceBootstrapEffects";
+        const builtin::span<const u8> bootstrap_word = borrow_bytes(bootstrap_name);
+        if (word_matches(source, token, bootstrap_word, 0, 23)) {
+            return AdmissionType(AdmissionKind::service, configuration.service_mask(10), token);
+        }
         const array<u8, 16> execution_name = "ExecutionEffects";
         const builtin::span<const u8> execution_word = borrow_bytes(execution_name);
         if (word_matches(source, token, execution_word, 0, 16)) {
@@ -3163,6 +3177,11 @@ namespace compiler_parser {
             78> execution_enums = "ExecPrepared;ExecStatus;ExecStep;ExecEffect;ExecRequest;ExecFinish;ExecCancel;";
         const builtin::span<const u8> execution_enum_words = borrow_bytes(execution_enums);
         if (word_list_matches(source, token, execution_enum_words)) {
+            return AdmissionType(AdmissionKind::copied, 0, token);
+        }
+        const array<u8, 66> bootstrap_enums = "BootstrapEffect;BootstrapProgress;BootstrapFinish;BootstrapResult;";
+        const builtin::span<const u8> bootstrap_enum_words = borrow_bytes(bootstrap_enums);
+        if (word_list_matches(source, token, bootstrap_enum_words)) {
             return AdmissionType(AdmissionKind::copied, 0, token);
         }
         const array<u8, 31> host_enums = "HostExit;HostStatus;HostStream;";
@@ -3412,7 +3431,7 @@ namespace compiler_parser {
     // The appended singleton Serve and HostFiles bits are new; mixed/high bits
     // stay closed. HostFiles (mask 64) is admitted through bit 0.
     auto admission_service_groups(i64 groups) -> bool {
-        return groups >= 0 && (u64(groups) & 4295036927u64) == u64(groups);
+        return groups >= 0 && (u64(groups) & 4295041023u64) == u64(groups);
     }
     auto admission_module(AstArena& arena, builtin::span<const u8> source, i64 root,
         AdmissionConfig configuration) -> AdmissionResult {
@@ -3425,10 +3444,10 @@ namespace compiler_parser {
         }
         u64 masks = 0u64;
         i64 service = 0;
-        while (service < 10) {
+        while (service < 11) {
             const i64 mask = configuration.service_mask(service);
             if ((mask != 1 && mask != 2 && mask != 4 && mask != 8 && mask != 16 && mask != 32 && mask != 64 && mask
-                != 128 && mask != 256 && mask != 512) || (masks & u64(mask)) != 0u64) {
+                != 128 && mask != 256 && mask != 512 && mask != 1024) || (masks & u64(mask)) != 0u64) {
                 return admission_result(AdmissionStatus::invalid);
             }
             masks = masks | u64(mask);

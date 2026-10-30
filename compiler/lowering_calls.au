@@ -812,7 +812,7 @@ export namespace compiler_lowering {
                 return fail(session, LoweringError::typed_owner_operation_requires_named_owner, reference);
             }
             const compiler_resolver::MetaRow spelling = session.meta(reference);
-            const i64 resource = compiler_catalog::resource_kind(kind);
+            const i64 resource = service_resource_kind(session, type);
             i64 method = 0;
             bool matched = false;
             while (method < compiler_catalog::resource_method_count(resource) && !matched && session.good()) {
@@ -833,7 +833,7 @@ export namespace compiler_lowering {
                 return fail(session, LoweringError::typed_owner_access_requires_copied_destination, reference);
             }
             if (binding) {
-                match_type(session, frame.output_mark(), result, reference);
+                match_type(session, result, frame.output_mark(), reference);
             }
             count = compiler_catalog::resource_method_parameters(resource, method);
             require_arity(session, node, count + 1);
@@ -916,7 +916,7 @@ export namespace compiler_lowering {
                 return fail(session, LoweringError::acknowledge_returns_scalar_enum, reference);
             }
             if (binding) {
-                match_type(session, frame.output_mark(), result, reference);
+                match_type(session, result, frame.output_mark(), reference);
             }
         } else {
             if (kind == compiler_resolver::ResolvedTypeKind::owned_values) {
@@ -1274,7 +1274,8 @@ export namespace compiler_lowering {
         const i64 type = frame.cleanup_cursor();
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
         if (kind == compiler_resolver::ResolvedTypeKind::service_resource) {
-            return compiler_resolver::catalog_type(session, compiler_catalog::resource_method_parameter(0,
+            const i64 resource = service_resource_kind(session, type);
+            return compiler_resolver::catalog_type(session, compiler_catalog::resource_method_parameter(resource,
                 frame.call_target()));
         }
         if (compiler_resolver::service_kind(kind)) {
@@ -1325,7 +1326,8 @@ export namespace compiler_lowering {
                 if (state.exclusive()) {
                     return fail(session, LoweringError::service_authority_suspended, reference);
                 }
-                if (kind == compiler_resolver::ResolvedTypeKind::execution_effects && !spend_issuer(session, local,
+                if ((kind == compiler_resolver::ResolvedTypeKind::execution_effects || kind
+                    == compiler_resolver::ResolvedTypeKind::bootstrap_effects) && !spend_issuer(session, local,
                     reference)) {
                     return false;
                 }
@@ -1900,14 +1902,16 @@ export namespace compiler_lowering {
         i64 destination = -1;
         if (kind == compiler_resolver::ResolvedTypeKind::service_resource) {
             const i64 method = frame.call_target();
-            result = compiler_resolver::catalog_type(session, compiler_catalog::resource_method_result(0, method));
+            const i64 resource = service_resource_kind(session, frame.cleanup_cursor());
+            result = compiler_resolver::catalog_type(session, compiler_catalog::resource_method_result(resource,
+                method));
             i64 result_offset = 0;
             if (value_kind(session, result) == compiler_resolver::ResolvedTypeKind::class_value) {
                 destination = expression_destination(session, frame, result, -1);
                 result_offset = local_offset(session, destination);
             }
-            emit_ServiceResourceOperation(session, offset, method, result_offset, 0);
-            if (compiler_catalog::resource_method_effect(0, method) == 2) {
+            emit_ServiceResourceOperation(session, offset, method, result_offset, resource);
+            if (compiler_catalog::resource_method_effect(resource, method) == 2) {
                 const LocalRow owner = session.local(frame.capability_root_local());
                 set_live(session, frame.capability_root_local(), false, false);
                 set_exclusive(session, owner.owner_id(), false);
@@ -1924,7 +1928,9 @@ export namespace compiler_lowering {
                 }
                 destination = expression_destination(session, frame, result, issuer);
                 const i64 target = local_offset(session, destination);
-                emit_IssueServiceResource(session, offset, 46, target, 0);
+                const i64 resource = service_resource_kind(session, result);
+                const i64 issue = compiler_catalog::resource_issue_operation(resource);
+                emit_IssueServiceResource(session, offset, issue, target, resource);
                 set_exclusive(session, issuer, true);
                 return finish_expression(session, result, destination);
             }

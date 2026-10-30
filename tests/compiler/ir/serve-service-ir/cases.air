@@ -111,9 +111,9 @@ function execution_ir_entry
   object 48 __au_execution_prep false
   object 72 __au_execution_step false
   service 16
-  service_resource 32 0 true
-  service_resource 96 0 true
-  service_resource 112 0 true
+  service_resource 32 __au_execution_lease true
+  service_resource 96 __au_execution_lease true
+  service_resource 112 __au_execution_lease true
     BindServiceParameter 0 16 9
     IssueServiceResource 16 46 32 0
     MoveServiceResource 32 96 0
@@ -136,7 +136,7 @@ function execution_delegate
   params [25]
   frame 32
   service 16
-  service_resource 32 0 true
+  service_resource 32 __au_execution_lease true
     BindServiceParameter 0 16 9
     AcquireServiceLoan 1 16 9
     ServiceCall execution_ir_entry 1 0 [0] 9
@@ -337,30 +337,30 @@ end
 ; RUN: verify
 ; EXPECT-ERROR: invalid service resource storage declaration
 @@ -24 +24 @@
--  service_resource 32 0 true
-+  service_resource 32 0 false
+-  service_resource 32 __au_execution_lease true
++  service_resource 32 __au_execution_lease false
 @@ -49 +49 @@
--  service_resource 32 0 true
-+  service_resource 32 0 false
+-  service_resource 32 __au_execution_lease true
++  service_resource 32 __au_execution_lease false
 
 ; CASE: resource slot rejects unknown nominal kind
 ; BASE: execution lease observations move and helper transfer
 ; RUN: verify
-; EXPECT-ERROR: invalid hosted IR metadata transport
+; EXPECT-ERROR: invalid service resource storage declaration
 @@ -24 +24 @@
--  service_resource 32 0 true
-+  service_resource 32 1 true
+-  service_resource 32 __au_execution_lease true
++  service_resource 32 __au_unknown_lease true
 @@ -49 +49 @@
--  service_resource 32 0 true
-+  service_resource 32 1 true
+-  service_resource 32 __au_execution_lease true
++  service_resource 32 __au_unknown_lease true
 
 ; CASE: resource slot requires sixteen-byte alignment
 ; BASE: execution lease observations move and helper transfer
 ; RUN: verify
 ; EXPECT-ERROR: invalid service resource storage declaration
 @@ -26 +26 @@
--  service_resource 112 0 true
-+  service_resource 104 0 true
+-  service_resource 112 __au_execution_lease true
++  service_resource 104 __au_execution_lease true
 
 ; CASE: lease move cannot alias its source
 ; BASE: execution lease observations move and helper transfer
@@ -449,3 +449,280 @@ end
 +    Constant 0 bool
 +    Return
 +end
+; Bootstrap lease shares generic resource operations, never Execution authority.
+; CASE: bootstrap lease nominal observations and helper transfer
+; RUN: emit
+; RUN: stack-facts
+; CHECK-NOT: __au_runtime_bytes_
+layout __au_bootstrap_preparation [bool u64 u64 bool]
+fields __au_bootstrap_preparation [(bool 0 1 false) (u64 1 1 false) (u64 2 1 false) (bool 3 1 false)]
+layout __au_execution_prep [(enum __au_exec_prepared display=builtin::ExecPrepared) (enum __au_exec_status display=builtin::ExecStatus)]
+fields __au_execution_prep [((enum __au_exec_prepared display=builtin::ExecPrepared) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false)]
+enum __au_exec_prepared 3
+enum __au_exec_status 9
+enum __au_exec_finish 5
+enum __au_bootstrap_effect 2
+enum __au_bootstrap_progress 3
+enum __au_bootstrap_finish 2
+enum __au_bootstrap_result 2
+function bootstrap_ir_entry
+  result u64
+  params [27]
+  frame 112
+  slot 56 bool
+  slot 64 u64
+  slot 72 u64
+  slot 80 bool
+  slot 104 (enum __au_exec_status display=builtin::ExecStatus)
+  slot 112 (enum __au_exec_prepared display=builtin::ExecPrepared)
+  object 80 __au_bootstrap_preparation false
+  object 112 __au_execution_prep false
+  service 16
+  service_resource 32 __au_service_bootstrap_lease true
+  service_resource 48 __au_service_bootstrap_lease true
+  service_resource 96 __au_execution_lease true
+    BindServiceParameter 0 16 10
+    IssueServiceResource 16 51 32 1
+    MoveServiceResource 32 48 1
+    BeginObject 80
+    ServiceResourceOperation 48 0 80 1
+    EndObject 80
+    ServiceResourceOperation 48 1 0 1
+    Constant 0 u64
+    ServiceResourceOperation 48 2 0 1
+    ServiceResourceOperation 48 3 0 1
+    ServiceResourceOperation 48 4 0 1
+    ServiceResourceOperation 48 5 0 1
+    EnumConstant (enum __au_bootstrap_finish) 0
+    ServiceResourceOperation 48 6 0 1
+    Constant 1 u64
+    Return
+end
+function bootstrap_delegate
+  result u64
+  params [27]
+  frame 32
+  service 16
+  service_resource 32 __au_service_bootstrap_lease true
+    BindServiceParameter 0 16 10
+    AcquireServiceLoan 1 16 10
+    ServiceCall bootstrap_ir_entry 1 0 [0] 10
+    ReleaseServiceLoan 1 10
+    Return
+end
+
+; CASE: bootstrap cannot issue execution nominal
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -29 +29 @@
+-    IssueServiceResource 16 51 32 1
++    IssueServiceResource 16 46 96 0
+
+; CASE: bootstrap issuing operation must match nominal
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -29 +29 @@
+-    IssueServiceResource 16 51 32 1
++    IssueServiceResource 16 46 32 1
+
+; CASE: bootstrap issuer cannot be execution issuer
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -14 +14 @@
+-  params [27]
++  params [25]
+@@ -28 +28 @@
+-    BindServiceParameter 0 16 10
++    BindServiceParameter 0 16 9
+@@ -47 +47 @@
+-  params [27]
++  params [25]
+@@ -51,4 +51,4 @@
+-    BindServiceParameter 0 16 10
+-    AcquireServiceLoan 1 16 10
+-    ServiceCall bootstrap_ir_entry 1 0 [0] 10
+-    ReleaseServiceLoan 1 10
++    BindServiceParameter 0 16 9
++    AcquireServiceLoan 1 16 9
++    ServiceCall bootstrap_ir_entry 1 0 [0] 9
++    ReleaseServiceLoan 1 9
+
+; CASE: bootstrap cannot move into execution slot
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -30 +30 @@
+-    MoveServiceResource 32 48 1
++    MoveServiceResource 32 96 1
+
+; CASE: bootstrap cannot forge execution method identity
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -37 +37 @@
+-    ServiceResourceOperation 48 3 0 1
++    ServiceResourceOperation 48 3 0 0
+
+; CASE: bootstrap cannot substitute execution copied observation
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -32 +32 @@
+-    ServiceResourceOperation 48 0 80 1
++    ServiceResourceOperation 48 0 112 1
+
+; CASE: bootstrap finish rejects execution disposition
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -40 +40 @@
+-    EnumConstant (enum __au_bootstrap_finish) 0
++    EnumConstant (enum __au_exec_finish) 0
+
+; CASE: bootstrap finish rejects same-sized result enum
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -40 +40 @@
+-    EnumConstant (enum __au_bootstrap_finish) 0
++    EnumConstant (enum __au_bootstrap_result) 0
+
+; CASE: bootstrap copy offset requires u64
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -35 +35 @@
+-    Constant 0 u64
++    Constant 0 i64
+
+; CASE: bootstrap rejects unknown method
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -39 +39 @@
+-    ServiceResourceOperation 48 5 0 1
++    ServiceResourceOperation 48 7 0 1
+
+; CASE: bootstrap cannot return live owner
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -41 +40,0 @@
+-    ServiceResourceOperation 48 6 0 1
+
+; CASE: bootstrap cannot use moved owner
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource operation requires a live owner
+@@ -34 +34 @@
+-    ServiceResourceOperation 48 1 0 1
++    ServiceResourceOperation 32 1 0 1
+
+; CASE: bootstrap finish does not refund opportunity
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer opportunity already spent
+@@ -41,0 +42 @@
++    IssueServiceResource 16 51 32 1
+
+; CASE: bootstrap forwarding spends caller opportunity
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer opportunity already spent
+@@ -54,0 +55 @@
++    IssueServiceResource 16 51 32 1
+
+; CASE: bootstrap live owner pins issuer
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer has a live resource
+@@ -30,0 +31 @@
++    AcquireServiceLoan 2 16 10
+
+; CASE: bootstrap rejects malformed preparation
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: noncanonical sealed bootstrap preparation layout
+@@ -1,2 +1,2 @@
+-layout __au_bootstrap_preparation [bool u64 u64 bool]
+-fields __au_bootstrap_preparation [(bool 0 1 false) (u64 1 1 false) (u64 2 1 false) (bool 3 1 false)]
++layout __au_bootstrap_preparation [u64 u64 u64 bool]
++fields __au_bootstrap_preparation [(u64 0 1 false) (u64 1 1 false) (u64 2 1 false) (bool 3 1 false)]
+
+; CASE: bootstrap rejects widened effect enum
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: noncanonical sealed service enum
+@@ -8 +8 @@
+-enum __au_bootstrap_effect 2
++enum __au_bootstrap_effect 3
+
+; CASE: bootstrap rejects widened progress enum
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: noncanonical sealed service enum
+@@ -9 +9 @@
+-enum __au_bootstrap_progress 3
++enum __au_bootstrap_progress 4
+
+; CASE: bootstrap rejects widened finish enum
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: noncanonical sealed service enum
+@@ -10 +10 @@
+-enum __au_bootstrap_finish 2
++enum __au_bootstrap_finish 3
+
+; CASE: bootstrap rejects widened result enum
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: noncanonical sealed service enum
+@@ -11 +11 @@
+-enum __au_bootstrap_result 2
++enum __au_bootstrap_result 3
+
+; CASE: bootstrap canonical raw nominal tuple
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: emit
+@@ -25 +25 @@
+-  service_resource 32 __au_service_bootstrap_lease true
++  service_resource 32 (26 __au_service_bootstrap_lease) true
+@@ -50 +50 @@
+-  service_resource 32 __au_service_bootstrap_lease true
++  service_resource 32 (26 __au_service_bootstrap_lease) true
+
+; CASE: bootstrap rejects empty nominal alias
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource storage declaration
+@@ -25 +25 @@
+-  service_resource 32 __au_service_bootstrap_lease true
++  service_resource 32 (26) true
+@@ -50 +50 @@
+-  service_resource 32 __au_service_bootstrap_lease true
++  service_resource 32 (26) true
+
+; CASE: bootstrap rejects nonzero resource type tail
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource storage declaration
+@@ -25 +25 @@
+-  service_resource 32 __au_service_bootstrap_lease true
++  service_resource 32 (26 __au_service_bootstrap_lease len=1) true
+@@ -50 +50 @@
+-  service_resource 32 __au_service_bootstrap_lease true
++  service_resource 32 (26 __au_service_bootstrap_lease len=1) true
+
+; CASE: bootstrap rejects forged resource raw kind
+; BASE: bootstrap lease nominal observations and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource storage declaration
+@@ -25 +25 @@
+-  service_resource 32 __au_service_bootstrap_lease true
++  service_resource 32 (5 __au_service_bootstrap_lease) true
+@@ -50 +50 @@
+-  service_resource 32 __au_service_bootstrap_lease true
++  service_resource 32 (5 __au_service_bootstrap_lease) true
