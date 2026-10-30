@@ -19,8 +19,9 @@ ZERO_CHUNK = bytes(65536)
 def mounted_cases(program, directory):
     """Production formatter against the Linux-accepted command witness.
 
-    One genuine full-ring image is reused. Rejection mutations and the
-    reversed-name case are synthetic inputs, not additional Linux witnesses.
+    One genuine full-ring proof serves payload and append-response cases.
+    A synthetic reversed-name image receives its own complete clean preflight.
+    Response faults and reversed names are not additional Linux witnesses.
     """
     fixture_dir = harness.ROOT / "fixtures/xfs-staged-replace"
     hashes = json.loads((fixture_dir / "append-hashes.json").read_text())
@@ -41,18 +42,33 @@ def mounted_cases(program, directory):
     witness = bytes.fromhex((fixture_dir / "append-writes.hex").read_text())
     harness.require(hashlib.sha256(witness).hexdigest() == hashes["append-writes.hex"], "commit witness hash")
     payload = directory / "mounted.payload"
+    data = bytes((at * 37 + 91) % 251 for at in range(4097))
+    payload.write_bytes(data)
+    case_file = directory / "mounted.cases"
 
-    def run(size, accepted, first_lba=160):
-        data = bytes((at * 37 + 91) % 251 for at in range(size))
-        payload.write_bytes(data)
-        result = harness.command([program, image, "mounted", payload], timeout=30)
-        harness.require((result.returncode == 0) == accepted, result.stderr.decode())
-        if not accepted:
-            harness.require(not result.stdout, "refused mount exposed a write plan")
+    def run(rows):
+        case_file.write_bytes(b"".join(struct.pack("<QQ", size, bad_append) for size, bad_append, _ in rows))
+        result = harness.command([program, image, "mounted", payload, case_file], timeout=30)
+        harness.require(result.returncode == 0 and not result.stderr, "mounted batch: " + result.stderr.decode())
+        expected_length = sum((8448 if outcome == 0 else 0) + 8 for _, _, outcome in rows)
+        harness.require(len(result.stdout) == expected_length, "complete mounted batch; no trailing plan bytes")
+        cursor = 0
+        for size, _, expected in rows:
+            length = 8448 if expected == 0 else 0
+            plan = result.stdout[cursor : cursor + length]
+            observed = struct.unpack_from("<Q", result.stdout, cursor + length)[0]
+            harness.require(observed == expected, "mounted acceptance or refusal phase")
+            cursor += length + 8
+            yield size, plan
+
+    def describe_plan(size, plan, first_lba=160):
+        if not plan:
             return "refused; no writes"
-        harness.require(not result.stderr and len(result.stdout) == 8448, "bounded write plan")
-        records = [result.stdout[at : at + 528] for at in range(0, 8448, 528)]
-        harness.require(b"".join(row[16:] for row in records[:8]) == data + bytes(4096 - size), "payload and zero tail")
+        harness.require(len(plan) == 8448, "bounded write plan")
+        records = [plan[at : at + 528] for at in range(0, 8448, 528)]
+        harness.require(
+            b"".join(row[16:] for row in records[:8]) == data[:size] + bytes(4096 - size), "payload and zero tail"
+        )
         harness.require(
             [struct.unpack("<Q", row[8:16])[0] for row in records]
             == [int(at in (9, 11, 13, 14, 15)) for at in range(16)],
@@ -67,31 +83,47 @@ def mounted_cases(program, directory):
         harness.require(int.from_bytes(records[12][72:80], "big") == size, "staging inode size")
         harness.require(struct.unpack("<Q", records[13][:8])[0] == 96, "root inode home")
         if size == 777 and first_lba == 160:
-            harness.require(result.stdout == witness, "Linux-accepted exact command witness")
+            harness.require(plan == witness, "Linux-accepted exact command witness")
         return "16 writes; 5 flushes; exact payload and zero tail"
 
-    for size in (0, 1, 777, 4096, 4097):
-        yield f"mounted replacement size {size}", run(size, 1 <= size <= 4096)
-    # All seven future record/successor sectors must be exact stale headers,
-    # not merely prior-cycle zero data accepted by the readonly ring scanner.
-    for sector in range(33, 40):
-        offset = (524328 + sector) * 512
+    sizes = [0, 1, 777, 4096, 4097]
+    rows = [(size, 0, 0 if 1 <= size <= 4096 else 1) for size in sizes]
+    # These zero-sector responses reach the real append consumer only after
+    # the unchanged full image has passed clean recovery. Every LBA must fail
+    # specifically at accept_append, without exposing a write plan.
+    rows += [(1, 524328 + sector, 2) for sector in range(33, 40)]
+    observed = list(run(rows))
+    # Preserve the cold-preflight distinction at the first stale boundary:
+    # zero old-cycle data is still clean, but cannot arm the mounted writer.
+    # This synthetic disk receives its own full proof, not the original's.
+    with image.open("r+b") as stream:
+        stream.seek(524361 * 512)
+        stale = stream.read(512)
+        stream.seek(524361 * 512)
+        stream.write(bytes(512))
+    try:
+        harness.require(list(run([(1, 524361, 2)])) == [(1, b"")], "cold noncanonical boundary refuses append")
+    finally:
         with image.open("r+b") as stream:
-            stream.seek(offset)
-            old = stream.read(512)
-            stream.seek(offset)
-            stream.write(bytes(512))
-        yield f"mounted noncanonical append sector {sector}", run(1, False)
-        with image.open("r+b") as stream:
-            stream.seek(offset)
-            stream.write(old)
+            stream.seek(524361 * 512)
+            stream.write(stale)
+    for index, (size, plan) in enumerate(observed):
+        label = (
+            f"mounted replacement size {size}"
+            if index < len(sizes)
+            else f"mounted noncanonical append sector {33 + index - len(sizes)}"
+        )
+        yield label, describe_plan(size, plan)
+
     with image.open("r+b") as stream:
         stream.seek(96 * 512)
         root = stream.read(512)
         swapped = shortform(root, [(b"hello", 100, 1, 96), (b".aurora-stage", 99, 1, 120)], parent=96)
         stream.seek(96 * 512)
         stream.write(swapped)
-    yield "mounted synthetic reversed inode roles", run(1, True, 72)
+    # The root changed: do not reuse the original root's authenticated proof.
+    for size, plan in run([(1, 0, 0)]):
+        yield "mounted synthetic reversed inode roles", describe_plan(size, plan, 72)
 
 
 def describe(compiler, directory):

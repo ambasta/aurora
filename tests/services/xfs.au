@@ -310,14 +310,23 @@ auto mounted_planned_sector(const fs::XfsMountedCommitPlan& plan, u64 lba) -> fs
 }
 
 auto mounted_commit(builtin::HostFiles& files, builtin::ByteRegion region, builtin::span<const u8> image_path,
-    builtin::span<const u8> payload_path) -> builtin::HostExit {
+    builtin::span<const u8> payload_path, builtin::span<const u8> cases_path) -> builtin::HostExit {
     const builtin::HostFileResult image = files.open_file(image_path);
     const builtin::HostFileResult input = files.open_file(payload_path);
+    const builtin::HostFileResult cases = files.open_file(cases_path);
     i64 at = 0;
     if (image.status != builtin::HostStatus::success || image.size % 512u64 != 0u64 || input.status
-        != builtin::HostStatus::success || input.size > 4097u64) {
+        != builtin::HostStatus::success || input.size > 4097u64 || cases.status != builtin::HostStatus::success
+        || cases.size == 0u64 || cases.size > 496u64 || cases.size % 16u64 != 0u64) {
         return builtin::HostExit::failure;
     }
+    const builtin::HostChunk batch = files.read(cases.id, 0u64);
+    if (batch.status != builtin::HostStatus::success || batch.count != cases.size) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::array<u8, 504> rows = batch.bytes;
+    const builtin::span<const u8> case_bytes = borrow_bytes(rows);
+    files.close(cases.id);
     builtin::OwnedBytes cache = region.try_allocate(49152);
     const fs::XfsLogTopology topology = fs::XfsLogTopology();
     const fs::XfsRecoveryConfig config = fs::XfsRecoveryConfig(image.size / 512u64,
@@ -325,8 +334,6 @@ auto mounted_commit(builtin::HostFiles& files, builtin::ByteRegion region, built
     fs::XfsCoreRecoveryPlan clean = fs::XfsCoreRecoveryPlan(region, move(cache), config, topology);
     builtin::OwnedBytes sector = region.try_allocate(512);
     builtin::OwnedBytes payload = region.try_allocate(i64(input.size));
-    builtin::OwnedBytes commit_cache = region.try_allocate(16384);
-    fs::XfsMountedCommitPlan commit = fs::XfsMountedCommitPlan(region, move(commit_cache));
     if (!sector.ok() || !payload.ok()) {
         return builtin::HostExit::failure;
     }
@@ -363,284 +370,339 @@ auto mounted_commit(builtin::HostFiles& files, builtin::ByteRegion region, built
         }
         copied = copied + chunk.count;
     }
-    const fs::XfsCommitCleanFacts facts = fs::xfs_commit_clean_facts(clean);
-    if (!fs::copy_xfs_mounted_inputs(commit, clean) || !commit.begin_allocation(facts)) {
-        return builtin::HostExit::failure;
-    }
-    while (commit.allocation_lba() != 0u64) {
-        const u64 lba = commit.allocation_lba();
-        const storage::SectorReadResult read = image_sector(files, image.id, lba);
-        const storage::Sector512 loaded = read.sector_or_zero();
-        i64 position = 0;
-        while (position < 512) {
-            const std::ByteReadResult byte = loaded.read_byte(position);
-            sector.set(position, u8(byte.value_or(0u64)));
-            position = position + 1;
-        }
-        if (read.status() != storage::SectorIoStatus::success || !commit.accept_allocation(lba, borrow_bytes(sector))) {
-            files.print(builtin::HostStream::stderr, "allocation-preflight-refused\n");
+    // Case rows select payload prefixes and append-response faults. The clean
+    // owner stays unchanged; every row owns a fresh commit plan and admission.
+    const builtin::span<const u8> input_bytes = borrow_bytes(payload);
+    u64 row = 0u64;
+    while (row < cases.size) {
+        const std::ByteReadResult size_field = std::read_le64(case_bytes, i64(row));
+        const std::ByteReadResult append_field = std::read_le64(case_bytes, i64(row + 8u64));
+        const u64 size = size_field.value_or(4098u64);
+        const u64 bad_append = append_field.value_or(18446744073709551615u64);
+        if (size > input.size || (bad_append != 0u64 && (bad_append < 524361u64 || bad_append > 524367u64))) {
             return builtin::HostExit::failure;
         }
-    }
-    if (!commit.admit_files(facts)) {
-        files.print(builtin::HostStream::stderr, "commit-prepare-refused\n");
-        return builtin::HostExit::failure;
-    }
-    while (commit.append_lba() != 0u64) {
-        const u64 lba = commit.append_lba();
-        const storage::SectorReadResult read = image_sector(files, image.id, lba);
-        const storage::Sector512 loaded = read.sector_or_zero();
-        i64 position = 0;
-        while (position < 512) {
-            const std::ByteReadResult byte = loaded.read_byte(position);
-            sector.set(position, u8(byte.value_or(0u64)));
-            position = position + 1;
-        }
-        if (read.status() != storage::SectorIoStatus::success || !commit.accept_append(lba, borrow_bytes(sector))) {
-            files.print(builtin::HostStream::stderr, "append-preflight-refused\n");
+        const builtin::span<const u8> selected = input_bytes.subspan(0, i64(size));
+        builtin::OwnedBytes commit_cache = region.try_allocate(16384);
+        fs::XfsMountedCommitPlan commit = fs::XfsMountedCommitPlan(region, move(commit_cache));
+        u64 outcome = 0u64;
+        const fs::XfsCommitCleanFacts facts = fs::xfs_commit_clean_facts(clean);
+        if (!fs::copy_xfs_mounted_inputs(commit, clean) || !commit.begin_allocation(facts)) {
             return builtin::HostExit::failure;
         }
-    }
-    if (!commit.prepare(facts, borrow_bytes(payload)) || !commit.ready()) {
-        return builtin::HostExit::failure;
-    }
-    if (input.size == 777u64) {
-        // Negative confirmation cases reuse this full clean proof and only
-        // repeat the small fixed-profile admission, not the full log scan.
-        u64 fault = 0u64;
-        while (fault < 22u64) {
-            builtin::OwnedBytes trial_cache = region.try_allocate(16384);
-            fs::XfsMountedCommitPlan trial = fs::XfsMountedCommitPlan(region, move(trial_cache));
-            const fs::XfsMountedContinuationFacts empty = trial.continuation();
-            if (empty.head != 0u64) {
+        while (commit.allocation_lba() != 0u64) {
+            const u64 lba = commit.allocation_lba();
+            const storage::SectorReadResult read = image_sector(files, image.id, lba);
+            const storage::Sector512 loaded = read.sector_or_zero();
+            i64 position = 0;
+            while (position < 512) {
+                const std::ByteReadResult byte = loaded.read_byte(position);
+                sector.set(position, u8(byte.value_or(0u64)));
+                position = position + 1;
+            }
+            if (read.status() != storage::SectorIoStatus::success || !commit.accept_allocation(lba,
+                borrow_bytes(sector))) {
+                files.print(builtin::HostStream::stderr, "allocation-preflight-refused\n");
                 return builtin::HostExit::failure;
             }
-            const fs::XfsCommitCleanFacts facts = fs::xfs_commit_clean_facts(clean);
-            if (!fs::copy_xfs_mounted_inputs(trial, clean) || !trial.begin_allocation(facts)) {
+        }
+        if (!commit.admit_files(facts)) {
+            files.print(builtin::HostStream::stderr, "commit-prepare-refused\n");
+            return builtin::HostExit::failure;
+        }
+        while (commit.append_lba() != 0u64 && outcome == 0u64) {
+            const u64 lba = commit.append_lba();
+            const storage::SectorReadResult read = image_sector(files, image.id, lba);
+            const storage::Sector512 loaded = read.sector_or_zero();
+            i64 position = 0;
+            while (position < 512) {
+                const std::ByteReadResult byte = loaded.read_byte(position);
+                sector.set(position, u8(byte.value_or(0u64)));
+                position = position + 1;
+            }
+            if (read.status() != storage::SectorIoStatus::success) {
                 return builtin::HostExit::failure;
             }
-            while (trial.allocation_lba() != 0u64) {
-                const u64 lba = trial.allocation_lba();
-                const storage::SectorReadResult read = image_sector(files, image.id, lba);
-                const storage::Sector512 loaded = read.sector_or_zero();
-                i64 position = 0;
+            // Consumer-response fault after the unchanged image's authentic clean
+            // proof, not a claim that a mutated disk passed a fresh preflight.
+            if (lba == bad_append) {
+                position = 0;
                 while (position < 512) {
-                    const std::ByteReadResult byte = loaded.read_byte(position);
-                    sector.set(position, u8(byte.value_or(0u64)));
+                    sector.set(position, 0u8);
                     position = position + 1;
                 }
-                if (read.status() != storage::SectorIoStatus::success || !trial.accept_allocation(lba,
-                    borrow_bytes(sector))) {
-                    files.print(builtin::HostStream::stderr, "allocation-preflight-refused\n");
+            }
+            if (!commit.accept_append(lba, borrow_bytes(sector))) {
+                if (lba != bad_append) {
+                    return builtin::HostExit::failure;
+                }
+                outcome = 2u64;
+            }
+        }
+        if (outcome == 0u64) {
+            const bool prepared = commit.prepare(facts, selected);
+            if (!prepared) {
+                if (size != 0u64 && size != 4097u64) {
+                    return builtin::HostExit::failure;
+                }
+                outcome = 1u64;
+            } else {
+                if (!commit.ready()) {
                     return builtin::HostExit::failure;
                 }
             }
-            if (!trial.admit_files(facts)) {
-                files.print(builtin::HostStream::stderr, "commit-prepare-refused\n");
-                return builtin::HostExit::failure;
-            }
-            while (trial.append_lba() != 0u64) {
-                const u64 lba = trial.append_lba();
-                const storage::SectorReadResult read = image_sector(files, image.id, lba);
-                const storage::Sector512 loaded = read.sector_or_zero();
-                i64 position = 0;
-                while (position < 512) {
-                    const std::ByteReadResult byte = loaded.read_byte(position);
-                    sector.set(position, u8(byte.value_or(0u64)));
-                    position = position + 1;
+        }
+        if (outcome == 0u64) {
+            if (size == 777u64) {
+                // Negative confirmation cases reuse this full clean proof and only
+                // repeat the small fixed-profile admission, not the full log scan.
+                u64 fault = 0u64;
+                while (fault < 22u64) {
+                    builtin::OwnedBytes trial_cache = region.try_allocate(16384);
+                    fs::XfsMountedCommitPlan trial = fs::XfsMountedCommitPlan(region, move(trial_cache));
+                    const fs::XfsMountedContinuationFacts empty = trial.continuation();
+                    if (empty.head != 0u64) {
+                        return builtin::HostExit::failure;
+                    }
+                    const fs::XfsCommitCleanFacts facts = fs::xfs_commit_clean_facts(clean);
+                    if (!fs::copy_xfs_mounted_inputs(trial, clean) || !trial.begin_allocation(facts)) {
+                        return builtin::HostExit::failure;
+                    }
+                    while (trial.allocation_lba() != 0u64) {
+                        const u64 lba = trial.allocation_lba();
+                        const storage::SectorReadResult read = image_sector(files, image.id, lba);
+                        const storage::Sector512 loaded = read.sector_or_zero();
+                        i64 position = 0;
+                        while (position < 512) {
+                            const std::ByteReadResult byte = loaded.read_byte(position);
+                            sector.set(position, u8(byte.value_or(0u64)));
+                            position = position + 1;
+                        }
+                        if (read.status() != storage::SectorIoStatus::success || !trial.accept_allocation(lba,
+                            borrow_bytes(sector))) {
+                            files.print(builtin::HostStream::stderr, "allocation-preflight-refused\n");
+                            return builtin::HostExit::failure;
+                        }
+                    }
+                    if (!trial.admit_files(facts)) {
+                        files.print(builtin::HostStream::stderr, "commit-prepare-refused\n");
+                        return builtin::HostExit::failure;
+                    }
+                    while (trial.append_lba() != 0u64) {
+                        const u64 lba = trial.append_lba();
+                        const storage::SectorReadResult read = image_sector(files, image.id, lba);
+                        const storage::Sector512 loaded = read.sector_or_zero();
+                        i64 position = 0;
+                        while (position < 512) {
+                            const std::ByteReadResult byte = loaded.read_byte(position);
+                            sector.set(position, u8(byte.value_or(0u64)));
+                            position = position + 1;
+                        }
+                        if (read.status() != storage::SectorIoStatus::success || !trial.accept_append(lba,
+                            borrow_bytes(sector))) {
+                            files.print(builtin::HostStream::stderr, "append-preflight-refused\n");
+                            return builtin::HostExit::failure;
+                        }
+                    }
+                    if (!trial.prepare(facts, selected) || !trial.ready()) {
+                        return builtin::HostExit::failure;
+                    }
+                    if (!confirm_mounted_plan(trial, fault)) {
+                        return builtin::HostExit::failure;
+                    }
+                    const fs::XfsMountedContinuationFacts absent = trial.continuation();
+                    if (absent.head != 0u64) {
+                        return builtin::HostExit::failure;
+                    }
+                    fault = fault + 1u64;
                 }
-                if (read.status() != storage::SectorIoStatus::success || !trial.accept_append(lba,
-                    borrow_bytes(sector))) {
-                    files.print(builtin::HostStream::stderr, "append-preflight-refused\n");
+            }
+            u64 ordinal = 0u64;
+            while (ordinal < 16u64) {
+                const fs::XfsRecoveryWrite write = commit.write_at(ordinal);
+                const storage::Sector512 bytes = write.sector_or_zero();
+                std::BinaryBuffer64 coordinate = std::BinaryBuffer64();
+                coordinate.write_le64(0, write.lba());
+                u64 fence = 0u64;
+                if (commit.flush_after(ordinal)) {
+                    fence = 1u64;
+                }
+                coordinate.write_le64(8, fence);
+                at = 0;
+                while (at < 512) {
+                    const std::ByteReadResult byte = bytes.read_byte(at);
+                    sector.set(at, u8(byte.value_or(0u64)));
+                    at = at + 1;
+                }
+                if (!write.valid() || files.print(builtin::HostStream::stdout, coordinate.bytes(0, 16))
+                    != builtin::HostStatus::success || files.print(builtin::HostStream::stdout, borrow_bytes(sector))
+                    != builtin::HostStatus::success) {
                     return builtin::HostExit::failure;
                 }
+                ordinal = ordinal + 1u64;
             }
-            if (!trial.prepare(facts, borrow_bytes(payload)) || !trial.ready()) {
-                return builtin::HostExit::failure;
+            if (size == 777u64) {
+                if (!confirm_mounted_plan(commit, 22u64)) {
+                    return builtin::HostExit::failure;
+                }
+                const fs::XfsMountedContinuationFacts confirmed = commit.continuation();
+                builtin::OwnedBytes mount_cache = region.try_allocate(1536);
+                const fs::XfsLogTopology mount_topology = fs::XfsLogTopology();
+                fs::XfsReadonlyMount mount = fs::XfsReadonlyMount(region, move(mount_cache), image.size / 512u64,
+                    fs::XfsReadonlyProfile::linux_6_12_x86_64_clean, mount_topology);
+                u64 phase = 0u64;
+                while (phase < 4u64) {
+                    u64 reads = 0u64;
+                    while (mount.needs_read()) {
+                        const u64 lba = mount.requested_lba();
+                        u64 selected_lba = lba;
+                        if (phase == 0u64) {
+                            selected_lba = 18446744073709551615u64;
+                        }
+                        const fs::XfsRecoveryWrite planned = mounted_planned_sector(commit, selected_lba);
+                        if (planned.valid()) {
+                            const storage::Sector512 bytes = planned.sector_or_zero();
+                            i64 at = 0;
+                            while (at < 512) {
+                                const std::ByteReadResult byte = bytes.read_byte(at);
+                                sector.set(at, u8(byte.value_or(0u64)));
+                                at = at + 1;
+                            }
+                        } else {
+                            const storage::SectorReadResult read = image_sector(files, image.id, lba);
+                            if (read.status() != storage::SectorIoStatus::success) {
+                                return builtin::HostExit::failure;
+                            }
+                            const storage::Sector512 bytes = read.sector_or_zero();
+                            i64 at = 0;
+                            while (at < 512) {
+                                const std::ByteReadResult byte = bytes.read_byte(at);
+                                sector.set(at, u8(byte.value_or(0u64)));
+                                at = at + 1;
+                            }
+                        }
+                        mount.accept(lba, storage::SectorIoStatus::success, borrow_bytes(sector));
+                        reads = reads + 1u64;
+                    }
+                    if (phase == 0u64) {
+                        if (mount.status() != fs::XfsMountStatus::ready) {
+                            return builtin::HostExit::failure;
+                        }
+                        u64 variant = 0u64;
+                        while (variant < 4u64) {
+                            fs::XfsMountedContinuationFacts wrong = confirmed;
+                            if (variant == 0u64) {
+                                wrong.head = 0u64;
+                            }
+                            if (variant == 1u64) {
+                                wrong.head = wrong.head + 1u64;
+                            }
+                            if (variant == 2u64) {
+                                wrong.latest = wrong.latest + 1u64;
+                            }
+                            if (variant == 3u64) {
+                                wrong.capacity = wrong.capacity + 1u64;
+                            }
+                            if (mount.continue_mounted(wrong, commit.original_superblock(), commit.original_root(),
+                                commit.completion_header(), commit.completion_body()) || mount.status()
+                                != fs::XfsMountStatus::ready) {
+                                return builtin::HostExit::failure;
+                            }
+                            variant = variant + 1u64;
+                        }
+                        if (mount.continue_mounted(confirmed, "", commit.original_root(), commit.completion_header(),
+                            commit.completion_body()) || mount.status() != fs::XfsMountStatus::ready) {
+                            return builtin::HostExit::failure;
+                        }
+                        variant = 0u64;
+                        while (variant < 4u64) {
+                            i64 at = 0;
+                            while (at < 512) {
+                                u8 byte = 0u8;
+                                if (variant == 0u64) {
+                                    const builtin::span<const u8> bytes = commit.original_superblock();
+                                    byte = bytes.at(at);
+                                }
+                                if (variant == 1u64) {
+                                    const builtin::span<const u8> bytes = commit.original_root();
+                                    byte = bytes.at(at);
+                                }
+                                if (variant == 2u64) {
+                                    const builtin::span<const u8> bytes = commit.completion_header();
+                                    byte = bytes.at(at);
+                                }
+                                if (variant == 3u64) {
+                                    const builtin::span<const u8> bytes = commit.completion_body();
+                                    byte = bytes.at(at);
+                                }
+                                sector.set(at, byte);
+                                at = at + 1;
+                            }
+                            sector.set(32, sector.at(32) ^ 1u8);
+                            bool accepted = false;
+                            if (variant == 0u64) {
+                                accepted = mount.continue_mounted(confirmed, borrow_bytes(sector),
+                                    commit.original_root(), commit.completion_header(), commit.completion_body());
+                            }
+                            if (variant == 1u64) {
+                                accepted = mount.continue_mounted(confirmed, commit.original_superblock(),
+                                    borrow_bytes(sector), commit.completion_header(), commit.completion_body());
+                            }
+                            if (variant == 2u64) {
+                                accepted = mount.continue_mounted(confirmed, commit.original_superblock(),
+                                    commit.original_root(), borrow_bytes(sector), commit.completion_body());
+                            }
+                            if (variant == 3u64) {
+                                accepted = mount.continue_mounted(confirmed, commit.original_superblock(),
+                                    commit.original_root(), commit.completion_header(), borrow_bytes(sector));
+                            }
+                            if (accepted || mount.status() != fs::XfsMountStatus::ready) {
+                                return builtin::HostExit::failure;
+                            }
+                            variant = variant + 1u64;
+                        }
+                        if (!mount.continue_mounted(confirmed, commit.original_superblock(), commit.original_root(),
+                            commit.completion_header(), commit.completion_body())) {
+                            return builtin::HostExit::failure;
+                        }
+                    }
+                    if (phase == 1u64) {
+                        if (reads != 3u64 || mount.status() != fs::XfsMountStatus::ready
+                            || mount.continue_mounted(confirmed, commit.original_superblock(), commit.original_root(),
+                            commit.completion_header(), commit.completion_body()) || !mount.read_file("hello", 0)) {
+                            return builtin::HostExit::failure;
+                        }
+                    }
+                    if (phase == 2u64) {
+                        const storage::Sector512 bytes = mount.sector_or_zero();
+                        const std::ByteReadResult first = bytes.read_byte(0);
+                        if (reads != 2u64 || mount.file_size() != 777u64 || first.value_or(0u64) != 91u64
+                            || !mount.read_inode(99u64, 0)) {
+                            return builtin::HostExit::failure;
+                        }
+                    }
+                    if (phase == 3u64) {
+                        const storage::Sector512 bytes = mount.sector_or_zero();
+                        const std::ByteReadResult first = bytes.read_byte(0);
+                        if (reads != 2u64 || mount.file_size() != 64u64 || first.value_or(0u64) != 11u64) {
+                            return builtin::HostExit::failure;
+                        }
+                    }
+                    phase = phase + 1u64;
+                }
             }
-            if (!confirm_mounted_plan(trial, fault)) {
-                return builtin::HostExit::failure;
-            }
-            const fs::XfsMountedContinuationFacts absent = trial.continuation();
-            if (absent.head != 0u64) {
-                return builtin::HostExit::failure;
-            }
-            fault = fault + 1u64;
         }
-    }
-    u64 ordinal = 0u64;
-    while (ordinal < 16u64) {
-        const fs::XfsRecoveryWrite write = commit.write_at(ordinal);
-        const storage::Sector512 bytes = write.sector_or_zero();
-        std::BinaryBuffer64 coordinate = std::BinaryBuffer64();
-        coordinate.write_le64(0, write.lba());
-        u64 fence = 0u64;
-        if (commit.flush_after(ordinal)) {
-            fence = 1u64;
-        }
-        coordinate.write_le64(8, fence);
-        at = 0;
-        while (at < 512) {
-            const std::ByteReadResult byte = bytes.read_byte(at);
-            sector.set(at, u8(byte.value_or(0u64)));
-            at = at + 1;
-        }
-        if (!write.valid() || files.print(builtin::HostStream::stdout, coordinate.bytes(0, 16))
-            != builtin::HostStatus::success || files.print(builtin::HostStream::stdout, borrow_bytes(sector))
-            != builtin::HostStatus::success) {
+        // Accepted rows carry the unchanged sixteen records; refused rows
+        // carry no plan. The trailer identifies the actual refusal phase.
+        if (outcome != 0u64 && commit.ready()) {
             return builtin::HostExit::failure;
         }
-        ordinal = ordinal + 1u64;
-    }
-    if (input.size == 777u64) {
-        if (!confirm_mounted_plan(commit, 22u64)) {
+        std::BinaryBuffer64 result = std::BinaryBuffer64();
+        result.write_le64(0, outcome);
+        if (files.print(builtin::HostStream::stdout, result.bytes(0, 8)) != builtin::HostStatus::success) {
             return builtin::HostExit::failure;
         }
-        const fs::XfsMountedContinuationFacts confirmed = commit.continuation();
-        builtin::OwnedBytes mount_cache = region.try_allocate(1536);
-        const fs::XfsLogTopology mount_topology = fs::XfsLogTopology();
-        fs::XfsReadonlyMount mount = fs::XfsReadonlyMount(region, move(mount_cache), image.size / 512u64,
-            fs::XfsReadonlyProfile::linux_6_12_x86_64_clean, mount_topology);
-        u64 phase = 0u64;
-        while (phase < 4u64) {
-            u64 reads = 0u64;
-            while (mount.needs_read()) {
-                const u64 lba = mount.requested_lba();
-                u64 selected_lba = lba;
-                if (phase == 0u64) {
-                    selected_lba = 18446744073709551615u64;
-                }
-                const fs::XfsRecoveryWrite planned = mounted_planned_sector(commit, selected_lba);
-                if (planned.valid()) {
-                    const storage::Sector512 bytes = planned.sector_or_zero();
-                    i64 at = 0;
-                    while (at < 512) {
-                        const std::ByteReadResult byte = bytes.read_byte(at);
-                        sector.set(at, u8(byte.value_or(0u64)));
-                        at = at + 1;
-                    }
-                } else {
-                    const storage::SectorReadResult read = image_sector(files, image.id, lba);
-                    if (read.status() != storage::SectorIoStatus::success) {
-                        return builtin::HostExit::failure;
-                    }
-                    const storage::Sector512 bytes = read.sector_or_zero();
-                    i64 at = 0;
-                    while (at < 512) {
-                        const std::ByteReadResult byte = bytes.read_byte(at);
-                        sector.set(at, u8(byte.value_or(0u64)));
-                        at = at + 1;
-                    }
-                }
-                mount.accept(lba, storage::SectorIoStatus::success, borrow_bytes(sector));
-                reads = reads + 1u64;
-            }
-            if (phase == 0u64) {
-                if (mount.status() != fs::XfsMountStatus::ready) {
-                    return builtin::HostExit::failure;
-                }
-                u64 variant = 0u64;
-                while (variant < 4u64) {
-                    fs::XfsMountedContinuationFacts wrong = confirmed;
-                    if (variant == 0u64) {
-                        wrong.head = 0u64;
-                    }
-                    if (variant == 1u64) {
-                        wrong.head = wrong.head + 1u64;
-                    }
-                    if (variant == 2u64) {
-                        wrong.latest = wrong.latest + 1u64;
-                    }
-                    if (variant == 3u64) {
-                        wrong.capacity = wrong.capacity + 1u64;
-                    }
-                    if (mount.continue_mounted(wrong, commit.original_superblock(), commit.original_root(),
-                        commit.completion_header(), commit.completion_body()) || mount.status()
-                        != fs::XfsMountStatus::ready) {
-                        return builtin::HostExit::failure;
-                    }
-                    variant = variant + 1u64;
-                }
-                if (mount.continue_mounted(confirmed, "", commit.original_root(), commit.completion_header(),
-                    commit.completion_body()) || mount.status() != fs::XfsMountStatus::ready) {
-                    return builtin::HostExit::failure;
-                }
-                variant = 0u64;
-                while (variant < 4u64) {
-                    i64 at = 0;
-                    while (at < 512) {
-                        u8 byte = 0u8;
-                        if (variant == 0u64) {
-                            const builtin::span<const u8> bytes = commit.original_superblock();
-                            byte = bytes.at(at);
-                        }
-                        if (variant == 1u64) {
-                            const builtin::span<const u8> bytes = commit.original_root();
-                            byte = bytes.at(at);
-                        }
-                        if (variant == 2u64) {
-                            const builtin::span<const u8> bytes = commit.completion_header();
-                            byte = bytes.at(at);
-                        }
-                        if (variant == 3u64) {
-                            const builtin::span<const u8> bytes = commit.completion_body();
-                            byte = bytes.at(at);
-                        }
-                        sector.set(at, byte);
-                        at = at + 1;
-                    }
-                    sector.set(32, sector.at(32) ^ 1u8);
-                    bool accepted = false;
-                    if (variant == 0u64) {
-                        accepted = mount.continue_mounted(confirmed, borrow_bytes(sector), commit.original_root(),
-                            commit.completion_header(), commit.completion_body());
-                    }
-                    if (variant == 1u64) {
-                        accepted = mount.continue_mounted(confirmed, commit.original_superblock(), borrow_bytes(sector),
-                            commit.completion_header(), commit.completion_body());
-                    }
-                    if (variant == 2u64) {
-                        accepted = mount.continue_mounted(confirmed, commit.original_superblock(),
-                            commit.original_root(), borrow_bytes(sector), commit.completion_body());
-                    }
-                    if (variant == 3u64) {
-                        accepted = mount.continue_mounted(confirmed, commit.original_superblock(),
-                            commit.original_root(), commit.completion_header(), borrow_bytes(sector));
-                    }
-                    if (accepted || mount.status() != fs::XfsMountStatus::ready) {
-                        return builtin::HostExit::failure;
-                    }
-                    variant = variant + 1u64;
-                }
-                if (!mount.continue_mounted(confirmed, commit.original_superblock(), commit.original_root(),
-                    commit.completion_header(), commit.completion_body())) {
-                    return builtin::HostExit::failure;
-                }
-            }
-            if (phase == 1u64) {
-                if (reads != 3u64 || mount.status() != fs::XfsMountStatus::ready || mount.continue_mounted(confirmed,
-                    commit.original_superblock(), commit.original_root(), commit.completion_header(),
-                    commit.completion_body()) || !mount.read_file("hello", 0)) {
-                    return builtin::HostExit::failure;
-                }
-            }
-            if (phase == 2u64) {
-                const storage::Sector512 bytes = mount.sector_or_zero();
-                const std::ByteReadResult first = bytes.read_byte(0);
-                if (reads != 2u64 || mount.file_size() != 777u64 || first.value_or(0u64) != 91u64
-                    || !mount.read_inode(99u64, 0)) {
-                    return builtin::HostExit::failure;
-                }
-            }
-            if (phase == 3u64) {
-                const storage::Sector512 bytes = mount.sector_or_zero();
-                const std::ByteReadResult first = bytes.read_byte(0);
-                if (reads != 2u64 || mount.file_size() != 64u64 || first.value_or(0u64) != 11u64) {
-                    return builtin::HostExit::failure;
-                }
-            }
-            phase = phase + 1u64;
-        }
+        row = row + 16u64;
     }
     files.close(input.id);
     files.close(image.id);
@@ -704,7 +766,16 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
         while (at < arguments.size() && arguments.at(at) != 0u8) {
             at = at + 1;
         }
-        return mounted_commit(files, region, path, arguments.subspan(payload_begin, at - payload_begin));
+        const builtin::span<const u8> payload_path = arguments.subspan(payload_begin, at - payload_begin);
+        const i64 cases_begin = at + 1;
+        at = cases_begin;
+        while (at < arguments.size() && arguments.at(at) != 0u8) {
+            at = at + 1;
+        }
+        if (cases_begin >= arguments.size()) {
+            return builtin::HostExit::usage;
+        }
+        return mounted_commit(files, region, path, payload_path, arguments.subspan(cases_begin, at - cases_begin));
     }
     u64 fault = 0u64;
     if (at + 1 < arguments.size()) {
