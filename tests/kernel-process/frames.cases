@@ -334,3 +334,78 @@ op release 6 0 17
 op release 5 1 18
 op audit
 end
+
+# Rejections before commit preserve the source ledger and next allocation.
+case source-atomic-denials
+arena 0x800000
+desc 1 0x800000 0x200
+desc 7 0xa00000 0x10
+op allocate 0
+op allocate 15
+op allocate 4294967296
+op audit
+op allocate 16
+op release 5 1 16
+op release 5 0 17
+op release 16 0 16
+op owner 16
+op audit
+op release 5 0 16
+op audit
+op finish
+end
+
+# The source allocator retires a last-generation record rather than reusing it.
+case source-generation-retirement
+arena 0x800000
+desc 1 0x800000 0x200
+desc 7 0xa00000 0x10
+op allocate 16
+op corrupt-record 5 10fffffff2
+op release 5 268435455 16
+op release 5 268435455 16
+op audit
+op allocate 17
+op release 6 0 17
+op audit
+op finish
+end
+
+# A corrupt free-list head poisons without committing an allocation or count.
+case source-out-of-range-link
+arena 0x800000
+desc 1 0x800000 0x200
+desc 7 0xa00000 0x10
+op corrupt-record 5 1100000001
+op allocate 16
+op owner 16
+op audit
+end
+
+# The complete source audit must terminate on a cycle and reject it.
+case source-cyclic-link
+arena 0x800000
+desc 1 0x800000 0x200
+desc 7 0xa00000 0x10
+op corrupt-record 5 600000001
+op audit
+end
+
+# Native fixed-backing grant authority, separate from allocator policy.
+grant-case roundtrip
+grant-case empty
+grant-case duplicate
+grant-case wrong-root
+grant-case detached
+grant-case wrong-bank
+grant-case wrong-extent
+grant-case revoked
+grant-case reentrant
+grant-case suspend-live
+grant-case readonly-write
+grant-case borrowed-finish
+grant-case foreign
+grant-case stale
+grant-case bounds
+grant-case root-overlap
+grant-case root-overflow

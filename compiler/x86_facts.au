@@ -434,7 +434,7 @@ export namespace compiler_x86 {
             const CallFact row = workspace.call_at(at);
             if (row.function() < 0 || row.function() >= workspace.function_count() || row.kind() < 0 || row.kind() > 2
                 || !fact_name_valid(workspace, metadata, row.kind(), row.symbol()) || row.live() < 8 || row.arguments()
-                < -1 || row.maximum() < -1 || (row.arguments() == -1) != (row.maximum() == -1) || (row.arguments() >= 0
+                < -1 || row.maximum() < -2 || (row.arguments() == -1) != (row.maximum() == -1) || (row.arguments() >= 0
                 && row.kind() != 2)) {
                 return workspace.fail();
             }
@@ -612,7 +612,11 @@ export namespace compiler_x86 {
                     workspace.text("{\"sysv_arguments\":");
                     workspace.number(arguments);
                     workspace.text(",\"result_max\":");
-                    workspace.number(maximum);
+                    if (maximum == -2) {
+                        workspace.text("18446744073709551615");
+                    } else {
+                        workspace.number(maximum);
+                    }
                     workspace.byte('}');
                 } else {
                     workspace.number(live);

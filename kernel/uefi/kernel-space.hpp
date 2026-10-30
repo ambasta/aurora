@@ -56,7 +56,7 @@ private:
     std::array<U64, 512> root_snapshot_{};
     Plan plan_{};
     U64 volume_physical_ = 0;
-    bool built_ = false, detached_ = false;
+    bool built_ = false, detached_ = false, records_handed_ = false;
     U64 saved_extension_ = 0;
 
     [[nodiscard]] static auto table(U64 address) -> volatile U64 * {
@@ -141,10 +141,28 @@ public:
         built_ = true;
         return true;
     }
-    [[nodiscard]] auto metadata(U64 frames) const -> std::span<U64> {
-        if (!built_ || frames * 8 > plan_.records * frames::page)
-            return {};
-        return {reinterpret_cast<U64 *>(metadata_base), frames};
+    // The records bank has one owner. No mutable span escapes after handoff;
+    // mapping words and process records are separate still-native banks.
+    [[nodiscard]] auto handoff_records(frames::Table &owner, const frames::Ranges &ranges) -> bool {
+        if (!built_ || detached_ || records_handed_ || !ranges.frames() ||
+            ranges.frames() > plan_.records * frames::page / sizeof(U64))
+            return false;
+        auto records = std::span<U64>{reinterpret_cast<U64 *>(metadata_base), ranges.frames()};
+        for (auto &record : records)
+            record = 0;
+        records_handed_ = true;
+        return owner.bind(records, ranges, plan_.tables, plan_.metadata);
+    }
+    [[nodiscard]] auto attached() const -> bool {
+        return built_ && !detached_;
+    }
+    // Reachability comes from the existing physical plan. The source allocator
+    // is still suspended while this mapping-only check runs.
+    [[nodiscard]] auto resume_records(frames::Table &owner, const frames::Ranges &ranges, U64 used) const -> bool {
+        if (!records_handed_ || !verify_mapping(ranges, used))
+            return false;
+        owner.resume(reinterpret_cast<const U64 *>(metadata_base), ranges.frames());
+        return true;
     }
     // The mapping words: what each frame holds in a process (process-space.hpp).
     [[nodiscard]] auto mappings(U64 frames) const -> std::span<U64> {
@@ -215,7 +233,7 @@ public:
     // Every extension entry exact, every table and metadata page a kernel frame
     // of its owner, volume pages outside the frame inventory, the window closed
     // and the remaining root entries those the boot verifier admitted.
-    [[nodiscard]] auto verify(const frames::Table &frames, const frames::Ranges &ranges, U64 used) const -> bool {
+    [[nodiscard]] auto verify_mapping(const frames::Ranges &ranges, U64 used) const -> bool {
         if (!built_ || detached_ || PageTables{root_, used}.window_slot() != window_ || window_[0])
             return false;
         for (U64 index = 0; index < 512; ++index) {
@@ -224,19 +242,9 @@ public:
             if (entry(table(root_), index) != expected)
                 return false;
         }
-        const auto kernel = [&](U64 index, U64 owner) {
-            const auto record = frames.record(index);
-            return frames::state(record) == static_cast<U64>(frames::State::kernel) && frames::word(record) == owner;
-        };
         const auto physical = [&](U64 index) {
             return *ranges.address(index);
         };
-        for (U64 index = 0; index < plan_.tables; ++index)
-            if (!kernel(index, frames::owner_tables))
-                return false;
-        for (U64 index = 0; index < plan_.metadata; ++index)
-            if (!kernel(plan_.tables + index, frames::owner_metadata))
-                return false;
         if (!exact(window_, first_view_slot + plan_.tables, [&](U64 slot) {
                 return slot >= first_view_slot ? physical(slot - first_view_slot) | data_flags : 0;
             }))
@@ -271,6 +279,21 @@ public:
                 return false;
         for (U64 page = 0; page < plan_.volume; ++page)
             if (ranges.index(volume_physical_ + page * frames::page))
+                return false;
+        return true;
+    }
+    [[nodiscard]] auto verify(const frames::Table &frames, const frames::Ranges &ranges, U64 used) const -> bool {
+        if (!verify_mapping(ranges, used))
+            return false;
+        const auto kernel = [&](U64 index, U64 owner) {
+            const auto record = frames.record(index);
+            return frames::state(record) == static_cast<U64>(frames::State::kernel) && frames::word(record) == owner;
+        };
+        for (U64 index = 0; index < plan_.tables; ++index)
+            if (!kernel(index, frames::owner_tables))
+                return false;
+        for (U64 index = 0; index < plan_.metadata; ++index)
+            if (!kernel(plan_.tables + index, frames::owner_metadata))
                 return false;
         return true;
     }

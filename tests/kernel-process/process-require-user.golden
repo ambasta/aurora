@@ -1,0 +1,2 @@
+1 bin/hostile hostile require	invalid_opcode vector=6 error=0
+2 bin/hostile hostile	exit 0

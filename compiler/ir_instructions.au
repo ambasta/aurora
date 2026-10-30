@@ -97,7 +97,7 @@ export namespace compiler_ir_instructions {
         i64 instruction = 0;
         while (instruction < store.instruction_count()) {
             const RawInstructionRow row = store.instruction_at(instruction + 1);
-            if (row.kind() != 1 || row.form() < 0 || row.form() > 90 || !bounded_range(row.operand_begin(),
+            if (row.kind() != 1 || row.form() < 0 || row.form() > 91 || !bounded_range(row.operand_begin(),
                 row.operand_count(), store.operand_count()) || (row.operand_count() != 0 && row.operand_begin()
                 != next_operand)) {
                 return fail(store, InstructionError::integrity);
@@ -2117,6 +2117,12 @@ export namespace compiler_ir_instructions {
         i64 instruction) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
+        if (form == 91) {
+            if (row.operand_count() != 0) {
+                return fail(store, InstructionError::integrity);
+            }
+            return true;
+        }
         if (form == 5) {
             return verify_scalar_constant(store, metadata, instruction);
         }
@@ -2378,10 +2384,10 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::service_resource_shape);
         }
         const i64 parameters = compiler_catalog::resource_method_parameters(resource_kind, method);
-        if (parameters < 0 || parameters > 1) {
+        if (parameters < 0 || parameters > 2) {
             return fail(store, InstructionError::service_resource_shape);
         }
-        if (parameters == 1) {
+        if (parameters > 0) {
             const i64 type = compiler_catalog::resource_method_parameter(resource_kind, method);
             const i64 kind = compiler_ir_metadata::catalogue_kind(type);
             if ((kind != 0 && kind != 1 && kind != 7 && kind != 9 && kind != 10) || (kind == 9
@@ -2467,7 +2473,7 @@ export namespace compiler_ir_instructions {
         const i64 method = call_value(store, instruction, 2);
         if (method < 0 || method >= compiler_catalog::resource_method_count(kind)
             || compiler_catalog::resource_method_parameters(kind, method) < 0
-            || compiler_catalog::resource_method_parameters(kind, method) > 1) {
+            || compiler_catalog::resource_method_parameters(kind, method) > 2) {
             return fail(store, InstructionError::service_resource_shape);
         }
         const i64 effect = compiler_catalog::resource_method_effect(kind, method);

@@ -89,6 +89,43 @@ progress before consuming finish; native authentication and physical cleanup are
 unchanged. No asynchronous loan, arbitrary owning factory or retained child API
 is added.
 
+## Fixed-extent native word backing
+
+`builtin::OwnedWords` is an exclusive u64 backing grant, not a physical address
+or a frame-allocation handle. One private field may receive its exact native-owned
+input through an empty complete constructor. The stable native root contract
+retains the constructor and consuming receiver entry; ordinary source minting,
+construction, copying, extraction, resize/rebind, pointer adoption and escaping
+returns remain unavailable. It is separate from lexical issuer-backed leases
+and byte-region allocation.
+
+`size()` and `at(u64)` are readonly u64 observations; `set(u64,u64)` is a mutable
+checked operation returning bool. Arguments evaluate once in source order, with
+both set arguments independently typed and the root rechecked after evaluation.
+Only a consuming receiver may call `finish()`, returning bool after explicit
+revocation. The independent IR preserves live field ownership and constness;
+normal consuming returns discharge the grant. Full-u64 results and argument
+shapes remain represented in native ABI facts.
+
+The native adapter authenticates binding, epoch, extent, exact stable root and
+an admitted synchronous access scope before dereferencing. A retained grant can
+survive temporary unmapping, but all accesses are denied while suspended.
+Reattachment validates the same bank and mapping before restoring access, without
+reminting or reinitializing records. Revocation ends access, not the physical
+reservation of bootstrap metadata. Source FrameAllocator owns the allocation
+records/free list/counts/audit; the adapter owns no duplicate allocator ledger.
+
+## Always-on checked requirement
+
+`builtin::require(condition);` is a statement, not an expression or an optimizer
+assumption. It evaluates one exact bool once. True continues without changing
+ownership facts; false takes the existing fail-stop trap without cleanup or
+unwinding. It is never disabled by a build mode. No return value may be bound,
+returned or used as an argument. Independent IR requires a bool current value
+and clears it, while preserving all outstanding lifetime obligations even for a
+constant false requirement. The trap boundary, not the assertion syntax, decides
+whether a fault is a user-process termination or a kernel fail-stop.
+
 ## Runtime-sized byte ownership
 
 ### Source contract

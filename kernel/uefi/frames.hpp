@@ -1,11 +1,11 @@
 #pragma once
 // Physical frame allocator over all usable EfiConventionalMemory of the final
-// memory map (kernel/uefi/process.md#frames). The Aurora policies admit the map,
-// derive each descriptor's frames and decide every record transition; this
-// trusted storage keeps the sorted range table, the record words (8 bytes per
-// frame, in mapped metadata) and the intrusive free list, and applies only
-// decisions whose encoding it has checked. It never maps or touches a frame.
+// memory map (kernel/uefi/process.md#frames). Aurora owns the allocation
+// records, intrusive free list, counts, poisoning and audit. Native code keeps
+// immutable admitted address ranges and an opaque root/backing authority gate.
+// It never maps or touches an allocated frame.
 #include "process-policy.hpp"
+#include "../owned-words.hpp"
 #include <array>
 
 namespace aurora::uefi::frames {
@@ -193,191 +193,124 @@ inventory(std::span<const std::byte> map, U64 stride, U64 version, U64 arena, U6
     return result;
 }
 
-// Records for every inventoried frame; the first `reserved` indices are kernel
-// frames (tables, then metadata), every other frame starts free, in index order.
+// Only opaque source storage and its native backing grant remain here. Aurora
+// owns all record/free-list/count/poison state and complete allocation audits.
+class FrameAllocation final {
+public:
+    U64 index = 0, generation = 0, valid = 0;
+};
+class FrameAudit final {
+public:
+    U64 consistent = 0, free = 0, allocated = 0, kernel = 0, retired = 0;
+};
+extern "C" {
+void __au_runtime_frame_construct(void *, words::Descriptor *);
+bool __au_runtime_frame_initialize(void *, U64, U64);
+void __au_runtime_frame_allocate(void *, U64, FrameAllocation *);
+U64 __au_runtime_frame_release(void *, U64, U64, U64);
+U64 __au_runtime_frame_record(const void *, U64);
+U64 __au_runtime_frame_frames(const void *);
+U64 __au_runtime_frame_reserved(const void *);
+U64 __au_runtime_frame_free(const void *);
+U64 __au_runtime_frame_allocated(const void *);
+U64 __au_runtime_frame_owner_allocated(const void *, U64);
+bool __au_runtime_frame_poisoned(const void *);
+void __au_runtime_frame_audit(const void *, FrameAudit *);
+bool __au_runtime_frame_finish(void *);
+}
 class Table final {
-    std::span<U64> records_{};
+    alignas(16) std::array<std::byte, 96> storage_{};
+    mutable words::Binding binding_;
     const Ranges *ranges_ = nullptr;
-    U64 head_ = 0, free_ = 0, allocated_ = 0, reserved_ = 0;
-    bool poisoned_ = false;
-    // Exactly two simultaneous process owners. Counts are updated with the
-    // frame records and checked against a complete record walk by audit().
-    class Owner final {
-    public:
-        U64 id = 0, frames = 0;
-    };
-    std::array<Owner, 2> owners_{};
-
-    [[nodiscard]] auto owner_slot(U64 owner) const -> std::size_t {
-        for (std::size_t slot = 0; slot < owners_.size(); ++slot)
-            if (owners_[slot].id == owner)
-                return slot;
-        return owners_.size();
-    }
-
-    [[nodiscard]] auto apply(U64 index, const Decision &decision) -> Rejection {
-        if (decision.rejection == Rejection::malformed)
-            poisoned_ = true;
-        if (decision.rejection != Rejection::none)
-            return decision.rejection;
-        records_[index] = decision.record;
-        return Rejection::none;
+    static void require(bool condition) {
+        if (!condition)
+            words::fail();
     }
 
 public:
-    // Records must be zeroed, cover every frame and hold no table or metadata
-    // frame other than those the caller reserves at the lowest indices.
+    using Audit = FrameAudit;
+    Table() = default;
+    Table(const Table &) = delete;
+    auto operator=(const Table &) -> Table & = delete;
+    Table(Table &&) = delete;
+    auto operator=(Table &&) -> Table & = delete;
     [[nodiscard]] auto bind(std::span<U64> records, const Ranges &ranges, U64 tables, U64 metadata) -> bool {
-        if (ranges_ || records.size() != ranges.frames() || records.size() > 0xffffffffULL ||
-            tables + metadata >= records.size())
+        if (binding_.created() || records.size() != ranges.frames() || records.empty() ||
+            records.size() > 0xffffffffULL || tables >= records.size() || metadata >= records.size() - tables)
             return false;
-        for (const auto record : records)
-            if (record)
-                return false;
-        records_ = records;
+        auto input = binding_.bind(records, storage_.data(), storage_.size());
+        __au_runtime_frame_construct(storage_.data(), &input);
+        require(!input.binding && !input.epoch);
+        words::Binding::Scope scope(binding_, words::Access::write);
+        require(__au_runtime_frame_initialize(storage_.data(), tables, metadata));
         ranges_ = &ranges;
-        reserved_ = tables + metadata;
-        for (U64 index = 0; index < reserved_; ++index)
-            if (apply(index,
-                      transition(
-                          Operation::initialize_kernel, 0, index < tables ? owner_tables : owner_metadata, 0, 0)) !=
-                Rejection::none)
-                return false;
-        for (auto index = records.size(); index > reserved_; --index) {
-            if (apply(index - 1, transition(Operation::initialize_free, 0, 0, 0, head_)) != Rejection::none)
-                return false;
-            head_ = index;
-        }
-        free_ = records.size() - reserved_;
         return true;
     }
     [[nodiscard]] auto allocate(U64 owner) -> std::optional<Frame> {
-        if (poisoned_ || head_ == 0)
+        words::Binding::Scope scope(binding_, words::Access::write);
+        FrameAllocation result;
+        __au_runtime_frame_allocate(storage_.data(), owner, &result);
+        require(result.valid <= 1);
+        if (!result.valid)
             return std::nullopt;
-        auto slot = owner_slot(owner);
-        if (slot == owners_.size())
-            for (std::size_t at = 0; at < owners_.size(); ++at)
-                if (owners_[at].frames == 0) {
-                    slot = at;
-                    break;
-                }
-        if (slot == owners_.size())
-            return std::nullopt;
-        const auto index = head_ - 1;
-        if (index >= records_.size())
-            return std::nullopt;
-        const auto old = records_[index];
-        // The list head must name a free frame whose link stays in the table.
-        if (state(old) != static_cast<U64>(State::free) || word(old) > records_.size()) {
-            poisoned_ = true;
-            return std::nullopt;
-        }
-        if (apply(index, transition(Operation::allocate, old, owner, 0, 0)) != Rejection::none)
-            return std::nullopt;
-        head_ = word(old);
-        --free_;
-        ++allocated_;
-        owners_[slot].id = owner;
-        ++owners_[slot].frames;
-        return Frame{index, generation(old)};
+        require(ranges_ && result.index < ranges_->frames() && result.generation <= 0x0fffffffULL);
+        return Frame{result.index, result.generation};
     }
     [[nodiscard]] auto release(Frame frame, U64 owner) -> Rejection {
-        if (poisoned_)
-            return Rejection::malformed;
-        if (frame.index >= records_.size())
-            return Rejection::index;
-        auto decision = transition(Operation::release, records_[frame.index], owner, frame.generation, head_);
-        // The free list is this storage's: a freed record must link to the old head.
-        if (decision.rejection == Rejection::none && state(decision.record) == static_cast<U64>(State::free) &&
-            word(decision.record) != head_)
-            decision = {0, Rejection::malformed};
-        const auto slot = owner_slot(owner);
-        if (decision.rejection == Rejection::none && (slot == owners_.size() || !owners_[slot].frames))
-            decision = {0, Rejection::malformed};
-        const auto applied = apply(frame.index, decision);
-        if (applied != Rejection::none)
-            return applied;
-        --allocated_;
-        if (--owners_[slot].frames == 0)
-            owners_[slot].id = 0;
-        if (state(decision.record) == static_cast<U64>(State::free)) {
-            head_ = frame.index + 1;
-            ++free_;
-        }
-        return Rejection::none;
+        words::Binding::Scope scope(binding_, words::Access::write);
+        const auto result = __au_runtime_frame_release(storage_.data(), frame.index, frame.generation, owner);
+        require(result <= static_cast<U64>(Rejection::stale) ||
+                (result >= static_cast<U64>(Rejection::malformed) && result <= static_cast<U64>(Rejection::exhausted)));
+        return static_cast<Rejection>(result);
     }
     [[nodiscard]] auto record(U64 index) const -> U64 {
-        return index < records_.size() ? records_[index] : 0;
+        words::Binding::Scope scope(binding_, words::Access::read);
+        return __au_runtime_frame_record(storage_.data(), index);
     }
     [[nodiscard]] auto address(U64 index) const -> std::optional<U64> {
         return ranges_ ? ranges_->address(index) : std::nullopt;
     }
     [[nodiscard]] auto frames() const -> U64 {
-        return records_.size();
+        words::Binding::Scope scope(binding_, words::Access::read);
+        return __au_runtime_frame_frames(storage_.data());
     }
     [[nodiscard]] auto reserved() const -> U64 {
-        return reserved_;
+        words::Binding::Scope scope(binding_, words::Access::read);
+        return __au_runtime_frame_reserved(storage_.data());
     }
     [[nodiscard]] auto free() const -> U64 {
-        return free_;
+        words::Binding::Scope scope(binding_, words::Access::read);
+        return __au_runtime_frame_free(storage_.data());
     }
     [[nodiscard]] auto allocated() const -> U64 {
-        return allocated_;
+        words::Binding::Scope scope(binding_, words::Access::read);
+        return __au_runtime_frame_allocated(storage_.data());
     }
     [[nodiscard]] auto allocated(U64 owner) const -> U64 {
-        const auto slot = owner_slot(owner);
-        return slot < owners_.size() ? owners_[slot].frames : 0;
+        words::Binding::Scope scope(binding_, words::Access::read);
+        return __au_runtime_frame_owner_allocated(storage_.data(), owner);
     }
     [[nodiscard]] auto poisoned() const -> bool {
-        return poisoned_;
+        words::Binding::Scope scope(binding_, words::Access::read);
+        return __au_runtime_frame_poisoned(storage_.data());
     }
-    // Complete consistency walk: canonical records, kernel frames exactly the
-    // reserved prefix, the free list visiting each free frame once, and counts.
-    class Audit final {
-    public:
-        bool consistent = false;
-        U64 free = 0, allocated = 0, kernel = 0, retired = 0;
-    };
     [[nodiscard]] auto audit() const -> Audit {
+        words::Binding::Scope scope(binding_, words::Access::read);
         Audit result;
-        if (!ranges_ || poisoned_)
-            return result;
-        std::array<U64, 2> owner_frames{};
-        for (U64 index = 0; index < records_.size(); ++index) {
-            const auto value = records_[index];
-            const auto kind = state(value);
-            if ((kind == static_cast<U64>(State::kernel)) != (index < reserved_))
-                return result;
-            result.free += kind == static_cast<U64>(State::free);
-            result.allocated += kind == static_cast<U64>(State::allocated);
-            result.kernel += kind == static_cast<U64>(State::kernel);
-            result.retired += kind == static_cast<U64>(State::retired);
-            const auto holder = word(value);
-            if (kind == static_cast<U64>(State::allocated)) {
-                const auto slot = owner_slot(holder);
-                if (slot == owners_.size())
-                    return result;
-                ++owner_frames[slot];
-            }
-            if (kind == 0 || kind > 4 || (kind == static_cast<U64>(State::free) && holder > records_.size()) ||
-                (kind == static_cast<U64>(State::allocated) && (holder < first_owner || holder > 0xffffffffULL)) ||
-                (kind == static_cast<U64>(State::kernel) && (holder == 0 || holder >= first_owner)) ||
-                (kind == static_cast<U64>(State::retired) && holder != 0))
-                return result;
-        }
-        for (std::size_t slot = 0; slot < owners_.size(); ++slot)
-            if (owner_frames[slot] != owners_[slot].frames || ((owners_[slot].frames == 0) != (owners_[slot].id == 0)))
-                return result;
-        U64 walked = 0;
-        for (auto link = head_; link; ++walked) {
-            if (walked > result.free || link > records_.size() ||
-                state(records_[link - 1]) != static_cast<U64>(State::free))
-                return result;
-            link = word(records_[link - 1]);
-        }
-        result.consistent = walked == result.free && result.free == free_ && result.allocated == allocated_ &&
-                            result.kernel == reserved_;
+        __au_runtime_frame_audit(storage_.data(), &result);
+        require(result.consistent <= 1);
         return result;
+    }
+    auto suspend() -> void {
+        binding_.suspend();
+    }
+    auto resume(const U64 *backing, U64 count) -> void {
+        binding_.resume(backing, count);
+    }
+    [[nodiscard]] auto finish() -> bool {
+        words::Binding::Scope scope(binding_, words::Access::consume);
+        require(__au_runtime_frame_finish(storage_.data()) && !binding_.live());
+        return true;
     }
 };
 } // namespace aurora::uefi::frames

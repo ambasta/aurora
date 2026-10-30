@@ -1,0 +1,38 @@
+module kernel_frame_allocator;
+import kernel.frame_allocator;
+
+auto process_frames_initialize(kernel::FrameAllocator& allocator, u64 tables, u64 metadata) -> bool {
+    return allocator.initialize(tables, metadata);
+}
+auto process_frames_allocate(kernel::FrameAllocator& allocator, u64 owner) -> kernel::FrameAllocation {
+    const kernel::FrameAllocation result = allocator.allocate(owner);
+    return result;
+}
+auto process_frames_release(kernel::FrameAllocator& allocator, u64 index, u64 generation, u64 owner) -> u64 {
+    return allocator.release(index, generation, owner);
+}
+auto process_frames_record(const kernel::FrameAllocator& allocator, u64 index) -> u64 {
+    return allocator.record(index);
+}
+auto process_frames_frames(const kernel::FrameAllocator& allocator) -> u64 {
+    return allocator.frames();
+}
+auto process_frames_reserved(const kernel::FrameAllocator& allocator) -> u64 {
+    return allocator.reserved();
+}
+auto process_frames_free(const kernel::FrameAllocator& allocator) -> u64 {
+    return allocator.free();
+}
+auto process_frames_allocated(const kernel::FrameAllocator& allocator) -> u64 {
+    return allocator.allocated();
+}
+auto process_frames_owner_allocated(const kernel::FrameAllocator& allocator, u64 owner) -> u64 {
+    return allocator.owner_allocated(owner);
+}
+auto process_frames_poisoned(const kernel::FrameAllocator& allocator) -> bool {
+    return allocator.poisoned();
+}
+auto process_frames_audit(const kernel::FrameAllocator& allocator) -> kernel::FrameAudit {
+    const kernel::FrameAudit result = allocator.audit();
+    return result;
+}

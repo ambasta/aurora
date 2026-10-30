@@ -1,0 +1,312 @@
+export module kernel.frame_allocator;
+import kernel.frames;
+
+export namespace kernel {
+    class FrameAllocation {
+    public:
+        u64 index;
+        u64 generation;
+        bool valid;
+        FrameAllocation(u64 position, u64 epoch, bool admitted) : index(position), generation(epoch), valid(admitted) {
+        }
+    };
+
+    class FrameAudit {
+    public:
+        bool consistent;
+        u64 free;
+        u64 allocated;
+        u64 kernel;
+        u64 retired;
+        FrameAudit(bool checked, u64 available, u64 held, u64 reserved, u64 exhausted) : consistent(checked),
+            free(available), allocated(held), kernel(reserved), retired(exhausted) {
+        }
+    };
+
+    // Owns the complete allocation ledger, not the physical mapping of its
+    // backing. The admitted native scope authenticates reachability first.
+    class FrameAllocator {
+        builtin::OwnedWords words;
+        u64 head;
+        u64 free_count;
+        u64 allocated_count;
+        u64 reserved_count;
+        u64 owner0;
+        u64 count0;
+        u64 owner1;
+        u64 count1;
+        bool initialized;
+        bool poison;
+
+        auto owner_slot(u64 owner) const -> u64 {
+            if (owner0 == owner) {
+                return 0u64;
+            }
+            if (owner1 == owner) {
+                return 1u64;
+            }
+            return 2u64;
+        }
+        auto held_by(u64 slot) const -> u64 {
+            if (slot == 0u64) {
+                return count0;
+            }
+            if (slot == 1u64) {
+                return count1;
+            }
+            return 0u64;
+        }
+    public:
+        FrameAllocator(builtin::OwnedWords input) : words(move(input)), head(0u64), free_count(0u64),
+            allocated_count(0u64), reserved_count(0u64), owner0(0u64), count0(0u64), owner1(0u64), count1(0u64),
+            initialized(false), poison(false) {
+        }
+        // Called only during unpublished boot admission. Every refusal occurs
+        // before the first write; the fixed backing cannot fail after admission.
+        auto initialize(u64 tables, u64 metadata) -> bool {
+            const u64 size = words.size();
+            if (initialized || poison || size == 0u64 || size > 4294967295u64 || tables >= size || metadata >= size
+                - tables) {
+                return false;
+            }
+            u64 index = 0u64;
+            while (index < size) {
+                if (words.at(index) != 0u64) {
+                    return false;
+                }
+                index = index + 1u64;
+            }
+            const u64 reserved = tables + metadata;
+            index = 0u64;
+            while (index < reserved) {
+                u64 owner = 2u64;
+                if (index < tables) {
+                    owner = 1u64;
+                }
+                const u64 next = frame_transition(FrameOperation::initialize_kernel, 0u64, owner, 0u64, 0u64);
+                builtin::require(next == frame_record(frame_kernel(), 0u64, owner));
+                builtin::require(words.set(index, next));
+                index = index + 1u64;
+            }
+            u64 next_head = 0u64;
+            index = size;
+            while (index > reserved) {
+                const u64 next = frame_transition(FrameOperation::initialize_free, 0u64, 0u64, 0u64, next_head);
+                builtin::require(next == frame_record(frame_free(), 0u64, next_head));
+                builtin::require(words.set(index - 1u64, next));
+                next_head = index;
+                index = index - 1u64;
+            }
+            reserved_count = reserved;
+            head = next_head;
+            free_count = size - reserved;
+            initialized = true;
+            return true;
+        }
+        auto allocate(u64 owner) -> FrameAllocation {
+            const FrameAllocation refused = FrameAllocation(0u64, 0u64, false);
+            if (!initialized || poison || head == 0u64) {
+                return refused;
+            }
+            u64 slot = owner_slot(owner);
+            if (slot == 2u64) {
+                if (count0 == 0u64) {
+                    slot = 0u64;
+                } else {
+                    if (count1 == 0u64) {
+                        slot = 1u64;
+                    }
+                }
+            }
+            if (slot == 2u64) {
+                return refused;
+            }
+            const u64 size = words.size();
+            const u64 index = head - 1u64;
+            if (index >= size) {
+                poison = true;
+                return refused;
+            }
+            const u64 old = words.at(index);
+            const u64 next_head = old >> 32;
+            if ((old & 15u64) != frame_free() || next_head > size) {
+                poison = true;
+                return refused;
+            }
+            const u64 next = frame_transition(FrameOperation::allocate, old, owner, 0u64, 0u64);
+            if ((next & 15u64) == 0u64) {
+                return refused;
+            }
+            const u64 current = (old >> 4) & generation_limit();
+            const u64 held = held_by(slot);
+            if (next != frame_record(frame_allocated(), current, owner) || free_count == 0u64 || allocated_count >= size
+                || held >= size || held > allocated_count) {
+                poison = true;
+                return refused;
+            }
+            // All denial and arithmetic checks precede this single record store.
+            const u64 next_free = free_count - 1u64;
+            const u64 next_allocated = allocated_count + 1u64;
+            const u64 next_held = held + 1u64;
+            builtin::require(words.set(index, next));
+            head = next_head;
+            free_count = next_free;
+            allocated_count = next_allocated;
+            if (slot == 0u64) {
+                owner0 = owner;
+                count0 = next_held;
+            } else {
+                owner1 = owner;
+                count1 = next_held;
+            }
+            const FrameAllocation result = FrameAllocation(index, current, true);
+            return result;
+        }
+        auto release(u64 index, u64 generation, u64 owner) -> u64 {
+            if (!initialized || poison) {
+                return 64u64;
+            }
+            const u64 size = words.size();
+            if (index >= size) {
+                return 65u64;
+            }
+            const u64 old = words.at(index);
+            const u64 next = frame_transition(FrameOperation::release, old, owner, generation, head);
+            if ((next & 15u64) == 0u64) {
+                return next >> 4;
+            }
+            const u64 slot = owner_slot(owner);
+            const u64 held = held_by(slot);
+            const u64 kind = next & 15u64;
+            const bool reusable = kind == frame_free();
+            if ((!reusable && kind != frame_retired()) || (reusable && (next >> 32) != head) || (!reusable && (next
+                >> 32) != 0u64) || slot == 2u64 || held == 0u64 || allocated_count == 0u64 || held > allocated_count
+                || (reusable && free_count >= size)) {
+                poison = true;
+                return 64u64;
+            }
+            const u64 next_allocated = allocated_count - 1u64;
+            const u64 next_held = held - 1u64;
+            u64 next_free = free_count;
+            if (reusable) {
+                next_free = free_count + 1u64;
+            }
+            builtin::require(words.set(index, next));
+            allocated_count = next_allocated;
+            if (slot == 0u64) {
+                count0 = next_held;
+                if (next_held == 0u64) {
+                    owner0 = 0u64;
+                }
+            } else {
+                count1 = next_held;
+                if (next_held == 0u64) {
+                    owner1 = 0u64;
+                }
+            }
+            if (reusable) {
+                head = index + 1u64;
+                free_count = next_free;
+            }
+            return 0u64;
+        }
+        auto record(u64 index) const -> u64 {
+            if (index >= words.size()) {
+                return 0u64;
+            }
+            return words.at(index);
+        }
+        auto frames() const -> u64 {
+            return words.size();
+        }
+        auto reserved() const -> u64 {
+            return reserved_count;
+        }
+        auto free() const -> u64 {
+            return free_count;
+        }
+        auto allocated() const -> u64 {
+            return allocated_count;
+        }
+        auto owner_allocated(u64 owner) const -> u64 {
+            const u64 slot = owner_slot(owner);
+            return held_by(slot);
+        }
+        auto poisoned() const -> bool {
+            return poison;
+        }
+        auto audit() const -> FrameAudit {
+            FrameAudit result = FrameAudit(false, 0u64, 0u64, 0u64, 0u64);
+            if (!initialized || poison) {
+                return result;
+            }
+            const u64 free_state = frame_free();
+            const u64 allocated_state = frame_allocated();
+            const u64 kernel_state = frame_kernel();
+            const u64 retired_state = frame_retired();
+            u64 counted0 = 0u64;
+            u64 counted1 = 0u64;
+            u64 index = 0u64;
+            const u64 size = words.size();
+            while (index < size) {
+                const u64 value = words.at(index);
+                const u64 kind = value & 15u64;
+                const u64 holder = value >> 32;
+                if ((kind == kernel_state) != (index < reserved_count)) {
+                    return result;
+                }
+                if (kind == free_state) {
+                    result.free = result.free + 1u64;
+                }
+                if (kind == allocated_state) {
+                    result.allocated = result.allocated + 1u64;
+                    const u64 slot = owner_slot(holder);
+                    if (slot == 2u64) {
+                        return result;
+                    }
+                    if (slot == 0u64) {
+                        counted0 = counted0 + 1u64;
+                    } else {
+                        counted1 = counted1 + 1u64;
+                    }
+                }
+                if (kind == kernel_state) {
+                    result.kernel = result.kernel + 1u64;
+                }
+                if (kind == retired_state) {
+                    result.retired = result.retired + 1u64;
+                }
+                if (!record_valid(value) || (kind == free_state && holder > size)) {
+                    return result;
+                }
+                index = index + 1u64;
+            }
+            if (counted0 != count0 || counted1 != count1 || ((count0 == 0u64) != (owner0 == 0u64)) || ((count1 == 0u64)
+                != (owner1 == 0u64))) {
+                return result;
+            }
+            u64 walked = 0u64;
+            u64 link = head;
+            while (link != 0u64) {
+                if (walked > result.free || link > size) {
+                    return result;
+                }
+                const u64 value = words.at(link - 1u64);
+                if ((value & 15u64) != free_state) {
+                    return result;
+                }
+                link = value >> 32;
+                walked = walked + 1u64;
+            }
+            result.consistent = walked == result.free && result.free == free_count && result.allocated
+                == allocated_count && result.kernel == reserved_count;
+            return result;
+        }
+        auto finish() && -> bool {
+            const FrameAudit checked = audit();
+            // A terminal refusal cannot return normally and lose this owner.
+            builtin::require(checked.consistent && checked.allocated == 0u64);
+            return words.finish();
+        }
+    };
+}

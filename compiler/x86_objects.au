@@ -969,6 +969,10 @@ export namespace compiler_x86 {
         if (kind == compiler_resolver::ResolvedTypeKind::enum_value) {
             return compiler_catalog::member_count(type) - 1;
         }
+        if (kind == compiler_resolver::ResolvedTypeKind::u64_value) {
+            // Full-width unsigned result; facts render this sentinel as U64_MAX.
+            return -2;
+        }
         return -1;
     }
     auto emit_service_resource(EmitWorkspace& w, ObjectWorkspace& o,
@@ -1036,6 +1040,10 @@ export namespace compiler_x86 {
         if (arguments == 3) {
             emit_mov_rr(w, o, Register::rax, Register::rdx);
         }
+        if (arguments == 4) {
+            emit_pop(w, o, Register::rcx);
+            emit_pop(w, o, Register::rdx);
+        }
         emit_call_runtime(w, o, symbol);
         if (compiler_catalog::resource_method_effect(resource, method) == 2) {
             // Native finalization consumes on every normal return. Clear the
@@ -1044,6 +1052,9 @@ export namespace compiler_x86 {
             emit_store_imm(w, o, 0, second, false);
         }
         const i64 maximum = resource_result_maximum(type);
+        if (maximum == -2) {
+            return w.record_service(symbol, arguments, maximum);
+        }
         if (maximum < 0) {
             return w.fail();
         }
@@ -1680,6 +1691,10 @@ export namespace compiler_x86 {
             if (arguments == 3) {
                 emit_mov_rr(w, o, Register::rax, Register::rdx);
             }
+            if (arguments == 4) {
+                emit_pop(w, o, Register::rcx);
+                emit_pop(w, o, Register::rdx);
+            }
         }
         emit_call_runtime(w, o, symbol);
         if (compiler_catalog::resource_method_effect(resource, method) == 2) {
@@ -1689,6 +1704,9 @@ export namespace compiler_x86 {
             clear_bytes(w, o, 0, 16, consumed);
         }
         const i64 maximum = resource_result_maximum(type);
+        if (maximum == -2) {
+            return w.record_service(symbol, arguments, maximum);
+        }
         if (maximum < 0) {
             return w.fail();
         }
@@ -1734,6 +1752,13 @@ export namespace compiler_x86 {
         if (form == 1 || form == 2 || form == 81 || form == 82) {
             // Provenance and loan lifetime are verified before emission. The
             // service loan-to-frame map is prepared over the whole retained body.
+            return true;
+        }
+        if (form == 91) {
+            // Require consumes a verified bool. Failure is the existing
+            // fail-stop trap, with no unwinding or ownership-state rewrite.
+            emit_alu_rr(workspace, object, AluOp::test, Register::rax, Register::rax);
+            emit_branch(workspace, object, 4, 4, 0);
             return true;
         }
         if (form == 90) {

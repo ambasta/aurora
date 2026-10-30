@@ -839,6 +839,14 @@ export namespace compiler_lowering {
                 frame.set_marks(session.output_count(), frame.operand_mark());
             }
             session.set_continuation(frame_id, frame);
+            if (kind == compiler_parser::SyntaxKind::expression && require_call(session, statement.word(3))) {
+                const i64 call = statement.word(3);
+                if (!require_arity(session, call, 1)) {
+                    return false;
+                }
+                const i64 condition = expression_argument(session, call, 0);
+                return push_expression(session, condition, -1, -1);
+            }
             return push_expression(session, statement.word(3), -1, -1);
         }
         if (frame.phase() == ContinuationPhase::then_branch) {
@@ -864,6 +872,13 @@ export namespace compiler_lowering {
                 return finish_local_scalar(session, frame_id, -1);
             }
             return finish_statement(session, false);
+        }
+        if (kind == compiler_parser::SyntaxKind::expression && require_call(session, statement.word(3))) {
+            const i64 expected = scalar_id(session, compiler_resolver::ResolvedTypeKind::bool_value);
+            const i64 source = source_ref(session, statement.word(3));
+            match_type(session, frame.child_type_id(), expected, source);
+            const i64 operands = session.operand_count();
+            emit(session, InstructionForm::Require, operands);
         }
         if (kind == compiler_parser::SyntaxKind::static_assertion) {
             const i64 staged_want_173 = scalar_id(session, compiler_resolver::ResolvedTypeKind::bool_value);

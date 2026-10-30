@@ -122,7 +122,7 @@ def validate_native_abi(facts, source):
             return dict(bytes=8, kind=source)
         if source == "span":
             return dict(bytes=56, kind="span")
-        if source == "__au_resident_slot":
+        if source in ("__au_resident_slot", "__au_owned_words"):
             return dict(bytes=16, kind="owner", type_name=source)
         if source in ("builtin::CallSession", "builtin::ConsoleSession"):
             return dict(bytes=16, kind="service")
@@ -300,6 +300,54 @@ def validate_native_abi(facts, source):
             ("detail", [], "u64", False),
         ):
             borrowed_entry(nominal, "process_service_" + name, tail, result, mutable)
+
+    if "# FRAME_ALLOCATOR_ABI:" in source:
+        nominal = retained_root("kernel::FrameAllocator")
+        record(
+            "kernel::FrameAllocator",
+            96,
+            [
+                ("words", "__au_owned_words", 0),
+                *[
+                    (name, "u64", 0)
+                    for name in (
+                        "head",
+                        "free_count",
+                        "allocated_count",
+                        "reserved_count",
+                        "owner0",
+                        "count0",
+                        "owner1",
+                        "count1",
+                    )
+                ],
+                ("initialized", "bool", 0),
+                ("poison", "bool", 0),
+            ],
+            alignment=16,
+        )
+        record("kernel::FrameAllocation", 24, [("index", "u64", 0), ("generation", "u64", 0), ("valid", "bool", 0)])
+        record(
+            "kernel::FrameAudit",
+            40,
+            [("consistent", "bool", 0), *[(name, "u64", 0) for name in ("free", "allocated", "kernel", "retired")]],
+        )
+        entry("kernel::FrameAllocator", ["__au_owned_words"], "i64", receiver=nominal, mode="complete_constructor")
+        entry("kernel::finish", [], "bool", receiver=nominal, mode="receiver_consuming")
+        for name, tail, result, mutable in (
+            ("initialize", 2, "bool", True),
+            ("allocate", 1, "kernel::FrameAllocation", True),
+            ("release", 3, "u64", True),
+            ("record", 1, "u64", False),
+            ("frames", 0, "u64", False),
+            ("reserved", 0, "u64", False),
+            ("free", 0, "u64", False),
+            ("allocated", 0, "u64", False),
+            ("owner_allocated", 1, "u64", False),
+            ("poisoned", 0, "bool", False),
+            ("audit", 0, "kernel::FrameAudit", False),
+        ):
+            borrowed_entry(nominal, "process_frames_" + name, ["u64"] * tail, result, mutable)
 
     if "# RESIDENT_OWNER_ABI:" in source:
         nominal = retained_root("kernel::ServiceOwner")
