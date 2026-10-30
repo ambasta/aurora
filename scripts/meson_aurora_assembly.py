@@ -122,6 +122,8 @@ def validate_native_abi(facts, source):
             return dict(bytes=8, kind=source)
         if source == "span":
             return dict(bytes=56, kind="span")
+        if source == "__au_resident_slot":
+            return dict(bytes=16, kind="owner", type_name=source)
         if source in ("builtin::CallSession", "builtin::ConsoleSession"):
             return dict(bytes=16, kind="service")
         if source in ("builtin::ServeSession", "builtin::ExecutionEffects", "builtin::ServiceBootstrapEffects"):
@@ -161,6 +163,7 @@ def validate_native_abi(facts, source):
                 "__au_bootstrap_progress",
                 "__au_bootstrap_finish",
                 "__au_bootstrap_result",
+                "__au_resident_status",
             )
             else "records"
         )
@@ -185,7 +188,7 @@ def validate_native_abi(facts, source):
         ):
             raise ValueError("Protected copied record differs from its native boundary: " + source)
 
-    def entry(source, parameters, result):
+    def entry(source, parameters, result, *, receiver=None, mode=None):
         _, raw = abi_declaration(facts, "functions", source)
         expected, offset = [], 0
         for kind in parameters:
@@ -193,10 +196,10 @@ def validate_native_abi(facts, source):
             expected.append(dict(offset=offset, **field))
             offset += field["bytes"]
         value = normalize_function_abi(facts, raw)
-        if value != dict(
+        expected = dict(
             source_name=source,
-            receiver=None,
-            receiver_mutable=None,
+            receiver=receiver,
+            receiver_mutable=True if receiver is not None else None,
             borrowed_root_count=0,
             borrowed_roots=[],
             borrowed_root_abi=dict(
@@ -205,7 +208,10 @@ def validate_native_abi(facts, source):
             parameter_bytes=offset,
             parameters=expected,
             result=shape(result),
-        ):
+        )
+        if mode is not None:
+            expected[mode] = True
+        if value != expected:
             raise ValueError("Protected copied entry differs from its native boundary: " + source)
 
     def enum(source, names):
@@ -294,6 +300,23 @@ def validate_native_abi(facts, source):
             ("detail", [], "u64", False),
         ):
             borrowed_entry(nominal, "process_service_" + name, tail, result, mutable)
+
+    if "# RESIDENT_OWNER_ABI:" in source:
+        nominal = retained_root("kernel::ServiceOwner")
+        record("kernel::ServiceOwner", 16, [("slot", "__au_resident_slot", 0)], alignment=16)
+        enum("__au_resident_status", "success unavailable conflict malformed")
+        enum("__au_bootstrap_progress", "pending complete failed")
+        enum("__au_exec_effect", "success failed")
+        record("__au_resident_run_result", 16, [("status", "__au_exec_status", 0), ("value", "u64", 0)])
+        entry("kernel::ServiceOwner", ["__au_resident_slot"], "i64", receiver=nominal, mode="complete_constructor")
+        entry("kernel::finish", [], "__au_exec_effect", receiver=nominal, mode="receiver_consuming")
+        for name, result in (
+            ("prepare", "bool"),
+            ("run", "__au_resident_run_result"),
+            ("console", "__au_resident_status"),
+            ("reject", "__au_resident_status"),
+        ):
+            borrowed_entry(nominal, "process_resident_" + name, [], result, True)
 
     if "# SERVICE_SATURATION_TEST_ABI:" in source:
         retained_root("kernel::ServiceIncarnation")

@@ -1,0 +1,246 @@
+; CASE: retained constructor and explicit terminal entry
+; RUN: emit
+; CHECK: __au_runtime_resident_finish
+layout ResidentOwner []
+fields ResidentOwner [((26 __au_resident_slot) 0 0 false)]
+storage ResidentOwner [] [0] 16 16 16
+enum __au_exec_effect 2
+enum __au_bootstrap_progress 3
+function resident_constructor
+  result i64
+  params [(26 __au_resident_slot)]
+  frame 16
+  receiver ResidentOwner true true
+  service_resource 16 __au_resident_slot true
+    BindRetainedResourceParameter 0 16 2
+    InitializeBytesField 0 0 16
+    Constant
+    Return
+end
+function resident_advance
+  result (enum __au_bootstrap_progress)
+  params []
+  frame 0
+  receiver ResidentOwner true false
+    RetainedFieldOperation 0 0 4 0 2
+    Return
+end
+function resident_finish
+  result (enum __au_exec_effect)
+  params []
+  frame 0
+  receiver ResidentOwner true false true true
+    RetainedFieldOperation 0 0 6 0 2
+    Return
+end
+
+; CASE: retained input must be transferred
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -13 +12,0 @@
+-    InitializeBytesField 0 0 16
+
+; CASE: retained input cannot initialize twice
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: constructor resource field initialized more than once
+@@ -12,0 +13 @@
++    InitializeBytesField 0 0 16
+
+; CASE: retained terminal must finalize
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -30 +30 @@
+-    RetainedFieldOperation 0 0 6 0 2
++    EnumConstant (enum __au_exec_effect) 0
+
+; CASE: retained terminal cannot finalize twice
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: resource field does not hold live ownership
+@@ -30,0 +31 @@
++    RetainedFieldOperation 0 0 6 0 2
+
+; CASE: retained terminal cannot observe finalized field
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: resource field does not hold live ownership
+@@ -30,0 +31 @@
++    RetainedFieldOperation 0 0 4 0 2
+
+; CASE: retained borrowed method cannot finalize
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -22 +22 @@
+-    RetainedFieldOperation 0 0 4 0 2
++    RetainedFieldOperation 0 0 6 0 2
+
+; CASE: retained effect requires exact field
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -30 +30 @@
+-    RetainedFieldOperation 0 0 6 0 2
++    RetainedFieldOperation 0 1 6 0 2
+
+; CASE: retained effect cannot select another root
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -30 +30 @@
+-    RetainedFieldOperation 0 0 6 0 2
++    RetainedFieldOperation 16 0 6 0 2
+
+; CASE: retained effect cannot claim lexical lease kind
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -30 +30 @@
+-    RetainedFieldOperation 0 0 6 0 2
++    RetainedFieldOperation 0 0 5 0 0
+
+; CASE: retained binding requires exact nominal input
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -12 +12 @@
+-    BindRetainedResourceParameter 0 16 2
++    BindRetainedResourceParameter 0 16 0
+
+; CASE: retained constructor cannot observe dormant field
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -13,0 +14 @@
++    RetainedFieldOperation 0 0 4 0 2
+
+; CASE: retained consuming receiver cannot be const
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: invalid consuming receiver signature
+@@ -29 +29 @@
+-  receiver ResidentOwner true false true true
++  receiver ResidentOwner false false true true
+
+; CASE: retained constructor rejects borrowed lexical input
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: retained constructor requires one exact owned resource input
+@@ -8 +8 @@
+-  params [(26 __au_resident_slot)]
++  params [(26 __au_execution_lease)]
+
+; CASE: retained constructor cannot mix byte owner field
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: invalid canonical owned value field type
+@@ -2 +2 @@
+-fields ResidentOwner [((26 __au_resident_slot) 0 0 false)]
++fields ResidentOwner [((26 __au_resident_slot) 0 0 false) (bytes 0 0 false)]
+
+; CASE: retained constructor cannot duplicate slot fields
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: invalid canonical owned value field type
+@@ -2 +2 @@
+-fields ResidentOwner [((26 __au_resident_slot) 0 0 false)]
++fields ResidentOwner [((26 __au_resident_slot) 0 0 false) ((26 __au_resident_slot) 0 0 false)]
+
+; CASE: retained terminal cannot be borrowed as ordinary method
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: retained constructor and consuming receiver require private entry
+@@ -22 +22 @@
+-    RetainedFieldOperation 0 0 4 0 2
++    MethodCall resident_finish 0
+
+; CASE: retained terminal cannot revive owner through ordinary method
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: object loan field lacks live ownership
+@@ -30,0 +31 @@
++    MethodCall resident_advance 0
+
+; CASE: retained terminal joins cannot erase conditional finalization
+; BASE: retained constructor and explicit terminal entry
+; RUN: verify
+; EXPECT-ERROR: incompatible owning object lifetimes or field ownership
+@@ -29,0 +30,2 @@
++    Constant 1 bool
++    BranchFalse 1
+@@ -30,0 +33,4 @@
++    Jump 2
++    Label 1
++    EnumConstant (enum __au_exec_effect) 0
++    Label 2
+
+; CASE: exported retained root emits imported lifetime entries
+; RUN: emit referenced
+; CHECK-DAG: resident_constructor:
+; CHECK-DAG: resident_finish:
+; CHECK-DAG: retained_export:
+views [(0 []) (1 [])]
+layout ResidentOwner []
+fields ResidentOwner [((26 __au_resident_slot) 0 0 false)]
+storage ResidentOwner [] [0] 16 16 16
+enum __au_exec_effect 2
+enum __au_bootstrap_progress 3
+function resident_constructor
+  result i64
+  params [(26 __au_resident_slot)]
+  frame 16
+  scope 1
+  receiver ResidentOwner true true
+  service_resource 16 __au_resident_slot true
+    BindRetainedResourceParameter 0 16 2
+    InitializeBytesField 0 0 16
+    Constant
+    Return
+end
+function resident_advance
+  result (enum __au_bootstrap_progress)
+  params []
+  frame 0
+  scope 1
+  receiver ResidentOwner true false
+    RetainedFieldOperation 0 0 4 0 2
+    Return
+end
+function resident_finish
+  result (enum __au_exec_effect)
+  params []
+  frame 0
+  scope 1
+  receiver ResidentOwner true false true true
+    RetainedFieldOperation 0 0 6 0 2
+    Return
+end
+function retained_export
+  result u64
+  params [(class ResidentOwner)]
+  frame 0
+  roots 1
+  rootmut 1
+    Constant 1 u64
+    Return
+end
+
+; CASE: imported unused retained owner does not root lifetime entries
+; BASE: exported retained root emits imported lifetime entries
+; RUN: emit referenced
+; CHECK-NOT: resident_constructor:
+; CHECK-NOT: resident_finish:
+; CHECK-NOT: resident_advance:
+; CHECK: retained_export:
+; CHECK-NOT: resident_constructor:
+; CHECK-NOT: resident_finish:
+; CHECK-NOT: resident_advance:
+@@ -39 +39 @@
+-  params [(class ResidentOwner)]
++  params []
+@@ -41,2 +40,0 @@
+-  roots 1
+-  rootmut 1

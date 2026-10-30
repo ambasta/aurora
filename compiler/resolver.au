@@ -1766,6 +1766,7 @@ export namespace compiler_resolver {
         bool writer = false;
         bool execution = false;
         bool bootstrap = false;
+        bool resident = false;
         i64 at = 0;
         while (at < session.syntax_count() && session.good()) {
             const SyntaxRow row = session.syntax(at);
@@ -1788,14 +1789,22 @@ export namespace compiler_resolver {
             writer = writer || family == 6;
             execution = execution || family == 7;
             bootstrap = bootstrap || family == 8;
+            resident = resident || family == 9;
             at = at + 1;
         }
         seed_family(session, 0);
+        if (resident) {
+            execution = true;
+            bootstrap = true;
+        }
         if (bootstrap) {
             seed_family(session, 8);
         }
         if (execution) {
             seed_family(session, 7);
+        }
+        if (resident) {
+            seed_family(session, 9);
         }
         if (writer) {
             seed_family(session, 6);

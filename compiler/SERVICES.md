@@ -817,9 +817,37 @@ writing a 32-byte copied record. Other operations return checked scalar enums;
 fields are checked at full qword width, including reserved bytes.
 
 Resource identity is catalogue-driven throughout resolution, lowering and
-independent IR. RawType26 uses exactly `__au_execution_lease` or
-`__au_service_bootstrap_lease` as its canonical nominal name with zero tails;
+independent IR. The temporary lease families use RawType26 canonical names `__au_execution_lease`
+and `__au_service_bootstrap_lease`, with zero tails;
 empty names and alternate spellings are rejected. Slot28 and instruction
 forms 85–87 retain their shapes. Moves, issuance and method results must match
 that exact resource kind and its catalogue issuer, rather than only the shared
 physical descriptor size. Neither concrete type rows nor verifier facts grow.
+
+## Retained resident slot
+
+`builtin::ResidentSlot` is a distinct catalogue resource with retained-native
+origin and explicit terminal cleanup, stored only through the complete-constructor
+contract in [OWNERSHIP.md](OWNERSHIP.md#retained-owners-and-consuming-receiver-entries).
+It remains live across separate synchronous runtime entries and across empty,
+ready and lost incarnations. It is not an escaped bootstrap lease.
+
+Its zero-argument operations consume only the separately bound outer operation:
+`prepare()` returns bool; `run()` returns copied `ResidentRunResult` with
+`ExecStatus status` and `u64 value`; `console()` and `reject()` return
+`ResidentStatus::{success, unavailable, conflict, malformed}`. Source shutdown uses
+`begin_shutdown()` and `advance_shutdown()` returning
+`BootstrapProgress::{pending, complete, failed}`. Consuming `finish()` returns
+`ExecEffect::{success, failed}` after terminal cleanup; a failure-valued normal
+return does not retain the ownership obligation.
+
+Resource kind2 uses RawType26 canonical name `__au_resident_slot`, size/alignment16.
+It has no lexical service issuer or service issuing operation; trusted native
+composition supplies its authenticated owned input. Native method symbols have prefix
+`__au_runtime_resident_`; binding and epoch are in RDI/RSI, the canonical field
+address in RDX, and a copied result destination in RCX. This additional storage
+identity is private ABI evidence, not a source pointer. Native authentication
+binds the active root, field and generation and rejects reentry/stale descriptors.
+The complete-constructor and consuming-receiver facts distinguish fresh ownership
+entry from ordinary synchronous borrowed access. Independent IR rejects use of the
+lexical issuer instructions for this resource and requires explicit field discharge.

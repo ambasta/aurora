@@ -1,0 +1,15 @@
+module kernel_resident_owner;
+import kernel.resident_owner;
+
+auto process_resident_prepare(kernel::ServiceOwner& owner) -> bool {
+    return owner.prepare();
+}
+auto process_resident_run(kernel::ServiceOwner& owner) -> builtin::ResidentRunResult {
+    return owner.run();
+}
+auto process_resident_console(kernel::ServiceOwner& owner) -> builtin::ResidentStatus {
+    return owner.console();
+}
+auto process_resident_reject(kernel::ServiceOwner& owner) -> builtin::ResidentStatus {
+    return owner.reject();
+}

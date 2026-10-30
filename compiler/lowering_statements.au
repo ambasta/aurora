@@ -164,6 +164,14 @@ export namespace compiler_lowering {
         const ContinuationRow frame = session.continuation(frame_id);
         const i64 source = source_ref(session, frame.cursor());
         const i64 result = body_result_type(session);
+        if (body_receiver_consuming(session)) {
+            const i64 receiver = object_loan_local(session, -2);
+            const LocalRow owner = session.local(receiver);
+            const SnapshotRow state = owner.state();
+            if (state.live()) {
+                return fail(session, LoweringError::ownership_constructor_type, source);
+            }
+        }
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, result);
         if (is_span(session, result)) {
             const LocalRow span = session.local(local);
@@ -300,6 +308,9 @@ export namespace compiler_lowering {
         if (field >= 0 && body_constructor(session)) {
             const OperandRow absent = scalar(OperandRole::NoDiagnosticValue, 0);
             fail_synthetic(session, LoweringError::initializer_receiver_field_access, reference, absent, absent);
+            return -1;
+        }
+        if (field >= 0 && !no_exclusive_object_loan(session, -2, reference)) {
             return -1;
         }
         return field;

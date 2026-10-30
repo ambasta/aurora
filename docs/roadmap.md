@@ -87,6 +87,16 @@ introducing a generic init manager, escaping service owner or larger process
 capacity. General composition must still specify dependency failure, restart
 bounds and cancellation authority rather than importing PID1 conventions.
 
+The fixed production file-service slot now has a retained, noncopyable Aurora
+owner across runtime operations. Its authority is distinct from the existing
+incarnation policy and from native page-table/continuation storage. Short-lived
+command and bootstrap grants derive from the exact owner and a matching admitted
+operation; neither copied generations nor slot ownership alone authorize an
+arbitrary client launch. Production console exit explicitly advances shutdown
+and consumes the owner after reclamation. The consuming receiver currently has
+an admitted native entry, not a general source-call or escaping child-handle
+surface. Larger process graphs and owned child lifetimes remain open.
+
 The Serve-authorized Aurora service owns boot-volume copies, namespace/handle
 state and retained mutable RAM files. The kernel authenticates incarnations and
 copies bounded requests/replies; the legacy kernel file store is removed.

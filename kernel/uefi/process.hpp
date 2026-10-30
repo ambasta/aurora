@@ -31,6 +31,9 @@ using ProcessOutput = bool (*)(void *, bool, std::span<const std::byte>);
 // first prompt. A valid unavailable mount preserves the boot/console owner.
 [[nodiscard]] auto prepare_programs(std::uint64_t arena, const Bytes &handoff) -> bool;
 
+// Explicit terminal ownership transfer: settle and reclaim the retained slot.
+[[nodiscard]] auto finish_programs(std::uint64_t arena, const Bytes &handoff) -> bool;
+
 // Private legacy-console policy retained by the same source file owner. These
 // copied commands expose only projections/selections, never its saved namespace.
 enum class ConsoleOperation : std::uint64_t {

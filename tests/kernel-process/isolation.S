@@ -74,6 +74,8 @@ _start:
     je .Lservice_probe
     cmpq $13, %r12
     je .Lservice_probe
+    cmpq $14, %r12
+    je .Lservice_probe
     ud2
 .Lwriter_probe:
     # The first boot recovery role has retired. Its observed generation cannot
@@ -445,6 +447,8 @@ _start:
     cmpq $18, 64(%rbp)
     jne 69b
     movq $2, 65600(%rbp)
+    cmpl $14, %r12d
+    je .Lservice_exchange
     cmpl $1, %r12d
     jne .Lservice_stale
     xorl %edx, %edx
@@ -584,6 +588,10 @@ _start:
     movl $65, %esi
     jmp .Lservice_exchange
 .Lservice_stop:
+    cmpl $14, %r12d
+    jne .Lservice_clean_stop
+    ud2
+.Lservice_clean_stop:
     xorl %edi, %edi
     kernel_call 1
 .elseif CASE == 7
@@ -779,7 +787,8 @@ f_txt:
 .if CASE == 6
 # The private-volume harness may patch this one ELF data symbol, never code.
 # It is immutable while running and has meaning only for exact file-service
-# argv: zero preserves original dispatch; 12/13 are the closed snapshot cases.
+# argv: zero preserves original dispatch; 12/13 are snapshot cases and 14
+# acknowledges startup/loader refusal, then faults only on control6 shutdown.
 .p2align 3
 .globl aurora_service_probe_mode
 .type aurora_service_probe_mode,@object

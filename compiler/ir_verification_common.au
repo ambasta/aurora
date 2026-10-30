@@ -908,6 +908,15 @@ export namespace compiler_ir_verification {
                 at = w.next_fact(at);
             }
         }
+        i64 retained_at = w.fact_lower_bound(FactKind::resident_field, base, -1);
+        while (retained_at >= 0 && fact_key_at(w, retained_at, FactKind::resident_field, base)) {
+            const FactRow retained = w.fact_at(retained_at);
+            if (!require(w, retained.disposition() == ByteDisposition::live,
+                first_error(VerificationErrorFirst::resource_field_does_not_hold_live_ownership))) {
+                return ObjectCompletion::invalid;
+            }
+            retained_at = w.next_fact(retained_at);
+        }
         const ObjectCompletion completion = compiler_ir_initialization::object_completion(w, m, base);
         if (!require(w, completion != ObjectCompletion::missing_nested,
             first_error(VerificationErrorFirst::nested_class_field_not_completely_initialized)) || !require(w,
@@ -1031,6 +1040,15 @@ export namespace compiler_ir_verification {
                 }
             }
             at = w.next_fact(at);
+        }
+        i64 retained_at = w.fact_lower_bound(FactKind::resident_field, root, -1);
+        while (retained_at >= 0 && fact_key_at(w, retained_at, FactKind::resident_field, root)) {
+            const FactRow retained = w.fact_at(retained_at);
+            if (!require(w, retained.disposition() == ByteDisposition::live,
+                first_error(VerificationErrorFirst::object_loan_field_lacks_live_ownership))) {
+                return false;
+            }
+            retained_at = w.next_fact(retained_at);
         }
         return w.good();
     }
@@ -1294,6 +1312,13 @@ export namespace compiler_ir_verification {
         while (ordinal < fields.count()) {
             const compiler_ir_metadata::FieldRow field = m.field_at(fields.begin() + ordinal);
             const compiler_ir_metadata::RawTypeRow type = m.type_at(field.type());
+            if (compiler_ir_metadata::retained_resource_kind(m, type) >= 0) {
+                const FactRow retained = semantic_fact(FactKind::resident_field, base, ordinal,
+                    control.instruction_id(), ByteDisposition::pristine, token);
+                if (!w.fact_set(retained)) {
+                    return false;
+                }
+            }
             if (compiler_ir_metadata::owner_kind(type)) {
                 const FactRow binding = semantic_fact(FactKind::owned_field, base, ordinal, control.instruction_id(),
                     ByteDisposition::pristine, token);
@@ -1621,7 +1646,40 @@ export namespace compiler_ir_verification {
         }
         return publish_array_borrow(w, 0, ordinal, result, 0);
     }
+    auto resident_inputs_closed(VerificationWorkspace& w) -> bool {
+        i64 at = w.first_fact(FactKind::resident_input);
+        while (at >= 0 && fact_kind_at(w, at, FactKind::resident_input)) {
+            const FactRow input = w.fact_at(at);
+            if (!require(w, input.disposition() == ByteDisposition::consumed,
+                second_error(VerificationErrorSecond::return_with_live_service_resource))) {
+                return false;
+            }
+            at = w.next_fact(at);
+        }
+        return w.good();
+    }
+    auto resident_fields_settled(VerificationWorkspace& w, i64 root, bool live) -> bool {
+        i64 at = w.fact_lower_bound(FactKind::resident_field, root, -1);
+        bool found = false;
+        while (at >= 0 && fact_key_at(w, at, FactKind::resident_field, root)) {
+            const FactRow field = w.fact_at(at);
+            ByteDisposition expected = ByteDisposition::consumed;
+            if (live) {
+                expected = ByteDisposition::live;
+            }
+            if (!require(w, field.disposition() == expected,
+                second_error(VerificationErrorSecond::return_with_live_service_resource))) {
+                return false;
+            }
+            found = true;
+            at = w.next_fact(at);
+        }
+        return require(w, found, first_error(VerificationErrorFirst::resource_field_requires_owning_root));
+    }
     auto closed_owned_objects(VerificationWorkspace& w) -> bool {
+        if (!resident_inputs_closed(w)) {
+            return false;
+        }
         const i64 first_resource = w.first_fact(FactKind::service_resource);
         if (first_resource >= 0) {
             const FactRow resource = w.fact_at(first_resource);

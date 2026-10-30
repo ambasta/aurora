@@ -469,23 +469,24 @@ export namespace compiler_lowering_projection {
         const compiler_lowering::OperandRow receiver_ref = item(session, id, 5);
         if (receiver_ref.role() == compiler_lowering::OperandRole::ReceiverRef) {
             const i64 selected = receiver_ref.signed_value();
-            if (!fixed(session, workspace, selected, compiler_lowering::RecordKind::Receiver, 4) || !expect(session,
+            if (!fixed(session, workspace, selected, compiler_lowering::RecordKind::Receiver, 5) || !expect(session,
                 workspace, selected, 0, compiler_lowering::OperandRole::ClassNominalId) || !expect(session, workspace,
                 selected, 1, compiler_lowering::OperandRole::MutableValue) || !expect(session, workspace, selected, 2,
                 compiler_lowering::OperandRole::Constructor) || !expect(session, workspace, selected, 3,
-                compiler_lowering::OperandRole::PublicAccess) || !resolve_name(session, workspace, scalar(session,
-                selected, 0), 1)) {
+                compiler_lowering::OperandRole::PublicAccess) || !expect(session, workspace, selected, 4,
+                compiler_lowering::OperandRole::ReceiverConsumption) || !resolve_name(session, workspace,
+                scalar(session, selected, 0), 1)) {
                 return false;
             }
             const compiler_ir_metadata::ByteRange receiver_spelling = workspace.name_result();
             const compiler_ir_metadata::ByteRange receiver_name = workspace.retain_name(receiver_spelling);
             if (!copy_text(workspace, metadata, receiver_spelling.begin(), receiver_name.begin(),
                 receiver_spelling.count(), fill) || !boolean(scalar(session, selected, 1)) || !boolean(scalar(session,
-                selected, 2)) || !boolean(scalar(session, selected, 3))) {
+                selected, 2)) || !boolean(scalar(session, selected, 3)) || !boolean(scalar(session, selected, 4))) {
                 return workspace.fail();
             }
             const u64 receiver_flags = u64(scalar(session, selected, 1)) + u64(scalar(session, selected, 2)) * 2u64
-                + u64(scalar(session, selected, 3)) * 4u64;
+                + u64(scalar(session, selected, 3)) * 4u64 + u64(scalar(session, selected, 4)) * 8u64;
             receiver_begin = receiver_name.begin();
             receiver_count = receiver_name.count();
             receiver_attributes = receiver_flags;

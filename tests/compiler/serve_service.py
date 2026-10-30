@@ -879,12 +879,60 @@ __au_runtime_group_entry:
             f"auto h({bootstrap})->u64{{return 0u64;}}auto f({bootstrap})->u64{{h(b);"
             f"{bootlease} lease=b.begin();{bootfinish}return 0u64;}}"
         )
+        resident = "builtin::ResidentSlot"
+        resident_head = f"class Owner{{{resident} slot;public:Owner({resident} input):slot(move(input)){{}}"
+        terminal = "auto finish() && ->builtin::ExecEffect{return slot.finish();}"
+        invalid["resident-direct-input"] = f"auto f({resident} input)->u64{{return 0u64;}}"
+        invalid["resident-direct-result"] = f"auto f()->{resident}{{return 0u64;}}"
+        invalid["resident-source-mint"] = f"auto f()->u64{{{resident} slot={resident}();return 0u64;}}"
+        invalid["resident-public-field"] = (
+            f"class Owner{{public:{resident} slot;Owner({resident} input):slot(move(input)){{}}}};"
+        )
+        invalid["resident-two-fields"] = (
+            f"class Owner{{{resident} first;{resident} second;public:"
+            f"Owner({resident} input):first(move(input)),second(move(input)){{}}}};"
+        )
+        invalid["resident-wrong-input"] = (
+            f"class Owner{{{resident} slot;public:Owner(builtin::ExecutionLease input):slot(move(input)){{}}}};"
+        )
+        invalid["resident-constructor-copy"] = (
+            resident_head.replace("slot(move(input))", "slot(input)") + terminal + "};"
+        )
+        invalid["resident-borrowed-finalize"] = resident_head + terminal.replace("() &&", "()") + "};"
+        invalid["resident-live-terminal-return"] = (
+            resident_head + "auto finish() && ->builtin::ExecEffect{return builtin::ExecEffect::failed;}};"
+        )
+        invalid["resident-double-finalize"] = (
+            resident_head + "auto finish() && ->builtin::ExecEffect{slot.finish();return slot.finish();}};"
+        )
+        invalid["resident-terminal-use-after"] = (
+            resident_head + "auto finish() && ->builtin::ExecEffect{slot.finish();slot.prepare();"
+            "return builtin::ExecEffect::success;}};"
+        )
+        invalid["resident-conditional-finalize"] = (
+            resident_head + "auto finish() && ->builtin::ExecEffect{if(slot.prepare()){return slot.finish();}"
+            "return builtin::ExecEffect::failed;}};"
+        )
+        invalid["resident-terminal-borrow-call"] = (
+            resident_head + terminal + "};auto f(Owner& root)->builtin::ExecEffect{return root.finish();}"
+        )
+        invalid["resident-terminal-move-borrow"] = (
+            resident_head + terminal + "};auto f(Owner& root)->builtin::ExecEffect{return move(root).finish();}"
+        )
+        invalid["resident-const-consuming"] = resident_head + terminal.replace("() &&", "() const &&") + "};"
+        invalid["resident-free-consuming"] = "auto f() && ->u64{return 0u64;}"
+        invalid["resident-copied-consuming"] = "class Value{public:auto finish() && ->u64{return 0u64;}};"
+        invalid["resident-nested-owner"] = (
+            resident_head + terminal + "};class Nested{Owner owner;public:Nested(Owner input):owner(input){}};"
+        )
         for label, code in invalid.items():
+            if label.startswith("resident-"):
+                code += "auto witness()->u64{return 0u64;}"
             source.write_text("module rejected;" + code)
             target = ["--target", "aurora"] if label.startswith(("writer-", "readonly-")) else []
             result = run([compiler, *target, "--check", source])
             need(result.returncode == 1 and b"error AU" in result.stderr, f"{label}: {result.stderr!r}")
-            if label.startswith("bootstrap-") or label == "execution-cross-issue":
+            if label.startswith(("bootstrap-", "resident-", "lease-parameter-")) or label == "execution-cross-issue":
                 need(b"error AU9001" not in result.stderr, f"{label}: internal failure is not semantic rejection")
             if label in ("bootstrap-cross-issue", "bootstrap-cross-move", "execution-cross-issue"):
                 expected, actual = "ExecutionLease", "ServiceBootstrapLease"

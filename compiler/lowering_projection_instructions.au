@@ -385,6 +385,12 @@ export namespace compiler_lowering_projection {
             // OwnerOffset, ResourceMethodId, ResultOffset, ResourceKindId.
             return InstructionShape(87, 220312851u64);
         }
+        if (form == compiler_lowering::InstructionForm::BindRetainedResourceParameter) {
+            return InstructionShape(88, 1720577u64);
+        }
+        if (form == compiler_lowering::InstructionForm::RetainedFieldOperation) {
+            return InstructionShape(89, 28200045464u64);
+        }
         return InstructionShape(-1, 0u64);
     }
     // The known schema role selects a balanced scalar decision tree. Only a

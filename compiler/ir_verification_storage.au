@@ -140,7 +140,9 @@ export namespace compiler_ir_verification {
         bound_plain_root,
         service_resource,
         service_issuer_used,
-        service_resource_dead
+        service_resource_dead,
+        resident_input,
+        resident_field
     };
     enum class ByteDisposition {
         pristine,
@@ -1180,6 +1182,12 @@ export namespace compiler_ir_verification {
         if (kind == FactKind::service_resource_dead) {
             return 12;
         }
+        if (kind == FactKind::resident_input) {
+            return 13;
+        }
+        if (kind == FactKind::resident_field) {
+            return 14;
+        }
         return -1;
     }
     auto compare_fact_key(FactKind kind, i64 key, i64 field, FactKind other_kind, i64 other_key,
@@ -1290,10 +1298,16 @@ export namespace compiler_ir_verification {
                 return false;
             }
         }
+        if (fact.kind() == FactKind::resident_input || fact.kind() == FactKind::resident_field) {
+            if (!token.same(empty_token()) || fact.site() < 0 || (fact.kind() == FactKind::resident_input && (fact.key()
+                <= 0 || fact.site() == 0))) {
+                return false;
+            }
+        }
         if (kind <= 0 || !canonical_token(token)) {
             return false;
         }
-        if (fact.kind() == FactKind::owned_field) {
+        if (fact.kind() == FactKind::owned_field || fact.kind() == FactKind::resident_field) {
             if (fact.field() < 0) {
                 return false;
             }
@@ -1881,7 +1895,7 @@ export namespace compiler_ir_verification {
             }
             ControlRow c = control();
             const i64 count = c.active_fact_count();
-            if (fact.kind() == FactKind::owned_field) {
+            if (fact.kind() == FactKind::owned_field || fact.kind() == FactKind::resident_field) {
                 const i64 root = find_fact(FactKind::owned_object, fact.key(), -1, count);
                 if (!good() || root < 0) {
                     return fail(first_error(VerificationErrorFirst::internal));
@@ -2186,6 +2200,7 @@ export namespace compiler_ir_verification {
             i64 previous_key = 0;
             i64 previous_field = -1;
             i64 owner_at = -1;
+            i64 owner_begin = -1;
             i64 owner_end = -1;
             while (at < row.fact_count()) {
                 const FactRow fact = retainedFacts.at(row.fact_begin() + at);
@@ -2196,10 +2211,14 @@ export namespace compiler_ir_verification {
                 if (fact.kind() == FactKind::owned_object) {
                     if (owner_at < 0) {
                         owner_at = at;
+                        owner_begin = at;
                     }
                     owner_end = at + 1;
                 }
-                if (fact.kind() == FactKind::owned_field) {
+                if (fact.kind() == FactKind::resident_field && previous_kind != FactKind::resident_field) {
+                    owner_at = owner_begin;
+                }
+                if (fact.kind() == FactKind::owned_field || fact.kind() == FactKind::resident_field) {
                     if (owner_at < 0) {
                         return fail(first_error(VerificationErrorFirst::internal));
                     }
@@ -2513,7 +2532,7 @@ export namespace compiler_ir_verification {
                     previous_field, fact.kind(), fact.key(), fact.field()) >= 0)) {
                     return fail(first_error(VerificationErrorFirst::internal));
                 }
-                if (fact.kind() == FactKind::owned_field) {
+                if (fact.kind() == FactKind::owned_field || fact.kind() == FactKind::resident_field) {
                     const i64 owner = find_fact(FactKind::owned_object, fact.key(), -1, count);
                     if (!good() || owner < 0) {
                         return fail(first_error(VerificationErrorFirst::internal));

@@ -485,6 +485,13 @@ process_bootstrap_object = custom_target('process-service-bootstrap',
               '--module-root', meson.project_source_root() / 'kernel/policies', '--local-symbols',
               '--referenced-reflection-only', '--bridge', files('../kernel/uefi/service-bootstrap-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+process_resident_object = custom_target('process-resident-owner',
+    input: '../examples/kernel-resident-owner.au', output: 'process-resident-owner.o',
+    depfile: 'process-resident-owner.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'kernel/policies', '--local-symbols',
+              '--referenced-reflection-only', '--bridge', files('../kernel/uefi/resident-owner-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 process_execution_object = custom_target('process-execution-policy',
     input: '../examples/kernel-execution.au', output: 'process-execution-policy.o', depfile: 'process-execution-policy.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
@@ -526,7 +533,7 @@ process_files_policy_object = custom_target('process-files-policy-reference',
               '--referenced-reflection-only', '--bridge', files('kernel-process-files-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 kernel_process = executable('kernel-process', 'kernel-process.cpp', process_policy_object, process_execution_object,
-    process_execution_cancel_object, process_bootstrap_object,
+    process_execution_cancel_object, process_bootstrap_object, process_resident_object,
     process_files_policy_object, process_budget_object, process_service_object, process_service_saturation_object,
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DAURORA_PROCESS_FIXTURE', '-DAURORA_UEFI_NVME'], link_args: ['-no-pie'],
     native: true, override_options: fixture_options, install: false)
@@ -545,6 +552,10 @@ process_volume_cases = custom_target('process-volume-cases', input: 'kernel-proc
     depend_files: files('../scripts/kernel_volume.py', '../examples/core_math.au', '../examples/host-sort.au'),
     command: [python, '-B', files('../scripts/kernel_volume.py'), '--cases', '@INPUT@',
               '--root', meson.project_source_root(), '--output', '@OUTPUT@'])
+test('kernel-process-resident-owner', python,
+     args: ['-B', golden_runner, files('kernel-process/resident.golden'), '--', kernel_process,
+            'resident', files('kernel-process/resident.cases')],
+     suite: ['full', 'merge', 'dev'], timeout: 60)
 test('kernel-process-service-bootstrap', python,
      args: ['-B', golden_runner, files('kernel-process/bootstrap.golden'), '--', kernel_process,
             'bootstrap', files('kernel-process/bootstrap.cases')],

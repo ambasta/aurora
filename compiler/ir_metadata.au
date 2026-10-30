@@ -278,6 +278,32 @@ export namespace compiler_ir_metadata {
     auto owner_kind(RawTypeRow type) -> bool {
         return type.kind() == 13 || type.kind() == 17;
     }
+    auto retained_resource_kind(const MetadataStore& store, RawTypeRow type) -> i64 {
+        const i64 kind = service_resource_kind(store, type);
+        if (kind >= 0 && compiler_catalog::resource_retained(kind) && compiler_catalog::resource_field_eligible(kind)) {
+            return kind;
+        }
+        return -1;
+    }
+    auto field_owner_kind(const MetadataStore& store, RawTypeRow type) -> bool {
+        return owner_kind(type) || retained_resource_kind(store, type) >= 0;
+    }
+    auto retained_class(const MetadataStore& store, i64 nominal) -> bool {
+        if (nominal < 0 || nominal >= store.class_count()) {
+            return false;
+        }
+        const ClassResultRow result = store.result_at(nominal);
+        const IndexRange fields = result.fields();
+        i64 at = 0;
+        while (at < fields.count()) {
+            const FieldRow field = store.field_at(fields.begin() + at);
+            if (retained_resource_kind(store, store.type_at(field.type())) >= 0) {
+                return true;
+            }
+            at = at + 1;
+        }
+        return false;
+    }
     auto owner_type(RawTypeRow type) -> bool {
         return canonical_tail(type) && ((type.kind() == 13 && name_length(type.name()) == 0) || type.kind() == 17);
     }
@@ -295,7 +321,7 @@ export namespace compiler_ir_metadata {
         while (at < fields.count()) {
             const FieldRow field = store.field_at(fields.begin() + at);
             const RawTypeRow type = store.type_at(field.type());
-            if (owner_kind(type)) {
+            if (field_owner_kind(store, type)) {
                 return true;
             }
             at = at + 1;
@@ -754,6 +780,8 @@ export namespace compiler_ir_metadata {
                 const IndexRange fields = result.fields();
                 i64 next_leaf = 0;
                 bool composed = false;
+                i64 retained_fields = 0;
+                i64 byte_fields = 0;
                 i64 field_index = 0;
                 while (field_index < fields.count()) {
                     const FieldRow field = store.field_at(fields.begin() + field_index);
@@ -772,11 +800,19 @@ export namespace compiler_ir_metadata {
                     if (field.first_leaf() < 0 || field.first_leaf() != next_leaf) {
                         return fail(store, MetadataError::field_shape);
                     }
-                    if (owner_kind(type)) {
+                    if (field_owner_kind(store, type)) {
+                        if (owner_kind(type)) {
+                            byte_fields = byte_fields + 1;
+                        } else {
+                            retained_fields = retained_fields + 1;
+                        }
+                        if (retained_fields > 1 || (retained_fields != 0 && byte_fields != 0)) {
+                            return fail(store, MetadataError::owner_field_type);
+                        }
                         if (field.array_flag() != 0 || field.length() != 0) {
                             return fail(store, MetadataError::owner_leaves);
                         }
-                        if (!owner_type(type)) {
+                        if (!owner_type(type) && retained_resource_kind(store, type) < 0) {
                             return fail(store, MetadataError::owner_field_type);
                         }
                     } else {
@@ -1329,7 +1365,7 @@ export namespace compiler_ir_metadata {
             i64 count = 1;
             i64 child_storage = -1;
             bool empty = false;
-            if (owner_kind(type)) {
+            if (field_owner_kind(store, type)) {
                 if (field.array_flag() != 0 || field.length() != 0) {
                     return fail(store, MetadataError::storage_owner_shape);
                 }
@@ -1377,7 +1413,10 @@ export namespace compiler_ir_metadata {
                     }
                 }
             }
-            if (field_alignment != 1 && field_alignment != 8) {
+            if (retained_resource_kind(store, type) >= 0) {
+                field_alignment = 16;
+            }
+            if (field_alignment != 1 && field_alignment != 8 && field_alignment != 16) {
                 return fail(store, MetadataError::storage_alignment);
             }
             cursor = (cursor + field_alignment - 1) / field_alignment * field_alignment;
@@ -1388,8 +1427,12 @@ export namespace compiler_ir_metadata {
             if (!store.set_index(field_begin + at, field_offset)) {
                 return false;
             }
-            if (owner_kind(type)) {
-                cursor = cursor + 32;
+            if (field_owner_kind(store, type)) {
+                if (owner_kind(type)) {
+                    cursor = cursor + 32;
+                } else {
+                    cursor = cursor + compiler_catalog::resource_extent(retained_resource_kind(store, type));
+                }
             } else {
                 if (type.kind() == 5) {
                     const StorageRow child = store.storage_at(child_storage);
@@ -1745,6 +1788,17 @@ export namespace compiler_ir_metadata {
         return type.kind() == 5 && name_length(type.name()) != 0 && canonical_tail(type) && plain_borrowed_class(store,
             find_class(store, type.name()));
     }
+    auto retained_constructor(const MetadataStore& store, CallableRow row) -> bool {
+        const FlagMasks masks = FlagMasks();
+        const ReceiverShape receiver = row.first_receiver();
+        return callable_flag(row, masks.callable_receiver()) && receiver_flag(receiver, masks.receiver_constructor())
+            && retained_class(store, find_class(store, receiver.name()));
+    }
+    auto consuming_receiver(CallableRow row) -> bool {
+        const FlagMasks masks = FlagMasks();
+        return callable_flag(row, masks.callable_receiver()) && receiver_flag(row.first_receiver(),
+            masks.receiver_consuming());
+    }
     auto owning_constructor(const MetadataStore& store, CallableRow row) -> bool {
         const FlagMasks masks = FlagMasks();
         const ReceiverShape receiver = row.first_receiver();
@@ -1975,6 +2029,28 @@ export namespace compiler_ir_metadata {
     }
     auto verify_resource_signature(MetadataStore& store, CallableRow row) -> bool {
         const FlagMasks masks = FlagMasks();
+        if (retained_constructor(store, row)) {
+            if (row.borrowed_root_count() != 0 || row.value_parameter_count() != 1) {
+                return fail(store, MetadataError::retained_signature);
+            }
+            const RawTypeRow input = store.type_at(row.value_parameter_begin());
+            if (retained_resource_kind(store, input) < 0) {
+                return fail(store, MetadataError::retained_signature);
+            }
+            const ReceiverShape receiver = row.first_receiver();
+            const ClassResultRow shape = store.result_at(find_class(store, receiver.name()));
+            const IndexRange fields = shape.fields();
+            i64 at = 0;
+            while (at < fields.count()) {
+                const FieldRow field = store.field_at(fields.begin() + at);
+                const RawTypeRow type = store.type_at(field.type());
+                if (retained_resource_kind(store, type) >= 0 && !same_type(store, input, type)) {
+                    return fail(store, MetadataError::retained_signature);
+                }
+                at = at + 1;
+            }
+            return true;
+        }
         const bool constructor = owning_constructor(store, row);
         const bool receiver = callable_flag(row, masks.callable_receiver());
         const IndexRange types = row.types();
@@ -2036,6 +2112,10 @@ export namespace compiler_ir_metadata {
             }
             return true;
         }
+        if (type.kind() == 26) {
+            return (parameter && retained_constructor(store, row) && retained_resource_kind(store, type) >= 0)
+                || fail(store, MetadataError::resource_boundary);
+        }
         if (resource_type(type)) {
             if (!resource || (!owner_kind(type) && (!parameter || !plain_type(type, 12)))) {
                 return fail(store, MetadataError::resource_boundary);
@@ -2088,6 +2168,9 @@ export namespace compiler_ir_metadata {
             return fail(store, MetadataError::value_carrier);
         }
         const bool owning = owning_class(store, class_index);
+        if (retained_class(store, class_index)) {
+            return fail(store, MetadataError::value_owner);
+        }
         if (owning && (!resource || callable_flag(row, masks.callable_receiver()))) {
             return fail(store, MetadataError::value_owner);
         }
@@ -2120,6 +2203,14 @@ export namespace compiler_ir_metadata {
             }
             if (member(declaration, masks.class_array_carrier())) {
                 return fail(store, MetadataError::receiver_carrier);
+            }
+        }
+        if (receiver_flag(receiver, masks.receiver_consuming())) {
+            if (class_index < 0 || !retained_class(store, class_index) || !receiver_flag(receiver,
+                masks.receiver_mutable()) || receiver_flag(receiver, masks.receiver_constructor())
+                || row.borrowed_root_count() != 0 || row.value_parameter_count() != 0 || callable_flag(row,
+                masks.callable_span_summary())) {
+                return fail(store, MetadataError::consuming_receiver);
             }
         }
         if (callable_flag(row, masks.callable_span_summary())) {

@@ -1,0 +1,36 @@
+export module kernel.resident_owner;
+
+export namespace kernel {
+    // This is the unique owner of the fixed service slot, including while the
+    // slot is physically empty. Incarnation policy remains a separate root.
+    class ServiceOwner {
+        builtin::ResidentSlot slot;
+    public:
+        ServiceOwner(builtin::ResidentSlot input) : slot(move(input)) {
+        }
+        auto prepare() -> bool {
+            return slot.prepare();
+        }
+        auto run() -> builtin::ResidentRunResult {
+            const builtin::ResidentRunResult result = slot.run();
+            return result;
+        }
+        auto console() -> builtin::ResidentStatus {
+            return slot.console();
+        }
+        auto reject() -> builtin::ResidentStatus {
+            return slot.reject();
+        }
+        // Aurora's && is a consuming receiver, not merely a ref-qualification.
+        // The retained native owner invokes this admitted entry in place.
+        auto finish() && -> builtin::ExecEffect {
+            builtin::BootstrapProgress progress = slot.begin_shutdown();
+            while (progress == builtin::BootstrapProgress::pending) {
+                progress = slot.advance_shutdown();
+            }
+            // Even failed shutdown must finish authenticated reclamation before
+            // this field can be consumed. There is no automatic destructor.
+            return slot.finish();
+        }
+    };
+}

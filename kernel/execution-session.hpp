@@ -1,4 +1,5 @@
 #pragma once
+#include "resident-owner.hpp"
 #include <cstdint>
 #include <limits>
 
@@ -87,6 +88,7 @@ template <class Transport, class Platform> class Session final {
     public:
         U64 generation = 0;
         bool active = false, operation = false, issued = false;
+        aurora::resident::Parent parent{};
     };
     class LeaseBinding final {
     public:
@@ -104,12 +106,13 @@ template <class Transport, class Platform> class Session final {
     }
     static auto enter_grant(const void *grant, U64 generation) -> void {
         require(grant == &grant_ && generation != 0 && generation == generation_ && grant_.generation == generation &&
-                grant_.active && !grant_.operation);
+                grant_.active && !grant_.operation && aurora::resident::ParentBoundary<Platform>::valid(grant_.parent));
         grant_.operation = true;
         require(Platform::quiet());
     }
     static auto leave() -> void {
-        require(grant_.active && grant_.operation && Platform::quiet());
+        require(grant_.active && grant_.operation && Platform::quiet() &&
+                aurora::resident::ParentBoundary<Platform>::valid(grant_.parent));
         grant_.operation = false;
     }
     static auto enter_lease(const void *binding, U64 generation) -> void {
@@ -124,7 +127,7 @@ public:
         require(!grant_.active && !grant_.operation && !lease_.active &&
                 generation_ != std::numeric_limits<U64>::max() && Platform::quiet());
         ++generation_;
-        grant_ = {generation_, true, false, false};
+        grant_ = {generation_, true, false, false, aurora::resident::ParentBoundary<Platform>::capture()};
         return {&grant_, generation_};
     }
     static auto release(Argument argument) -> void {
@@ -132,6 +135,8 @@ public:
         enter_grant(argument.grant, argument.generation);
         leave();
         grant_.active = false;
+        aurora::resident::ParentBoundary<Platform>::release(grant_.parent);
+        grant_.parent = {};
     }
     [[nodiscard]] static auto prepare(const void *grant, U64 generation) -> Lease {
         enter_grant(grant, generation);

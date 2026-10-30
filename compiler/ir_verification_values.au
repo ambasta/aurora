@@ -381,6 +381,20 @@ export namespace compiler_ir_verification {
                 if (!owner_writable(w, s, base, -2, AccessMode::write)) {
                     return false;
                 }
+                const i64 nominal = slot_class(m, slot);
+                if (compiler_ir_metadata::retained_class(m, nominal)) {
+                    if (!resident_fields_settled(w, base, false)) {
+                        return false;
+                    }
+                    i64 at = w.fact_lower_bound(FactKind::resident_field, base, -1);
+                    while (at >= 0 && fact_key_at(w, at, FactKind::resident_field, base)) {
+                        const FactRow field = w.fact_at(at);
+                        if (!w.fact_erase(FactKind::resident_field, base, field.field())) {
+                            return false;
+                        }
+                        at = w.fact_lower_bound(FactKind::resident_field, base, -1);
+                    }
+                }
                 if (!w.fact_erase(FactKind::object, base, -1) || !w.fact_erase(FactKind::owned_object, base, -1)) {
                     return false;
                 }

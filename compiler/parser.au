@@ -544,11 +544,14 @@ namespace compiler_parser {
             133> names9 =
             "ServiceBootstrapEffects;ServiceBootstrapLease;BootstrapPreparation;BootstrapEffect;BootstrapProgress;BootstrapFinish;BootstrapResult;";
         const builtin::span<const u8> words9 = borrow_bytes(names9);
-        return word_list_matches(source, token, words9) || word_list_matches(source, token, words8)
-            || word_list_matches(source, token, words7) || word_list_matches(source, token, words0)
-            || word_list_matches(source, token, words1) || word_list_matches(source, token, words2)
-            || word_list_matches(source, token, words3) || word_list_matches(source, token, words4)
-            || word_list_matches(source, token, words5) || word_list_matches(source, token, words6);
+        const array<u8, 46> names10 = "ResidentSlot;ResidentRunResult;ResidentStatus;";
+        const builtin::span<const u8> words10 = borrow_bytes(names10);
+        return word_list_matches(source, token, words10) || word_list_matches(source, token, words9)
+            || word_list_matches(source, token, words8) || word_list_matches(source, token, words7)
+            || word_list_matches(source, token, words0) || word_list_matches(source, token, words1)
+            || word_list_matches(source, token, words2) || word_list_matches(source, token, words3)
+            || word_list_matches(source, token, words4) || word_list_matches(source, token, words5)
+            || word_list_matches(source, token, words6);
     }
     enum class TypeWord {
         invalid,
@@ -942,8 +945,8 @@ namespace compiler_parser {
                                                 "HostChunk;HostFileResult;HostDirectoryResult;HostOutputResult;";
                                             const builtin::span<const u8> host_words = borrow_bytes(host_samples);
                                             const array<u8,
-                                                49> execution_samples =
-                                                "ExecutionPrep;ExecutionStep;BootstrapPreparation;";
+                                                67> execution_samples =
+                                                "ExecutionPrep;ExecutionStep;BootstrapPreparation;ResidentRunResult;";
                                             const builtin::span<const u8> execution_words = borrow_bytes(
                                                 execution_samples);
                                             if (word_list_matches(source, token, execution_words)
@@ -2533,6 +2536,12 @@ namespace compiler_parser {
                 if (type_word(source, token) == TypeWord::const_type) {
                     readonly = 1;
                     token.update(advance(source, token));
+                } else {
+                    if (token.last() - token.first() == 2 && source.at(token.first()) == '&' && source.at(token.first()
+                        + 1) == '&') {
+                        readonly = 2;
+                        token.update(advance(source, token));
+                    }
                 }
             }
             if (token.last() - token.first() != 2 || source.at(token.first()) != '-' || source.at(token.first() + 1)
@@ -3182,6 +3191,21 @@ namespace compiler_parser {
         const array<u8, 66> bootstrap_enums = "BootstrapEffect;BootstrapProgress;BootstrapFinish;BootstrapResult;";
         const builtin::span<const u8> bootstrap_enum_words = borrow_bytes(bootstrap_enums);
         if (word_list_matches(source, token, bootstrap_enum_words)) {
+            return AdmissionType(AdmissionKind::copied, 0, token);
+        }
+        const array<u8, 37> lexical_owners = "ExecutionLease;ServiceBootstrapLease;";
+        const builtin::span<const u8> lexical_owner_words = borrow_bytes(lexical_owners);
+        if (word_list_matches(source, token, lexical_owner_words)) {
+            return AdmissionType(AdmissionKind::owner, 0, token);
+        }
+        const array<u8, 12> resident_owner = "ResidentSlot";
+        const builtin::span<const u8> resident_owner_word = borrow_bytes(resident_owner);
+        if (word_matches(source, token, resident_owner_word, 0, 12)) {
+            return AdmissionType(AdmissionKind::owner, 0, token);
+        }
+        const array<u8, 14> resident_enum = "ResidentStatus";
+        const builtin::span<const u8> resident_enum_word = borrow_bytes(resident_enum);
+        if (word_matches(source, token, resident_enum_word, 0, 14)) {
             return AdmissionType(AdmissionKind::copied, 0, token);
         }
         const array<u8, 31> host_enums = "HostExit;HostStatus;HostStream;";

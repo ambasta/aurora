@@ -241,6 +241,42 @@ root and frame accounting. The admitted list has at most 64 clients; companion
 owner runs 64 + ordinal cannot alias client runs 1..64. Case 7 is only two memory/print
 processes and has no filesystem binding. Cases 8..10 retain a service across clients.
 
+### Retained service-slot ownership
+
+Production retains one `kernel::ServiceOwner` containing a private nominal
+`ResidentSlot` resource. The slot owner remains live while its physical process
+is absent, starting, ready or lost; the separate `ServiceIncarnation` root still
+owns those policies. Page tables, saved frames and ENTER/RESUME evidence remain
+native. This does not add process capacity, an escaping child handle or a general
+scheduler.
+
+Native composition supplies one authentic dormant descriptor to the emitted
+complete constructor in fresh stable storage. Activation checks complete layout,
+canonical field identity and consumed input. The wrapper cannot copy or move,
+and finalization cannot reconstruct another owner in the same boot. A copied
+generation or descriptor is not authority: each field effect authenticates its
+exact stable address, binding and epoch.
+
+Each outer runtime API admits one immutable operation context. The source owner
+may consume only its matching prepare, run, console or reject operation, once.
+Client execution requires both that context's preadmitted command and the service
+slot owner. Nested Execution/Bootstrap grants pin the exact context and must all
+end before the owner's synchronous borrow returns. Callbacks may enter the
+separate incarnation and budget roots, never this already-borrowed owner. The
+independent boot recovery grant runs before service-slot construction; legacy
+fixture compositions remain separate and do not mint production owner authority.
+
+Production console exit now explicitly finalizes the owner instead of retaining
+the external service until machine termination. The source consuming `finish() &&`
+entry stages control 6 once, advances the canonical transport one step at a time,
+and consumes the field only after authenticated shutdown or abandonment and all
+resident, endpoint, snapshot and frame audits. Empty or already-lost slots never
+start a replacement. Mounted authority is revoked through existing retirement,
+not reminted. Every normal result, including failure, has completed reclamation;
+an unsafe teardown entry or unreclaimable boundary is fail-stop, not unwinding.
+The actual retained terminal entry is invoked in place by native composition;
+ordinary source `move(local).finish()` calls remain outside this first surface.
+
 ### Command loader boundary
 
 The production supervisor API `run_program` uses the same retained owner and

@@ -264,7 +264,7 @@ export namespace compiler_parser {
     // type/binding, borrow and const qualifier; end locates admission
     // after the binding. Initializers use token/expression. Callable nodes use
     // token=name, type=result, other=parameters, body=block (or constructor
-    // initializer list), and receiver-const qualifier. Field nodes use token=type
+    // initializer list), and receiver qualifier (0 mutable, 1 const, 2 consuming). Field nodes use token=type
     // start, type/binding, and end after the semicolon. Preambles use token/binding
     // for the module name interval, body for imports and the interface qualifier.
     // Enums use token=name and body=cases. Import/case lists use token/end/previous.
@@ -536,7 +536,8 @@ export namespace compiler_parser {
                 || value.expression() >= used || value.target() < -1 || value.target() >= used || value.type() < -1
                 || value.type() >= type_count || value.binding() < -1 || value.body() < -1 || value.body()
                 >= syntax_count || value.other() < -1 || value.other() >= syntax_count || value.borrow_site() < -1
-                || value.mutable_binding() < 0 || value.mutable_binding() > 1 || syntax_count == 9223372036854775807) {
+                || value.mutable_binding() < 0 || value.mutable_binding() > 2 || (value.mutable_binding() == 2
+                && value.kind() != SyntaxKind::method) || syntax_count == 9223372036854775807) {
                 return -1;
             }
             if (syntax_count == syntax_nodes.size()) {

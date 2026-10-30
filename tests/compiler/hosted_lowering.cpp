@@ -264,7 +264,8 @@ struct Fixture {
                                      {scalar(Role::ClassNominalId, classSymbol),
                                       scalar(Role::MutableValue),
                                       scalar(Role::Constructor),
-                                      scalar(Role::PublicAccess, 1)});
+                                      scalar(Role::PublicAccess, 1),
+                                      scalar(Role::ReceiverConsumption)});
         field(function, 5) = scalar(Role::ReceiverRef, receiver);
     }
     void finish() {

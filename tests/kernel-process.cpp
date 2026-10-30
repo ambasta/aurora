@@ -15,6 +15,7 @@
 // stdout is compared with the golden file beside the cases.
 #include "../kernel/execution-session.hpp"
 #include "../kernel/service-bootstrap.hpp"
+#include "../kernel/resident-owner.hpp"
 #include "../kernel/retained-budget.hpp"
 #include "../kernel/retained-service.hpp"
 #include "../kernel/uefi/frames.hpp"
@@ -1668,9 +1669,13 @@ auto service_incarnation_mode(const char *cases) -> int {
     return 0;
 }
 
+#include "kernel-process-resident.hpp"
+
 } // namespace
 
 auto main(int argc, char **argv) -> int {
+    if (argc == 3 && std::string{argv[1]} == "resident")
+        return resident_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "bootstrap")
         return bootstrap_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "service-incarnation")

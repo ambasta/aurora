@@ -260,6 +260,66 @@ export namespace compiler_ir_verification {
         const ValueRow result = ValueRow(result_key, bounds);
         return w.set_current(result);
     }
+    auto transfer_retained_resource(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const compiler_ir_instructions::RawInstructionRow instruction = s.instruction_at(id);
+        if (instruction.form() == 88) {
+            const i64 offset = transfer_value(s, id, 1);
+            if (has_fact(w, FactKind::resident_input, offset, -1)) {
+                return w.fail(second_error(VerificationErrorSecond::service_resource_requires_fresh_storage));
+            }
+            const TokenRow empty = no_token();
+            const FactRow input = semantic_fact(FactKind::resident_input, offset, -1, id, ByteDisposition::live, empty);
+            return w.fact_set(input) && w.clear_current();
+        }
+        const i64 ordinal = transfer_value(s, id, 1);
+        const i64 method = transfer_value(s, id, 2);
+        const i64 result_offset = transfer_value(s, id, 3);
+        const i64 kind = transfer_value(s, id, 4);
+        const i64 effect = compiler_catalog::resource_method_effect(kind, method);
+        FactRow field = w.fact_find(FactKind::resident_field, 0, ordinal);
+        const FactRow root = w.fact_find(FactKind::owned_object, 0, -1);
+        if (!require(w, present(root) && root.disposition() == ByteDisposition::live && present(field)
+            && field.disposition() == ByteDisposition::live,
+            first_error(VerificationErrorFirst::resource_field_does_not_hold_live_ownership))) {
+            return false;
+        }
+        AccessMode mode = AccessMode::read;
+        if (effect != 0) {
+            mode = AccessMode::write;
+        }
+        if (!owner_writable(w, s, 0, ordinal, mode)) {
+            return false;
+        }
+        const i64 result_type = compiler_catalog::resource_method_result(kind, method);
+        const bool copied = compiler_ir_metadata::catalogue_kind(result_type) == 5;
+        if (copied) {
+            if (!transfer_has(w, FactKind::object, result_offset)
+                || compiler_ir_initialization::object_was_constructed(w, m, result_offset) != 0
+                || compiler_ir_initialization::object_pristine(w, m, result_offset) != 1) {
+                return w.fail(second_error(VerificationErrorSecond::service_observation_requires_pristine_sample));
+            }
+            if (!compiler_ir_initialization::mark_object(w, m, result_offset)) {
+                return false;
+            }
+        }
+        if (effect == 2) {
+            if (!compiler_ir_metadata::consuming_receiver(m.callable_at(w.callable()))) {
+                return w.fail(second_error(VerificationErrorSecond::service_resource_provenance_mismatch));
+            }
+            field.set_disposition(ByteDisposition::consumed);
+            if (!w.fact_set(field)) {
+                return false;
+            }
+        }
+        if (copied) {
+            return w.clear_current();
+        }
+        const TypeKey type = transfer_catalogue_type(m, result_type);
+        const BoundsEvidence bounds = empty_bounds();
+        const ValueRow result = ValueRow(type, bounds);
+        return w.set_current(result);
+    }
     auto transfer_services(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
         const compiler_ir_instructions::RawInstructionRow op = s.instruction_at(id);

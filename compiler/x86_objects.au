@@ -1618,6 +1618,70 @@ export namespace compiler_x86 {
         }
         return true;
     }
+    // Retained fields keep their canonical stable address through native effects.
+    // The verifier admits complete initialization and explicit terminal use; no
+    // owning descriptor is exposed as a scalar or moved to call scratch space.
+    auto emit_retained_resource(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 instruction) -> bool {
+        const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(instruction);
+        const i64 current = w.current_callable();
+        if (row.form() == 88) {
+            const i64 parameter = operand_value(s, instruction, 0);
+            const i64 destination = operand_value(s, instruction, 1);
+            const i64 saved = w.call_record_save();
+            const i64 record = w.pack_address(0, saved);
+            emit_load(w, o, record, Register::r11, false);
+            const i64 source = w.pack_address(3, record_offset(m, current, parameter));
+            const i64 target = w.pack_address(0, destination);
+            object_copy_record_words(w, o, source, target, 16);
+            clear_bytes(w, o, 0, 16, source);
+            return w.ok();
+        }
+        const i64 root = operand_value(s, instruction, 0);
+        const i64 field = operand_value(s, instruction, 1);
+        const i64 method = operand_value(s, instruction, 2);
+        const i64 result = operand_value(s, instruction, 3);
+        const i64 resource = operand_value(s, instruction, 4);
+        const i64 type = compiler_catalog::resource_method_result(resource, method);
+        const i64 symbol = resource_runtime_symbol(w, resource, method);
+        const i64 first = bytes_owner_address(w, o, m, root, field, 0);
+        const i64 second = w.advance_address(first, 8);
+        emit_load(w, o, first, Register::rdi, false);
+        emit_load(w, o, second, Register::rsi, false);
+        emit_lea(w, o, first, Register::rdx);
+        if (compiler_catalog::type_kind(type) == compiler_resolver::ResolvedTypeKind::class_value) {
+            const i64 fields = compiler_catalog::member_count(type);
+            const i64 output = w.pack_address(0, result);
+            clear_bytes(w, o, 0, fields * 8, output);
+            emit_lea(w, o, output, Register::rcx);
+            emit_call_runtime(w, o, symbol);
+            i64 at = 0;
+            while (at < fields) {
+                const i64 member = compiler_catalog::field_type(type, at);
+                const i64 maximum = resource_result_maximum(member);
+                if (maximum >= 0) {
+                    const i64 address = w.pack_address(0, result - at * 8);
+                    emit_alu_mem_imm(w, o, AluOp::compare, maximum, address);
+                    emit_branch(w, o, 7, 4, 0);
+                }
+                at = at + 1;
+            }
+            return w.ok();
+        }
+        emit_call_runtime(w, o, symbol);
+        if (compiler_catalog::resource_method_effect(resource, method) == 2) {
+            // Native terminal cleanup has settled on every normal return,
+            // including a failure-valued result. Preserve RAX while clearing.
+            const i64 consumed = bytes_owner_address(w, o, m, root, field, 0);
+            clear_bytes(w, o, 0, 16, consumed);
+        }
+        const i64 maximum = resource_result_maximum(type);
+        if (maximum < 0) {
+            return w.fail();
+        }
+        emit_service_completion(w, o, symbol, 3, maximum);
+        return w.ok();
+    }
     auto emit_objects(EmitWorkspace& workspace, ObjectWorkspace& object,
         const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
         i64 instruction) -> bool {
@@ -1626,6 +1690,10 @@ export namespace compiler_x86 {
         if (form == 1 || form == 2 || form == 81 || form == 82) {
             // Provenance and loan lifetime are verified before emission. The
             // service loan-to-frame map is prepared over the whole retained body.
+            return true;
+        }
+        if (form == 88 || form == 89) {
+            emit_retained_resource(workspace, object, metadata, store, instruction);
             return true;
         }
         if (form >= 85 && form <= 87) {

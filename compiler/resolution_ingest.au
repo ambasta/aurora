@@ -371,7 +371,8 @@ namespace compiler_resolver {
             if (node.kind() == compiler_parser::SyntaxKind::invalid || node.token() < 0 || node.end() <= node.token()
                 || node.previous() < -1 || node.previous() >= at || node.body() < -1 || node.body() >= at
                 || node.other() < -1 || node.other() >= at || node.binding() < -1 || node.borrow_site() < -1
-                || node.mutable_binding() < 0 || node.mutable_binding() > 1) {
+                || node.mutable_binding() < 0 || node.mutable_binding() > 2 || (node.mutable_binding() == 2
+                && node.kind() != compiler_parser::SyntaxKind::method)) {
                 session.fail_storage(StorageStatus::invalid);
             }
             row.set_declaration_kind(node.kind());

@@ -561,6 +561,9 @@ export namespace compiler_lowering {
         const ContinuationRow frame = session.continuation(frame_id);
         const i64 node = frame.syntax_node();
         const i64 source = source_ref(session, node);
+        if (retained_resource(session, frame.output_mark())) {
+            return fail(session, LoweringError::ownership_constructor_type, source);
+        }
         if (frame.scope_head() < 0) {
             return fail(session, LoweringError::ownership_constructor_requires_typed_initializer, source);
         }
