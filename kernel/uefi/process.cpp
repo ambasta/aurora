@@ -2714,11 +2714,18 @@ auto execution_cancel_fixture(std::span<const std::byte> volume,
             const auto result = static_cast<Request>(Session::request(lease.binding, lease.generation));
             if (result == Request::pending) {
                 if (point == 2 && observed) {
-                    if (endpoint.transaction != drain_transaction || endpoint.next != drain_next ||
-                        residents[0].state.budget->used() < drain_used ||
-                        residents[0].state.budget->quantum() != drain_quantum)
+                    const U64 used = residents[0].state.budget->used();
+                    const U64 quantum = residents[0].state.budget->quantum();
+                    const U64 ceiling = U64{1} << ((residents[0].state.flags & 8) ? 31 : 24);
+                    // quantum is the remainder of the current tick, not its
+                    // profile size. Crossing a tick increments used and may
+                    // reload quantum; every actual server step consumes counts.
+                    const bool consumed = used > drain_used || (used == drain_used && quantum < drain_quantum);
+                    if (endpoint.transaction != drain_transaction || endpoint.next != drain_next || !consumed ||
+                        !residents[0].state.budget->available() || !quantum || quantum > ceiling)
                         fail("execution cancellation drain renewed transaction or budget");
-                    drain_used = residents[0].state.budget->used();
+                    drain_used = used;
+                    drain_quantum = quantum;
                 }
                 continue;
             }
