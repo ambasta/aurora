@@ -267,6 +267,37 @@ fails. Voluntary zero-count progress consumes one count in source. Retirement
 captures immutable terminal ticks with run/service identity before stopping and
 scrubbing the root; those observations cannot resume execution.
 
+### Retained service incarnation policy
+
+One `kernel.service_incarnation::ServiceIncarnation` root owns the file owner's
+incarnation ordinal, startup/ready/stopping/retiring phase, disk readiness and
+frozen terminal observation. Native code retains the actual resident, endpoint
+binding, transport and cleanup effects, not a second readiness flag or generation
+allocator. An ordinal copied into a reply is not authority to create a service.
+
+Each existing runtime API entry opens an operation after attachment and recovery;
+its exit closes only after the physical boundary audit and settled source phase.
+This is an API operation, not necessarily a whole console command. At most one
+fresh incarnation is attempted per operation. Reusing a live incarnation also
+consumes that operation's incarnation opportunity. Loss cannot refund it after
+cleanup; only a later operation may start another owner. Generation-pinned
+operations never start a replacement. The largest ordinal remains usable while
+its owner is ready; only the next allocation is refused rather than wrapping.
+
+Readiness is published after the existing authenticated startup controls. A
+usable RAM file owner may report disk unavailable. Loss revokes logical readiness
+before physical retirement; only verified removal of residents, snapshots and
+pending endpoint authority acknowledges cleanup. Normal fixture shutdown requires
+prior shutdown intent and an authenticated successful exit; an unexpected exit,
+even status zero, remains service loss. Failed requests and uncertain commits are
+not replayed. Existing one-way mounted/recovery grants are unchanged.
+
+The root uses the same bounded plain-class lifetime foundation as the budget
+ledger: unique opaque native storage, exact emitted ABI admission, short exclusive
+loans and an import-free object. No loan crosses process/device/cleanup effects.
+This is bounded service lifecycle policy, not a general async child capability,
+restart manager, scheduler or init system.
+
 ### Retained file service
 
 Case 8 designates one `services/file-service.au` ELF as the file owner and runs

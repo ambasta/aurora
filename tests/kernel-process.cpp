@@ -15,6 +15,7 @@
 // stdout is compared with the golden file beside the cases.
 #include "../kernel/execution-session.hpp"
 #include "../kernel/retained-budget.hpp"
+#include "../kernel/retained-service.hpp"
 #include "../kernel/uefi/frames.hpp"
 #include "../kernel/uefi/kernel-space.hpp"
 #include "kernel-process-files.hpp"
@@ -23,6 +24,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -1151,9 +1153,178 @@ auto budget_mode(const char *cases) -> int {
     return 0;
 }
 
+namespace service_fixture {
+namespace service = aurora::service;
+using U64 = std::uint64_t;
+constexpr const char *actions[] = {"refused", "reuse", "start"};
+constexpr const char *phases[] = {"absent", "starting", "ready", "stopping", "retiring"};
+constexpr const char *reasons[] = {"none",
+                                   "invalid_reply",
+                                   "consumer_rejected",
+                                   "exited",
+                                   "watchdog",
+                                   "invalid_call",
+                                   "fault",
+                                   "caller_expired",
+                                   "unavailable",
+                                   "shutdown"};
+bool excluded = true, reenter = false;
+class Platform {
+public:
+    static auto quiet() -> bool;
+    [[noreturn]] static auto fail() -> void {
+        std::_Exit(77);
+    }
+};
+using Root = service::Root<Platform>;
+Root *entered = nullptr;
+auto Platform::quiet() -> bool {
+    if (reenter) {
+        reenter = false;
+        if (!entered)
+            usage("missing service reentry target");
+        static_cast<void>(entered->generation());
+    }
+    return excluded;
+}
+template <class Value, std::size_t N> auto word(Value value, const char *const (&names)[N]) -> const char * {
+    const auto index = static_cast<U64>(value);
+    if (index >= N)
+        usage("invalid source service observation");
+    return names[index];
+}
+auto reason(const std::string &name) -> service::Reason {
+    for (std::size_t index = 0; index < std::size(reasons); ++index)
+        if (name == reasons[index])
+            return static_cast<service::Reason>(index);
+    return static_cast<service::Reason>(number(name));
+}
+auto view(Root &root, std::ostream &result) -> void {
+    result << " view=" << word(root.phase(), phases) << ':' << root.generation() << ':' << root.disk_ready(0) << ':'
+           << word(root.reason(), reasons) << ':' << root.detail();
+}
+auto denial(const std::string &kind) -> void {
+    const auto child = fork();
+    if (child < 0)
+        usage("service fixture fork failed");
+    if (!child) {
+        Root root;
+        if (kind == "before_create") {
+            static_cast<void>(root.open_operation());
+        } else {
+            root.create();
+            if (kind == "duplicate_create") {
+                root.create();
+            } else if (kind == "not_excluded") {
+                excluded = false;
+                static_cast<void>(root.generation());
+            } else if (kind == "reentrant") {
+                entered = &root;
+                reenter = true;
+                static_cast<void>(root.generation());
+            } else
+                usage("unknown service denial");
+        }
+        std::_Exit(1);
+    }
+    int status{};
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status) != 77)
+        usage("service root denial failed");
+}
+extern "C" auto __au_runtime_service_saturation_create(void *) -> void;
+auto saturation(std::ostream &result) -> void {
+    // Complete source construction, no private field reads or production hook.
+    // This local root is policy data, not bound to a process or endpoint.
+    alignas(16) std::array<std::byte, 128> storage{};
+    auto *root = storage.data();
+    constexpr auto maximum = std::numeric_limits<U64>::max();
+    __au_runtime_service_saturation_create(root);
+    result << " open=" << service::__au_runtime_service_open_operation(root)
+           << " admit=" << word(service::__au_runtime_service_admit(root, 0, true), actions)
+           << " generation=" << service::__au_runtime_service_generation(root)
+           << " ready=" << service::__au_runtime_service_mark_ready(root, maximum, true)
+           << " admit=" << word(service::__au_runtime_service_admit(root, 0, true), actions)
+           << " close=" << service::__au_runtime_service_close_operation(root)
+           << " open=" << service::__au_runtime_service_open_operation(root)
+           << " admit=" << word(service::__au_runtime_service_admit(root, maximum, false), actions)
+           << " loss=" << service::__au_runtime_service_lose(root, maximum, service::Reason::fault, 14)
+           << " clean=" << service::__au_runtime_service_cleaned(root, maximum)
+           << " close=" << service::__au_runtime_service_close_operation(root)
+           << " open=" << service::__au_runtime_service_open_operation(root)
+           << " admit=" << word(service::__au_runtime_service_admit(root, 0, true), actions)
+           << " view=" << word(service::__au_runtime_service_phase(root), phases) << ':'
+           << service::__au_runtime_service_generation(root) << ':' << service::__au_runtime_service_disk_ready(root, 0)
+           << ':' << word(service::__au_runtime_service_reason(root), reasons) << ':'
+           << service::__au_runtime_service_detail(root)
+           << " close=" << service::__au_runtime_service_close_operation(root);
+}
+} // namespace service_fixture
+
+auto service_incarnation_mode(const char *cases) -> int {
+    namespace fixture = service_fixture;
+    std::ifstream input{cases};
+    if (!input)
+        usage("cannot read service-incarnation cases");
+    for (std::string line; std::getline(input, line);) {
+        if (line.empty() || line.starts_with('#'))
+            continue;
+        std::istringstream row{line};
+        std::string name, token;
+        row >> name;
+        std::ostringstream result;
+        result << name;
+        fixture::Root root;
+        root.create();
+        while (row >> token) {
+            std::vector<std::string> fields;
+            std::istringstream part{token};
+            for (std::string field; std::getline(part, field, ':');)
+                fields.push_back(field);
+            const auto &operation = fields[0];
+            if (operation == "deny" && fields.size() == 2) {
+                fixture::denial(fields[1]);
+                result << " denied";
+            } else if (operation == "saturation" && fields.size() == 1) {
+                fixture::saturation(result);
+            } else if (operation == "view" && fields.size() == 1) {
+                fixture::view(root, result);
+            } else if (operation == "open" && fields.size() == 1) {
+                result << " open=" << root.open_operation();
+            } else if (operation == "close" && fields.size() == 1) {
+                result << " close=" << root.close_operation();
+            } else if (operation == "admit" && fields.size() == 3) {
+                const auto permit = number(fields[2]);
+                if (permit > 1)
+                    usage("invalid service fixture permit flag");
+                result << " admit=" << fixture::word(root.admit(number(fields[1]), permit != 0), fixture::actions);
+            } else if (operation == "ready" && fields.size() == 3) {
+                const auto disk = number(fields[2]);
+                if (disk > 1)
+                    usage("invalid service fixture disk flag");
+                result << " ready=" << root.mark_ready(number(fields[1]), disk != 0);
+            } else if (operation == "shutdown" && fields.size() == 2) {
+                result << " shutdown=" << root.begin_shutdown(number(fields[1]));
+            } else if (operation == "loss" && fields.size() == 4) {
+                result << " loss=" << root.lose(number(fields[1]), fixture::reason(fields[2]), number(fields[3]));
+            } else if (operation == "exit" && fields.size() == 2) {
+                result << " exit=" << root.normal_exit(number(fields[1]));
+            } else if (operation == "clean" && fields.size() == 2) {
+                result << " clean=" << root.cleaned(number(fields[1]));
+            } else if (operation == "disk" && fields.size() == 2) {
+                result << " disk=" << root.disk_ready(number(fields[1]));
+            } else
+                usage("invalid service-incarnation operation");
+        }
+        std::cout << result.str() << '\n';
+    }
+    return 0;
+}
+
 } // namespace
 
 auto main(int argc, char **argv) -> int {
+    if (argc == 3 && std::string{argv[1]} == "service-incarnation")
+        return service_incarnation_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "budget")
         return budget_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "execution")

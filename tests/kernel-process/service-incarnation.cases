@@ -1,0 +1,30 @@
+# Actual retained source policy; ordinals are observations, not authority.
+fresh view open admit:0:1 view ready:1:1 view close
+ready_reuse open admit:0:1 ready:1:0 close open admit:1:0 admit:0:0 view close
+pinned_absent open admit:7:1 view close
+permission_refusal open admit:0:0 view admit:0:1 ready:1:0 close
+zero_generation_loss open loss:0:unavailable:0 view close
+operation_exclusion open open close close admit:0:1 view
+startup_failure open admit:0:1 loss:1:unavailable:3 clean:1 admit:0:1 view close open admit:0:1 ready:2:0 view close
+cleanup_required open admit:0:1 ready:1:1 loss:1:fault:14 view admit:0:1 clean:2 close clean:1 view close
+stale_bindings open admit:0:1 ready:2:1 ready:1:1 loss:2:fault:14 shutdown:2 clean:2 view close
+ready_once open ready:1:1 admit:0:1 ready:1:1 ready:1:0 clean:1 view close
+frozen_loss open admit:0:1 ready:1:1 loss:1:invalid_reply:19 loss:1:fault:6 view clean:1 clean:1 view close
+unexpected_zero_exit open admit:0:1 ready:1:0 exit:1 loss:1:exited:0 view clean:1 close
+normal_shutdown open admit:0:1 ready:1:1 shutdown:1 view admit:0:1 close exit:1 view clean:1 view close
+shutdown_failure open admit:0:1 ready:1:1 shutdown:1 loss:1:exited:7 view exit:1 clean:1 close
+shutdown_intent_once open admit:0:1 ready:1:0 shutdown:1 shutdown:1 exit:2 exit:1 clean:1 admit:0:1 close
+pinned_ready open admit:0:1 ready:1:1 admit:2:1 disk:2 disk:1 view close
+stale_after_restart open admit:0:1 loss:1:watchdog:64 clean:1 close open admit:1:1 view admit:0:1 ready:1:1 ready:2:1 loss:1:fault:6 clean:1 view close
+closed_mutations open admit:0:1 ready:1:1 close loss:1:fault:6 shutdown:1 ready:1:0 clean:1 view
+invalid_reasons open admit:0:1 ready:1:1 loss:1:none:0 loss:1:shutdown:0 loss:1:99:0 view close
+starting_cannot_close open admit:0:1 close open ready:1:0 close
+normal_exit_without_start open exit:0 exit:1 view close
+maximum_generation saturation
+before_create deny:before_create
+duplicate_create deny:duplicate_create
+not_excluded deny:not_excluded
+reentrant deny:reentrant
+# Reusing an owner also consumes this operation's opportunity to select an incarnation.
+reused_loss_no_restart open admit:0:1 ready:1:1 close open admit:0:1 loss:1:fault:14 clean:1 admit:0:1 view close open admit:0:1 ready:2:0 view close
+pinned_reused_loss_no_restart open admit:0:1 ready:1:1 close open admit:1:0 loss:1:invalid_reply:19 clean:1 admit:0:1 admit:1:1 view close open admit:0:1 ready:2:1 view close

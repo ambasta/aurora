@@ -1,0 +1,50 @@
+module kernel_service_root;
+import kernel.service_incarnation;
+
+// Synchronous, effect-free loans of one complete retained lifecycle root.
+// Physical attachment, identity binding and cleanup remain native obligations.
+auto process_service_create() -> kernel::ServiceIncarnation {
+    const kernel::ServiceIncarnation service = kernel::ServiceIncarnation(0u64);
+    return service;
+}
+auto process_service_open_operation(kernel::ServiceIncarnation& service) -> bool {
+    return service.open_operation();
+}
+auto process_service_close_operation(kernel::ServiceIncarnation& service) -> bool {
+    return service.close_operation();
+}
+auto process_service_admit(kernel::ServiceIncarnation& service, u64 expected,
+    bool permit_start) -> kernel::ServiceAction {
+    return service.admit(expected, permit_start);
+}
+auto process_service_mark_ready(kernel::ServiceIncarnation& service, u64 generation, bool disk_ready) -> bool {
+    return service.mark_ready(generation, disk_ready);
+}
+auto process_service_begin_shutdown(kernel::ServiceIncarnation& service, u64 generation) -> bool {
+    return service.begin_shutdown(generation);
+}
+auto process_service_lose(kernel::ServiceIncarnation& service, u64 generation, kernel::ServiceReason reason,
+    u64 detail) -> bool {
+    return service.lose(generation, reason, detail);
+}
+auto process_service_normal_exit(kernel::ServiceIncarnation& service, u64 generation) -> bool {
+    return service.normal_exit(generation);
+}
+auto process_service_cleaned(kernel::ServiceIncarnation& service, u64 generation) -> bool {
+    return service.cleaned(generation);
+}
+auto process_service_generation(const kernel::ServiceIncarnation& service) -> u64 {
+    return service.generation();
+}
+auto process_service_phase(const kernel::ServiceIncarnation& service) -> kernel::ServicePhase {
+    return service.phase();
+}
+auto process_service_disk_ready(const kernel::ServiceIncarnation& service, u64 expected) -> bool {
+    return service.disk_ready(expected);
+}
+auto process_service_reason(const kernel::ServiceIncarnation& service) -> kernel::ServiceReason {
+    return service.reason();
+}
+auto process_service_detail(const kernel::ServiceIncarnation& service) -> u64 {
+    return service.detail();
+}

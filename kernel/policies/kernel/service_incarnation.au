@@ -1,0 +1,150 @@
+export module kernel.service_incarnation;
+
+export namespace kernel {
+    enum class ServicePhase {
+        absent,
+        starting,
+        ready,
+        stopping,
+        retiring
+    };
+    enum class ServiceAction {
+        refused,
+        reuse,
+        start
+    };
+    enum class ServiceReason {
+        none,
+        invalid_reply,
+        consumer_rejected,
+        exited,
+        watchdog,
+        invalid_call,
+        fault,
+        caller_expired,
+        unavailable,
+        shutdown
+    };
+
+    // Copied ordinals and observations are not capabilities. Only the native
+    // retained-root owner binds this policy to an authenticated physical owner.
+    class ServiceIncarnation {
+        u64 incarnation;
+        ServicePhase state;
+        bool operation_open;
+        bool start_spent;
+        bool disk_available;
+        ServiceReason terminal_reason;
+        u64 terminal_detail;
+    public:
+        ServiceIncarnation(u64 previous) : incarnation(previous), state(ServicePhase::absent), operation_open(false),
+            start_spent(false), disk_available(false), terminal_reason(ServiceReason::none), terminal_detail(0u64) {
+        }
+        auto open_operation() -> bool {
+            if (operation_open || (state != ServicePhase::absent && state != ServicePhase::ready)) {
+                return false;
+            }
+            operation_open = true;
+            // An operation admitted with an existing owner cannot replace it
+            // after loss: that would replay work within the same operation.
+            start_spent = state == ServicePhase::ready;
+            return true;
+        }
+        auto close_operation() -> bool {
+            if (!operation_open || (state != ServicePhase::absent && state != ServicePhase::ready)) {
+                return false;
+            }
+            operation_open = false;
+            return true;
+        }
+        auto admit(u64 expected, bool permit_start) -> ServiceAction {
+            if (!operation_open) {
+                return ServiceAction::refused;
+            }
+            if (state == ServicePhase::ready) {
+                if (expected == 0u64 || expected == incarnation) {
+                    return ServiceAction::reuse;
+                }
+                return ServiceAction::refused;
+            }
+            if (state != ServicePhase::absent || expected != 0u64 || !permit_start || start_spent || incarnation
+                == 18446744073709551615u64) {
+                return ServiceAction::refused;
+            }
+            // Consume before any physical load. Failure and cleanup cannot
+            // refund an attempt within this already-open outer operation.
+            start_spent = true;
+            incarnation = incarnation + 1u64;
+            state = ServicePhase::starting;
+            disk_available = false;
+            terminal_reason = ServiceReason::none;
+            terminal_detail = 0u64;
+            return ServiceAction::start;
+        }
+        auto mark_ready(u64 generation, bool disk_ready) -> bool {
+            if (!operation_open || generation == 0u64 || generation != incarnation || state != ServicePhase::starting) {
+                return false;
+            }
+            state = ServicePhase::ready;
+            disk_available = disk_ready;
+            return true;
+        }
+        auto begin_shutdown(u64 generation) -> bool {
+            if (!operation_open || generation == 0u64 || generation != incarnation || state != ServicePhase::ready) {
+                return false;
+            }
+            state = ServicePhase::stopping;
+            disk_available = false;
+            return true;
+        }
+        auto lose(u64 generation, ServiceReason reason, u64 detail) -> bool {
+            if (!operation_open || generation == 0u64 || generation != incarnation || (state != ServicePhase::starting
+                && state != ServicePhase::ready && state != ServicePhase::stopping)) {
+                return false;
+            }
+            if (reason != ServiceReason::invalid_reply && reason != ServiceReason::consumer_rejected && reason
+                != ServiceReason::exited && reason != ServiceReason::watchdog && reason != ServiceReason::invalid_call
+                && reason != ServiceReason::fault && reason != ServiceReason::caller_expired && reason
+                != ServiceReason::unavailable) {
+                return false;
+            }
+            state = ServicePhase::retiring;
+            disk_available = false;
+            terminal_reason = reason;
+            terminal_detail = detail;
+            return true;
+        }
+        auto normal_exit(u64 generation) -> bool {
+            if (!operation_open || generation == 0u64 || generation != incarnation || state != ServicePhase::stopping) {
+                return false;
+            }
+            state = ServicePhase::retiring;
+            disk_available = false;
+            terminal_reason = ServiceReason::shutdown;
+            terminal_detail = 0u64;
+            return true;
+        }
+        auto cleaned(u64 generation) -> bool {
+            if (!operation_open || generation == 0u64 || generation != incarnation || state != ServicePhase::retiring) {
+                return false;
+            }
+            state = ServicePhase::absent;
+            return true;
+        }
+        auto generation() const -> u64 {
+            return incarnation;
+        }
+        auto phase() const -> ServicePhase {
+            return state;
+        }
+        auto disk_ready(u64 expected) const -> bool {
+            return state == ServicePhase::ready && disk_available && (expected == 0u64 || expected == incarnation);
+        }
+        auto reason() const -> ServiceReason {
+            return terminal_reason;
+        }
+        auto detail() const -> u64 {
+            return terminal_detail;
+        }
+    };
+}
