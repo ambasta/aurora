@@ -158,7 +158,34 @@ and generation. A release with a stale generation, the wrong owner, a kernel
 owner, a kernel, free or retired frame, or a noncanonical record is rejected with
 its reason and leaves the record unchanged. A generation that would wrap retires
 the frame. Owners 1..15 are kernel uses (1 tables, 2 metadata); allocation
-starts at 16. `Table::audit` walks every record and the free list.
+starts at 16.
+
+The retained Aurora `FrameAllocator` owns every record, free-list head, free and
+allocated count, the two owner counters, poison state and the complete audit.
+The native `Table` is an opaque forwarding facade, not a second allocator.
+Allocation and release validate transitions and arithmetic before the committing
+record store; ordinary rejection leaves the ledger unchanged. Full audit walks
+every record and free-list link, detects cycles and checks owner and total counts.
+
+A private `builtin::OwnedWords` field holds exclusive access to the fixed metadata
+bank. Native boot admission reserves, maps and zeros that backing without using
+the allocator it is about to initialize. Complete construction transfers the
+unique grant; explicit unpublished initialization fills the ledger before use.
+The grant cannot be copied, resized, rebound or created from a source address.
+Checked word effects authenticate binding, epoch, bounds and the synchronous
+access scope before dereferencing. `builtin::require` fails stop on an impossible
+invariant, without unwinding or hiding cleanup. Consuming finish requires a
+consistent audit and zero allocated frames, then revokes access; reserved kernel
+backing is not falsely reported freed.
+
+The descriptor and root remain in permanent kernel storage while the runtime
+extension is detached between console operations. Its gate closes before unmap;
+reattach verifies the same bank, extent and mapping before resuming the unchanged
+grant, followed by full physical and source audits. No loan survives the call or
+physical detach. Entry admits the kernel root or the authenticated current process
+root sharing that metadata (including demand faults), with interrupts disabled
+and no allocator reentry. Source ownership does not replace native page-table,
+CR3, transient-window or process-mapping checks.
 
 ## Kernel space
 
@@ -804,8 +831,9 @@ rejected=4`).
 
 ## Tests
 
-`kernel-process` (merge suite) links the generated policies with
-`frames.hpp`. Its memory-map, inventory, record and policy cases are
+`kernel-process` (merge suite) links the generated policies and actual retained
+frame allocator with the native backing-grant adapter and `frames.hpp` facade.
+Its memory-map, inventory, record, grant and policy cases are
 `tests/kernel-process/frames.cases`. The volume cases are built by the writer
 from `volumes.cases`; each edits one field of a canonical volume. Program and
 run-list cases are `programs.cases`: each edits one field of the writer's

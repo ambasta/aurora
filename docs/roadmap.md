@@ -37,15 +37,20 @@ named-file state in the same external Aurora owner as process files.
 The kernel is to become entirely Aurora. The [process image](../kernel/uefi/process.md)
 already uses Aurora policies for memory-map/frame admission, ELF and address-space
 layout, faults, kernel calls and memory quotas. A separate Aurora program owns
-file state. Native code still owns privileged execution, frame/mapping records,
-page-table effects and process/IPC transport; this is not an all-Aurora kernel.
+file state. The retained source FrameAllocator owns its checked word backing and
+complete allocation ledger; native code authenticates backing reachability across
+metadata detach/reattach without mirroring allocator policy. Native code still
+owns privileged execution, physical mapping descriptors, page-table effects and
+process/IPC transport; this is not an all-Aurora kernel.
 Retiring those components needs these language and bridge capabilities, each a
 milestone with its own consumer:
 
 - further kernel-side Aurora state that persists across bridge calls: retained
-  budget and service-incarnation roots now exist, while frame/mapping records and
-  physical run state still live in C++;
-- mutable spans over kernel-supplied memory (record insertion, data copies);
+  budget, service-incarnation and frame-allocation roots now exist, while physical
+  mapping descriptors and run state still live in C++;
+- broader checked mutable memory views and data copies: boot-admitted OwnedWords
+  now provides fixed-extent scalar access for the frame ledger, not general
+  allocation, resizing, pointer adoption or escaping views;
 - a privileged-instruction and physical-address capability (page-table writes,
   CR3, INVLPG, MSRs, LAPIC, GDT/IDT loads, IRETQ);
 - a trap-entry form for interrupt and kernel-call entry;

@@ -102,11 +102,11 @@ static_assert(static_cast<unsigned>(Fixture::console_service_report) + 1 == stat
 // (every boot checksums its whole volume; scripts/kernel_profiles.py
 // COMPILER_CASES), and 6 the compiler over its own sources.
 [[nodiscard]] constexpr auto volume_path(Fixture fixture, std::uint64_t selected_case) -> const char16_t * {
-    return fixture == Fixture::process_volume_corrupt ? u"\\aurora\\corrupt"
-           : fixture == Fixture::process_volume_empty ? u"\\aurora\\empty"
-           : selected_case == 3 || selected_case == 5 ? u"\\aurora\\compiler"
-           : selected_case == 6                       ? u"\\aurora\\selfhost"
-                                                      : u"\\aurora\\volume";
+    return fixture == Fixture::process_volume_corrupt                        ? u"\\aurora\\corrupt"
+           : fixture == Fixture::process_volume_empty                        ? u"\\aurora\\empty"
+           : selected_case == 3 || selected_case == 5 || selected_case == 43 ? u"\\aurora\\compiler"
+           : selected_case == 6                                              ? u"\\aurora\\selfhost"
+                                                                             : u"\\aurora\\volume";
 }
 // Every row hands over the RSDP (v9): the watchdog's timer comes from ACPI.
 [[nodiscard]] constexpr auto acpi(Fixture) -> bool {

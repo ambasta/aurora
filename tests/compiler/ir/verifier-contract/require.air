@@ -1,0 +1,68 @@
+; CASE: require checks bool without producing a value
+; RUN: emit
+; RUN: stack-facts
+function require_true
+  result i64
+  frame 0
+    Constant 1 bool
+    Require
+    Constant 42
+    Return
+end
+
+; CASE: require false is still checked control flow
+; BASE: require checks bool without producing a value
+; RUN: emit
+@@ -4 +4 @@
+-    Constant 1 bool
++    Constant 0 bool
+
+; CASE: require rejects nonbool current
+; BASE: require checks bool without producing a value
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -4 +4 @@
+-    Constant 1 bool
++    Constant 1 i64
+
+; CASE: require rejects missing current
+; BASE: require checks bool without producing a value
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -4 +3,0 @@
+-    Constant 1 bool
+
+; CASE: require cannot be used as a value
+; BASE: require checks bool without producing a value
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -6 +5,0 @@
+-    Constant 42
+
+; CASE: require cannot erase retained finalization obligation
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+layout ResidentOwner []
+fields ResidentOwner [((26 __au_resident_slot) 0 0 false)]
+storage ResidentOwner [] [0] 16 16 16
+function resident_constructor
+  result i64
+  params [(26 __au_resident_slot)]
+  frame 16
+  receiver ResidentOwner true true
+  service_resource 16 __au_resident_slot true
+    BindRetainedResourceParameter 0 16 2
+    InitializeBytesField 0 0 16
+    Constant
+    Return
+end
+function resident_finish
+  result bool
+  params []
+  frame 0
+  receiver ResidentOwner true false true true
+    Constant 0 bool
+    Require
+    Constant 1 bool
+    Return
+end

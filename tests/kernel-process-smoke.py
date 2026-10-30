@@ -103,7 +103,7 @@ def runs(text, mode):
     """One outcome line per run, checking each run's record order and release."""
     case, expected = PROCESS_CASES[mode]
     paired = mode == "process-lifecycle"
-    isolated = 1 <= case <= 6
+    isolated = 1 <= case <= 6 or mode == "process-require-user"
     retained = mode in (
         "process-service",
         "process-service-hostile",
@@ -649,6 +649,33 @@ def validate(
     need("AURORA_UEFI_FAIL:" not in text, "Loader failure")
     ordered(text, BASE)
     volume = (image / "esp/aurora/volume").read_bytes()
+    if mode in ("process-frame-require-kernel", "process-frame-require-process"):
+        frames(text)
+        context = "kernel" if mode.endswith("-kernel") else "process"
+        probes = re.findall(r"AURORA_FRAME_REQUIRE_PROBE: context=(kernel|process) root=(\d+) kernel=(\d+)", text)
+        need(len(probes) == 1 and probes[0][0] == context, "One real allocator require context")
+        current, kernel = map(int, probes[0][1:])
+        need(current > 0 and kernel > 0 and current % 4096 == 0 and kernel % 4096 == 0, "Aligned real roots")
+        need((current == kernel) == (context == "kernel"), "Allocator require uses selected real CR3")
+        need(
+            status == 35 and text.count("AURORA_PROCESS_FAIL: kernel fault") == 1, "Allocator require must stop kernel"
+        )
+        after = text[text.index("AURORA_FRAME_REQUIRE_PROBE:") :]
+        faults = re.findall(r"AURORA_PROCESS_KERNEL_FAULT: vector=(\d+) error=\d+ rip=\d+ cs=(\d+) cr2=\d+", after)
+        need(faults == [("6", "8")], "Source require traps at CPL0, not a recoverable user fault")
+        need(
+            not any(
+                marker in after
+                for marker in (
+                    "AURORA_PROCESS_END:",
+                    "AURORA_PROCESS_RELEASED:",
+                    "AURORA_PROCESS_RUNS_OK",
+                    "AURORA_PROCESS_OK",
+                )
+            ),
+            "No retirement, resume or successful return after allocator require",
+        )
+        return
     if mode == "process-volume-map":
         need(
             status == 35

@@ -830,9 +830,10 @@ export namespace compiler_lowering {
         i64 target = -1;
         if (kind == compiler_resolver::ResolvedTypeKind::service_resource) {
             const bool retained = frame.receiver_field_index() >= 0;
-            if (!mutable_receiver || (retained && (!field_resource(session, type) || (body_constructor(session)
-                && !constructor_body_active(session)) || frame.capability_root_local() >= 0)) || (!retained && (implicit
-                || retained_resource(session, type) || frame.capability_root_local() < 0))) {
+            if ((!mutable_receiver && !retained) || (retained && (!field_resource(session, type)
+                || (body_constructor(session) && !constructor_body_active(session)) || frame.capability_root_local()
+                >= 0)) || (!retained && (implicit || retained_resource(session, type) || frame.capability_root_local()
+                < 0))) {
                 return fail(session, LoweringError::typed_owner_operation_requires_named_owner, reference);
             }
             const compiler_resolver::MetaRow spelling = session.meta(reference);
@@ -850,6 +851,9 @@ export namespace compiler_lowering {
             if (method == compiler_catalog::resource_method_count(resource)) {
                 return fail(session, LoweringError::unknown_typed_owner_operation, reference);
             }
+            if (!mutable_receiver && compiler_catalog::resource_method_effect(resource, method) != 0) {
+                return fail(session, LoweringError::typed_owner_operation_requires_named_owner, reference);
+            }
             if (retained && compiler_catalog::resource_method_effect(resource, method) == 2
                 && !body_receiver_consuming(session)) {
                 return fail(session, LoweringError::borrowed_object_ownership_transfer, reference);
@@ -864,7 +868,9 @@ export namespace compiler_lowering {
                 match_type(session, result, frame.output_mark(), reference);
             }
             count = compiler_catalog::resource_method_parameters(resource, method);
-            require_arity(session, node, count + 1);
+            if (compiler_resolver::sw(session, node, 2) != count + 1) {
+                return fail(session, LoweringError::method_argument_count, reference);
+            }
             i64 field = -1;
             if (retained) {
                 field = frame.receiver_field_index();
@@ -1219,6 +1225,14 @@ export namespace compiler_lowering {
         }
         return session.good();
     }
+    auto require_call(compiler_resolver::Session& session, i64 node) -> bool {
+        const compiler_resolver::SyntaxRow syntax = session.syntax(node);
+        if (syntax.expression_kind() != compiler_parser::NodeKind::call) {
+            return false;
+        }
+        const i64 name = compiler_resolver::rw(session, node, 0);
+        return compiler_resolver::builtin_name(session, name) && compiler_resolver::leaf_is(session, name, "require");
+    }
     auto begin_call(compiler_resolver::Session& session, i64 frame_id) -> bool {
         if (!redirect_host_operation(session, frame_id)) {
             return false;
@@ -1226,6 +1240,9 @@ export namespace compiler_lowering {
         ContinuationRow frame = session.continuation(frame_id);
         const i64 node = frame.syntax_node();
         const i64 reference = source_ref(session, node);
+        if (require_call(session, node)) {
+            return fail(session, LoweringError::invalid_expression, reference);
+        }
         const compiler_resolver::ResolvedRow resolved = session.resolved(node);
         const bool method = is_method_expression(session, node);
         const bool constructor = is_constructor_expression(session, node);
@@ -1620,7 +1637,8 @@ export namespace compiler_lowering {
                 emit_Push(session);
             } else {
                 const compiler_resolver::ResolvedTypeKind receiver = value_kind(session, frame.cleanup_cursor());
-                if (compiler_resolver::service_kind(receiver)) {
+                if (compiler_resolver::service_kind(receiver) || receiver
+                    == compiler_resolver::ResolvedTypeKind::service_resource) {
                     if (frame.argument_count() > 1) {
                         emit_Push(session);
                     }

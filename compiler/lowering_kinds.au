@@ -94,7 +94,8 @@ export namespace compiler_lowering {
         ServiceResourceOperation,
         BindRetainedResourceParameter,
         RetainedFieldOperation,
-        ResourceObjectCall
+        ResourceObjectCall,
+        Require
     };
     enum class Unary {
         CheckedNegate,

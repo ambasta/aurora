@@ -1025,15 +1025,69 @@ __au_runtime_group_entry:
         invalid["resident-constructor-body"] = (
             resident_head.replace("slot(move(input)){}", "slot(move(input)){slot.prepare();}") + terminal + "};"
         )
+        source.write_text(
+            "module require_admitted;auto f(bool condition)->u64{"
+            "builtin::require(condition);builtin::require(true);return 7u64;}"
+        )
+        result = run([compiler, "--check", source])
+        need(result.returncode == 0, f"require-admitted: {result.stderr!r}")
+        invalid["require-no-argument"] = "auto f()->u64{builtin::require();return 0u64;}"
+        invalid["require-extra-argument"] = "auto f()->u64{builtin::require(true,true);return 0u64;}"
+        invalid["require-exact-bool"] = "auto f()->u64{builtin::require(1u64);return 0u64;}"
+        invalid["require-no-value"] = "auto f()->bool{return builtin::require(true);}"
+        invalid["require-no-binding"] = "auto f()->u64{bool value=builtin::require(true);return 0u64;}"
+        invalid["require-no-condition-value"] = "auto f()->u64{if(builtin::require(true)){return 1u64;}return 0u64;}"
+        invalid["require-does-not-finalize"] = (
+            f"auto f({execution})->u64{{{lease} input=e.prepare();builtin::require(false);return 0u64;}}"
+        )
+        words = "builtin::OwnedWords"
+        words_head = f"class Words{{{words} data;public:Words({words} input):data(move(input)){{}}"
+        words_read = "auto observe_word(u64 index) const->u64{return data.at(index)+data.size();}"
+        words_set = "auto store_word(u64 index,u64 value)->bool{return data.set(index,value);}"
+        words_finish = "auto finish() && ->bool{return data.finish();}"
+        words_class = words_head + words_read + words_set + words_finish + "};"
+        source.write_text(
+            "module words_admitted;"
+            + words_class
+            + "auto inspect(const Words& root)->u64{return root.observe_word(0u64);}"
+            + "auto store_word(Words& root,u64 index,u64 value)->bool{return root.store_word(index,value);}"
+        )
+        result = run([compiler, "--check", source])
+        need(result.returncode == 0, f"words-admitted: {result.stderr!r}")
+        invalid["words-source-mint"] = f"auto f()->u64{{{words} data={words}();return 0u64;}}"
+        invalid["words-direct-input"] = f"auto f({words} input)->u64{{return input.size();}}"
+        invalid["words-copy-input"] = words_class.replace("data(move(input))", "data(input)")
+        invalid["words-public-field"] = words_class.replace("class Words{", "class Words{public:")
+        invalid["words-const-write"] = words_class.replace(
+            "auto store_word(u64 index,u64 value)->", "auto store_word(u64 index,u64 value) const->"
+        )
+        invalid["words-borrowed-finish"] = words_class.replace("auto finish() &&", "auto finish()")
+        invalid["words-missing-finish"] = words_class.replace("return data.finish();", "return true;")
+        invalid["words-double-finish"] = words_class.replace(
+            "return data.finish();", "data.finish();return data.finish();"
+        )
+        invalid["words-read-consumed"] = words_class.replace(
+            "return data.finish();", "data.finish();data.at(0u64);return true;"
+        )
+        invalid["words-constructor-body"] = words_class.replace(
+            "data(move(input)){}", "data(move(input)){data.size();}"
+        )
+        invalid["words-read-wrong-type"] = words_class.replace("data.at(index)", "data.at(0)")
+        invalid["words-set-wrong-index"] = words_class.replace("data.set(index,value)", "data.set(0,value)")
+        invalid["words-set-wrong-value"] = words_class.replace("data.set(index,value)", "data.set(index,0)")
+        invalid["words-set-missing-value"] = words_class.replace("data.set(index,value)", "data.set(index)")
+        invalid["words-set-extra-value"] = words_class.replace("data.set(index,value)", "data.set(index,value,value)")
+        invalid["words-resize"] = words_class.replace("data.set(index,value)", "data.resize(index,value)")
+        invalid["words-native-finish-borrow"] = words_class + "auto f(Words& root)->bool{return move(root).finish();}"
         for label, code in invalid.items():
-            if label.startswith(("resident-", "command-")):
+            if label.startswith(("resident-", "command-", "words-")):
                 code += "auto witness()->u64{return 0u64;}"
             source.write_text("module rejected;" + code)
             target = ["--target", "aurora"] if label.startswith(("writer-", "readonly-")) else []
             result = run([compiler, *target, "--check", source])
             need(result.returncode == 1 and b"error AU" in result.stderr, f"{label}: {result.stderr!r}")
             if (
-                label.startswith(("bootstrap-", "resident-", "command-", "lease-parameter-"))
+                label.startswith(("bootstrap-", "resident-", "command-", "words-", "require-", "lease-parameter-"))
                 or label == "execution-cross-issue"
             ):
                 need(b"error AU9001" not in result.stderr, f"{label}: internal failure is not semantic rejection")

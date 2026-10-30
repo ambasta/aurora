@@ -329,9 +329,17 @@ PROCESS_CASES["process-xfs-mounted-loss"] = (
         (16, 8, 8192, "bin/lifecycle", "lifecycle mounted-absent"),
     ),
 )
+# Real source require failures use the same packed process image. Kernel
+# probes must stop globally; the user probe must retire only its own process.
+PROCESS_CASES["process-frame-require-kernel"] = (42, ())
+PROCESS_CASES["process-frame-require-process"] = (43, PROCESS_CASES["process-memory"][1])
+PROCESS_CASES["process-require-user"] = (
+    44,
+    ((8, 0, 0, "bin/hostile", "hostile require"), (8, 0, 0, "bin/hostile", "hostile")),
+)
 # The run lists of the compiler volume (\\aurora\\compiler, kernel/uefi/loader-fixture.hpp)
 # and of the self-host volume (\\aurora\\selfhost).
-COMPILER_CASES = frozenset({3, 5})
+COMPILER_CASES = frozenset({3, 5, 43})
 SELF_HOST_CASES = frozenset({6})
 # Guest memory of the rows that need more than the UEFI default: one memory
 # case keeps 4 GiB mapped (committed on first touch, but charged in full).
@@ -342,6 +350,7 @@ SELF_HOST_CASES = frozenset({6})
 PROCESS_MEMORY = {
     "process-run": "256M",
     "process-hostile": "256M",
+    "process-require-user": "256M",
     "process-compile": "256M",
     "process-memory": "5G",
     "process-files": "256M",
@@ -1242,6 +1251,7 @@ def uefi_profile(profile_mode, flags):
         (framebuffer, "display", "display-service", "display-service", ["kernel/policies", "library"]),
         (owned_bytes, "owned-bytes", "owned-bytes", "owned-bytes", ["kernel/policies", "library"]),
         (process, "process-policy", "process", "process", ["kernel/policies", "library"]),
+        (process, "frame-allocator", "frame-allocator", "frame-allocator", ["kernel/policies"]),
         (process, "budget-root", "budget-root", "budget-root", ["kernel/policies"]),
         (process, "service-root", "service-root", "service-root", ["kernel/policies"]),
         (process, "service-bootstrap", "service-bootstrap", "service-bootstrap", ["kernel/policies"]),
@@ -1445,7 +1455,8 @@ GUEST_FAMILIES = {
     "pins": "runtime-pin-cancel runtime-pin-fault runtime-pin-stale runtime-pin-exhaust",
     "process": "process-volume process-volume-corrupt process-volume-empty process-volume-map process-run "
     "process-hostile process-memory process-files process-compile process-lifecycle process-service "
-    "process-service-hostile process-xfs",
+    "process-service-hostile process-xfs process-frame-require-kernel process-frame-require-process "
+    "process-require-user",
     # The release suite's row (tests/native/meson.build), minutes under TCG.
     "self-host": "process-self-host",
 }

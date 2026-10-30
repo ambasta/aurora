@@ -478,6 +478,12 @@ process_policy_object = custom_target('process-policy',
               '--module-root', meson.project_source_root() / 'library', '--local-symbols',
               '--referenced-reflection-only', '--bridge', files('../kernel/uefi/process-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+process_frame_allocator_object = custom_target('process-frame-allocator',
+    input: '../examples/kernel-frame-allocator.au', output: 'frame-allocator.o', depfile: 'frame-allocator.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'kernel/policies', '--local-symbols',
+              '--referenced-reflection-only', '--bridge', files('../kernel/uefi/frame-allocator-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 process_bootstrap_object = custom_target('process-service-bootstrap',
     input: '../examples/kernel-service-bootstrap.au', output: 'process-service-bootstrap.o',
     depfile: 'process-service-bootstrap.d',
@@ -533,7 +539,7 @@ process_files_policy_object = custom_target('process-files-policy-reference',
               '--referenced-reflection-only', '--bridge', files('kernel-process-files-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 kernel_process = executable('kernel-process', 'kernel-process.cpp', process_policy_object, process_execution_object,
-    process_execution_cancel_object, process_bootstrap_object, process_resident_object,
+    process_execution_cancel_object, process_bootstrap_object, process_resident_object, process_frame_allocator_object,
     process_files_policy_object, process_budget_object, process_service_object, process_service_saturation_object,
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DAURORA_PROCESS_FIXTURE', '-DAURORA_UEFI_NVME'], link_args: ['-no-pie'],
     native: true, override_options: fixture_options, install: false)

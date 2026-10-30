@@ -1,0 +1,153 @@
+; CASE: owned words complete native construction and checked operations
+; RUN: emit
+; CHECK: __au_runtime_owned_words_size
+; CHECK: __au_runtime_owned_words_at
+; CHECK: __au_runtime_owned_words_set
+; CHECK: __au_runtime_owned_words_finish
+; RUN: stack-facts
+; CHECK-JSON: functions.words_size.service_abi.calls {"__au_runtime_owned_words_size":{"sysv_arguments":2,"result_max":18446744073709551615}}
+; CHECK-JSON: functions.words_at.service_abi.calls {"__au_runtime_owned_words_at":{"sysv_arguments":3,"result_max":18446744073709551615}}
+; CHECK-JSON: functions.words_set.service_abi.calls {"__au_runtime_owned_words_set":{"sysv_arguments":4,"result_max":1}}
+; CHECK-JSON: functions.words_finish.service_abi.calls {"__au_runtime_owned_words_finish":{"sysv_arguments":2,"result_max":1}}
+layout WordOwner []
+fields WordOwner [((26 __au_owned_words) 0 0 false)]
+storage WordOwner [] [0] 16 16 16
+function words_constructor
+  result i64
+  params [(26 __au_owned_words)]
+  frame 16
+  receiver WordOwner true true
+  service_resource 16 __au_owned_words true
+    BindRetainedResourceParameter 0 16 3
+    InitializeBytesField 0 0 16
+    Constant
+    Return
+end
+function words_size
+  result u64
+  params []
+  frame 0
+  receiver WordOwner false false
+    RetainedFieldOperation 0 0 0 0 3
+    Return
+end
+function words_at
+  result u64
+  params []
+  frame 0
+  receiver WordOwner false false
+    Constant 0 u64
+    RetainedFieldOperation 0 0 1 0 3
+    Return
+end
+function words_set
+  result bool
+  params []
+  frame 0
+  receiver WordOwner true false
+    Constant 0 u64
+    Push
+    Constant 42 u64
+    Push
+    RetainedFieldOperation 0 0 2 0 3
+    Return
+end
+function words_finish
+  result bool
+  params []
+  frame 0
+  receiver WordOwner true false true true
+    RetainedFieldOperation 0 0 3 0 3
+    Return
+end
+
+; CASE: words constructor must transfer input
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -11 +10,0 @@
+-    InitializeBytesField 0 0 16
+
+; CASE: words constructor cannot transfer input twice
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: constructor resource field initialized more than once
+@@ -10,0 +11 @@
++    InitializeBytesField 0 0 16
+
+; CASE: words constructor cannot access inactive storage
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -11,0 +12 @@
++    RetainedFieldOperation 0 0 0 0 3
+
+; CASE: words set requires two pushed arguments
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: value stack underflow
+@@ -39,2 +38,0 @@
+-    Constant 42 u64
+-    Push
+
+; CASE: words set rejects mistyped index
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: service scalar argument mismatch
+@@ -37 +37 @@
+-    Constant 0 u64
++    Constant 0 i64
+
+; CASE: words set rejects mistyped value
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: service scalar argument mismatch
+@@ -39 +39 @@
+-    Constant 42 u64
++    Constant 1 bool
+
+; CASE: words set cannot mutate const receiver
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -36 +36 @@
+-  receiver WordOwner true false
++  receiver WordOwner false false
+
+; CASE: words at requires u64 index
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -28 +28 @@
+-    Constant 0 u64
++    Constant 0 i64
+
+; CASE: words finish must consume field
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -49 +49 @@
+-    RetainedFieldOperation 0 0 3 0 3
++    Constant 1 bool
+
+; CASE: words finish cannot consume twice
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: resource field does not hold live ownership
+@@ -49,0 +50 @@
++    RetainedFieldOperation 0 0 3 0 3
+
+; CASE: words finish cannot read consumed field
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: resource field does not hold live ownership
+@@ -49,0 +50 @@
++    RetainedFieldOperation 0 0 0 0 3
+
+; CASE: words borrowed receiver cannot consume
+; BASE: owned words complete native construction and checked operations
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -41 +41 @@
+-    RetainedFieldOperation 0 0 2 0 3
++    RetainedFieldOperation 0 0 3 0 3

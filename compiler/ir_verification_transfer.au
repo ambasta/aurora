@@ -382,6 +382,9 @@ export namespace compiler_ir_verification {
         const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(id);
         const i64 form = row.form();
+        if (form == 91) {
+            return transfer_current_kind(w, 1) && w.clear_current();
+        }
         if (form == 90) {
             return transfer_resource_object_call(w, m, s, id);
         }

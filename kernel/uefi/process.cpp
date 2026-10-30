@@ -582,6 +582,7 @@ constinit U64 recovery_owner = 0, recovery_root = 0, recovery_generation = 0, re
 constinit U64 mounted_owner = 0, mounted_root = 0, mounted_generation = 0, mounted_sectors = 0, mounted_service = 0;
 #ifdef AURORA_PROCESS_FIXTURE
 constinit U64 recovery_cut_case = 0, mounted_cut_case = 0;
+constinit bool frame_finish_fault = false;
 constinit bool mounted_owner_termination = false;
 #endif
 constinit bool recovery_completed = false;
@@ -1207,6 +1208,16 @@ auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
     if (committed.malformed)
         fail("Aurora memory fault decision");
     if (committed.index) {
+#ifdef AURORA_PROCESS_FIXTURE
+        if (frame_finish_fault) {
+            Serial::text("AURORA_FRAME_REQUIRE_PROBE: context=process");
+            field("root", root());
+            field("kernel", kernel_root);
+            Serial::text("\r\n");
+            static_cast<void>(table.finish());
+            fail("frame require returned");
+        }
+#endif
         if (!running.space->commit(trap.cr2))
             fail("memory commit");
         if ((running.flags & 4) && !running.space->verify())
@@ -3153,6 +3164,10 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 [[noreturn]] auto run_list(U64 arena, std::span<const std::byte> view, U64 selected) -> void {
     U64 run_case = selected;
 #ifdef AURORA_PROCESS_FIXTURE
+    if (selected == 43) {
+        frame_finish_fault = true;
+        run_case = 3;
+    }
     if (selected >= 13 && selected <= 16) {
         recovery_cut_case = selected;
         run_case = 12; // Exactly the ordinary recovery program and run list.
@@ -3184,7 +3199,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
     process_kernel_root = kernel_root;
     const bool paired = selected == 7;
     U64 count = 0;
-    if (selected >= 1 && selected <= 6)
+    if ((selected >= 1 && selected <= 6) || selected == 43 || selected == 44)
         count = run_independent(view, *runs);
     if (selected == 8)
         count = run_external(view, *runs);
@@ -3322,12 +3337,10 @@ auto initialize_process(U64 arena, const Bytes &h, U64 selected, bool timer_read
     if (!plan || !space.bind(arena + Handoff::tables_offset, tables.window_slot()) ||
         !space.build(ranges, *plan, volume))
         fail("kernel space");
-    const auto records = space.metadata(ranges.frames()), mappings = space.mappings(ranges.frames());
-    for (auto &record : records)
-        record = 0;
+    const auto mappings = space.mappings(ranges.frames());
     for (auto &mapping : mappings)
         mapping = 0;
-    if (records.empty() || mappings.empty() || !table.bind(records, ranges, plan->tables, plan->metadata))
+    if (mappings.empty() || !space.handoff_records(table, ranges))
         fail("frame table");
     if (!space.verify(table, ranges, h.get(96)))
         fail("kernel space walk");
@@ -3361,6 +3374,21 @@ auto initialize_process(U64 arena, const Bytes &h, U64 selected, bool timer_read
 auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
     const auto selected = h.get(Handoff::case_word);
     const auto view = initialize_process(arena, h, selected, false);
+#ifdef AURORA_PROCESS_FIXTURE
+    if (selected == 42) {
+        install_architecture(arena);
+        capture_shared(arena);
+        process_kernel_root = kernel_root;
+        if (!table.allocate(probe_owner))
+            fail("frame require fixture allocation");
+        Serial::text("AURORA_FRAME_REQUIRE_PROBE: context=kernel");
+        field("root", root());
+        field("kernel", kernel_root);
+        Serial::text("\r\n");
+        static_cast<void>(table.finish());
+        fail("frame require returned");
+    }
+#endif
     if (selected)
         run_list(arena, view, selected);
     frame_cases(h.get(96));
@@ -3548,6 +3576,8 @@ auto enter_runtime(U64 arena, const Bytes &handoff) -> bool {
     } else {
         if (!runtime_detached || arena != owned_arena || root() != kernel_root || !space.attach(ranges))
             fail("process runtime reattach");
+        if (!space.resume_records(table, ranges, handoff.get(96)))
+            fail("frame metadata reattachment");
         runtime_detached = false;
         if (!space.verify(table, ranges, handoff.get(96)) || !audit_residents())
             fail("process runtime attachment audit");
@@ -3567,7 +3597,10 @@ auto leave_runtime(const Bytes &handoff) -> void {
         endpoint.completion || Timer::read(0x390) || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false) ||
         !audit_residents() || !space.verify(table, ranges, handoff.get(96)))
         fail("process runtime return audit");
-    if (!service_root.close_operation() || !space.detach())
+    if (!service_root.close_operation())
+        fail("process runtime lifecycle return");
+    table.suspend();
+    if (!space.detach())
         fail("process runtime lifecycle return");
     runtime_detached = true;
 }
@@ -4003,4 +4036,32 @@ auto service_bootstrap_finish(const void *, U64, U64) -> U64 asm("__au_runtime_s
     __attribute__((visibility("hidden")));
 auto service_bootstrap_finish(const void *binding, U64 generation, U64 value) -> U64 {
     return ServiceBootstrapSession::finish(binding, generation, value);
+}
+
+// The allocator root remains in ordinary kernel storage. Admitted process roots
+// share the same supervisor metadata extension captured at process creation.
+namespace aurora::words {
+auto accessible() -> bool {
+    return Timer::irq_off() && space.attached() &&
+           (root() == kernel_root || (running.space && root() == running.space->root()));
+}
+[[noreturn]] auto fail() -> void {
+    ::fail("frame metadata authority");
+}
+} // namespace aurora::words
+extern "C" {
+__attribute__((visibility("hidden"))) auto __au_runtime_owned_words_size(const void *binding, U64 epoch) -> U64 {
+    return aurora::words::Binding::size(binding, epoch);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_owned_words_at(const void *binding, U64 epoch, U64 index)
+    -> U64 {
+    return aurora::words::Binding::at(binding, epoch, index);
+}
+__attribute__((visibility("hidden"))) auto
+__au_runtime_owned_words_set(const void *binding, U64 epoch, U64 index, U64 value) -> U64 {
+    return aurora::words::Binding::set(binding, epoch, index, value);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_owned_words_finish(const void *binding, U64 epoch) -> U64 {
+    return aurora::words::Binding::finish(binding, epoch);
+}
 }

@@ -145,3 +145,60 @@ resident-owners: map=valid grant=none ranges=1 frames=16 tables=3 metadata=2
   release 6 0 17 -> none
   release 5 1 18 -> none
   audit consistent=1 free=11 allocated=0 kernel=5 retired=0 poisoned=0
+source-atomic-denials: map=valid grant=none ranges=1 frames=16 tables=3 metadata=2
+  range 0xa00000 pages=16 index=0
+  bound reserved=5 free=11
+  allocate 0 -> none
+  allocate 15 -> none
+  allocate 4294967296 -> none
+  audit consistent=1 free=11 allocated=0 kernel=5 retired=0 poisoned=0
+  allocate 16 -> frame 5 generation 0 at 0xa05000
+  release 5 1 16 -> stale
+  release 5 0 17 -> wrong_owner
+  release 16 0 16 -> index
+  owner 16 frames=1
+  audit consistent=1 free=10 allocated=1 kernel=5 retired=0 poisoned=0
+  release 5 0 16 -> none
+  audit consistent=1 free=11 allocated=0 kernel=5 retired=0 poisoned=0
+  finish -> 1
+source-generation-retirement: map=valid grant=none ranges=1 frames=16 tables=3 metadata=2
+  range 0xa00000 pages=16 index=0
+  bound reserved=5 free=11
+  allocate 16 -> frame 5 generation 0 at 0xa05000
+  corrupt-record 5 0x10fffffff2
+  release 5 268435455 16 -> none
+  release 5 268435455 16 -> retired
+  audit consistent=1 free=10 allocated=0 kernel=5 retired=1 poisoned=0
+  allocate 17 -> frame 6 generation 0 at 0xa06000
+  release 6 0 17 -> none
+  audit consistent=1 free=10 allocated=0 kernel=5 retired=1 poisoned=0
+  finish -> 1
+source-out-of-range-link: map=valid grant=none ranges=1 frames=16 tables=3 metadata=2
+  range 0xa00000 pages=16 index=0
+  bound reserved=5 free=11
+  corrupt-record 5 0x1100000001
+  allocate 16 -> none
+  owner 16 frames=0
+  audit consistent=0 free=0 allocated=0 kernel=0 retired=0 poisoned=1
+source-cyclic-link: map=valid grant=none ranges=1 frames=16 tables=3 metadata=2
+  range 0xa00000 pages=16 index=0
+  bound reserved=5 free=11
+  corrupt-record 5 0x600000001
+  audit consistent=0 free=11 allocated=0 kernel=5 retired=0 poisoned=0
+grant roundtrip -> passed
+grant empty -> denied
+grant duplicate -> denied
+grant wrong-root -> denied
+grant detached -> denied
+grant wrong-bank -> denied
+grant wrong-extent -> denied
+grant revoked -> denied
+grant reentrant -> denied
+grant suspend-live -> denied
+grant readonly-write -> denied
+grant borrowed-finish -> denied
+grant foreign -> denied
+grant stale -> denied
+grant bounds -> denied
+grant root-overlap -> denied
+grant root-overflow -> denied

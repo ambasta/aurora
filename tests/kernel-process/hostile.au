@@ -3,7 +3,8 @@ import aurora.host;
 
 // A process-image program (kernel/uefi/process.md#guest-rows): `hostile spin`
 // never returns, so only the kernel's watchdog ends it; `hostile` alone exits
-// successfully. (Recursion reachable from a HostFiles main is rejected by the
+// successfully; `hostile require` triggers an always-on checked source failure.
+// (Recursion reachable from a HostFiles main is rejected by the
 // compiler, so the stack-guard case is recurse.S.)
 
 auto second_word(builtin::span<const u8> arguments, builtin::span<const u8> text) -> bool {
@@ -26,6 +27,9 @@ auto second_word(builtin::span<const u8> arguments, builtin::span<const u8> text
 }
 
 auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {
+    if (second_word(arguments, "require")) {
+        builtin::require(false);
+    }
     if (second_word(arguments, "spin")) {
         u64 turns = 0u64;
         while (turns < 2u64) {

@@ -3,8 +3,8 @@ export module kernel.frames;
 // Physical frame record transitions (kernel/uefi/process.md#frames). A record is
 // one copied word: bits 0..3 state, 4..31 generation, 32..63 owner (allocated
 // and kernel frames) or link (free frames: next free index + 1, 0 ends the
-// list). Trusted C++ stores records and maps frames; this policy alone decides
-// whether a transition is admitted and what the next record is. A rejection is
+// list). FrameAllocator owns the records and allocation ledger; native code
+// retains physical mappings. This policy decides each record transition. A rejection is
 // the reason in bits 4..11 with state zero; it never changes a record.
 export namespace kernel {
     enum class FrameOperation {

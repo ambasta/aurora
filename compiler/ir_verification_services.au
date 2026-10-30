@@ -229,6 +229,15 @@ export namespace compiler_ir_verification {
                 return false;
             }
         }
+        if (parameter_count == 2) {
+            const i64 argument_kind = compiler_ir_metadata::catalogue_kind(compiler_catalog::resource_method_parameter(
+                resource_kind, method));
+            if (!transfer_pop_kind(w, argument_kind,
+                second_error(VerificationErrorSecond::service_scalar_argument_mismatch)) || !transfer_pop_kind(w,
+                argument_kind, second_error(VerificationErrorSecond::service_scalar_argument_mismatch))) {
+                return false;
+            }
+        }
         const bool copied_result = compiler_ir_metadata::catalogue_kind(result_type) == 5;
         if (copied_result) {
             const i64 base = transfer_value(s, id, 2);
@@ -308,6 +317,15 @@ export namespace compiler_ir_verification {
                 method));
             const ValueRow argument = current(w, expected);
             if (!w.good()) {
+                return false;
+            }
+        }
+        if (compiler_catalog::resource_method_parameters(kind, method) == 2) {
+            const i64 argument_kind = compiler_ir_metadata::catalogue_kind(compiler_catalog::resource_method_parameter(
+                kind, method));
+            if (!transfer_pop_kind(w, argument_kind,
+                second_error(VerificationErrorSecond::service_scalar_argument_mismatch)) || !transfer_pop_kind(w,
+                argument_kind, second_error(VerificationErrorSecond::service_scalar_argument_mismatch))) {
                 return false;
             }
         }

@@ -42,11 +42,57 @@ def reflection_symbols(directory, encoded, expected, binding):
             )
 
 
+def require_execution(compiler):
+    # One module per emitter, all modes in the same linked binary. The true
+    # path observes the predicate count; false must stop at the exact UD2 site.
+    source_text = """module require_execution;
+class Counter {
+    i64 calls;
+public:
+    Counter() : calls(0) {}
+    auto predicate(bool answer) -> bool {
+        calls = calls + 1;
+        return answer;
+    }
+    auto count() const -> i64 { return calls; }
+};
+auto require_true() -> i64 {
+    Counter counter = Counter();
+    builtin::require(counter.predicate(true));
+    return counter.count();
+}
+auto require_false() -> i64 {
+    Counter counter = Counter();
+    builtin::require(counter.predicate(false));
+    return 99;
+}
+"""
+    for mode in ("text", "object"):
+        with tempfile.TemporaryDirectory(prefix="aurora-require-" + mode + "-") as temporary:
+            directory = Path(temporary)
+            source, output = directory / "require.au", directory / "require.output"
+            source.write_text(source_text)
+            options = ["--emit-object"] if mode == "object" else []
+            command([compiler, *options, source, "-o", output])
+            encoded = output.read_bytes() if mode == "object" else output.read_text()
+            runner = NativeRunner(directory, None, 10)
+            observed, symbols = runner.assemble(encoded, ["require_true", "require_false"], values=[0])
+            check_words(observed, [1], [mode + " require predicate evaluated once"])
+            check_trap(
+                observe(run([directory / "program", 1], 10)),
+                Trap.BOUNDS,
+                symbols,
+                mode + " require false never returned",
+            )
+    print("PASS require text/object: predicate once, true continues, false exact fail-stop")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ir_tests", type=Path)
     parser.add_argument("--compiler", type=Path, required=True)
     args = parser.parse_args()
+    require_execution(args.compiler.resolve())
     with tempfile.TemporaryDirectory(prefix="aurora-window-ir-") as temporary:
         directory = Path(temporary)
         assembly = command([args.ir_tests.resolve(), "--output", AIR, "native"]).stdout.decode()

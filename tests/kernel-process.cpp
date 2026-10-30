@@ -24,6 +24,8 @@
 #include <algorithm>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
+#include <csignal>
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -34,6 +36,31 @@
 #include <vector>
 #include <sys/wait.h>
 #include <unistd.h>
+
+namespace aurora::words {
+inline bool hosted_reachable = true;
+auto accessible() -> bool {
+    return hosted_reachable;
+}
+[[noreturn]] auto fail() -> void {
+    std::abort();
+}
+} // namespace aurora::words
+extern "C" {
+auto __au_runtime_owned_words_size(const void *binding, std::uint64_t epoch) -> std::uint64_t {
+    return aurora::words::Binding::size(binding, epoch);
+}
+auto __au_runtime_owned_words_at(const void *binding, std::uint64_t epoch, std::uint64_t index) -> std::uint64_t {
+    return aurora::words::Binding::at(binding, epoch, index);
+}
+auto __au_runtime_owned_words_set(const void *binding, std::uint64_t epoch, std::uint64_t index, std::uint64_t value)
+    -> std::uint64_t {
+    return aurora::words::Binding::set(binding, epoch, index, value);
+}
+auto __au_runtime_owned_words_finish(const void *binding, std::uint64_t epoch) -> std::uint64_t {
+    return aurora::words::Binding::finish(binding, epoch);
+}
+}
 
 namespace {
 namespace frames = aurora::uefi::frames;
@@ -184,6 +211,15 @@ auto run_operations(const MapCase &item, frames::Table &table, std::span<U64> re
                 usage("corrupt-owner index");
             records[index] = (records[index] & 0xffffffffULL) | (owner << 32);
             std::cout << "  corrupt-owner " << index << " " << owner << "\n";
+        } else if (verb == "corrupt-record") {
+            U64 index = 0, value = 0;
+            words >> index >> std::hex >> value;
+            if (index >= records.size())
+                usage("corrupt-record index");
+            records[index] = value;
+            std::cout << "  corrupt-record " << index << " " << hex(value) << "\n";
+        } else if (verb == "finish") {
+            std::cout << "  finish -> " << table.finish() << "\n";
         } else if (verb == "audit") {
             const auto audit = table.audit();
             std::cout << "  audit consistent=" << audit.consistent << " free=" << audit.free
@@ -245,6 +281,8 @@ auto run_map(const MapCase &item) -> void {
     }
     std::cout << "  bound reserved=" << table.reserved() << " free=" << table.free() << "\n";
     run_operations(item, table, records);
+    std::cout.flush();
+    _exit(0);
 }
 
 auto number(const std::string &text) -> U64 {
@@ -253,6 +291,100 @@ auto number(const std::string &text) -> U64 {
     if (used != text.size())
         usage("bad number: " + text);
     return value;
+}
+
+// Data-selected primitive grant checks. Deliberate bad authority must abort
+// before touching backing, not become a recoverable allocator result.
+auto grant_case(const std::string &name) -> void {
+    std::cout.flush();
+    const auto child = fork();
+    if (child < 0)
+        usage("grant fixture fork");
+    if (!child) {
+        using aurora::words::Access;
+        using aurora::words::Binding;
+        using aurora::words::Descriptor;
+        std::array<U64, 4> words{};
+        alignas(16) Descriptor root{};
+        Binding binding;
+        if (name == "empty") {
+            static_cast<void>(binding.bind({}, &root, sizeof(root)));
+            _exit(3);
+        }
+        if (name == "root-overlap") {
+            static_cast<void>(binding.bind(words, words.data(), sizeof(root)));
+            _exit(3);
+        }
+        if (name == "root-overflow") {
+            static_cast<void>(binding.bind(words, &root, std::numeric_limits<std::size_t>::max()));
+            _exit(3);
+        }
+        root = binding.bind(words, &root, sizeof(root));
+        const auto epoch = root.epoch;
+        if (name == "roundtrip") {
+            Binding::Scope scope(binding, Access::write);
+            if (!Binding::set(root.binding, root.epoch, 2, 0x5678))
+                _exit(3);
+        }
+        if (name == "duplicate") {
+            Binding second;
+            alignas(16) Descriptor other{};
+            static_cast<void>(second.bind(words, &other, sizeof(other)));
+            _exit(3);
+        }
+        if (name == "wrong-root")
+            aurora::words::hosted_reachable = false;
+        if (name == "detached" || name == "wrong-bank" || name == "wrong-extent" || name == "roundtrip") {
+            binding.suspend();
+            if (name == "wrong-bank")
+                binding.resume(words.data() + 1, words.size());
+            if (name == "wrong-extent")
+                binding.resume(words.data(), words.size() - 1);
+            if (name == "roundtrip") {
+                binding.resume(words.data(), words.size());
+                Binding::Scope scope(binding, Access::read);
+                if (root.epoch != epoch || Binding::at(root.binding, root.epoch, 2) != 0x5678)
+                    _exit(3);
+            }
+        }
+        if (name == "revoked" || name == "roundtrip") {
+            {
+                Binding::Scope scope(binding, Access::consume);
+                if (!Binding::set(root.binding, root.epoch, 3, 0x1234) ||
+                    Binding::at(root.binding, root.epoch, 3) != 0x1234 ||
+                    Binding::size(root.binding, root.epoch) != words.size() ||
+                    !Binding::finish(root.binding, root.epoch))
+                    _exit(3);
+            }
+            if (name == "roundtrip")
+                _exit(words[3] == 0x1234 ? 0 : 3);
+        }
+        Binding::Scope scope(binding, Access::read);
+        if (name == "reentrant") {
+            Binding::Scope nested(binding, Access::read);
+        } else if (name == "suspend-live") {
+            binding.suspend();
+        } else if (name == "readonly-write") {
+            static_cast<void>(Binding::set(root.binding, root.epoch, 0, 1));
+        } else if (name == "borrowed-finish") {
+            static_cast<void>(Binding::finish(root.binding, root.epoch));
+        } else if (name == "foreign") {
+            static_cast<void>(Binding::at(reinterpret_cast<const void *>(1), root.epoch, 0));
+        } else if (name == "stale") {
+            static_cast<void>(Binding::at(root.binding, root.epoch + 1, 0));
+        } else if (name == "bounds") {
+            static_cast<void>(Binding::at(root.binding, root.epoch, words.size()));
+        }
+        _exit(3);
+    }
+    int status = 0;
+    if (waitpid(child, &status, 0) != child)
+        usage("grant fixture wait");
+    const bool success = name == "roundtrip";
+    if (success ? (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+                : (!WIFSIGNALED(status) || WTERMSIG(status) != SIGABRT))
+        usage("grant fixture did not stop before access: " + name);
+    std::cout << "grant " << name << " -> " << (success ? "passed" : "denied") << "\n";
 }
 
 auto frames_mode(const char *path) -> int {
@@ -271,7 +403,9 @@ auto frames_mode(const char *path) -> int {
         std::vector<std::string> rest;
         for (std::string word; words >> word;)
             rest.push_back(word);
-        if (verb == "case") {
+        if (verb == "grant-case" && !current && rest.size() == 1) {
+            grant_case(rest[0]);
+        } else if (verb == "case") {
             if (current || rest.size() != 1)
                 usage("unterminated or unnamed case");
             current = MapCase{};
@@ -279,7 +413,21 @@ auto frames_mode(const char *path) -> int {
         } else if (!current) {
             usage("row outside a case: " + line);
         } else if (verb == "end") {
-            run_map(*current);
+            std::cout.flush();
+            const auto child = fork();
+            if (child < 0)
+                usage("frame fixture fork");
+            if (!child) {
+                run_map(*current);
+                std::cout.flush();
+                // Some adversarial cases deliberately retain live/corrupt
+                // allocations. Process termination, not a source destructor or
+                // successful consuming finish, ends their private fixture.
+                _exit(0);
+            }
+            int status = 0;
+            if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status))
+                usage("frame fixture child failed");
             current.reset();
         } else if (verb == "stride" && rest.size() == 1) {
             current->stride = number(rest[0]);

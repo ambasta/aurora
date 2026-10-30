@@ -158,6 +158,26 @@ RULES = [
         "profiles": ["uefi/service-fixture"],
         "reachable": ["aurora_kernel_round_robin_next", "aurora_kernel_client_disposal"],
     },
+    # Whole source allocation entry points replace the old native-to-transition
+    # reachability requirement; transitions are now internal source calls.
+    # Only the source allocation ledger can access the unique metadata bank.
+    {
+        "profiles": ["uefi/process-fixture", "uefi/production"],
+        "imports:frame-allocator": [
+            "__au_runtime_owned_words_size",
+            "__au_runtime_owned_words_at",
+            "__au_runtime_owned_words_set",
+            "__au_runtime_owned_words_finish",
+        ],
+        "reachable": [
+            "__au_runtime_frame_construct",
+            "__au_runtime_frame_initialize",
+            "__au_runtime_frame_allocate",
+            "__au_runtime_frame_release",
+            "__au_runtime_frame_record",
+            "__au_runtime_frame_audit",
+        ],
+    },
     # Retained source accounting is a real consumer, not unused ABI scaffolding.
     {
         "profiles": ["uefi/process-fixture", "uefi/production"],
@@ -221,7 +241,6 @@ RULES = [
             "__au_runtime_process_volume_find",
             "__au_runtime_process_volume_entry",
             "__au_runtime_process_base64_group",
-            "aurora_kernel_frame_transition",
             "__au_runtime_process_elf_admit",
             "__au_runtime_process_layout",
             "__au_runtime_process_region",
@@ -305,7 +324,6 @@ RULES = [
             "__au_runtime_process_volume_admit",
             "__au_runtime_process_volume_find",
             "__au_runtime_process_volume_entry",
-            "aurora_kernel_frame_transition",
             "__au_runtime_process_elf_admit",
             "__au_runtime_process_layout",
             "__au_runtime_process_region",
