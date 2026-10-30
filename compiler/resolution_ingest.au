@@ -380,7 +380,21 @@ namespace compiler_resolver {
             row.set_word(1, node.end());
             row.set_word(2, translate_index(session, declaration_base, declarations, node.previous()));
             row.set_word(3, translate_index(session, expression_base, expressions, node.expression()));
-            row.set_word(4, translate_index(session, expression_base, expressions, node.target()));
+            if (node.kind() == compiler_parser::SyntaxKind::constructor) {
+                if (node.target() < -1 || node.target() >= at) {
+                    session.fail_storage(StorageStatus::invalid);
+                } else {
+                    if (node.target() >= 0) {
+                        const compiler_parser::SyntaxNode block = parsed.syntax_at(node.target());
+                        if (block.kind() != compiler_parser::SyntaxKind::block) {
+                            session.fail_storage(StorageStatus::invalid);
+                        }
+                    }
+                }
+                row.set_word(4, translate_index(session, declaration_base, declarations, node.target()));
+            } else {
+                row.set_word(4, translate_index(session, expression_base, expressions, node.target()));
+            }
             row.set_word(5, translate_index(session, type_base, types, node.type()));
             row.set_word(6, node.binding());
             if (node.kind() == compiler_parser::SyntaxKind::import_name) {

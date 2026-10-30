@@ -2488,12 +2488,7 @@ namespace compiler_parser {
         if (!single(source, token, '{')) {
             return TypeResult(ParseStatus::expected_brace_open, -1, token);
         }
-        const ParseToken close = advance(source, token);
-        if (!single(source, close, '}')) {
-            return TypeResult(ParseStatus::expected_brace_close, -1, close);
-        }
-        const ParseToken after = advance(source, close);
-        return TypeResult(ParseStatus::success, tail, after);
+        return TypeResult(ParseStatus::success, tail, token);
     }
     auto parse_callable(AstArena& arena, builtin::span<const u8> source, ParseToken begin, Stop stop,
         TypeContext context) -> TypeResult {
@@ -2521,6 +2516,7 @@ namespace compiler_parser {
         i64 declared_type = -1;
         i64 readonly = 0;
         i64 body = -1;
+        i64 constructor_body = -1;
         SyntaxKind kind = SyntaxKind::constructor;
         if (stop == Stop::constructor) {
             const TypeResult initializers = constructor_initializers(arena, source, token, context);
@@ -2529,6 +2525,17 @@ namespace compiler_parser {
                 return TypeResult(initializers.status(), -1, token);
             }
             body = initializers.root();
+            const ParseToken first_statement = advance(source, token);
+            if (single(source, first_statement, '}')) {
+                token.update(advance(source, first_statement));
+            } else {
+                const TypeResult parsed = parse_body(arena, source, token, context);
+                token.update(parsed.token());
+                if (parsed.status() != ParseStatus::success) {
+                    return TypeResult(parsed.status(), -1, token);
+                }
+                constructor_body = parsed.root();
+            }
         } else {
             kind = SyntaxKind::function;
             if (stop == Stop::method) {
@@ -2569,6 +2576,7 @@ namespace compiler_parser {
         SyntaxNode callable = SyntaxNode(kind, name, token.index(), -1);
         callable.bind_declaration(declared_type, -1, readonly);
         callable.bind_body(body, parameters.root());
+        callable.bind_expression(-1, constructor_body);
         const i64 root = arena.append_syntax(callable);
         if (root < 0) {
             const TypeResult error = failure(arena, token, base);

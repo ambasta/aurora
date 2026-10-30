@@ -1618,10 +1618,9 @@ export namespace compiler_x86 {
         }
         return true;
     }
-    // Retained fields keep their canonical stable address through native effects.
-    // The verifier admits complete initialization and explicit terminal use; no
-    // owning descriptor is exposed as a scalar or moved to call scratch space.
-    auto emit_retained_resource(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
+    // Resource fields remain encapsulated; retained fields additionally pass
+    // their canonical stable address to native effects.
+    auto emit_resource_field(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 instruction) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(instruction);
         const i64 current = w.current_callable();
@@ -1648,12 +1647,19 @@ export namespace compiler_x86 {
         const i64 second = w.advance_address(first, 8);
         emit_load(w, o, first, Register::rdi, false);
         emit_load(w, o, second, Register::rsi, false);
-        emit_lea(w, o, first, Register::rdx);
+        const bool retained = resource == 2;
+        if (retained) {
+            emit_lea(w, o, first, Register::rdx);
+        }
         if (compiler_catalog::type_kind(type) == compiler_resolver::ResolvedTypeKind::class_value) {
             const i64 fields = compiler_catalog::member_count(type);
             const i64 output = w.pack_address(0, result);
             clear_bytes(w, o, 0, fields * 8, output);
-            emit_lea(w, o, output, Register::rcx);
+            if (retained) {
+                emit_lea(w, o, output, Register::rcx);
+            } else {
+                emit_lea(w, o, output, Register::rdx);
+            }
             emit_call_runtime(w, o, symbol);
             i64 at = 0;
             while (at < fields) {
@@ -1668,6 +1674,13 @@ export namespace compiler_x86 {
             }
             return w.ok();
         }
+        i64 arguments = 3;
+        if (!retained) {
+            arguments = 2 + compiler_catalog::resource_method_parameters(resource, method);
+            if (arguments == 3) {
+                emit_mov_rr(w, o, Register::rax, Register::rdx);
+            }
+        }
         emit_call_runtime(w, o, symbol);
         if (compiler_catalog::resource_method_effect(resource, method) == 2) {
             // Native terminal cleanup has settled on every normal return,
@@ -1679,7 +1692,38 @@ export namespace compiler_x86 {
         if (maximum < 0) {
             return w.fail();
         }
-        emit_service_completion(w, o, symbol, 3, maximum);
+        emit_service_completion(w, o, symbol, arguments, maximum);
+        return w.ok();
+    }
+    auto emit_resource_object_call(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 instruction) -> bool {
+        const i64 target = instruction_target(m, s, instruction);
+        if (target < 0) {
+            return w.fail();
+        }
+        const i64 receiver = operand_value(s, instruction, 1);
+        const i64 source = operand_value(s, instruction, 2);
+        const i64 result = operand_value(s, instruction, 3);
+        i64 record_bytes = 0;
+        if (parameter_count(m, target) != 0) {
+            // The admitted constructor has exactly one lexical descriptor.
+            record_bytes = 16;
+            emit_reserve_stack(w, o, record_bytes);
+            const i64 input = w.pack_address(0, source);
+            const i64 record = w.pack_address(1, 0);
+            object_copy_record_words(w, o, input, record, 16);
+            clear_bytes(w, o, 0, 16, input);
+            emit_mov_rr(w, o, Register::rsp, Register::r11);
+        } else {
+            if (type_kind(m, result_type(m, target)) == 5) {
+                const i64 output = w.pack_address(0, result);
+                emit_lea(w, o, output, Register::r11);
+            }
+        }
+        const i64 address = w.pack_address(0, receiver);
+        emit_lea(w, o, address, Register::r10);
+        call_target(w, o, m, target);
+        emit_release_stack(w, o, record_bytes);
         return w.ok();
     }
     auto emit_objects(EmitWorkspace& workspace, ObjectWorkspace& object,
@@ -1692,8 +1736,12 @@ export namespace compiler_x86 {
             // service loan-to-frame map is prepared over the whole retained body.
             return true;
         }
+        if (form == 90) {
+            emit_resource_object_call(workspace, object, metadata, store, instruction);
+            return true;
+        }
         if (form == 88 || form == 89) {
-            emit_retained_resource(workspace, object, metadata, store, instruction);
+            emit_resource_field(workspace, object, metadata, store, instruction);
             return true;
         }
         if (form >= 85 && form <= 87) {

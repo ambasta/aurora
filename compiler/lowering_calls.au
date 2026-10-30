@@ -686,7 +686,11 @@ export namespace compiler_lowering {
         i64 type = -1;
         i64 field = -1;
         bool mutable_receiver = !body_receiver_const(session);
+        bool consuming_receiver = false;
         if (implicit) {
+            if (body_constructor(session) && !constructor_body_active(session)) {
+                return fail(session, LoweringError::initializer_receiver_field_access, reference);
+            }
             if (lookup_local(session, reference) >= 0) {
                 return fail(session, LoweringError::local_shadows_method, reference);
             }
@@ -710,30 +714,45 @@ export namespace compiler_lowering {
                     type = field_type(session, staged_nominal_51, field);
                 }
             } else {
-                if (target_row.expression_kind() == compiler_parser::NodeKind::member) {
-                    const i64 target_parent = target_row.word(1);
-                    const compiler_resolver::SyntaxRow parent_row = session.syntax(target_parent);
-                    if (parent_row.expression_kind() != compiler_parser::NodeKind::name) {
+                if (target_row.expression_kind() == compiler_parser::NodeKind::call && expression_spelling(session,
+                    target, "move")) {
+                    require_arity(session, target, 1);
+                    const i64 original = expression_argument(session, target, 0);
+                    root = named_source(session, original);
+                    const LocalRow local = session.local(root);
+                    type = local.concrete_type_id();
+                    mutable_receiver = local.mutable_value();
+                    consuming_receiver = true;
+                    if (!lexical_resource_class(session, type) || local.borrowed_object() || !mutable_receiver
+                        || !no_object_loan(session, root, reference)) {
+                        return fail(session, LoweringError::borrowed_object_ownership_transfer, reference);
+                    }
+                } else {
+                    if (target_row.expression_kind() == compiler_parser::NodeKind::member) {
+                        const i64 target_parent = target_row.word(1);
+                        const compiler_resolver::SyntaxRow parent_row = session.syntax(target_parent);
+                        if (parent_row.expression_kind() != compiler_parser::NodeKind::name) {
+                            return fail(session, LoweringError::method_receiver_requires_class_storage, reference);
+                        }
+                        root = named_source(session, target_parent);
+                        const LocalRow local = session.local(root);
+                        if (local.borrowed_object()) {
+                            const i64 staged_source_52 = source_ref(session, target);
+                            return fail(session, LoweringError::borrowed_object_field_projection, staged_source_52);
+                        }
+                        mutable_receiver = local.mutable_value();
+                        const i64 staged_reference_53 = source_ref(session, target);
+                        field = checked_field(session, local.concrete_type_id(), staged_reference_53, false);
+                        const i64 staged_nominal_54 = compiler_resolver::mw(session, local.concrete_type_id(), 1);
+                        type = field_type(session, staged_nominal_54, field);
+                    } else {
                         return fail(session, LoweringError::method_receiver_requires_class_storage, reference);
                     }
-                    root = named_source(session, target_parent);
-                    const LocalRow local = session.local(root);
-                    if (local.borrowed_object()) {
-                        const i64 staged_source_52 = source_ref(session, target);
-                        return fail(session, LoweringError::borrowed_object_field_projection, staged_source_52);
-                    }
-                    mutable_receiver = local.mutable_value();
-                    const i64 staged_reference_53 = source_ref(session, target);
-                    field = checked_field(session, local.concrete_type_id(), staged_reference_53, false);
-                    const i64 staged_nominal_54 = compiler_resolver::mw(session, local.concrete_type_id(), 1);
-                    type = field_type(session, staged_nominal_54, field);
-                } else {
-                    return fail(session, LoweringError::method_receiver_requires_class_storage, reference);
                 }
             }
             if (field >= 0) {
                 if (value_kind(session, type) != compiler_resolver::ResolvedTypeKind::class_value
-                    && !is_owner_storage(session, type) && !retained_resource(session, type)) {
+                    && !is_owner_storage(session, type) && !field_resource(session, type)) {
                     const i64 staged_source_55 = source_ref(session, target);
                     return fail(session, LoweringError::nested_method_receiver_requires_owned_field, staged_source_55);
                 }
@@ -758,7 +777,7 @@ export namespace compiler_lowering {
         }
         if (kind == compiler_resolver::ResolvedTypeKind::class_value) {
             const i64 callee = select_method(session, type, reference, false);
-            if (method_consuming(session, callee)) {
+            if (method_consuming(session, callee) != consuming_receiver) {
                 return fail(session, LoweringError::borrowed_object_ownership_transfer, reference);
             }
             const i64 staged_type_57 = signature_result(session, callee);
@@ -810,10 +829,10 @@ export namespace compiler_lowering {
         i64 count = 0;
         i64 target = -1;
         if (kind == compiler_resolver::ResolvedTypeKind::service_resource) {
-            const bool retained = retained_resource(session, type);
-            if (!mutable_receiver || (retained && (body_constructor(session) || frame.receiver_field_index() < 0
-                || frame.capability_root_local() >= 0)) || (!retained && (implicit || frame.receiver_field_index() != -1
-                || frame.capability_root_local() < 0))) {
+            const bool retained = frame.receiver_field_index() >= 0;
+            if (!mutable_receiver || (retained && (!field_resource(session, type) || (body_constructor(session)
+                && !constructor_body_active(session)) || frame.capability_root_local() >= 0)) || (!retained && (implicit
+                || retained_resource(session, type) || frame.capability_root_local() < 0))) {
                 return fail(session, LoweringError::typed_owner_operation_requires_named_owner, reference);
             }
             const compiler_resolver::MetaRow spelling = session.meta(reference);
@@ -1095,6 +1114,9 @@ export namespace compiler_lowering {
         const bool inferred = argument_use(session, frame_id) && !span_destination;
         const bool binding = frame.scope_head() >= 0 || (frame.output_mark() >= 0 && !inferred);
         const bool method = is_method_expression(session, frame.syntax_node());
+        if (constructor && resource_class(session, result) && !binding) {
+            return fail(session, LoweringError::resource_result_requires_typed_initializer, reference);
+        }
         if (inferred && is_resource_owner(session, result)) {
             return fail(session, LoweringError::copied_argument_consumes_owning_result, reference);
         }
@@ -1316,6 +1338,22 @@ export namespace compiler_lowering {
         const i64 callee = frame.call_target();
         const i64 reference = source_ref(session, node);
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
+        if (is_service_resource(session, type)) {
+            const i64 nominal = compiler_resolver::mw(session, callee, 7);
+            const i64 receiver_type = nominal_type(session, nominal);
+            if (!is_constructor_expression(session, frame.syntax_node()) || index != 0
+                || !lexical_resource_class(session, receiver_type)) {
+                return fail(session, LoweringError::resource_argument_type, reference);
+            }
+            const i64 original = moved_source(session, node, type);
+            const LocalRow owner = session.local(original);
+            ArgumentLane lane = ArgumentLane(index, ArgumentKind::owner, type, original, -1, -1);
+            frame.set_argument(index, lane);
+            frame.set_call(callee, owner.owner_id(), -1, frame.argument_count());
+            set_live(session, original, false, false);
+            frame.set_next_argument(index + 1);
+            return session.set_continuation(frame_id, frame);
+        }
         if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
             const i64 local = named_source(session, node);
             const i64 staged_got_66 = local_type(session, local);
@@ -1731,6 +1769,8 @@ export namespace compiler_lowering {
             const i64 staged_nominal_79 = compiler_resolver::mw(session, callee, 7);
             result = nominal_type(session, staged_nominal_79);
         }
+        const bool lexical_constructor = constructor && lexical_resource_class(session, result);
+        const bool consuming = method && method_consuming(session, callee);
         bool resource = false;
         bool service = false;
         bool borrowed = false;
@@ -1774,125 +1814,146 @@ export namespace compiler_lowering {
                 destination = add_span(session, span_request, -1, frame.capability_root_local(), field, false);
             } else {
                 i64 owner = -1;
-                if (resource && is_resource_owner(session, result)) {
+                if ((resource || lexical_constructor) && is_resource_owner(session, result)) {
                     owner = frame.capability_root_local();
                 }
                 destination = expression_destination(session, frame, result, owner);
             }
             destination_offset = local_offset(session, destination);
         }
-        if (resource) {
-            const OperandRow owners = argument_offsets(session, frame, OperandRole::OwnerArguments, 0, true);
-            i64 result_offset = destination_offset;
-            i64 receiver = 0;
-            if (constructor) {
-                receiver = destination_offset;
-                result_offset = 0;
-            }
-            const i64 staged_a1_80 = local_offset(session, frame.capability_root_local());
-            emit_ResourceCall(session, callee, staged_a1_80, owners, result_offset, receiver);
-        } else {
-            if (service) {
-                const OperandRow span_arguments = argument_offsets(session, frame, OperandRole::SpanArguments, 0, true);
-                const OperandRow object_arguments = argument_offsets(session, frame, OperandRole::ObjectArguments, 0,
-                    true);
-                const i64 extra_begin = session.operand_count();
-                i64 service_index = 1;
-                while (service_index < frame.argument_count()) {
-                    const ArgumentLane lane = frame.argument(service_index);
-                    if (lane.kind() == ArgumentKind::service) {
-                        put(session, OperandRole::ServiceLoanId, lane.loan_id());
-                        put(session, OperandRole::ServiceKindId, lane.service_kind_id());
-                    }
-                    service_index = service_index + 1;
-                }
-                const OperandRow additional = slice(OperandRole::AdditionalServices, extra_begin,
-                    session.operand_count() - extra_begin);
-                const ArgumentLane first = frame.argument(0);
-                const i64 begin = session.operand_count();
-                put(session, OperandRole::CalleeSymbolId, callee);
-                put(session, OperandRole::LoanId, first.loan_id());
-                put(session, OperandRole::ResultOffset, destination_offset);
-                session.append_operand(span_arguments);
-                put(session, OperandRole::ServiceKindId, first.service_kind_id());
-                session.append_operand(additional);
-                session.append_operand(object_arguments);
-                i64 region_offset = 0;
-                const i64 region_parameter = service_region_parameter(session, callee);
-                if (region_parameter >= 0) {
-                    const ArgumentLane region = frame.argument(region_parameter);
-                    region_offset = local_offset(session, region.local_id());
-                }
-                put(session, OperandRole::RegionOffset, region_offset);
-                emit(session, InstructionForm::ServiceCall, begin);
+        if (lexical_constructor || consuming) {
+            i64 receiver = destination_offset;
+            i64 source_offset = 0;
+            i64 result_offset = 0;
+            if (lexical_constructor) {
+                const ArgumentLane source = frame.argument(0);
+                source_offset = local_offset(session, source.local_id());
             } else {
-                if (method || constructor) {
-                    // Method packed object slices include zero scalar positions. A
-                    // constructor has no result offset and receives the pristine object.
-                    bool packed = false;
-                    index = 0;
-                    while (index < frame.argument_count()) {
-                        const ArgumentLane lane = frame.argument(index);
-                        if (lane.kind() == ArgumentKind::object || lane.kind() == ArgumentKind::span) {
-                            packed = true;
-                        }
-                        index = index + 1;
-                    }
-                    const OperandRow objects = argument_offsets(session, frame, OperandRole::ObjectArguments, 0,
-                        packed);
+                receiver = receiver_offset(session, frame);
+                result_offset = destination_offset;
+                const LocalRow owner = session.local(frame.capability_root_local());
+                set_live(session, frame.capability_root_local(), false, false);
+                set_exclusive(session, owner.owner_id(), false);
+            }
+            emit_ResourceObjectCall(session, callee, receiver, source_offset, result_offset);
+            if (consuming) {
+                emit_EndObject(session, receiver);
+            }
+        } else {
+            if (resource) {
+                const OperandRow owners = argument_offsets(session, frame, OperandRole::OwnerArguments, 0, true);
+                i64 result_offset = destination_offset;
+                i64 receiver = 0;
+                if (constructor) {
+                    receiver = destination_offset;
+                    result_offset = 0;
+                }
+                const i64 staged_a1_80 = local_offset(session, frame.capability_root_local());
+                emit_ResourceCall(session, callee, staged_a1_80, owners, result_offset, receiver);
+            } else {
+                if (service) {
                     const OperandRow span_arguments = argument_offsets(session, frame, OperandRole::SpanArguments, 0,
-                        spans);
+                        true);
+                    const OperandRow object_arguments = argument_offsets(session, frame, OperandRole::ObjectArguments,
+                        0, true);
+                    const i64 extra_begin = session.operand_count();
+                    i64 service_index = 1;
+                    while (service_index < frame.argument_count()) {
+                        const ArgumentLane lane = frame.argument(service_index);
+                        if (lane.kind() == ArgumentKind::service) {
+                            put(session, OperandRole::ServiceLoanId, lane.loan_id());
+                            put(session, OperandRole::ServiceKindId, lane.service_kind_id());
+                        }
+                        service_index = service_index + 1;
+                    }
+                    const OperandRow additional = slice(OperandRole::AdditionalServices, extra_begin,
+                        session.operand_count() - extra_begin);
+                    const ArgumentLane first = frame.argument(0);
                     const i64 begin = session.operand_count();
                     put(session, OperandRole::CalleeSymbolId, callee);
-                    i64 receiver = receiver_offset(session, frame);
-                    i64 result_offset = destination_offset;
-                    i64 field = frame.receiver_field_index();
-                    if (constructor) {
-                        receiver = destination_offset;
-                        result_offset = 0;
-                        field = -1;
-                    }
-                    put(session, OperandRole::ReceiverOffset, receiver);
-                    session.append_operand(objects);
-                    put(session, OperandRole::ResultOffset, result_offset);
-                    put(session, OperandRole::ReceiverFieldIndex, field);
+                    put(session, OperandRole::LoanId, first.loan_id());
+                    put(session, OperandRole::ResultOffset, destination_offset);
                     session.append_operand(span_arguments);
-                    emit(session, InstructionForm::MethodCall, begin);
+                    put(session, OperandRole::ServiceKindId, first.service_kind_id());
+                    session.append_operand(additional);
+                    session.append_operand(object_arguments);
+                    i64 region_offset = 0;
+                    const i64 region_parameter = service_region_parameter(session, callee);
+                    if (region_parameter >= 0) {
+                        const ArgumentLane region = frame.argument(region_parameter);
+                        region_offset = local_offset(session, region.local_id());
+                    }
+                    put(session, OperandRole::RegionOffset, region_offset);
+                    emit(session, InstructionForm::ServiceCall, begin);
                 } else {
-                    if (borrowed) {
-                        const i64 leading = borrowed_root_count(session, callee);
-                        const OperandRow objects = argument_offsets(session, frame, OperandRole::ObjectArguments,
-                            leading, aggregate);
-                        const OperandRow span_arguments = argument_offsets(session, frame, OperandRole::SpanArguments,
-                            leading, spans);
-                        const i64 roots_begin = session.operand_count();
-                        i64 ordinal = 0;
-                        while (ordinal < leading && session.good()) {
-                            const ArgumentLane lane = frame.argument(ordinal);
-                            const i64 selector = object_root_offset(session, lane.local_id());
-                            put(session, OperandRole::Root, selector);
-                            put(session, OperandRole::LoanId, lane.loan_id());
-                            put(session, OperandRole::FieldIndex, lane.field_index());
-                            ordinal = ordinal + 1;
+                    if (method || constructor) {
+                        // Method packed object slices include zero scalar positions. A
+                        // constructor has no result offset and receives the pristine object.
+                        bool packed = false;
+                        index = 0;
+                        while (index < frame.argument_count()) {
+                            const ArgumentLane lane = frame.argument(index);
+                            if (lane.kind() == ArgumentKind::object || lane.kind() == ArgumentKind::span) {
+                                packed = true;
+                            }
+                            index = index + 1;
                         }
-                        const OperandRow roots = slice(OperandRole::BorrowedRoots, roots_begin, session.operand_count()
-                            - roots_begin);
+                        const OperandRow objects = argument_offsets(session, frame, OperandRole::ObjectArguments, 0,
+                            packed);
+                        const OperandRow span_arguments = argument_offsets(session, frame, OperandRole::SpanArguments,
+                            0, spans);
                         const i64 begin = session.operand_count();
                         put(session, OperandRole::CalleeSymbolId, callee);
-                        session.append_operand(roots);
+                        i64 receiver = receiver_offset(session, frame);
+                        i64 result_offset = destination_offset;
+                        i64 field = frame.receiver_field_index();
+                        if (constructor) {
+                            receiver = destination_offset;
+                            result_offset = 0;
+                            field = -1;
+                        }
+                        put(session, OperandRole::ReceiverOffset, receiver);
                         session.append_operand(objects);
-                        put(session, OperandRole::ResultOffset, destination_offset);
+                        put(session, OperandRole::ResultOffset, result_offset);
+                        put(session, OperandRole::ReceiverFieldIndex, field);
                         session.append_operand(span_arguments);
-                        emit(session, InstructionForm::BorrowedCall, begin);
+                        emit(session, InstructionForm::MethodCall, begin);
                     } else {
-                        if (aggregate) {
-                            const OperandRow objects = argument_offsets(session, frame, OperandRole::ObjectArguments, 0,
-                                true);
+                        if (borrowed) {
+                            const i64 leading = borrowed_root_count(session, callee);
+                            const OperandRow objects = argument_offsets(session, frame, OperandRole::ObjectArguments,
+                                leading, aggregate);
                             const OperandRow span_arguments = argument_offsets(session, frame,
-                                OperandRole::SpanArguments, 0, true);
-                            emit_AggregateCall(session, callee, objects, destination_offset, span_arguments);
+                                OperandRole::SpanArguments, leading, spans);
+                            const i64 roots_begin = session.operand_count();
+                            i64 ordinal = 0;
+                            while (ordinal < leading && session.good()) {
+                                const ArgumentLane lane = frame.argument(ordinal);
+                                const i64 selector = object_root_offset(session, lane.local_id());
+                                put(session, OperandRole::Root, selector);
+                                put(session, OperandRole::LoanId, lane.loan_id());
+                                put(session, OperandRole::FieldIndex, lane.field_index());
+                                ordinal = ordinal + 1;
+                            }
+                            const OperandRow roots = slice(OperandRole::BorrowedRoots, roots_begin,
+                                session.operand_count() - roots_begin);
+                            const i64 begin = session.operand_count();
+                            put(session, OperandRole::CalleeSymbolId, callee);
+                            session.append_operand(roots);
+                            session.append_operand(objects);
+                            put(session, OperandRole::ResultOffset, destination_offset);
+                            session.append_operand(span_arguments);
+                            emit(session, InstructionForm::BorrowedCall, begin);
                         } else {
-                            emit_Call(session, callee);
+                            if (aggregate) {
+                                const OperandRow objects = argument_offsets(session, frame,
+                                    OperandRole::ObjectArguments, 0, true);
+                                const OperandRow span_arguments = argument_offsets(session, frame,
+                                    OperandRole::SpanArguments, 0, true);
+                                emit_AggregateCall(session, callee, objects, destination_offset, span_arguments);
+                            } else {
+                                emit_Call(session, callee);
+                            }
                         }
                     }
                 }
@@ -1923,7 +1984,7 @@ export namespace compiler_lowering {
                 destination = expression_destination(session, frame, result, -1);
                 result_offset = local_offset(session, destination);
             }
-            if (compiler_catalog::resource_retained(resource)) {
+            if (field >= 0) {
                 emit_RetainedFieldOperation(session, offset, field, method, result_offset, resource);
                 if (compiler_catalog::resource_method_effect(resource, method) == 2) {
                     const i64 receiver = object_loan_local(session, frame.capability_root_local());

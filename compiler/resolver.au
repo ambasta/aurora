@@ -2407,6 +2407,9 @@ export namespace compiler_resolver {
         if (kind == compiler_parser::SyntaxKind::function || kind == compiler_parser::SyntaxKind::method || kind
             == compiler_parser::SyntaxKind::constructor) {
             if (kind == compiler_parser::SyntaxKind::constructor) {
+                if (row.word(4) >= 0) {
+                    session.append_work(WorkRow(row.word(4), 0, 0, 0, 0, 0));
+                }
                 push_statement_list(session, row.word(7));
             } else {
                 if (row.word(7) >= 0) {
@@ -3354,22 +3357,14 @@ export namespace compiler_resolver {
         }
         return 0;
     }
-    auto resolve_body(Session& session, i64 symbol, i64 receiver) -> i64 {
-        const i64 unit = mw(session, symbol, 1);
-        const i64 scope = mw(session, symbol, 2);
-        const i64 root = mw(session, symbol, 5);
-        const bool constructor = declaration_kind(session, symbol) == DeclarationKind::constructor;
-        i64 function = symbol;
-        if (receiver >= 0) {
-            function = -1;
-        }
-        const BindContext context = BindContext(unit, scope, function, receiver, constructor, false);
+    auto resolve_body_tree(Session& session, i64 body, BindContext context, bool initializers) -> i64 {
         const i64 base = session.work_count();
-        const i64 body = sw(session, root, 7);
-        if (constructor) {
+        if (initializers) {
             push_statement_list(session, body);
         } else {
-            session.append_work(WorkRow(body, 0, 0, 0, 0, 0));
+            if (body >= 0) {
+                session.append_work(WorkRow(body, 0, 0, 0, 0, 0));
+            }
         }
         while (session.work_count() > base && session.good()) {
             const i64 top = session.work_count() - 1;
@@ -3391,6 +3386,25 @@ export namespace compiler_resolver {
             }
         }
         session.truncate_work(base);
+        return 0;
+    }
+    auto resolve_body(Session& session, i64 symbol, i64 receiver) -> i64 {
+        const i64 unit = mw(session, symbol, 1);
+        const i64 scope = mw(session, symbol, 2);
+        const i64 root = mw(session, symbol, 5);
+        const bool constructor = declaration_kind(session, symbol) == DeclarationKind::constructor;
+        i64 function = symbol;
+        if (receiver >= 0) {
+            function = -1;
+        }
+        const BindContext context = BindContext(unit, scope, function, receiver, constructor, false);
+        const i64 initializers = sw(session, root, 7);
+        resolve_body_tree(session, initializers, context, constructor);
+        if (constructor && session.good()) {
+            const BindContext complete = BindContext(unit, scope, function, receiver, false, false);
+            const i64 body = sw(session, root, 4);
+            resolve_body_tree(session, body, complete, false);
+        }
         return 0;
     }
     auto heap_down(Session& session, i64 base, i64 root, i64 count) -> i64 {

@@ -893,6 +893,10 @@ auto nested(Box<Box<i64>> value)->Box<Box<i64>>{return value;}
 @step program
 Box(){}
 Box(i64 value):first(value),bytes{},last{1u8,2u8}{}
+Box(i64 input):value(input){const i64 prepared=value;value=prepared;}
+Box(){return 1;}
+Box(){{}}
+Box(Owner& value){return 1;}
 @case callable boundary
 @step callable stop=function at=2
 @step callable stop=method at=next
@@ -950,8 +954,6 @@ Box(
 Box(i64 value
 Box()
 Box(){
-Box(){return 1;}
-Box(){{}}
 Box()const{}
 Box():
 Box():true(1){}
@@ -963,7 +965,6 @@ Box():value(){}
 Box():value{1,}{}
 Box():value{}
 Box():value(1),{}
-Box(Owner& value){return 1;}
 # Declaration admission: complete syntax is accepted alone and rejected in a module.
 @cases callable-admission
 @variant direct
@@ -1588,11 +1589,11 @@ auto f()->i64{
 @step raw stop=constructor reuse
 Box(){} next
 Box(i64 p):first(p),bytes{}{} next
+Box(){{}} next
 @variant constructor-error
 @step raw stop=constructor
 Box():field(1
 Box():field{}
-Box(){{}}
 @cases raw-module
 @step raw stop=module_definition admit
 export module m;namespace n{template<Scalar T,i64 N>class C{T value;};}

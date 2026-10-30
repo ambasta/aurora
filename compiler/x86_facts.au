@@ -1054,7 +1054,7 @@ export namespace compiler_x86 {
             if (compiler_ir_metadata::consuming_receiver(row)) {
                 workspace.text(",\"receiver_consuming\":true");
             }
-            if (compiler_ir_metadata::retained_constructor(metadata, row)) {
+            if (compiler_ir_metadata::resource_constructor(metadata, row)) {
                 workspace.text(",\"complete_constructor\":true");
             }
         }

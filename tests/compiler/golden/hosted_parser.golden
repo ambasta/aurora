@@ -3331,6 +3331,91 @@ callable-constructor/wrapped Box(i64 value):first(value),bytes{},last{1u8,2u8}{}
     syntax 9 namespace ns@42 end=<eof>@116 binding=ns@42 body=8
     syntax 10 declaration ns@42 end=<eof>@116 body=9
     syntax 11 module export@0 end=<eof>@116 body=0 other=10
+callable-constructor/alone Box(i64 input):value(input){const i64 prepared=value;value=prepared;}
+  callable next=22
+    syntax 0 parameter i64@4 end=)@13 type=(i64 i64@4) binding=input@8
+    syntax 1 initializer value@15 end={@27 expression=(name input@21)
+    syntax 2 local const@28 end=value@53 expression=(name value@47) type=(i64 i64@34) binding=prepared@38
+    syntax 3 assign value@53 end=}@68 previous=2 expression=(name prepared@59) target=(name value@53)
+    syntax 4 block {@27 end=<eof>@69 body=3
+    syntax 5 constructor Box@0 end=<eof>@69 constructor_body=4 body=1 other=0
+callable-constructor/wrapped Box(i64 input):value(input){const i64 prepared=value;value=prepared;}
+  callable next=34
+    syntax 0 parameter i64@66 end=)@75 type=(i64 i64@66) binding=input@70
+    syntax 1 initializer value@77 end={@89 expression=(name input@83)
+    syntax 2 local const@90 end=value@115 expression=(name value@109) type=(i64 i64@96) binding=prepared@100
+    syntax 3 assign value@115 end=}@130 previous=2 expression=(name prepared@121) target=(name value@115)
+    syntax 4 block {@89 end=}@131 body=3
+    syntax 5 constructor Box@62 end=}@131 constructor_body=4 body=1 other=0
+  program module callable_contract interface
+    syntax 0 preamble callable_contract@14 end=namespace@32 binding=callable_contract@14 qualifier=1
+    syntax 1 parameter i64@66 end=)@75 type=(i64 i64@66) binding=input@70
+    syntax 2 initializer value@77 end={@89 expression=(name input@83)
+    syntax 3 local const@90 end=value@115 expression=(name value@109) type=(i64 i64@96) binding=prepared@100
+    syntax 4 assign value@115 end=}@130 previous=3 expression=(name prepared@121) target=(name value@115)
+    syntax 5 block {@89 end=}@131 body=4
+    syntax 6 constructor Box@62 end=}@131 constructor_body=5 body=2 other=1
+    syntax 7 declaration Box@62 end=}@131 body=6 qualifier=1
+    syntax 8 class Box@51 end=}@133 body=7
+    syntax 9 declaration Box@51 end=}@133 body=8
+    syntax 10 namespace ns@42 end=<eof>@134 binding=ns@42 body=9
+    syntax 11 declaration ns@42 end=<eof>@134 body=10
+    syntax 12 module export@0 end=<eof>@134 body=0 other=11
+callable-constructor/alone Box(){return 1;}
+  callable next=8
+    syntax 0 return return@6 end=}@15 expression=(literal 1@13)
+    syntax 1 block {@5 end=<eof>@16 body=0
+    syntax 2 constructor Box@0 end=<eof>@16 constructor_body=1
+callable-constructor/wrapped Box(){return 1;}
+  callable next=20
+    syntax 0 return return@68 end=}@77 expression=(literal 1@75)
+    syntax 1 block {@67 end=}@78 body=0
+    syntax 2 constructor Box@62 end=}@78 constructor_body=1
+  program module callable_contract interface
+    syntax 0 preamble callable_contract@14 end=namespace@32 binding=callable_contract@14 qualifier=1
+    syntax 1 return return@68 end=}@77 expression=(literal 1@75)
+    syntax 2 block {@67 end=}@78 body=1
+    syntax 3 constructor Box@62 end=}@78 constructor_body=2
+    syntax 4 declaration Box@62 end=}@78 body=3 qualifier=1
+    syntax 5 class Box@51 end=}@80 body=4
+    syntax 6 declaration Box@51 end=}@80 body=5
+    syntax 7 namespace ns@42 end=<eof>@81 binding=ns@42 body=6
+    syntax 8 declaration ns@42 end=<eof>@81 body=7
+    syntax 9 module export@0 end=<eof>@81 body=0 other=8
+callable-constructor/alone Box(){{}}
+  callable next=7
+    syntax 0 block {@6 end=}@8
+    syntax 1 block {@5 end=<eof>@9 body=0
+    syntax 2 constructor Box@0 end=<eof>@9 constructor_body=1
+callable-constructor/wrapped Box(){{}}
+  callable next=19
+    syntax 0 block {@68 end=}@70
+    syntax 1 block {@67 end=}@71 body=0
+    syntax 2 constructor Box@62 end=}@71 constructor_body=1
+  program module callable_contract interface
+    syntax 0 preamble callable_contract@14 end=namespace@32 binding=callable_contract@14 qualifier=1
+    syntax 1 block {@68 end=}@70
+    syntax 2 block {@67 end=}@71 body=1
+    syntax 3 constructor Box@62 end=}@71 constructor_body=2
+    syntax 4 declaration Box@62 end=}@71 body=3 qualifier=1
+    syntax 5 class Box@51 end=}@73 body=4
+    syntax 6 declaration Box@51 end=}@73 body=5
+    syntax 7 namespace ns@42 end=<eof>@74 binding=ns@42 body=6
+    syntax 8 declaration ns@42 end=<eof>@74 body=7
+    syntax 9 module export@0 end=<eof>@74 body=0 other=8
+callable-constructor/alone Box(Owner& value){return 1;}
+  callable next=11
+    syntax 0 parameter Owner@4 end=)@16 type=(named Owner@4) binding=value@11 borrow=&@9
+    syntax 1 return return@18 end=}@27 expression=(literal 1@25)
+    syntax 2 block {@17 end=<eof>@28 body=1
+    syntax 3 constructor Box@0 end=<eof>@28 constructor_body=2 other=0
+callable-constructor/wrapped Box(Owner& value){return 1;}
+  callable next=23
+    syntax 0 parameter Owner@66 end=)@78 type=(named Owner@66) binding=value@73 borrow=&@71
+    syntax 1 return return@80 end=}@89 expression=(literal 1@87)
+    syntax 2 block {@79 end=}@90 body=1
+    syntax 3 constructor Box@62 end=}@90 constructor_body=2 other=0
+  program error AU2001 @73-78 borrowed parameters require a supported leading ownership reference signature on an ordinary function (found 'value')
 callable boundary
   callable next=10
     syntax 0 block {@19 end=auto@21
@@ -3479,17 +3564,9 @@ callable-error-constructor/direct Box()
 callable-error-constructor/module Box()
   program error AU2001 @38-38 expected '{' (found '<eof>')
 callable-error-constructor/direct Box(){
-  callable error AU2001 @6-6 expected '}' (found '<eof>')
+  callable error AU2001 @6-6 unterminated block (found '<eof>')
 callable-error-constructor/module Box(){
-  program error AU2001 @39-39 expected '}' (found '<eof>')
-callable-error-constructor/direct Box(){return 1;}
-  callable error AU2001 @6-12 expected '}' (found 'return')
-callable-error-constructor/module Box(){return 1;}
-  program error AU2001 @39-45 expected '}' (found 'return')
-callable-error-constructor/direct Box(){{}}
-  callable error AU2001 @6-7 expected '}' (found '{')
-callable-error-constructor/module Box(){{}}
-  program error AU2001 @39-40 expected '}' (found '{')
+  program error AU2001 @39-39 unterminated block (found '<eof>')
 callable-error-constructor/direct Box()const{}
   callable error AU2001 @5-10 expected '{' (found 'const')
 callable-error-constructor/module Box()const{}
@@ -3534,10 +3611,6 @@ callable-error-constructor/direct Box():value(1),{}
   callable error AU2001 @15-16 expected identifier (found '{')
 callable-error-constructor/module Box():value(1),{}
   program error AU2001 @48-49 expected identifier (found '{')
-callable-error-constructor/direct Box(Owner& value){return 1;}
-  callable error AU2001 @18-24 expected '}' (found 'return')
-callable-error-constructor/module Box(Owner& value){return 1;}
-  program error AU2001 @51-57 expected '}' (found 'return')
 callable-admission/direct auto f(const i64 value)->i64{}
   callable next=11
     syntax 0 parameter const@7 end=)@22 type=(i64 i64@13) binding=value@17 qualifier=1
@@ -5343,14 +5416,18 @@ raw-declaration/constructor Box(i64 p):first(p),bytes{}{} next
     syntax 2 initializer bytes@20 end={@27 previous=1 expression=(array_zero bytes@20 close=}@26)
     syntax 3 constructor Box@0 end=next@30 body=2 other=0
     reuse 68 -1 2 0 0 0
+raw-declaration/constructor Box(){{}} next
+  raw 0 2 0 7 10 0
+    syntax 0 block {@6 end=}@8
+    syntax 1 block {@5 end=next@10 body=0
+    syntax 2 constructor Box@0 end=next@10 constructor_body=1
+    reuse 68 -1 0 0 0 0
 raw-declaration/constructor-error Box():field(1
   raw 3 -1 1 7 13 0
     node 0 1 6 -1 -1 1 6 6
 raw-declaration/constructor-error Box():field{}
   raw 16 -1 1 7 13 0
     syntax 0 initializer field@6 end=<eof>@13 expression=(array_zero field@6 close=}@12)
-raw-declaration/constructor-error Box(){{}}
-  raw 13 -1 0 4 6 0
 raw-module export module m;namespace n{template<Scalar T,i64 N>class C{T value;};}
   raw 0 9 0 24 71 0
     syntax 0 preamble m@14 end=namespace@16 binding=m@14 qualifier=1

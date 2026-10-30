@@ -859,7 +859,7 @@ std::size_t cursor{};
 std::string trace;
 execution::Argument argument{};
 execution::Lease lease{};
-unsigned calls{}, expected_calls{};
+unsigned calls{}, expected_calls{}, preparation_reads{};
 bool quiet = true, reenter = false, release_inside = false, authority_only = false, unsettled = false;
 bool owner_reentry = false, finish_release = false;
 
@@ -1030,24 +1030,36 @@ __au_runtime_execution_prepare(const void *grant, std::uint64_t generation, auro
 extern "C" auto __au_runtime_execution_preparation(const void *binding,
                                                    std::uint64_t generation,
                                                    aurora::execution::Preparation *result) -> void {
+    if (execution_fixture::preparation_reads++ != 0)
+        usage("command construction repeated its preparation observation");
     *result = execution_fixture::Session::preparation(binding, generation);
 }
 extern "C" auto __au_runtime_execution_advance(const void *grant,
                                                std::uint64_t generation,
                                                aurora::execution::Observation *result) -> void {
+    if (execution_fixture::preparation_reads != 1)
+        usage("command progressed before constructor preparation");
     *result = execution_fixture::Session::advance(grant, generation);
 }
 extern "C" auto __au_runtime_execution_output(const void *grant, std::uint64_t generation) -> std::uint64_t {
+    if (execution_fixture::preparation_reads != 1)
+        usage("command effect before constructor preparation");
     return execution_fixture::Session::output(grant, generation);
 }
 extern "C" auto __au_runtime_execution_request(const void *grant, std::uint64_t generation) -> std::uint64_t {
+    if (execution_fixture::preparation_reads != 1)
+        usage("command effect before constructor preparation");
     return execution_fixture::Session::request(grant, generation);
 }
 extern "C" auto __au_runtime_execution_cancel(const void *binding, std::uint64_t generation) -> std::uint64_t {
+    if (execution_fixture::preparation_reads != 1)
+        usage("command effect before constructor preparation");
     return execution_fixture::Session::cancel(binding, generation);
 }
 extern "C" auto __au_runtime_execution_finish(const void *grant, std::uint64_t generation, std::uint64_t disposition)
     -> std::uint64_t {
+    if (execution_fixture::preparation_reads != 1)
+        usage("command effect before constructor preparation");
     return execution_fixture::Session::finish(grant, generation, disposition);
 }
 
@@ -1071,7 +1083,7 @@ auto execution_mode(const char *cases) -> int {
         std::string name, token;
         row >> name;
         fixture::script.clear();
-        fixture::cursor = fixture::calls = 0;
+        fixture::cursor = fixture::calls = fixture::preparation_reads = 0;
         fixture::trace.clear();
         while (row >> token) {
             std::vector<std::string> fields;
@@ -1096,7 +1108,7 @@ auto execution_mode(const char *cases) -> int {
             __au_runtime_process_execute_command(&fixture::argument, &result);
         }
         fixture::Session::release(fixture::argument);
-        if (fixture::cursor != fixture::script.size() ||
+        if (fixture::preparation_reads != 1 || fixture::cursor != fixture::script.size() ||
             static_cast<std::uint64_t>(result.status) >= std::size(fixture::statuses))
             usage("execution script not consumed or invalid result");
         std::cout << name << ' ' << fixture::statuses[static_cast<std::size_t>(result.status)] << ':' << result.value

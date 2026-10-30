@@ -109,7 +109,7 @@ export namespace compiler_ir_verification {
         while (at < fields.count()) {
             const compiler_ir_metadata::FieldRow field = m.field_at(fields.begin() + at);
             const compiler_ir_metadata::RawTypeRow type = m.type_at(field.type());
-            if (compiler_ir_metadata::retained_resource_kind(m, type) >= 0) {
+            if (compiler_ir_metadata::field_resource_kind(m, type) >= 0) {
                 const TokenRow empty = no_token();
                 const FactRow field_fact = semantic_fact(FactKind::resident_field, root, at, 0, disposition, empty);
                 if (!w.fact_set(field_fact)) {

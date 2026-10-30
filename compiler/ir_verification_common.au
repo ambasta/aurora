@@ -740,6 +740,26 @@ export namespace compiler_ir_verification {
         }
         return w.good();
     }
+    // Body permission is derived from physical/logical initialization and the
+    // transferred field, never from a caller-provided phase bit.
+    auto lexical_constructor_complete(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m) -> bool {
+        const ControlRow control = w.control();
+        if (!control.owning_constructor() || !compiler_ir_metadata::lexical_resource_class(m, control.receiver_class())
+            || compiler_ir_initialization::receiver_completion(w, m) != ReceiverCompletion::complete) {
+            return false;
+        }
+        i64 at = w.fact_lower_bound(FactKind::resident_field, 0, -1);
+        bool found = false;
+        while (at >= 0 && fact_key_at(w, at, FactKind::resident_field, 0)) {
+            const FactRow field = w.fact_at(at);
+            if (field.disposition() != ByteDisposition::live || field.site() <= 0) {
+                return false;
+            }
+            found = true;
+            at = w.next_fact(at);
+        }
+        return found && w.good();
+    }
     auto receiver_shape(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 ordinal) -> i64 {
         const compiler_ir_metadata::CallableRow signature = m.callable_at(w.callable());
@@ -1123,7 +1143,7 @@ export namespace compiler_ir_verification {
             if (!w.good()) {
                 return -1;
             }
-            const bool condition_753 = !receiver_constructor(m, w.callable());
+            const bool condition_753 = !receiver_constructor(m, w.callable()) || lexical_constructor_complete(w, m);
             if (!require(w, condition_753,
                 first_error(VerificationErrorFirst::constructor_cannot_access_owned_field_during_initialization))) {
                 return -1;
@@ -1312,7 +1332,7 @@ export namespace compiler_ir_verification {
         while (ordinal < fields.count()) {
             const compiler_ir_metadata::FieldRow field = m.field_at(fields.begin() + ordinal);
             const compiler_ir_metadata::RawTypeRow type = m.type_at(field.type());
-            if (compiler_ir_metadata::retained_resource_kind(m, type) >= 0) {
+            if (compiler_ir_metadata::field_resource_kind(m, type) >= 0) {
                 const FactRow retained = semantic_fact(FactKind::resident_field, base, ordinal,
                     control.instruction_id(), ByteDisposition::pristine, token);
                 if (!w.fact_set(retained)) {

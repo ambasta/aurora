@@ -97,7 +97,7 @@ export namespace compiler_ir_instructions {
         i64 instruction = 0;
         while (instruction < store.instruction_count()) {
             const RawInstructionRow row = store.instruction_at(instruction + 1);
-            if (row.kind() != 1 || row.form() < 0 || row.form() > 89 || !bounded_range(row.operand_begin(),
+            if (row.kind() != 1 || row.form() < 0 || row.form() > 90 || !bounded_range(row.operand_begin(),
                 row.operand_count(), store.operand_count()) || (row.operand_count() != 0 && row.operand_begin()
                 != next_operand)) {
                 return fail(store, InstructionError::integrity);
@@ -212,7 +212,7 @@ export namespace compiler_ir_instructions {
         if (type.kind() == 12) {
             return 73;
         }
-        if (compiler_ir_metadata::retained_resource_kind(metadata, type) >= 0) {
+        if (compiler_ir_metadata::field_resource_kind(metadata, type) >= 0) {
             return 88;
         }
         if (compiler_ir_metadata::owner_kind(type)) {
@@ -496,7 +496,7 @@ export namespace compiler_ir_instructions {
             const i64 form = row.form();
             const i64 offset = entry_value(store, row, 1);
             if (form == 88) {
-                if (!compiler_ir_metadata::retained_constructor(metadata, declaration) || row.operand_count() != 3) {
+                if (!compiler_ir_metadata::resource_constructor(metadata, declaration) || row.operand_count() != 3) {
                     return fail(store, InstructionError::service_resource_shape);
                 }
                 i64 lane = 0;
@@ -516,13 +516,13 @@ export namespace compiler_ir_instructions {
                 }
                 const compiler_ir_metadata::RawTypeRow parameter = metadata.type_at(declaration.value_parameter_begin()
                     + position);
-                const i64 kind = compiler_ir_metadata::retained_resource_kind(metadata, parameter);
+                const i64 kind = compiler_ir_metadata::field_resource_kind(metadata, parameter);
                 const i64 slot_index = entry_slot(metadata, callable, 28, offset);
                 if (kind < 0 || slot_index < 0 || entry_value(store, row, 2) != kind) {
                     return fail(store, InstructionError::service_resource_shape);
                 }
                 const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
-                if (slot.mutable_value() != 1 || compiler_ir_metadata::retained_resource_kind(metadata,
+                if (slot.mutable_value() != 1 || compiler_ir_metadata::field_resource_kind(metadata,
                     metadata.type_at(slot.type())) != kind) {
                     return fail(store, InstructionError::service_resource_shape);
                 }
@@ -1410,8 +1410,9 @@ export namespace compiler_ir_instructions {
                 return fail(store, InstructionError::method_forward_unbound);
             }
             const compiler_ir_metadata::ReceiverShape formal = call_formal(metadata, caller, root);
-            if (compiler_ir_metadata::receiver_flag(formal, masks.receiver_constructor())
-                || compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())) {
+            if ((compiler_ir_metadata::receiver_flag(formal, masks.receiver_constructor())
+                && !compiler_ir_metadata::lexical_resource_class(metadata, compiler_ir_metadata::find_class(metadata,
+                formal.name()))) || compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())) {
                 return fail(store, InstructionError::method_forward_constructor);
             }
             if (compiler_ir_metadata::compare_names(metadata, formal.name(), receiver.name()) != 0) {
@@ -1751,7 +1752,7 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::method_target);
         }
         const compiler_ir_metadata::CallableRow target_row = metadata.callable_at(target);
-        if (compiler_ir_metadata::consuming_receiver(target_row) || compiler_ir_metadata::retained_constructor(metadata,
+        if (compiler_ir_metadata::consuming_receiver(target_row) || compiler_ir_metadata::resource_constructor(metadata,
             target_row)) {
             return fail(store, InstructionError::retained_entry_call);
         }
@@ -2445,8 +2446,9 @@ export namespace compiler_ir_instructions {
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
         const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
         if (!compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())
-            || compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())
-            || declaration.borrowed_root_count() != 0) {
+            || (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())
+            && !compiler_ir_metadata::lexical_resource_class(metadata, compiler_ir_metadata::find_class(metadata,
+            receiver.name()))) || declaration.borrowed_root_count() != 0) {
             return fail(store, InstructionError::service_resource_shape);
         }
         const i64 nominal = compiler_ir_metadata::find_class(metadata, receiver.name());
@@ -2454,17 +2456,18 @@ export namespace compiler_ir_instructions {
         const compiler_ir_metadata::IndexRange fields = shape.fields();
         const i64 ordinal = call_value(store, instruction, 1);
         const i64 kind = call_value(store, instruction, 4);
-        if (ordinal < 0 || ordinal >= fields.count() || !compiler_catalog::resource_retained(kind)) {
+        if (ordinal < 0 || ordinal >= fields.count() || !compiler_catalog::resource_field_eligible(kind)) {
             return fail(store, InstructionError::service_resource_shape);
         }
         const compiler_ir_metadata::FieldRow field = metadata.field_at(fields.begin() + ordinal);
-        if (field.array_flag() != 0 || compiler_ir_metadata::retained_resource_kind(metadata,
+        if (field.array_flag() != 0 || compiler_ir_metadata::field_resource_kind(metadata,
             metadata.type_at(field.type())) != kind) {
             return fail(store, InstructionError::service_resource_shape);
         }
         const i64 method = call_value(store, instruction, 2);
         if (method < 0 || method >= compiler_catalog::resource_method_count(kind)
-            || compiler_catalog::resource_method_parameters(kind, method) != 0) {
+            || compiler_catalog::resource_method_parameters(kind, method) < 0
+            || compiler_catalog::resource_method_parameters(kind, method) > 1) {
             return fail(store, InstructionError::service_resource_shape);
         }
         const i64 effect = compiler_catalog::resource_method_effect(kind, method);
@@ -2494,10 +2497,90 @@ export namespace compiler_ir_instructions {
         return true;
     }
 
+    auto verify_resource_object_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 caller, i64 instruction) -> bool {
+        const RawInstructionRow row = store.instruction_at(instruction);
+        if (row.operand_count() != 4) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        const RawOperandRow callee = call_operand(store, instruction, 0);
+        if (callee.role() != 100 || callee.count() <= 0) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        i64 at = 1;
+        while (at < 4) {
+            const RawOperandRow operand = call_operand(store, instruction, at);
+            i64 role = 26;
+            if (at == 2) {
+                role = 22;
+            }
+            if (at == 3) {
+                role = 6;
+            }
+            if (operand.role() != role || !scalar_payload(operand)) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+            at = at + 1;
+        }
+        const compiler_ir_metadata::ByteRange name = compiler_ir_metadata::ByteRange(callee.begin(), callee.count());
+        const i64 target = compiler_ir_metadata::first_named_callable(metadata, name);
+        if (target < 0 || !call_private_access(metadata, caller, target)) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
+        const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        const i64 nominal = compiler_ir_metadata::find_class(metadata, receiver.name());
+        const i64 root = call_value(store, instruction, 1);
+        const i64 source = call_value(store, instruction, 2);
+        const i64 result = call_value(store, instruction, 3);
+        const i64 slot_index = entry_slot(metadata, caller, 11, root);
+        if (!compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())
+            || !compiler_ir_metadata::lexical_resource_class(metadata, nominal) || slot_index < 0 || root <= 0
+            || declaration.borrowed_root_count() != 0) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
+        if (compiler_ir_metadata::compare_names(metadata, type.name(), receiver.name()) != 0) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        if (compiler_ir_metadata::resource_constructor(metadata, declaration)) {
+            if (result != 0 || source <= 0 || service_resource_kind_at(metadata, caller, source)
+                != compiler_ir_metadata::class_resource_kind(metadata, nominal)) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+            return true;
+        }
+        if (!compiler_ir_metadata::consuming_receiver(declaration) || source != 0 || slot.mutable_value() != 1) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        const compiler_ir_metadata::RawTypeRow output = call_type(metadata, target, 0);
+        if (output.kind() == 5) {
+            const i64 destination = entry_slot(metadata, caller, 11, result);
+            if (destination < 0 || result == root || compiler_ir_metadata::owning_type(metadata, output)) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+            const compiler_ir_metadata::SlotRow output_slot = metadata.slot_at(destination);
+            const compiler_ir_metadata::RawTypeRow output_type = metadata.type_at(output_slot.type());
+            if (compiler_ir_metadata::compare_names(metadata, output.name(), output_type.name()) != 0) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+        } else {
+            if (result != 0 || !compiler_ir_metadata::scalar_value(metadata, output)) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+        }
+        return true;
+    }
+
     auto verify_service_instruction(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 instruction, u64 result_enums) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
+        if (form == 90) {
+            return verify_resource_object_call(store, metadata, callable, instruction);
+        }
         if (form == 89) {
             return verify_retained_field_instruction(store, metadata, callable, instruction);
         }

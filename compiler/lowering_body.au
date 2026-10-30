@@ -64,7 +64,7 @@ export namespace compiler_lowering {
         }
         const i64 type = nominal_type(session, nominal);
         if (!owning_type(session, type) || compiler_resolver::declaration_kind(session, function)
-            == compiler_resolver::DeclarationKind::constructor) {
+            == compiler_resolver::DeclarationKind::constructor && !constructor_body_active(session)) {
             return session.good();
         }
         // Only owning non-constructor receivers can lend complete owner fields.
@@ -118,7 +118,7 @@ export namespace compiler_lowering {
                     const i64 staged_a2_177 = service_type_id(session, type);
                     emit_BindServiceParameter(session, parameter_index, offset, staged_a2_177);
                 } else {
-                    if (retained_resource(session, type)) {
+                    if (field_resource(session, type)) {
                         const i64 resource = service_resource_kind(session, type);
                         emit_BindRetainedResourceParameter(session, parameter_index, offset, resource);
                     } else {
@@ -188,7 +188,7 @@ export namespace compiler_lowering {
         const i64 expression = session.index(118, root.syntax_node(), root.cursor(), 0, 0);
         if (owning_field(session, type)) {
             const LocalRow value = session.local(local);
-            if (!retained_resource(session, type) && value.owner_id() != 0) {
+            if (!field_resource(session, type) && value.owner_id() != 0) {
                 const i64 staged_source_181 = source_ref(session, expression);
                 return fail(session, LoweringError::constructor_byte_field_region_mismatch, staged_source_181);
             }
@@ -206,11 +206,25 @@ export namespace compiler_lowering {
     }
     auto step_constructor(compiler_resolver::Session& session) -> bool {
         ContinuationRow root = session.continuation(0);
-        if (root.phase() == ContinuationPhase::child) {
+        const i64 nominal = compiler_resolver::mw(session, root.syntax_node(), 7);
+        const i64 fields = field_total(session, nominal);
+        if (root.cursor() <= fields && root.phase() == ContinuationPhase::child) {
             return finish_constructor_field(session, root.child_local_id());
         }
-        const i64 nominal = compiler_resolver::mw(session, root.syntax_node(), 7);
-        if (root.cursor() == field_total(session, nominal)) {
+        if (root.cursor() >= fields) {
+            const i64 declaration = compiler_resolver::mw(session, root.syntax_node(), 5);
+            const i64 body = compiler_resolver::sw(session, declaration, 4);
+            if (root.cursor() == fields && body >= 0) {
+                const i64 type = nominal_type(session, nominal);
+                if (!lexical_resource_class(session, type)) {
+                    return fail(session, LoweringError::ownership_constructor_type, -1);
+                }
+                root.set_cursor(fields + 1);
+                root.set_phase(ContinuationPhase::child);
+                session.set_continuation(0, root);
+                bind_receiver_loan_state(session, root.syntax_node());
+                return push_block(session, body);
+            }
             const i64 staged_type_183 = scalar_id(session, compiler_resolver::ResolvedTypeKind::i64_value);
             emit_signed(session, 0, staged_type_183);
             return_owners(session, -1);
@@ -229,7 +243,7 @@ export namespace compiler_lowering {
                 const i64 original = moved_source(session, node, type);
                 return finish_constructor_field(session, original);
             }
-            if (retained_resource(session, type)) {
+            if (field_resource(session, type)) {
                 const i64 source = source_ref(session, node);
                 return fail(session, LoweringError::owning_transfer_requires_move, source);
             }

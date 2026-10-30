@@ -150,6 +150,15 @@ export namespace compiler_lowering {
         put(session, OperandRole::ResourceKindId, kind);
         return emit(session, InstructionForm::RetainedFieldOperation, begin);
     }
+    auto emit_ResourceObjectCall(compiler_resolver::Session& session, i64 callee, i64 receiver, i64 source,
+        i64 result) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::CalleeSymbolId, callee);
+        put(session, OperandRole::ReceiverOffset, receiver);
+        put(session, OperandRole::SourceOffset, source);
+        put(session, OperandRole::ResultOffset, result);
+        return emit(session, InstructionForm::ResourceObjectCall, begin);
+    }
     auto emit_IssueServiceResource(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2, i64 a3) -> i64 {
         const i64 begin = session.operand_count();
         put(session, OperandRole::Offset, a0);
@@ -775,7 +784,7 @@ export namespace compiler_lowering {
         if (id >= 0) {
             const LocalRow local = session.local(id);
             const SnapshotRow state = local.state();
-            if (!state.live() && retained_class(session, local.concrete_type_id())) {
+            if (!state.live() && resource_class(session, local.concrete_type_id())) {
                 return fail(session, LoweringError::borrowed_object_ownership_transfer, source);
             }
             if (state.object_exclusive()) {
@@ -1116,7 +1125,8 @@ export namespace compiler_lowering {
     }
     auto end_owner(compiler_resolver::Session& session, i64 id) -> bool {
         const LocalRow local = session.local(id);
-        if (is_service_resource(session, local.concrete_type_id())) {
+        if (is_service_resource(session, local.concrete_type_id()) || resource_class(session,
+            local.concrete_type_id())) {
             const SnapshotRow state = local.state();
             if (state.live()) {
                 return fail(session, LoweringError::ownership_constructor_type, local.name_source_id());
@@ -1212,6 +1222,9 @@ export namespace compiler_lowering {
     }
     auto emit_move(compiler_resolver::Session& session, i64 original, i64 destination) -> bool {
         const LocalRow local = session.local(original);
+        if (resource_class(session, local.concrete_type_id())) {
+            return fail(session, LoweringError::borrowed_object_ownership_transfer, local.name_source_id());
+        }
         const SnapshotRow state = local.state();
         if (is_owner_storage(session, local.concrete_type_id())) {
             const i64 staged_a1_10 = local_offset(session, destination);
@@ -1260,7 +1273,7 @@ export namespace compiler_lowering {
             const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
             if (!local.borrowed_object()) {
                 if (is_resource_owner(session, type)) {
-                    if (!terminal || is_service_resource(session, type)) {
+                    if (!terminal || is_service_resource(session, type) || resource_class(session, type)) {
                         end_owner(session, at);
                     }
                     set_live(session, at, false, false);

@@ -62,3 +62,7 @@ use_after_finish deny:use_after_finish
 reissue_after_finish deny:reissue_after_finish
 unsettled_finish deny:unsettled_finish
 release_during_finish deny:release_during_finish
+
+# The owning operation consumes refusal and failed-close obligations as well.
+cancel_inert_quota_close_failed point:0 prepare:refused:quota cancel:settled finish:complete:failed
+output_failure_service_lost prepare:loaded:exited advance:output:unavailable:0 output:failed cancel:service_lost finish:service_lost:success
