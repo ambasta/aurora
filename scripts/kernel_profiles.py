@@ -1239,6 +1239,7 @@ def uefi_profile(profile_mode, flags):
         (framebuffer, "display", "display-service", "display-service", ["kernel/policies", "library"]),
         (owned_bytes, "owned-bytes", "owned-bytes", "owned-bytes", ["kernel/policies", "library"]),
         (process, "process-policy", "process", "process", ["kernel/policies", "library"]),
+        (process, "budget-root", "budget-root", "budget-root", ["kernel/policies"]),
         (profile_mode == "production", "execution", "execution", "execution", ["kernel/policies"]),
     ):
         if enabled:

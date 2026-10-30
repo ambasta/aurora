@@ -86,6 +86,12 @@ export namespace compiler_ir_verification {
     }
     auto seed_root(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m, i64 root, i64 nominal,
         bool pristine) -> bool {
+        if (!compiler_ir_metadata::owning_class(m, nominal)) {
+            if (pristine || root != 0 || !compiler_ir_metadata::plain_borrowed_class(m, nominal)) {
+                return w.fail(first_error(VerificationErrorFirst::invalid_borrowed_object_root));
+            }
+            return w.fact_set(bound_plain_root_fact(root));
+        }
         ByteDisposition disposition = ByteDisposition::live;
         if (pristine) {
             disposition = ByteDisposition::pristine;
@@ -128,7 +134,7 @@ export namespace compiler_ir_verification {
             return w.retain_state(position) && w.queue_push(position);
         }
         // Exact native ordering is observable when several facts disagree.
-        if (!w.same_facts(position, FactKind::object)) {
+        if (!w.same_facts(position, FactKind::object) || !w.same_facts(position, FactKind::bound_plain_root)) {
             return w.fail(first_error(
                 VerificationErrorFirst::incompatible_active_object_lifetimes_at_control_flow_join));
         }

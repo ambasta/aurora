@@ -492,10 +492,10 @@ end
 -  receiver Buffer true false
 +  receiver Buffer true true
 
-; CASE: pair second must own resources
+; CASE: pair cannot mix owning and plain roots
 ; BASE: pair requires borrowed free function identity
 ; RUN: verify
-; EXPECT-ERROR: borrowed root requires a complete concrete owning class
+; EXPECT-ERROR: borrowed root requires a complete concrete owning class or a single supported plain class
 @@ -12 +12 @@
 -  params [(class Buffer) (class Other)]
 +  params [(class Buffer) (class Word)]

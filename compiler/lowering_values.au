@@ -1081,6 +1081,9 @@ export namespace compiler_lowering {
         if (owning_type(session, local.concrete_type_id())) {
             return error(session, LoweringError::owning_class_copy, source);
         }
+        if (local.borrowed_object()) {
+            return error(session, LoweringError::borrowed_object_ownership_transfer, source);
+        }
         const LocalRequest request = LocalRequest(-1, local.concrete_type_id(), source, false, false, true);
         const i64 destination = add_local(session, request);
         const i64 staged_a1_9 = local_offset(session, destination);

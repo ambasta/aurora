@@ -202,6 +202,10 @@ export namespace compiler_lowering {
                 }
             } else {
                 if (kind == compiler_resolver::ResolvedTypeKind::class_value) {
+                    const LocalRow returned_binding = session.local(local);
+                    if (returned_binding.borrowed_object()) {
+                        return fail(session, LoweringError::borrowed_object_ownership_transfer, source);
+                    }
                     const i64 staged_got_141 = local_type(session, local);
                     match_type(session, staged_got_141, result, source);
                     return_borrows(session, -1);

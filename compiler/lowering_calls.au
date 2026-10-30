@@ -426,6 +426,13 @@ export namespace compiler_lowering {
                 return empty;
             }
             const i64 original = named_source(session, child);
+            const LocalRow original_binding = session.local(original);
+            if (original_binding.borrowed_object()) {
+                const i64 source = source_ref(session, child);
+                fail(session, LoweringError::borrowed_object_ownership_transfer, source);
+                const OperandRow empty = slice(OperandRole::Sources, 0, 0);
+                return empty;
+            }
             const i64 staged_got_35 = local_type(session, original);
             const i64 staged_want_36 = compiler_resolver::mw(session, type, 2);
             const i64 staged_source_37 = source_ref(session, child);

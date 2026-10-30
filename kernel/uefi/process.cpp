@@ -1,7 +1,7 @@
 #include "process.hpp"
 #include "acpi.hpp"
 #include "apic-timer-io.hpp"
-#include "budget-transport.hpp"
+#include "../retained-budget.hpp"
 #include "../round-robin-transport.hpp"
 #include "process-space.hpp"
 #include "image-snapshot.hpp"
@@ -245,7 +245,16 @@ auto process_drain() -> void asm("uefi_process_drain") __attribute__((visibility
 // below reaches it through these words, which only the kernel writes.
 namespace {
 // A watchdog tick: 2^24 LAPIC counts, or 2^31 for a run with flag 8.
-constexpr U64 tick_count = U64{1} << 24, long_tick_count = U64{1} << 31;
+class BudgetPlatform final {
+public:
+    static auto quiet() -> bool {
+        return Timer::irq_off();
+    }
+    [[noreturn]] static auto fail() -> void {
+        ::fail("retained budget lifetime");
+    }
+};
+using BudgetRoot = aurora::budget::Root<BudgetPlatform>;
 // The interrupt frame: 15 saved registers (R15 first, RAX last), the vector and
 // error code, then the CPU's RIP, CS, RFLAGS, RSP and SS.
 constexpr std::size_t frame_words = BootstrapLayout::fault_frame_words, frame_rax = 14, frame_rdi = 8, frame_rsi = 9,
@@ -253,15 +262,13 @@ constexpr std::size_t frame_words = BootstrapLayout::fault_frame_words, frame_ra
 class Running final {
 public:
     ProcessSpace *space = nullptr;
-    U64 run = 0, flags = 0, initial = 0, remaining = 0, used = 0, calls = 0, memory_calls = 0, commits = 0, peak = 0;
+    BudgetRoot *budget = nullptr;
+    U64 run = 0, flags = 0, calls = 0, memory_calls = 0, commits = 0, peak = 0;
     std::array<U64, frame_words> *continuation = nullptr;
-    U64 quantum = 0, slice = 0, service = 0, block_generation = 0, block_sectors = 0, companion = 0;
+    U64 slice = 0, service = 0, block_generation = 0, block_sectors = 0, companion = 0;
     U64 recovery_generation = 0, recovery_sectors = 0;
     U64 mounted_generation = 0, mounted_sectors = 0;
     bool external = false;
-    [[nodiscard]] auto tick() const -> U64 {
-        return flags & 8 ? long_tick_count : tick_count;
-    }
 };
 // How the process ended, copied from its last kernel entry.
 class Outcome final {
@@ -270,6 +277,7 @@ public:
          output = false, unavailable = false;
     process::TrapClass trap = process::TrapClass::kernel;
     U64 status = 0, vector = 0, error = 0, rip = 0, cr2 = 0, operation = 0;
+    U64 terminal_ticks = 0, terminal_run = 0, terminal_service = 0;
 };
 constinit Running running;
 constinit Outcome outcome;
@@ -476,6 +484,7 @@ class Resident final {
 public:
     std::optional<ProcessSpace> space;
     Running state;
+    BudgetRoot budget;
     std::array<U64, frame_words> continuation{};
     std::array<U64, 8> initial{};
     bool started = false;
@@ -496,7 +505,14 @@ public:
 };
 constinit Endpoint endpoint;
 constinit std::optional<aurora::uefi::ImageSnapshot> snapshot;
-constinit Running loader_budget;
+constinit BudgetRoot loader_budget;
+#ifndef AURORA_PRODUCTION
+constinit U64 export_armed = 0;
+#endif
+auto reset_loader(U64 limit, U64 scale = 0) -> void {
+    if (!loader_budget.initialize_or_reset(limit, scale))
+        fail("loader budget configuration");
+}
 constinit bool loading_image = false;
 #ifdef AURORA_UEFI_NVME
 constinit U64 next_block_generation = 0;
@@ -523,42 +539,28 @@ auto save_frame(const volatile U64 *frame) -> void {
 
 // Partial LAPIC counts belong to the outgoing process. Voluntary exchanges
 // never renew a quantum; even a zero-count handoff consumes at least one count.
-auto charge_counts(Running &state, U64 count) -> bool {
-    while (count && state.remaining) {
-        if (!state.quantum || state.quantum > state.tick())
-            fail("watchdog partial accounting");
-        const auto charged = count < state.quantum ? count : state.quantum;
-        state.quantum -= charged;
-        count -= charged;
-        if (!state.quantum) {
-            const auto encoded = aurora::uefi::language_budget_tick(state.initial, state.remaining, state.used);
-            const auto next =
-                aurora::uefi::BudgetTransition::decode(encoded, state.initial, state.remaining, state.used);
-            if (!next)
-                fail("Aurora budget transition");
-            state.remaining = next->remaining();
-            state.used = next->used();
-            state.quantum = state.tick();
-        }
-    }
-    return state.remaining != 0;
+auto charge_counts(BudgetRoot &state, U64 count, bool progress) -> bool {
+    const auto result = progress ? state.progress(count) : state.charge(count);
+    if (result == aurora::budget::Charge::rejected)
+        fail("Aurora budget charge");
+    return result == aurora::budget::Charge::available;
 }
-auto elapsed(U64 count) -> void {
+auto elapsed(U64 count, bool progress = false) -> void {
     if (running.service && (endpoint.caller || loading_image) && !endpoint.caller_cancelled) {
-        auto &caller = endpoint.caller ? residents[*endpoint.caller].state : loader_budget;
-        if (!charge_counts(caller, count))
+        auto &caller = endpoint.caller ? residents[*endpoint.caller].budget : loader_budget;
+        if (!charge_counts(caller, count, progress))
             endpoint.caller_cancelled = true;
     }
-    if (!charge_counts(running, count)) {
+    if (!charge_counts(*running.budget, count, progress)) {
         outcome.watchdog = true;
         outcome.parked = false;
         outcome.exited = false;
     }
 }
 auto arm_slice() -> void {
-    U64 count = running.quantum;
+    U64 count = running.budget->quantum();
     if (running.service && (endpoint.caller || loading_image) && !endpoint.caller_cancelled) {
-        const auto caller = endpoint.caller ? residents[*endpoint.caller].state.quantum : loader_budget.quantum;
+        const auto caller = endpoint.caller ? residents[*endpoint.caller].budget.quantum() : loader_budget.quantum();
         if (caller < count)
             count = caller;
     }
@@ -1178,7 +1180,7 @@ auto end_record(U64 run) -> void {
         field("status", outcome.status);
     } else if (outcome.watchdog) {
         Serial::text(" reason=watchdog");
-        field("ticks", running.used);
+        field("ticks", outcome.terminal_ticks);
     } else if (outcome.unavailable) {
         Serial::text(" reason=service_lost");
     } else if (outcome.invalid_call) {
@@ -1397,9 +1399,14 @@ auto load_image(std::span<const std::byte> view,
                         service,
                         write_generation ? write_generation : read_generation,
                         write_generation ? write_sectors : read_sectors};
-    resident.state = Running{&process_space, run, entry.flags, entry.ticks, entry.ticks, 0, 0, 0, 0};
+    if (!resident.budget.create(entry.ticks, (entry.flags & 8) ? 1 : 0))
+        fail("resident budget admission");
+    resident.state = {};
+    resident.state.space = &process_space;
+    resident.state.budget = &resident.budget;
+    resident.state.run = run;
+    resident.state.flags = entry.flags;
     resident.state.continuation = preemptible ? &resident.continuation : nullptr;
-    resident.state.quantum = resident.state.tick();
     resident.state.service = service;
     resident.state.block_generation = read_generation;
     resident.state.block_sectors = read_sectors;
@@ -1449,6 +1456,9 @@ auto retire_resident(std::size_t slot) -> bool {
     auto &resident = residents[slot];
     running = resident.state;
     running.space = nullptr;
+    outcome.terminal_ticks = resident.budget.used();
+    outcome.terminal_run = resident.state.run;
+    outcome.terminal_service = resident.state.service;
     end_record(resident.state.run);
     auto &process_space = *resident.space;
     const bool writer = resident.state.recovery_generation != 0;
@@ -1536,6 +1546,8 @@ auto retire_resident(std::size_t slot) -> bool {
 #endif
         mounted_owner = mounted_root = mounted_generation = mounted_sectors = mounted_service = 0;
     }
+    resident.budget.stop();
+    running.budget = nullptr;
     resident.state = {};
     resident.started = false;
 #ifdef AURORA_UEFI_NVME
@@ -1609,7 +1621,7 @@ auto deliver_before_enter(std::size_t slot) -> void {
 // another process can enter, preserving the single saved kernel continuation.
 auto run_resident(std::size_t slot) -> bool {
     auto &resident = residents[slot];
-    if (!resident.space || !resident.state.remaining || running.space || root() != kernel_root)
+    if (!resident.space || !resident.budget.available() || running.space || root() != kernel_root)
         fail("resident activation");
     running = resident.state;
     outcome = Outcome{};
@@ -1618,7 +1630,7 @@ auto run_resident(std::size_t slot) -> bool {
     if (resident.started && !resident.state.external) {
         Serial::text("AURORA_PROCESS_RESUMED:");
         field("run", resident.state.run);
-        field("ticks", resident.state.used);
+        field("ticks", resident.budget.used());
         Serial::text("\r\n");
     }
     const auto result = resident.started ? process_resume(resident.continuation.data(), resident.space->root())
@@ -1634,7 +1646,7 @@ auto run_resident(std::size_t slot) -> bool {
         // An expiration latched between the sample and stop belongs to this
         // outgoing slice. Its later drain acknowledges only, never charges twice.
         const U64 consumed = Timer::pending() ? running.slice : running.slice - current;
-        elapsed(consumed ? consumed : 1);
+        elapsed(consumed, true);
         running.slice = 0;
     }
     resident.started = true;
@@ -1650,7 +1662,7 @@ auto run_resident(std::size_t slot) -> bool {
         if (!resident.state.external) {
             Serial::text("AURORA_PROCESS_PARKED:");
             field("run", resident.state.run);
-            field("ticks", resident.state.used);
+            field("ticks", resident.budget.used());
             Serial::text("\r\n");
         }
         return false;
@@ -1669,9 +1681,8 @@ auto begin_exchange(U64 source) -> bool {
     endpoint.replied = false;
     endpoint.delivery = true;
     auto &server = residents[0].state;
-    server.remaining = server.initial;
-    server.used = 0;
-    server.quantum = server.tick();
+    if (!server.budget->restart())
+        fail("service budget restart");
     return true;
 }
 enum class ExchangeProgress {
@@ -1859,12 +1870,13 @@ auto observe_service_loss(ServiceFailure kind) -> ServiceLoss {
         return {endpoint.caller_cancelled ? ServiceFailure::caller_expired : ServiceFailure::unavailable, 0};
     // A naturally retired server leaves its authenticated running identity and
     // terminal outcome here. A failed load has no such execution evidence.
-    if (!endpoint.generation || running.service != endpoint.generation)
+    if (!endpoint.generation || running.service != endpoint.generation ||
+        outcome.terminal_service != endpoint.generation || outcome.terminal_run != running.run)
         return {ServiceFailure::unavailable, 0};
     if (outcome.exited)
         return {ServiceFailure::exited, outcome.status};
     if (outcome.watchdog)
-        return {ServiceFailure::watchdog, running.used};
+        return {ServiceFailure::watchdog, outcome.terminal_ticks};
     if (outcome.invalid_call)
         return {ServiceFailure::invalid_call, outcome.operation};
     if (!outcome.parked && !outcome.unavailable)
@@ -2003,9 +2015,7 @@ auto start_file_service(std::span<const std::byte> volume) -> bool {
 #endif
     const auto path =
         mounted_entry ? std::string_view{"bin/file-service-mounted", 24} : std::string_view{"bin/file-service", 16};
-    loader_budget = {};
-    loader_budget.initial = loader_budget.remaining = 128;
-    loader_budget.quantum = loader_budget.tick();
+    reset_loader(128);
     loading_image = true;
     endpoint.generation = ++next_service_generation;
     runtime_disk_ready = false;
@@ -2046,13 +2056,10 @@ auto start_file_service(std::span<const std::byte> volume) -> bool {
         // One bounded startup admission scans the complete supported log. It
         // is not charged to a future client or renewed by sector reads. Normal
         // runtime budgets are restored exactly once after the copied result.
-        loader_budget = {};
-        loader_budget.flags = 8;
-        loader_budget.initial = loader_budget.remaining = 16;
-        loader_budget.quantum = loader_budget.tick();
+        reset_loader(16, 1);
         auto &server = residents[0].state;
-        server.flags = 8;
-        server.initial = 16;
+        if (!server.budget->configure_next(16, 1))
+            fail("mounted startup budget profile");
         message_header(15, 0, 0, 0);
         const bool received = exchange_request(0) && !endpoint.caller_cancelled;
         bool valid = received && endpoint.count == 64;
@@ -2083,10 +2090,8 @@ auto start_file_service(std::span<const std::byte> volume) -> bool {
             }
         }
 #endif
-        server.flags = 0;
-        server.initial = server.remaining = 64;
-        server.used = 0;
-        server.quantum = server.tick();
+        if (!server.budget->reset(64, 0))
+            fail("mounted runtime budget profile");
     }
     loading_image = false;
     Serial::text("AURORA_FILE_SERVICE_READY:");
@@ -2108,9 +2113,7 @@ auto start_companion(std::span<const std::byte> volume, U64 client) -> bool {
         return false;
     endpoint = {};
     endpoint.generation = ++next_service_generation;
-    loader_budget = {};
-    loader_budget.initial = loader_budget.remaining = 128;
-    loader_budget.quantum = loader_budget.tick();
+    reset_loader(128);
     loading_image = true;
     constexpr std::string_view path = "bin/file-service", arguments{"file-service\0", 13};
     const auto image = process::volume_lookup(volume, bytes_of(path));
@@ -2158,15 +2161,21 @@ auto export_request(U64 operation, U64 record, U64 offset) -> std::optional<U64>
     return status ? ~U64{0} : count;
 }
 auto export_clock_begin() -> bool {
-    return loader_budget.remaining && loader_budget.quantum &&
-           Timer::arm(static_cast<std::uint32_t>(loader_budget.quantum));
+    if (!loader_budget.available())
+        return false;
+    export_armed = loader_budget.quantum();
+    return export_armed && Timer::arm(static_cast<std::uint32_t>(export_armed));
 }
 auto export_clock_end() -> bool {
     const auto remaining = Timer::read(0x390);
-    if (!Timer::stop() || remaining > loader_budget.quantum)
+    if (!Timer::stop() || remaining > export_armed)
         fail("export timer stop");
-    const auto charged = Timer::pending() ? loader_budget.quantum : loader_budget.quantum - remaining;
-    const bool available = charge_counts(loader_budget, charged ? charged : 1);
+    const auto charged = Timer::pending() ? export_armed : export_armed - remaining;
+    const auto verdict = loader_budget.progress(charged);
+    export_armed = 0;
+    if (verdict == aurora::budget::Charge::rejected)
+        fail("export budget charge");
+    const bool available = verdict == aurora::budget::Charge::available;
     if (Timer::pending()) {
         draining = true;
         process_drain();
@@ -2189,10 +2198,7 @@ auto export_committed() -> bool {
     // The prior client is already retired and its authenticated cleanup has
     // completed; this supervisor-only export has an independent finite budget.
     endpoint.caller_cancelled = false;
-    loader_budget = {};
-    loader_budget.flags = 8;
-    loader_budget.initial = loader_budget.remaining = 16;
-    loader_budget.quantum = loader_budget.tick();
+    reset_loader(16, 1);
     loading_image = true;
     for (U64 record = 0; record < 64; ++record) {
         const auto selected = export_request(7, record, 0);
@@ -2692,9 +2698,7 @@ auto load_committed(std::span<const std::byte> volume,
                     U64 client,
                     std::span<const std::byte> path,
                     std::span<const std::byte> arguments) -> RunStatus {
-    loader_budget = {};
-    loader_budget.initial = loader_budget.remaining = 128;
-    loader_budget.quantum = loader_budget.tick();
+    reset_loader(128);
     loading_image = true;
     endpoint.caller_cancelled = false;
     if (!loader_call(client, 18, 0, 0, path))
@@ -3015,9 +3019,7 @@ auto aurora::uefi::console_request(U64 arena,
         leave_runtime(handoff);
         return {};
     }
-    loader_budget = {};
-    loader_budget.initial = loader_budget.remaining = 128;
-    loader_budget.quantum = loader_budget.tick();
+    reset_loader(128);
     loading_image = true;
     endpoint.caller_cancelled = false;
     message_header(code, expected_note_revision, 0, request.size());

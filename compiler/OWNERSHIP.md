@@ -735,9 +735,32 @@ identity. None of the formal roots may produce a span in the multi-root form; pu
 getters remain usable. Independent local spans are unaffected. No owning-reference
 method parameters, reference locals or general lifetime syntax are added.
 
+### Single plain-object roots
+
+A single leading `T&` or `const T&` also accepts a concrete, pointer-free,
+non-owning class within the existing copied-class layout bounds. Its flattened
+leaves are scalars or enums; nested copied classes and supported arrays do not
+introduce pointer or owner authority. Mixed/multiple plain roots, class-template
+roots and service/region combinations remain rejected. This is a synchronous
+complete-object borrow, not an affine class, source pointer or FFI facility.
+
+The caller must name a live fully initialized object. Ordinary local values remain
+copyable when not exclusively borrowed. Bound plain formals cannot themselves be
+copied, returned by value, moved, rebound or stored as references; public copied
+getters may return independent snapshots. Const authority, private visibility,
+argument-evaluation freezing, reborrows and exact joins remain enforced.
+
+Typed IR records a plain bound root's initialized lifetime separately from
+resource ownership. Local plain roots use their actual complete-object lifetime
+and initialization facts; neither route fabricates an owning-object token. The
+private single-root R10 ABI is unchanged. A trusted native consumer must construct
+valid complete storage before entering that ABI, keep it stable/exclusive through
+the synchronous call, and end it only after all loans return. Emitted ABI facts
+establish nominal layout, not allocation freedom or external storage provenance.
+
 ### Authority and argument evaluation
 
-Each root argument names a complete owning root or the current named borrowed
+Each root argument names a supported complete object root or the current named borrowed
 formal. Its loan begins before any later argument is evaluated, and remains live
 through the synchronous call. A mutable loan excludes every other access to its
 root during argument evaluation. Precompute a size or other observation before

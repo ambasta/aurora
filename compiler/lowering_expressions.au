@@ -156,6 +156,10 @@ export namespace compiler_lowering {
             if (owning_type(session, staged_type_102)) {
                 return fail(session, LoweringError::owning_class_copy, reference);
             }
+            const LocalRow original_binding = session.local(original);
+            if (original_binding.borrowed_object()) {
+                return fail(session, LoweringError::borrowed_object_ownership_transfer, reference);
+            }
             const i64 destination = expression_destination(session, frame, type, -1);
             const i64 staged_a0_103 = local_offset(session, original);
             const i64 staged_a1_104 = local_offset(session, destination);

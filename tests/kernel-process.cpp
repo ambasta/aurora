@@ -14,6 +14,7 @@
 //                                 (files.cases), one fresh service per line
 // stdout is compared with the golden file beside the cases.
 #include "../kernel/execution-session.hpp"
+#include "../kernel/retained-budget.hpp"
 #include "../kernel/uefi/frames.hpp"
 #include "../kernel/uefi/kernel-space.hpp"
 #include "kernel-process-files.hpp"
@@ -1023,9 +1024,138 @@ auto execution_mode(const char *cases) -> int {
     return 0;
 }
 
+namespace budget_fixture {
+using U64 = std::uint64_t;
+bool excluded = true, reenter = false;
+class Platform {
+public:
+    static auto quiet() -> bool;
+    [[noreturn]] static auto fail() -> void {
+        std::_Exit(77);
+    }
+};
+using Root = aurora::budget::Root<Platform>;
+Root *entered = nullptr;
+auto Platform::quiet() -> bool {
+    if (reenter) {
+        reenter = false;
+        if (!entered)
+            usage("missing budget reentry target");
+        static_cast<void>(entered->used());
+    }
+    return excluded;
+}
+auto charge_name(aurora::budget::Charge charge) -> const char * {
+    switch (charge) {
+    case aurora::budget::Charge::rejected:
+        return "rejected";
+    case aurora::budget::Charge::available:
+        return "available";
+    case aurora::budget::Charge::exhausted:
+        return "exhausted";
+    }
+    usage("invalid source budget charge result");
+}
+auto denial(const std::string &kind) -> void {
+    const auto child = fork();
+    if (child < 0)
+        usage("budget fixture fork failed");
+    if (!child) {
+        Root root;
+        if (kind == "before_create") {
+            static_cast<void>(root.available());
+        } else {
+            if (!root.create(3, 0))
+                std::_Exit(1);
+            if (kind == "stopped") {
+                root.stop();
+                static_cast<void>(root.used());
+            } else if (kind == "not_excluded") {
+                excluded = false;
+                static_cast<void>(root.available());
+            } else if (kind == "reentrant") {
+                entered = &root;
+                reenter = true;
+                static_cast<void>(root.used());
+            } else
+                usage("unknown budget denial");
+        }
+        std::_Exit(1);
+    }
+    int status{};
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status) != 77)
+        usage("budget lifetime denial failed");
+}
+} // namespace budget_fixture
+
+auto budget_mode(const char *cases) -> int {
+    std::ifstream input{cases};
+    if (!input)
+        usage("cannot read budget cases");
+    for (std::string line; std::getline(input, line);) {
+        if (line.empty() || line.starts_with('#'))
+            continue;
+        std::istringstream row{line};
+        std::string name, token;
+        row >> name;
+        budget_fixture::Root first, second;
+        std::array<budget_fixture::Root *, 2> roots{&first, &second};
+        std::array<bool, 2> live{};
+        std::ostringstream result;
+        result << name;
+        while (row >> token) {
+            std::vector<std::string> fields;
+            std::istringstream part{token};
+            for (std::string field; std::getline(part, field, ':');)
+                fields.push_back(field);
+            if (fields.size() == 2 && fields[0] == "deny") {
+                budget_fixture::denial(fields[1]);
+                result << " denied";
+                continue;
+            }
+            if (fields.size() < 2 || (fields[0] != "a" && fields[0] != "b"))
+                usage("invalid budget operation");
+            const auto index = fields[0] == "a" ? 0 : 1;
+            auto &root = *roots[index];
+            const auto &operation = fields[1];
+            if (operation == "observe" && fields.size() == 2) {
+                result << ' ' << fields[0] << '=' << root.available() << ':' << root.quantum() << ':' << root.used();
+                continue;
+            }
+            result << ' ' << fields[0] << ':' << operation << '=';
+            if (operation == "create" && fields.size() == 4) {
+                live[index] = root.create(number(fields[2]), number(fields[3]));
+                result << live[index];
+            } else if (operation == "reset" && fields.size() == 4) {
+                result << root.reset(number(fields[2]), number(fields[3]));
+            } else if (operation == "configure" && fields.size() == 4) {
+                result << root.configure_next(number(fields[2]), number(fields[3]));
+            } else if (operation == "restart" && fields.size() == 2) {
+                result << root.restart();
+            } else if (operation == "charge" && fields.size() == 3) {
+                result << budget_fixture::charge_name(root.charge(number(fields[2])));
+            } else if (operation == "progress" && fields.size() == 3) {
+                result << budget_fixture::charge_name(root.progress(number(fields[2])));
+            } else if (operation == "stop" && fields.size() == 2) {
+                root.stop();
+                live[index] = false;
+                result << '1';
+            } else
+                usage("invalid budget operation arguments");
+        }
+        for (std::size_t index = 0; index < roots.size(); ++index)
+            if (live[index])
+                roots[index]->stop();
+        std::cout << result.str() << '\n';
+    }
+    return 0;
+}
+
 } // namespace
 
 auto main(int argc, char **argv) -> int {
+    if (argc == 3 && std::string{argv[1]} == "budget")
+        return budget_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "execution")
         return execution_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "handoff")
@@ -1038,5 +1168,5 @@ auto main(int argc, char **argv) -> int {
         return events_mode(argv[2]);
     if (argc == 4 && std::string{argv[1]} == "files")
         return files_mode(argv[2], argv[3]);
-    usage("usage: kernel-process frames CASES | volumes BUNDLE | events CASES | files VOLUME CASES");
+    usage("usage: kernel-process frames CASES | volumes BUNDLE | events CASES | files VOLUME CASES | budget CASES");
 }

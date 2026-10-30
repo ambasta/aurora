@@ -1,0 +1,25 @@
+# Two retained roots, named operations and copied scalar observations only.
+# observe prints available:quantum:used; no native field offsets are read.
+zero_count a:create:3:0 a:charge:0 a:observe
+partial_tick a:create:3:0 a:charge:16777215 a:observe a:charge:1 a:observe
+minimum_progress a:create:3:0 a:progress:0 a:observe
+exact_expiry a:create:1:0 a:charge:16777216 a:observe a:charge:0 a:observe
+excess_count a:create:2:0 a:charge:18446744073709551615 a:observe
+long_partial a:create:2:1 a:charge:2147483647 a:observe a:progress:0 a:observe
+maximum_long a:create:128:1 a:charge:18446744073709551615 a:observe
+repeated_parks a:create:2:0 a:charge:7 a:progress:0 a:charge:8 a:observe
+configure_without_restart a:create:64:0 a:charge:33554433 a:configure:16:1 a:observe a:charge:0 a:observe
+configured_restart a:create:64:0 a:charge:33554433 a:configure:16:1 a:restart a:observe
+mount_restore a:create:64:0 a:configure:16:1 a:restart a:charge:2147483648 a:reset:64:0 a:observe
+message_reset a:create:3:0 b:create:2:0 a:charge:16777216 b:charge:16777216 b:restart a:observe b:observe
+caller_expired a:create:1:0 b:create:2:0 a:charge:16777216 b:charge:16777216 b:progress:0 a:observe b:observe
+loader_reconfigure a:create:128:0 a:charge:16777219 a:reset:16:1 a:charge:2147483651 a:reset:128:0 a:observe
+invalid_reconfigure a:create:3:0 a:charge:16777216 a:configure:129:0 a:reset:2:2 a:observe
+invalid_zero a:create:0:0
+invalid_limit a:create:129:0
+invalid_scale a:create:16:2
+slot_reuse a:create:1:0 a:charge:16777216 a:stop a:create:2:1 a:observe
+before_create deny:before_create
+stopped deny:stopped
+not_excluded deny:not_excluded
+reentrant deny:reentrant

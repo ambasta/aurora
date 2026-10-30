@@ -402,6 +402,7 @@ namespace abi {
             : prefix(1u8), payload(move(bytes)), suffix(2) {}
     };
     auto copied(Record value) -> Record { return value; }
+    auto borrowed(const Record& value) -> i64 { return 42; }
     auto released(builtin::ByteRegion region, Owner value) -> i64 { return 0; }
     auto scan(builtin::span<const u8> source, i64 value) -> i64 { return source.size() + value; }
 }
@@ -452,6 +453,35 @@ auto demo() -> i64 { return 42; }
         and [(part["offset"], part["bytes"]) for part in scan["parameters"]] == [(0, 56), (56, 8)],
         "span call record extents",
     )
+    # Normalize the actual compiler-emitted nested plain root, then reject
+    # authority-bearing, missing and cyclic record dependencies at this boundary.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    from bootstrap_frontend import normalize_function_abi
+
+    _, borrowed = declaration("functions", "abi::borrowed")
+    require(normalize_function_abi(abi, borrowed) == borrowed, "plain borrowed ABI normalization")
+    roots = borrowed["borrowed_roots"]
+    require(len(roots) == 1 and roots[0]["mutable"] is False, "single const plain root")
+    root_symbol = roots[0]["type_name"]
+    for replacement in (
+        {"kind": "span"},
+        {"kind": "class", "type_name": "missing"},
+        {"kind": "class", "type_name": root_symbol},
+    ):
+        bad_record = {**record, "fields": [replacement]}
+        bad_facts = {**abi, "records": {**abi["records"], root_symbol: bad_record}}
+        try:
+            normalize_function_abi(bad_facts, borrowed)
+        except ValueError:
+            continue
+        raise AssertionError("plain borrowed ABI accepted invalid record dependency")
+    two_roots = [roots[0], {**roots[0], "ordinal": 1, "selector": -1}]
+    try:
+        normalize_function_abi(abi, {**borrowed, "borrowed_roots": two_roots, "borrowed_root_count": 2})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("plain borrowed ABI accepted multiple roots")
     original_abi, original_stack = abi_path.read_bytes(), facts_path.read_bytes()
     for options in (
         ["--abi-facts"],

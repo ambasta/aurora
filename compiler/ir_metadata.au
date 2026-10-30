@@ -1586,6 +1586,31 @@ export namespace compiler_ir_metadata {
     auto owning_type(const MetadataStore& store, RawTypeRow type) -> bool {
         return type.kind() == 5 && owning_class(store, find_class(store, type.name()));
     }
+    // A plain borrowed root is a complete copied object, not a resource owner.
+    // Scalar/enum leaves exclude pointer, span, service and owner authority.
+    auto plain_borrowed_class(const MetadataStore& store, i64 nominal) -> bool {
+        if (nominal < 0 || nominal >= store.class_count()) {
+            return false;
+        }
+        const ClassRow row = store.class_at(nominal);
+        if (copied_element_failure(store, row.name()) != 0) {
+            return false;
+        }
+        const IndexRange leaves = row.leaves();
+        i64 at = 0;
+        while (at < leaves.count()) {
+            const RawTypeRow type = store.type_at(leaves.begin() + at);
+            if (!scalar_value(store, type)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto plain_borrowed_type(const MetadataStore& store, RawTypeRow type) -> bool {
+        return type.kind() == 5 && name_length(type.name()) != 0 && canonical_tail(type) && plain_borrowed_class(store,
+            find_class(store, type.name()));
+    }
     auto owning_constructor(const MetadataStore& store, CallableRow row) -> bool {
         const FlagMasks masks = FlagMasks();
         const ReceiverShape receiver = row.first_receiver();
@@ -1786,7 +1811,8 @@ export namespace compiler_ir_metadata {
                 return fail(store, MetadataError::borrowed_root_type);
             }
             const i64 class_index = find_class(store, type.name());
-            if (class_index < 0 || !owning_class(store, class_index)) {
+            if (class_index < 0 || (!owning_class(store, class_index) && (roots != 1 || !plain_borrowed_class(store,
+                class_index)))) {
                 return fail(store, MetadataError::borrowed_root_class);
             }
             const ClassRow declaration = store.class_at(class_index);

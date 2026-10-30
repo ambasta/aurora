@@ -1,0 +1,36 @@
+module kernel_budget_root;
+import kernel.process_budget;
+
+// These synchronous plain-root calls are effect-free. The native owner supplies
+// initialized concrete storage, and no source loan survives a hardware effect.
+auto process_budget_create(u64 limit, u64 scale) -> kernel::BudgetLedger {
+    const kernel::BudgetLedger ledger = kernel::budget_create(limit, scale);
+    return ledger;
+}
+auto process_budget_reset(kernel::BudgetLedger& ledger, u64 limit, u64 scale) -> bool {
+    return kernel::budget_reset(ledger, limit, scale);
+}
+auto process_budget_configure_next(kernel::BudgetLedger& ledger, u64 limit, u64 scale) -> bool {
+    return kernel::budget_configure_next(ledger, limit, scale);
+}
+auto process_budget_restart(kernel::BudgetLedger& ledger) -> bool {
+    return kernel::budget_restart(ledger);
+}
+auto process_budget_charge(kernel::BudgetLedger& ledger, u64 count) -> kernel::BudgetCharge {
+    return kernel::budget_charge(ledger, count);
+}
+auto process_budget_progress(kernel::BudgetLedger& ledger, u64 measured) -> kernel::BudgetCharge {
+    return kernel::budget_progress(ledger, measured);
+}
+auto process_budget_admitted(const kernel::BudgetLedger& ledger) -> bool {
+    return kernel::budget_admitted(ledger);
+}
+auto process_budget_available(const kernel::BudgetLedger& ledger) -> bool {
+    return kernel::budget_available(ledger);
+}
+auto process_budget_quantum(const kernel::BudgetLedger& ledger) -> u64 {
+    return kernel::budget_quantum(ledger);
+}
+auto process_budget_used(const kernel::BudgetLedger& ledger) -> u64 {
+    return kernel::budget_used(ledger);
+}

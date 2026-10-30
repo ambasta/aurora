@@ -709,10 +709,19 @@ export namespace compiler_ir_verification {
             }
             nominal = slot_class(m, slot_id);
         }
-        if (!live_owning_root(w, m, s, root, AccessMode::read)) {
-            return false;
+        i64 site = -1;
+        if (compiler_ir_metadata::owning_class(m, nominal)) {
+            if (!live_owning_root(w, m, s, root, AccessMode::read)) {
+                return false;
+            }
+            const FactRow object = w.fact_find(FactKind::owned_object, root, -1);
+            site = object.site();
+        } else {
+            site = plain_root_site(w, m, root, nominal);
+            if (!w.good()) {
+                return false;
+            }
         }
-        const FactRow object = w.fact_find(FactKind::owned_object, root, -1);
         if (mutable_value && !owner_writable(w, s, root, -2, AccessMode::write)) {
             return false;
         }
@@ -720,7 +729,7 @@ export namespace compiler_ir_verification {
         FactRow loan = transfer_resource_fact(FactKind::object_loan, loan_id, -1, 0, ByteDisposition::pristine,
             fact_token);
         const TypeKey loan_type = TypeKey(5, nominal);
-        const LoanPayload payload = LoanPayload(root, object.site(), loan_type, mutable_value, false, -1);
+        const LoanPayload payload = LoanPayload(root, site, loan_type, mutable_value, false, -1);
         loan.set_loan(payload);
         return w.fact_set(loan);
     }
@@ -860,11 +869,20 @@ export namespace compiler_ir_verification {
                             VerificationErrorSecond::borrowed_call_object_lifetime_or_authority_mismatch));
                     }
                 }
-                if (!live_owned_root(w, m, root)) {
-                    return false;
+                i64 site = -1;
+                if (compiler_ir_metadata::owning_type(m, formal)) {
+                    if (!live_owned_root(w, m, root)) {
+                        return false;
+                    }
+                    const FactRow object = w.fact_find(FactKind::owned_object, root, -1);
+                    site = object.site();
+                } else {
+                    site = plain_root_site(w, m, root, loan_type.nominal());
+                    if (!w.good()) {
+                        return false;
+                    }
                 }
-                const FactRow object = w.fact_find(FactKind::owned_object, root, -1);
-                if (object.site() != loan.root_site()) {
+                if (site != loan.root_site()) {
                     return w.fail(second_error(VerificationErrorSecond::borrowed_call_root_lifetime_mismatch));
                 }
             }

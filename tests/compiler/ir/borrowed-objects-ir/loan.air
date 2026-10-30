@@ -478,10 +478,10 @@ end
 +    BeginObject 88
 +    MoveObject 48 88
 
-; CASE: copyable root
+; CASE: plain root cannot substitute for different owning root
 ; BASE: mutable local root
 ; RUN: verify
-; EXPECT-ERROR: object loan requires exact owning root
+; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
 @@ -28 +28,4 @@
 -    AcquireObjectLoan 1 48 true
 +    BeginObject 96

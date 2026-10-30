@@ -1,0 +1,172 @@
+export module kernel.process_budget;
+import kernel.interrupt_budget;
+
+export namespace kernel {
+    enum class BudgetCharge {
+        rejected,
+        available,
+        exhausted
+    };
+
+    auto budget_profile_valid(u64 limit, u64 scale) -> bool {
+        return limit > 0u64 && limit <= 128u64 && scale <= 1u64;
+    }
+    auto budget_tick_counts(u64 scale) -> u64 {
+        if (scale == 0u64) {
+            return 16777216u64;
+        }
+        if (scale == 1u64) {
+            return 2147483648u64;
+        }
+        return 0u64;
+    }
+
+    // One retained accounting root. The next message's profile is separate
+    // from current accounting so changing it cannot renew an old allowance.
+    // This scalar class owns no hardware authority and performs no effects.
+    class BudgetLedger {
+        u64 configured_limit;
+        u64 configured_tick;
+        u64 current_limit;
+        u64 current_tick;
+        u64 remaining_count;
+        u64 used_count;
+        u64 quantum_count;
+        bool admitted_profile;
+        bool restart_required;
+    public:
+        BudgetLedger(u64 limit, u64 scale) : configured_limit(limit), configured_tick(budget_tick_counts(scale)),
+            current_limit(limit), current_tick(budget_tick_counts(scale)), remaining_count(limit), used_count(0u64),
+            quantum_count(budget_tick_counts(scale)), admitted_profile(budget_profile_valid(limit, scale)),
+            restart_required(false) {
+        }
+        auto admitted() const -> bool {
+            return admitted_profile;
+        }
+        auto available() const -> bool {
+            return admitted_profile && !restart_required && remaining_count != 0u64;
+        }
+        auto quantum() const -> u64 {
+            if (!admitted_profile) {
+                return 0u64;
+            }
+            return quantum_count;
+        }
+        auto used() const -> u64 {
+            if (!admitted_profile) {
+                return 0u64;
+            }
+            return used_count;
+        }
+        auto reset(u64 limit, u64 scale) -> bool {
+            if (!budget_profile_valid(limit, scale)) {
+                return false;
+            }
+            configured_limit = limit;
+            configured_tick = budget_tick_counts(scale);
+            current_limit = limit;
+            current_tick = configured_tick;
+            remaining_count = limit;
+            used_count = 0u64;
+            quantum_count = current_tick;
+            admitted_profile = true;
+            restart_required = false;
+            return true;
+        }
+        auto configure_next(u64 limit, u64 scale) -> bool {
+            if (!admitted_profile || !budget_profile_valid(limit, scale)) {
+                return false;
+            }
+            configured_limit = limit;
+            configured_tick = budget_tick_counts(scale);
+            restart_required = true;
+            return true;
+        }
+        auto restart() -> bool {
+            if (!admitted_profile) {
+                return false;
+            }
+            current_limit = configured_limit;
+            current_tick = configured_tick;
+            remaining_count = current_limit;
+            used_count = 0u64;
+            quantum_count = current_tick;
+            restart_required = false;
+            return true;
+        }
+        auto charge_counts(u64 count) -> BudgetCharge {
+            if (!admitted_profile || restart_required) {
+                return BudgetCharge::rejected;
+            }
+            u64 pending = count;
+            // At most 128 canonical tick transitions, even for a maximal count.
+            // Consume by subtraction so counts never overflow a running total.
+            while (pending != 0u64 && remaining_count != 0u64) {
+                if (quantum_count == 0u64 || quantum_count > current_tick) {
+                    admitted_profile = false;
+                    return BudgetCharge::rejected;
+                }
+                u64 charged = quantum_count;
+                if (pending < charged) {
+                    charged = pending;
+                }
+                quantum_count = quantum_count - charged;
+                pending = pending - charged;
+                if (quantum_count == 0u64) {
+                    const TickDecision next = interrupt_tick(current_limit, remaining_count, used_count);
+                    if (next.action() == TickAction::rejected) {
+                        admitted_profile = false;
+                        return BudgetCharge::rejected;
+                    }
+                    remaining_count = next.remaining();
+                    used_count = next.used();
+                    quantum_count = current_tick;
+                }
+            }
+            if (remaining_count == 0u64) {
+                return BudgetCharge::exhausted;
+            }
+            return BudgetCharge::available;
+        }
+        auto charge_progress(u64 measured) -> BudgetCharge {
+            u64 charged = measured;
+            if (charged == 0u64) {
+                charged = 1u64;
+            }
+            return charge_counts(charged);
+        }
+    };
+
+    auto budget_create(u64 limit, u64 scale) -> BudgetLedger {
+        // Invalid profiles still return a completely initialized disabled root.
+        const BudgetLedger result = BudgetLedger(limit, scale);
+        return result;
+    }
+    auto budget_reset(BudgetLedger& ledger, u64 limit, u64 scale) -> bool {
+        return ledger.reset(limit, scale);
+    }
+    auto budget_configure_next(BudgetLedger& ledger, u64 limit, u64 scale) -> bool {
+        return ledger.configure_next(limit, scale);
+    }
+    auto budget_restart(BudgetLedger& ledger) -> bool {
+        return ledger.restart();
+    }
+    auto budget_charge(BudgetLedger& ledger, u64 count) -> BudgetCharge {
+        return ledger.charge_counts(count);
+    }
+    auto budget_progress(BudgetLedger& ledger, u64 measured) -> BudgetCharge {
+        return ledger.charge_progress(measured);
+    }
+    auto budget_admitted(const BudgetLedger& ledger) -> bool {
+        return ledger.admitted();
+    }
+    auto budget_available(const BudgetLedger& ledger) -> bool {
+        return ledger.available();
+    }
+    auto budget_quantum(const BudgetLedger& ledger) -> u64 {
+        return ledger.quantum();
+    }
+    auto budget_used(const BudgetLedger& ledger) -> u64 {
+        return ledger.used();
+    }
+}

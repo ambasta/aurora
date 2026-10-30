@@ -26,7 +26,7 @@ for every possible input, including u64 maximum. The source contains no loop or
 recursion and introduces no allocation or dynamic state. This local range
 argument does not prove compiler correctness or whole-kernel stack safety.
 
-### Disposable transport and independent decoder
+### Legacy disposable transport and independent decoder
 
 The root `aurora_kernel_budget_tick` function converts the copied class/enum result
 to a u64 through the existing scalar-symbol bootstrap seam. There is no new Aurora
@@ -74,6 +74,25 @@ context preservation, state storage, live grants, mapping retirement, revocation
 and cancellation remain trusted C++/assembly. This change moves policy calculation,
 not these authorities, into Aurora. The defensive transport can add C++ lines;
 there is no claim that total trusted-code line count shrinks.
+
+### Retained process accounting
+
+The process runtime instead retains `kernel.process_budget::BudgetLedger` in
+one unique opaque binding per resident and a separate loader binding. The source
+object owns configuration, remaining/used ticks and the partial LAPIC quantum;
+its `charge_counts` composes the same canonical `interrupt_tick` calculation.
+Native process code no longer retains or decodes a second allowance tuple.
+
+A single leading plain-class root loan carries complete-object lifetime facts,
+not resource ownership. The factory initializes stable storage before its first
+loan. Each call ends before native effects; IRQ exclusion and a nonreentry guard
+protect interrupt charging. Opaque size/alignment and exact nominal entry facts
+are admitted at build time. The dedicated object has no imports, and existing
+whole-image recursion/stack admission still applies. Native code retains actual
+timer receipts, resident identity and immutable terminal diagnostics. The older
+scalar transport above remains for standalone service/console fixture consumers.
+See [process runtime](uefi/process.md#retained-source-budget-roots) for renewal,
+caller expiry, shutdown and the single-CPU scope.
 
 ## Two-client selection
 

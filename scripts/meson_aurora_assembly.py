@@ -145,6 +145,7 @@ def validate_native_abi(facts, source):
                 "kernel::RunsVerdict",
                 "kernel::MemoryVerdict",
                 "kernel::BudgetVerdict",
+                "kernel::BudgetCharge",
                 "kernel::FileStatus",
                 "__au_exec_status",
                 "__au_exec_prepared",
@@ -204,6 +205,49 @@ def validate_native_abi(facts, source):
         names = names.split()
         if value["cases"] != dict(zip(names, range(len(names)))):
             raise ValueError("Native enum encoding differs from compiler facts: " + source)
+
+    if "# RETAINED_BUDGET_ABI:" in source:
+        nominal, layout = abi_declaration(facts, "records", "kernel::BudgetLedger")
+        if not (
+            0 < layout["size"] <= layout["reserved"] <= 128
+            and layout["alignment"] in (1, 2, 4, 8, 16)
+            and layout["reserved"] % layout["alignment"] == 0
+        ):
+            raise ValueError("Retained budget root exceeds its aligned opaque reservation")
+        enum("kernel::BudgetCharge", "rejected available exhausted")
+        entry("process_budget_create", ["u64", "u64"], "kernel::BudgetLedger")
+        for name, tail, result, mutable in (
+            ("reset", 2, "bool", True),
+            ("configure_next", 2, "bool", True),
+            ("restart", 0, "bool", True),
+            ("charge", 1, "kernel::BudgetCharge", True),
+            ("progress", 1, "kernel::BudgetCharge", True),
+            ("admitted", 0, "bool", False),
+            ("available", 0, "bool", False),
+            ("quantum", 0, "u64", False),
+            ("used", 0, "u64", False),
+        ):
+            name = "process_budget_" + name
+            _, raw = abi_declaration(facts, "functions", name)
+            expected = dict(
+                source_name=name,
+                receiver=None,
+                receiver_mutable=None,
+                borrowed_root_count=1,
+                borrowed_roots=[dict(ordinal=0, selector=0, type_name=nominal, mutable=mutable)],
+                borrowed_root_abi=dict(
+                    kind="direct",
+                    register="r10",
+                    tuple_payload_bytes=0,
+                    tuple_reserved_bytes=0,
+                    saved_root_reserved_bytes=16,
+                ),
+                parameter_bytes=8 * tail,
+                parameters=[dict(offset=8 * i, bytes=8, kind="u64") for i in range(tail)],
+                result=shape(result),
+            )
+            if normalize_function_abi(facts, raw) != expected:
+                raise ValueError("Retained budget root entry differs from its native boundary: " + name)
 
     if "# UART_POLICY_ABI:" in source:
         validate_uart_policy_abi(facts)
@@ -453,7 +497,11 @@ def validate_native_abi(facts, source):
         record(
             "kernel::MemoryBudget",
             24,
-            [("verdict", "kernel::BudgetVerdict", 0), ("quota", "u64", 0), ("charged", "u64", 0)],
+            [
+                ("verdict", "kernel::BudgetVerdict", 0),
+                ("quota", "u64", 0),
+                ("charged", "u64", 0),
+            ],
         )
         entry("process_elf_admit", ["span"], "kernel::ElfVerdict")
         entry("process_layout", ["span", "u64", "u64", "u64"], "kernel::LayoutVerdict")
