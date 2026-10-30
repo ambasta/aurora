@@ -1811,14 +1811,10 @@ auto settle_staged_cancellation(U64 client, U64 service) -> bool {
     endpoint.replied = endpoint.completion = false;
     return true;
 }
-auto advance_client_request(bool cancel_staged = false) -> ClientProgress {
+auto advance_client_request() -> ClientProgress {
     if (!residents[1].space || endpoint.caller != std::optional<std::size_t>{1})
         return ClientProgress::failed;
     const U64 client = residents[1].state.run;
-    if (cancel_staged && endpoint.caller_cancelled && endpoint.waiting && !endpoint.replied && !endpoint.delivery) {
-        return settle_staged_cancellation(client, endpoint.generation) ? ClientProgress::complete
-                                                                       : ClientProgress::failed;
-    }
     if (endpoint.waiting && !endpoint.replied) {
         if (!begin_exchange(client))
             return ClientProgress::failed;
@@ -2238,8 +2234,17 @@ public:
     static auto request(Binding &binding) -> aurora::execution::Request {
         using namespace aurora::execution;
         require(bound_client(binding) && binding.request_pending && !binding.output_pending);
-        const auto progress =
-            bound_service(binding) ? advance_client_request(binding.explicit_cancel_requested) : ClientProgress::failed;
+        ClientProgress progress = ClientProgress::failed;
+        if (bound_service(binding)) {
+            if (binding.explicit_cancel_requested && endpoint.caller_cancelled && endpoint.waiting &&
+                !endpoint.replied && !endpoint.delivery) {
+                progress = settle_staged_cancellation(binding.client, binding.service_generation)
+                               ? ClientProgress::complete
+                               : ClientProgress::failed;
+            } else {
+                progress = advance_client_request();
+            }
+        }
         if (progress == ClientProgress::pending)
             return Request::pending;
         binding.request_failed = progress == ClientProgress::failed;
