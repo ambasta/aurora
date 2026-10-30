@@ -15,6 +15,7 @@ STATUSES = (
     "invalid_metadata invalid_log clean_marker already_clean"
 ).split()
 LOG = 524328
+ZERO_CHUNK = bytes(65536)
 
 
 def exchange_cases(program, mount, directory):
@@ -29,7 +30,7 @@ def exchange_cases(program, mount, directory):
         while chunk := source.read(65536):
             digest.update(chunk)
             length += len(chunk)
-            if any(chunk):
+            if chunk != ZERO_CHUNK[: len(chunk)]:
                 output.write(chunk)
             else:
                 output.seek(len(chunk), 1)
@@ -207,7 +208,7 @@ def staged_cases(program, mount, directory):
             while chunk := source.read(65536):
                 digest.update(chunk)
                 length += len(chunk)
-                if any(chunk):
+                if chunk != ZERO_CHUNK[: len(chunk)]:
                     output.write(chunk)
                 else:
                     output.seek(len(chunk), 1)
@@ -370,7 +371,7 @@ def append_cases(program, mount, directory):
         while chunk := source.read(65536):
             digest.update(chunk)
             length += len(chunk)
-            if any(chunk):
+            if chunk != ZERO_CHUNK[: len(chunk)]:
                 output.write(chunk)
             else:
                 output.seek(len(chunk), 1)
@@ -695,7 +696,7 @@ def describe(compiler, directory):
                     length = 0
                     while chunk := source.read(65536):
                         length += len(chunk)
-                        if any(chunk):
+                        if chunk != ZERO_CHUNK[: len(chunk)]:
                             output.write(chunk)
                         else:
                             output.seek(len(chunk), 1)

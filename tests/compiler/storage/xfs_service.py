@@ -13,6 +13,8 @@ from xfs_mount import fixture
 sys.path.insert(0, str(harness.ROOT / "scripts"))
 from kernel_volume import volume
 
+ZERO_CHUNK = bytes(65536)
+
 
 def mounted_cases(program, directory):
     """Production formatter against the Linux-accepted command witness.
@@ -30,7 +32,7 @@ def mounted_cases(program, directory):
         while chunk := source.read(65536):
             digest.update(chunk)
             length += len(chunk)
-            if any(chunk):
+            if chunk != ZERO_CHUNK[: len(chunk)]:
                 output.write(chunk)
             else:
                 output.seek(len(chunk), 1)
