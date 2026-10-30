@@ -1,0 +1,1098 @@
+module xfs_service_driver;
+import fs.xfs_geometry;
+import fs.xfs_probe;
+import fs.xfs_root;
+import fs.xfs_file;
+import fs.xfs_core_log;
+import fs.xfs_core_redo;
+import fs.xfs_recovery_ag;
+import fs.xfs_commit_log;
+import fs.xfs_recovery;
+import fs.xfs_commit;
+import aurora.host;
+import aurora.memory;
+import std.binary;
+import std.binary_buffer;
+import storage.sector;
+import storage.block_io;
+import fs.xfs_mount;
+import fs.xfs_log;
+import service.files;
+import service.xfs;
+import service.xfs_output;
+import service.console;
+import console.session_note;
+import console.protected_files;
+import console.protected_commands;
+import console.session_files;
+import console.file_namespace;
+import kernel.process_files;
+
+auto hex_digit(u8 value) -> u8 {
+    if (value < 10u8) {
+        return value + 48u8;
+    }
+    return value + 87u8;
+}
+
+auto image_sector(builtin::HostFiles& files, u64 file, u64 lba) -> storage::SectorReadResult {
+    storage::Sector512 sector = storage::Sector512();
+    i64 copied = 0;
+    while (copied < 512) {
+        const builtin::HostChunk chunk = files.read(file, lba * 512u64 + u64(copied));
+        if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64) {
+            const storage::Sector512 zero = storage::Sector512();
+            return storage::SectorReadResult(storage::SectorIoStatus::invalid_source, zero);
+        }
+        const builtin::array<u8, 504> bytes = chunk.bytes;
+        i64 count = i64(chunk.count);
+        if (count > 512 - copied) {
+            count = 512 - copied;
+        }
+        i64 at = 0;
+        while (at < count) {
+            sector.write_byte(copied + at, bytes[at]);
+            at = at + 1;
+        }
+        copied = copied + count;
+    }
+    return storage::SectorReadResult(storage::SectorIoStatus::success, sector);
+}
+
+auto write_exports(service::Store& store) -> bool {
+    const service::Reply refused = store.export_select(0u64);
+    const service::Reply old = store.create("/result");
+    const service::Reply old_written = store.write_file(old.id, "old");
+    const service::Reply old_committed = store.commit(old.id);
+    const service::Reply retained_old = store.open(2u64, 0u64, "/result");
+    const service::Reply file = store.create("/result");
+    bool passed = refused.status == kernel::FileStatus::failed && old.status == kernel::FileStatus::success
+        && old_written.status == kernel::FileStatus::success && old_committed.status == kernel::FileStatus::success
+        && retained_old.status == kernel::FileStatus::success && file.status == kernel::FileStatus::success;
+    builtin::array<u8, 32> bytes = {
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8,
+        0u8
+    };
+    u64 offset = 0u64;
+    while (offset < 9001u64 && passed) {
+        u64 count = 9001u64 - offset;
+        if (count > 32u64) {
+            count = 32u64;
+        }
+        u64 at = 0u64;
+        while (at < count) {
+            bytes[i64(at)] = u8(((offset + at) * 37u64 + 11u64) % 256u64);
+            at = at + 1u64;
+        }
+        const builtin::span<const u8> all = borrow_bytes(bytes);
+        const service::Reply written = store.write_file(file.id, all.subspan(0, i64(count)));
+        passed = passed && written.status == kernel::FileStatus::success;
+        offset = offset + count;
+    }
+    const service::Reply committed = store.commit(file.id);
+    // Whole-message admission poisons an oversized replacement before a
+    // caller could append individually fitting staged portions.
+    const service::Reply oversized = store.create("/result");
+    const service::Reply zero = store.prepare_write(oversized.id, 0u64);
+    const service::Reply prefix = store.write_file(oversized.id, "x");
+    const service::Reply refused_total = store.prepare_write(oversized.id, 67108864u64);
+    const service::Reply poisoned = store.write_file(oversized.id, "fits alone");
+    const service::Reply refused_commit = store.commit(oversized.id);
+    const service::Reply stale = store.prepare_write(oversized.id, 1u64);
+    const service::Reply invalid = store.prepare_write(0u64, 1u64);
+    passed = passed && oversized.status == kernel::FileStatus::success && zero.status == kernel::FileStatus::success
+        && prefix.status == kernel::FileStatus::success && refused_total.status == kernel::FileStatus::too_large
+        && refused_total.count == 0u64 && poisoned.status == kernel::FileStatus::failed && refused_commit.status
+        == kernel::FileStatus::failed && stale.status == kernel::FileStatus::invalid_handle && invalid.status
+        == kernel::FileStatus::invalid_handle;
+    const service::Reply old_read = store.read_file(retained_old.id, 0u64);
+    passed = passed && old_read.status == kernel::FileStatus::success && old_read.count == 3u64 && store.read_byte(0u64)
+        == 111u8;
+    const service::Reply nested = store.create("/tree/result");
+    const service::Reply nested_written = store.write_file(nested.id, "TEST");
+    const service::Reply nested_committed = store.commit(nested.id);
+    const service::Reply empty = store.create("/empty");
+    const service::Reply empty_committed = store.commit(empty.id);
+    const service::Reply pending = store.create("/pending");
+    const service::Reply pending_written = store.write_file(pending.id, "not committed");
+    return passed && committed.status == kernel::FileStatus::success && nested.status == kernel::FileStatus::success
+        && nested_written.status == kernel::FileStatus::success && nested_committed.status
+        == kernel::FileStatus::success && empty.status == kernel::FileStatus::success && empty_committed.status
+        == kernel::FileStatus::success && pending.status == kernel::FileStatus::success && pending_written.status
+        == kernel::FileStatus::success;
+}
+auto verify_exports(service::Store& store) -> bool {
+    const builtin::array<u8, 6> root_name = "result";
+    const builtin::array<u8, 11> nested_name = "tree/result";
+    const builtin::array<u8, 5> empty_name = "empty";
+    const builtin::array<u8, 4> nested_data = "TEST";
+    u64 record = 0u64;
+    u64 found = 0u64;
+    bool passed = true;
+    while (record < 64u64 && passed) {
+        const service::Reply selected = store.export_select(record);
+        if (selected.status == kernel::FileStatus::success) {
+            found = found + 1u64;
+            const u64 length = store.export_path_size();
+            const u64 size = store.export_file_size();
+            passed = selected.count == 16u64 && selected.id == 0u64 && selected.size == 0u64 && selected.device == 0u64
+                && selected.inode == 0u64 && selected.directory_device == 0u64 && selected.directory_inode == 0u64;
+            const service::Reply path = store.export_read(0u64, true);
+            passed = passed && path.status == kernel::FileStatus::success && path.count == length;
+            u64 at = 0u64;
+            while (at < length && passed) {
+                u8 expected = 0u8;
+                if (length == 6u64 && size == 9001u64) {
+                    expected = root_name[i64(at)];
+                } else {
+                    if (length == 11u64 && size == 4u64) {
+                        expected = nested_name[i64(at)];
+                    } else {
+                        if (length == 5u64 && size == 0u64) {
+                            expected = empty_name[i64(at)];
+                        } else {
+                            passed = false;
+                        }
+                    }
+                }
+                passed = passed && store.export_byte(at) == expected;
+                at = at + 1u64;
+            }
+            const service::Reply path_end = store.export_read(length, true);
+            const service::Reply oversized = store.export_read(9223372036854775808u64, false);
+            passed = passed && path_end.status == kernel::FileStatus::success && path_end.count == 0u64
+                && oversized.status == kernel::FileStatus::failed && oversized.count == 0u64 && store.export_byte(0u64)
+                == 0u8;
+            u64 offset = 0u64;
+            while (offset < size && passed) {
+                const service::Reply data = store.export_read(offset, false);
+                u64 count = size - offset;
+                if (count > 504u64) {
+                    count = 504u64;
+                }
+                passed = data.status == kernel::FileStatus::success && data.count == count;
+                at = 0u64;
+                while (at < count && passed) {
+                    u8 expected = u8(((offset + at) * 37u64 + 11u64) % 256u64);
+                    if (size == 4u64) {
+                        expected = nested_data[i64(at)];
+                    }
+                    passed = store.export_byte(at) == expected;
+                    at = at + 1u64;
+                }
+                offset = offset + count;
+            }
+            const service::Reply end = store.export_read(size, false);
+            passed = passed && end.status == kernel::FileStatus::success && end.count == 0u64;
+        } else {
+            passed = selected.status == kernel::FileStatus::not_found && selected.count == 0u64
+                && store.export_path_size() == 0u64 && store.export_file_size() == 0u64;
+            const service::Reply absent = store.export_read(0u64, false);
+            passed = passed && absent.status == kernel::FileStatus::failed && store.export_byte(0u64) == 0u8;
+        }
+        record = record + 1u64;
+    }
+    // Re-select a known linked record; beginning a new client clears the cursor.
+    record = 0u64;
+    bool selected = false;
+    while (record < 64u64 && !selected) {
+        const service::Reply result = store.export_select(record);
+        selected = result.status == kernel::FileStatus::success;
+        record = record + 1u64;
+    }
+    passed = passed && found == 3u64 && selected && store.begin(42u64);
+    const service::Reply stale = store.export_read(0u64, false);
+    passed = passed && stale.status == kernel::FileStatus::failed && store.export_byte(0u64) == 0u8
+        && store.finish(42u64);
+    const service::Reply ended = store.export_read(0u64, false);
+    return passed && ended.status == kernel::FileStatus::failed && store.ok();
+}
+
+class MountedConfirmationBytes {
+    builtin::array<u8, 512> _bytes;
+public:
+    MountedConfirmationBytes() : _bytes{} {
+    }
+    auto set(i64 at, u8 byte) -> bool {
+        _bytes[at] = byte;
+        return true;
+    }
+    auto bytes() const -> builtin::span<const u8> {
+        return borrow_bytes(_bytes);
+    }
+};
+
+auto confirm_mounted_plan(fs::XfsMountedCommitPlan& plan, u64 fault) -> bool {
+    MountedConfirmationBytes scratch = MountedConfirmationBytes();
+    u64 index = 0u64;
+    u64 previous = 0u64;
+    while (plan.needs_confirmation()) {
+        if (fault == 21u64 && index == 17u64) {
+            return !plan.confirmed();
+        }
+        u64 lba = plan.confirmation_lba();
+        const storage::Sector512 expected = plan.confirmation_sector();
+        i64 at = 0;
+        while (at < 512) {
+            const std::ByteReadResult byte = expected.read_byte(at);
+            scratch.set(at, u8(byte.value_or(0u64)));
+            at = at + 1;
+        }
+        if (fault < 18u64 && index == fault) {
+            u8 changed = 0u8;
+            {
+                const builtin::span<const u8> bytes = scratch.bytes();
+                changed = bytes.at(511) ^ 1u8;
+            }
+            scratch.set(511, changed);
+        }
+        storage::SectorIoStatus io = storage::SectorIoStatus::success;
+        if (fault == 18u64 && index == 0u64) {
+            lba = lba + 1u64;
+        }
+        if (fault == 19u64 && index == 0u64) {
+            io = storage::SectorIoStatus::invalid_source;
+        }
+        if (fault == 20u64 && index == 1u64) {
+            lba = previous;
+        }
+        if (!plan.accept_confirmation(lba, io, scratch.bytes())) {
+            const fs::XfsMountedContinuationFacts absent = plan.continuation();
+            return fault < 21u64 && !plan.confirmed() && !plan.needs_confirmation() && absent.head == 0u64;
+        }
+        previous = lba;
+        index = index + 1u64;
+    }
+    return fault == 22u64 && index == 18u64 && plan.confirmed();
+}
+
+auto mounted_planned_sector(const fs::XfsMountedCommitPlan& plan, u64 lba) -> fs::XfsRecoveryWrite {
+    u64 at = 0u64;
+    while (at < 16u64) {
+        const fs::XfsRecoveryWrite write = plan.write_at(at);
+        if (write.valid() && write.lba() == lba) {
+            return write;
+        }
+        at = at + 1u64;
+    }
+    const storage::Sector512 zero = storage::Sector512();
+    return fs::XfsRecoveryWrite(0u64, zero);
+}
+
+auto mounted_commit(builtin::HostFiles& files, builtin::ByteRegion region, builtin::span<const u8> image_path,
+    builtin::span<const u8> payload_path) -> builtin::HostExit {
+    const builtin::HostFileResult image = files.open_file(image_path);
+    const builtin::HostFileResult input = files.open_file(payload_path);
+    i64 at = 0;
+    if (image.status != builtin::HostStatus::success || image.size % 512u64 != 0u64 || input.status
+        != builtin::HostStatus::success || input.size > 4097u64) {
+        return builtin::HostExit::failure;
+    }
+    builtin::OwnedBytes cache = region.try_allocate(49152);
+    const fs::XfsLogTopology topology = fs::XfsLogTopology();
+    const fs::XfsRecoveryConfig config = fs::XfsRecoveryConfig(image.size / 512u64,
+        fs::XfsRecoveryProfile::linux_6_12_x86_64_core);
+    fs::XfsCoreRecoveryPlan clean = fs::XfsCoreRecoveryPlan(region, move(cache), config, topology);
+    builtin::OwnedBytes sector = region.try_allocate(512);
+    builtin::OwnedBytes payload = region.try_allocate(i64(input.size));
+    builtin::OwnedBytes commit_cache = region.try_allocate(16384);
+    fs::XfsMountedCommitPlan commit = fs::XfsMountedCommitPlan(region, move(commit_cache));
+    if (!sector.ok() || !payload.ok()) {
+        return builtin::HostExit::failure;
+    }
+    while (clean.needs_read()) {
+        const u64 lba = clean.requested_lba();
+        const storage::SectorReadResult read = image_sector(files, image.id, lba);
+        const storage::Sector512 loaded = read.sector_or_zero();
+        if (read.status() != storage::SectorIoStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        i64 position = 0;
+        while (position < 512) {
+            const std::ByteReadResult byte = loaded.read_byte(position);
+            sector.set(position, u8(byte.value_or(0u64)));
+            position = position + 1;
+        }
+        clean.accept(lba, storage::SectorIoStatus::success, borrow_bytes(sector));
+    }
+    if (clean.status() != fs::XfsRecoveryStatus::already_clean) {
+        files.print(builtin::HostStream::stderr, "clean-preflight-refused\n");
+        return builtin::HostExit::failure;
+    }
+    u64 copied = 0u64;
+    while (copied < input.size) {
+        const builtin::HostChunk chunk = files.read(input.id, copied);
+        if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64 || chunk.count > input.size - copied) {
+            return builtin::HostExit::failure;
+        }
+        const builtin::array<u8, 504> bytes = chunk.bytes;
+        at = 0;
+        while (at < i64(chunk.count)) {
+            payload.set(i64(copied) + at, bytes[at]);
+            at = at + 1;
+        }
+        copied = copied + chunk.count;
+    }
+    const fs::XfsCommitCleanFacts facts = fs::xfs_commit_clean_facts(clean);
+    if (!fs::copy_xfs_mounted_inputs(commit, clean) || !commit.begin_allocation(facts)) {
+        return builtin::HostExit::failure;
+    }
+    while (commit.allocation_lba() != 0u64) {
+        const u64 lba = commit.allocation_lba();
+        const storage::SectorReadResult read = image_sector(files, image.id, lba);
+        const storage::Sector512 loaded = read.sector_or_zero();
+        i64 position = 0;
+        while (position < 512) {
+            const std::ByteReadResult byte = loaded.read_byte(position);
+            sector.set(position, u8(byte.value_or(0u64)));
+            position = position + 1;
+        }
+        if (read.status() != storage::SectorIoStatus::success || !commit.accept_allocation(lba, borrow_bytes(sector))) {
+            files.print(builtin::HostStream::stderr, "allocation-preflight-refused\n");
+            return builtin::HostExit::failure;
+        }
+    }
+    if (!commit.admit_files(facts)) {
+        files.print(builtin::HostStream::stderr, "commit-prepare-refused\n");
+        return builtin::HostExit::failure;
+    }
+    while (commit.append_lba() != 0u64) {
+        const u64 lba = commit.append_lba();
+        const storage::SectorReadResult read = image_sector(files, image.id, lba);
+        const storage::Sector512 loaded = read.sector_or_zero();
+        i64 position = 0;
+        while (position < 512) {
+            const std::ByteReadResult byte = loaded.read_byte(position);
+            sector.set(position, u8(byte.value_or(0u64)));
+            position = position + 1;
+        }
+        if (read.status() != storage::SectorIoStatus::success || !commit.accept_append(lba, borrow_bytes(sector))) {
+            files.print(builtin::HostStream::stderr, "append-preflight-refused\n");
+            return builtin::HostExit::failure;
+        }
+    }
+    if (!commit.prepare(facts, borrow_bytes(payload)) || !commit.ready()) {
+        return builtin::HostExit::failure;
+    }
+    if (input.size == 777u64) {
+        // Negative confirmation cases reuse this full clean proof and only
+        // repeat the small fixed-profile admission, not the full log scan.
+        u64 fault = 0u64;
+        while (fault < 22u64) {
+            builtin::OwnedBytes trial_cache = region.try_allocate(16384);
+            fs::XfsMountedCommitPlan trial = fs::XfsMountedCommitPlan(region, move(trial_cache));
+            const fs::XfsMountedContinuationFacts empty = trial.continuation();
+            if (empty.head != 0u64) {
+                return builtin::HostExit::failure;
+            }
+            const fs::XfsCommitCleanFacts facts = fs::xfs_commit_clean_facts(clean);
+            if (!fs::copy_xfs_mounted_inputs(trial, clean) || !trial.begin_allocation(facts)) {
+                return builtin::HostExit::failure;
+            }
+            while (trial.allocation_lba() != 0u64) {
+                const u64 lba = trial.allocation_lba();
+                const storage::SectorReadResult read = image_sector(files, image.id, lba);
+                const storage::Sector512 loaded = read.sector_or_zero();
+                i64 position = 0;
+                while (position < 512) {
+                    const std::ByteReadResult byte = loaded.read_byte(position);
+                    sector.set(position, u8(byte.value_or(0u64)));
+                    position = position + 1;
+                }
+                if (read.status() != storage::SectorIoStatus::success || !trial.accept_allocation(lba,
+                    borrow_bytes(sector))) {
+                    files.print(builtin::HostStream::stderr, "allocation-preflight-refused\n");
+                    return builtin::HostExit::failure;
+                }
+            }
+            if (!trial.admit_files(facts)) {
+                files.print(builtin::HostStream::stderr, "commit-prepare-refused\n");
+                return builtin::HostExit::failure;
+            }
+            while (trial.append_lba() != 0u64) {
+                const u64 lba = trial.append_lba();
+                const storage::SectorReadResult read = image_sector(files, image.id, lba);
+                const storage::Sector512 loaded = read.sector_or_zero();
+                i64 position = 0;
+                while (position < 512) {
+                    const std::ByteReadResult byte = loaded.read_byte(position);
+                    sector.set(position, u8(byte.value_or(0u64)));
+                    position = position + 1;
+                }
+                if (read.status() != storage::SectorIoStatus::success || !trial.accept_append(lba,
+                    borrow_bytes(sector))) {
+                    files.print(builtin::HostStream::stderr, "append-preflight-refused\n");
+                    return builtin::HostExit::failure;
+                }
+            }
+            if (!trial.prepare(facts, borrow_bytes(payload)) || !trial.ready()) {
+                return builtin::HostExit::failure;
+            }
+            if (!confirm_mounted_plan(trial, fault)) {
+                return builtin::HostExit::failure;
+            }
+            const fs::XfsMountedContinuationFacts absent = trial.continuation();
+            if (absent.head != 0u64) {
+                return builtin::HostExit::failure;
+            }
+            fault = fault + 1u64;
+        }
+    }
+    u64 ordinal = 0u64;
+    while (ordinal < 16u64) {
+        const fs::XfsRecoveryWrite write = commit.write_at(ordinal);
+        const storage::Sector512 bytes = write.sector_or_zero();
+        std::BinaryBuffer64 coordinate = std::BinaryBuffer64();
+        coordinate.write_le64(0, write.lba());
+        u64 fence = 0u64;
+        if (commit.flush_after(ordinal)) {
+            fence = 1u64;
+        }
+        coordinate.write_le64(8, fence);
+        at = 0;
+        while (at < 512) {
+            const std::ByteReadResult byte = bytes.read_byte(at);
+            sector.set(at, u8(byte.value_or(0u64)));
+            at = at + 1;
+        }
+        if (!write.valid() || files.print(builtin::HostStream::stdout, coordinate.bytes(0, 16))
+            != builtin::HostStatus::success || files.print(builtin::HostStream::stdout, borrow_bytes(sector))
+            != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        ordinal = ordinal + 1u64;
+    }
+    if (input.size == 777u64) {
+        if (!confirm_mounted_plan(commit, 22u64)) {
+            return builtin::HostExit::failure;
+        }
+        const fs::XfsMountedContinuationFacts confirmed = commit.continuation();
+        builtin::OwnedBytes mount_cache = region.try_allocate(1536);
+        const fs::XfsLogTopology mount_topology = fs::XfsLogTopology();
+        fs::XfsReadonlyMount mount = fs::XfsReadonlyMount(region, move(mount_cache), image.size / 512u64,
+            fs::XfsReadonlyProfile::linux_6_12_x86_64_clean, mount_topology);
+        u64 phase = 0u64;
+        while (phase < 4u64) {
+            u64 reads = 0u64;
+            while (mount.needs_read()) {
+                const u64 lba = mount.requested_lba();
+                u64 selected_lba = lba;
+                if (phase == 0u64) {
+                    selected_lba = 18446744073709551615u64;
+                }
+                const fs::XfsRecoveryWrite planned = mounted_planned_sector(commit, selected_lba);
+                if (planned.valid()) {
+                    const storage::Sector512 bytes = planned.sector_or_zero();
+                    i64 at = 0;
+                    while (at < 512) {
+                        const std::ByteReadResult byte = bytes.read_byte(at);
+                        sector.set(at, u8(byte.value_or(0u64)));
+                        at = at + 1;
+                    }
+                } else {
+                    const storage::SectorReadResult read = image_sector(files, image.id, lba);
+                    if (read.status() != storage::SectorIoStatus::success) {
+                        return builtin::HostExit::failure;
+                    }
+                    const storage::Sector512 bytes = read.sector_or_zero();
+                    i64 at = 0;
+                    while (at < 512) {
+                        const std::ByteReadResult byte = bytes.read_byte(at);
+                        sector.set(at, u8(byte.value_or(0u64)));
+                        at = at + 1;
+                    }
+                }
+                mount.accept(lba, storage::SectorIoStatus::success, borrow_bytes(sector));
+                reads = reads + 1u64;
+            }
+            if (phase == 0u64) {
+                if (mount.status() != fs::XfsMountStatus::ready) {
+                    return builtin::HostExit::failure;
+                }
+                u64 variant = 0u64;
+                while (variant < 4u64) {
+                    fs::XfsMountedContinuationFacts wrong = confirmed;
+                    if (variant == 0u64) {
+                        wrong.head = 0u64;
+                    }
+                    if (variant == 1u64) {
+                        wrong.head = wrong.head + 1u64;
+                    }
+                    if (variant == 2u64) {
+                        wrong.latest = wrong.latest + 1u64;
+                    }
+                    if (variant == 3u64) {
+                        wrong.capacity = wrong.capacity + 1u64;
+                    }
+                    if (mount.continue_mounted(wrong, commit.original_superblock(), commit.original_root(),
+                        commit.completion_header(), commit.completion_body()) || mount.status()
+                        != fs::XfsMountStatus::ready) {
+                        return builtin::HostExit::failure;
+                    }
+                    variant = variant + 1u64;
+                }
+                if (mount.continue_mounted(confirmed, "", commit.original_root(), commit.completion_header(),
+                    commit.completion_body()) || mount.status() != fs::XfsMountStatus::ready) {
+                    return builtin::HostExit::failure;
+                }
+                variant = 0u64;
+                while (variant < 4u64) {
+                    i64 at = 0;
+                    while (at < 512) {
+                        u8 byte = 0u8;
+                        if (variant == 0u64) {
+                            const builtin::span<const u8> bytes = commit.original_superblock();
+                            byte = bytes.at(at);
+                        }
+                        if (variant == 1u64) {
+                            const builtin::span<const u8> bytes = commit.original_root();
+                            byte = bytes.at(at);
+                        }
+                        if (variant == 2u64) {
+                            const builtin::span<const u8> bytes = commit.completion_header();
+                            byte = bytes.at(at);
+                        }
+                        if (variant == 3u64) {
+                            const builtin::span<const u8> bytes = commit.completion_body();
+                            byte = bytes.at(at);
+                        }
+                        sector.set(at, byte);
+                        at = at + 1;
+                    }
+                    sector.set(32, sector.at(32) ^ 1u8);
+                    bool accepted = false;
+                    if (variant == 0u64) {
+                        accepted = mount.continue_mounted(confirmed, borrow_bytes(sector), commit.original_root(),
+                            commit.completion_header(), commit.completion_body());
+                    }
+                    if (variant == 1u64) {
+                        accepted = mount.continue_mounted(confirmed, commit.original_superblock(), borrow_bytes(sector),
+                            commit.completion_header(), commit.completion_body());
+                    }
+                    if (variant == 2u64) {
+                        accepted = mount.continue_mounted(confirmed, commit.original_superblock(),
+                            commit.original_root(), borrow_bytes(sector), commit.completion_body());
+                    }
+                    if (variant == 3u64) {
+                        accepted = mount.continue_mounted(confirmed, commit.original_superblock(),
+                            commit.original_root(), commit.completion_header(), borrow_bytes(sector));
+                    }
+                    if (accepted || mount.status() != fs::XfsMountStatus::ready) {
+                        return builtin::HostExit::failure;
+                    }
+                    variant = variant + 1u64;
+                }
+                if (!mount.continue_mounted(confirmed, commit.original_superblock(), commit.original_root(),
+                    commit.completion_header(), commit.completion_body())) {
+                    return builtin::HostExit::failure;
+                }
+            }
+            if (phase == 1u64) {
+                if (reads != 3u64 || mount.status() != fs::XfsMountStatus::ready || mount.continue_mounted(confirmed,
+                    commit.original_superblock(), commit.original_root(), commit.completion_header(),
+                    commit.completion_body()) || !mount.read_file("hello", 0)) {
+                    return builtin::HostExit::failure;
+                }
+            }
+            if (phase == 2u64) {
+                const storage::Sector512 bytes = mount.sector_or_zero();
+                const std::ByteReadResult first = bytes.read_byte(0);
+                if (reads != 2u64 || mount.file_size() != 777u64 || first.value_or(0u64) != 91u64
+                    || !mount.read_inode(99u64, 0)) {
+                    return builtin::HostExit::failure;
+                }
+            }
+            if (phase == 3u64) {
+                const storage::Sector512 bytes = mount.sector_or_zero();
+                const std::ByteReadResult first = bytes.read_byte(0);
+                if (reads != 2u64 || mount.file_size() != 64u64 || first.value_or(0u64) != 11u64) {
+                    return builtin::HostExit::failure;
+                }
+            }
+            phase = phase + 1u64;
+        }
+    }
+    files.close(input.id);
+    files.close(image.id);
+    return builtin::HostExit::success;
+}
+
+auto check_mounted_output(builtin::ByteRegion region) -> bool {
+    service::XfsOutput output = service::XfsOutput(region);
+    if (!output.available() || !output.begin(40u64) || output.committable(40u64) || output.append(41u64, "x")
+        || !output.append(40u64, "x")) {
+        return false;
+    }
+    if (output.exceeds_limit(4095u64) || !output.exceeds_limit(4096u64) || !output.committable(40u64)) {
+        return false;
+    }
+    output.clear();
+    if (!output.available() || !output.begin(41u64)) {
+        return false;
+    }
+    u64 at = 0u64;
+    while (at < 4096u64) {
+        if (!output.append(41u64, "x")) {
+            return false;
+        }
+        at = at + 1u64;
+    }
+    if (!output.committable(41u64) || !output.exceeds_limit(1u64) || output.append(41u64, "x")
+        || output.committable(41u64) || output.consume(41u64)) {
+        return false;
+    }
+    output.clear();
+    if (!output.begin(42u64) || !output.append(42u64, "new") || !output.consume(42u64) || output.consume(42u64)
+        || output.append(42u64, "x")) {
+        return false;
+    }
+    output.clear();
+    return !output.available() && !output.begin(43u64);
+}
+
+auto main(builtin::HostFiles& files, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    if (!check_mounted_output(region)) {
+        return builtin::HostExit::failure;
+    }
+    i64 at = 0;
+    while (at < arguments.size() && arguments.at(at) != 0u8) {
+        at = at + 1;
+    }
+    const i64 begin = at + 1;
+    at = begin;
+    while (at < arguments.size() && arguments.at(at) != 0u8) {
+        at = at + 1;
+    }
+    if (begin >= arguments.size()) {
+        return builtin::HostExit::usage;
+    }
+    const builtin::span<const u8> path = arguments.subspan(begin, at - begin);
+    if (at + 9 < arguments.size() && arguments.at(at + 1) == 109u8) {
+        const i64 payload_begin = at + 9;
+        at = payload_begin;
+        while (at < arguments.size() && arguments.at(at) != 0u8) {
+            at = at + 1;
+        }
+        return mounted_commit(files, region, path, arguments.subspan(payload_begin, at - payload_begin));
+    }
+    u64 fault = 0u64;
+    if (at + 1 < arguments.size()) {
+        if (arguments.at(at + 1) == 105u8) {
+            fault = 1u64;
+        }
+        if (arguments.at(at + 1) == 103u8) {
+            fault = 2u64;
+        }
+        if (arguments.at(at + 1) == 98u8) {
+            fault = 3u64;
+        }
+        if (arguments.at(at + 1) == 99u8) {
+            fault = 4u64;
+        }
+        if (arguments.at(at + 1) == 101u8) {
+            fault = 5u64;
+        }
+        if (arguments.at(at + 1) == 110u8) {
+            fault = 6u64;
+        }
+        if (arguments.at(at + 1) == 104u8) {
+            fault = 7u64;
+        }
+    }
+    const builtin::HostFileResult image = files.open_file(path);
+    if (image.status != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    if (fault == 7u64) {
+        if (image.size > 504u64) {
+            return builtin::HostExit::failure;
+        }
+        const builtin::HostChunk chunk = files.read(image.id, 0u64);
+        if (chunk.status != builtin::HostStatus::success || chunk.count != image.size) {
+            return builtin::HostExit::failure;
+        }
+        const builtin::array<u8, 504> bytes = chunk.bytes;
+        const builtin::span<const u8> input = borrow_bytes(bytes);
+        if (service::bootstrap_valid(input.subspan(0, i64(chunk.count)))) {
+            files.print(builtin::HostStream::stdout, "valid bootstrap\n");
+        } else {
+            files.print(builtin::HostStream::stdout, "invalid bootstrap\n");
+        }
+        files.close(image.id);
+        return builtin::HostExit::success;
+    }
+    if (fault == 6u64) {
+        const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+        const console::SessionNote note = console::SessionNote(empty);
+        const console::FileNamespace names = console::FileNamespace(empty);
+        const console::ProtectedFiles named_files = console::ProtectedFiles(names);
+        service::ConsoleStore state = service::ConsoleStore(region, note, named_files);
+        builtin::OwnedBytes line = region.try_allocate(528);
+        if (!state.ok() || !line.ok()) {
+            return builtin::HostExit::failure;
+        }
+        u64 offset = 0u64;
+        while (offset < image.size) {
+            const builtin::HostChunk chunk = files.read(image.id, offset);
+            if (chunk.status != builtin::HostStatus::success || chunk.count < 24u64) {
+                return builtin::HostExit::failure;
+            }
+            const builtin::array<u8, 504> bytes = chunk.bytes;
+            const builtin::span<const u8> input = borrow_bytes(bytes);
+            const std::ByteReadResult operation = std::read_le64(input, 0);
+            const std::ByteReadResult expected = std::read_le64(input, 8);
+            const std::ByteReadResult length = std::read_le64(input, 16);
+            const u64 count = length.value_or(233u64);
+            if (count > 232u64 || count > chunk.count - 24u64) {
+                return builtin::HostExit::failure;
+            }
+            state.execute(operation.value_or(0u64), expected.value_or(0u64), input.subspan(24, i64(count)));
+            line.set(0, u8(48u64 + state.status()));
+            line.set(1, 58u8);
+            i64 used = 2;
+            i64 digit = 4;
+            while (digit > 0) {
+                digit = digit - 1;
+                line.set(used, hex_digit(u8((state.count() >> (digit * 4)) & 15u64)));
+                used = used + 1;
+            }
+            line.set(used, 58u8);
+            used = used + 1;
+            digit = 16;
+            while (digit > 0) {
+                digit = digit - 1;
+                line.set(used, hex_digit(u8((state.revision() >> (digit * 4)) & 15u64)));
+                used = used + 1;
+            }
+            line.set(used, 58u8);
+            used = used + 1;
+            u64 index = 0u64;
+            while (index < state.count()) {
+                const u8 byte = state.byte(index);
+                line.set(used, hex_digit(byte >> 4));
+                line.set(used + 1, hex_digit(byte & 15u8));
+                used = used + 2;
+                index = index + 1u64;
+            }
+            if (state.byte(state.count()) != 0u8) {
+                return builtin::HostExit::failure;
+            }
+            line.set(used, 10u8);
+            const builtin::span<const u8> text = borrow_bytes(line);
+            files.print(builtin::HostStream::stdout, text.subspan(0, used + 1));
+            offset = offset + 24u64 + count;
+        }
+        files.close(image.id);
+        return builtin::HostExit::success;
+    }
+    if (fault >= 3u64) {
+        if (image.size > 4096u64) {
+            return builtin::HostExit::failure;
+        }
+        service::Store store = service::Store(region, i64(image.size));
+        service::XfsFiles missing = service::XfsFiles(region, 0u64, 0u64);
+        u64 loaded = 0u64;
+        while (loaded < image.size) {
+            const builtin::HostChunk chunk = files.read(image.id, loaded);
+            if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64) {
+                return builtin::HostExit::failure;
+            }
+            const builtin::array<u8, 504> bytes = chunk.bytes;
+            u64 index = 0u64;
+            while (index < chunk.count) {
+                store.volume_byte(i64(loaded + index), bytes[i64(index)]);
+                index = index + 1u64;
+            }
+            loaded = loaded + chunk.count;
+        }
+        bool passed = store.admit_volume() && store.begin(41u64) && missing.begin(41u64);
+        passed = passed && store.disk_collision() == (fault == 4u64);
+        const service::Reply root = store.open(0u64, 0u64, "/");
+        const service::Reply tree = store.open(0u64, 0u64, "/tree");
+        const service::Reply file = store.open(2u64, 0u64, "/tree/a");
+        passed = passed && root.status == kernel::FileStatus::success && tree.status == kernel::FileStatus::success
+            && file.status == kernel::FileStatus::success && store.is_root_directory(root.id)
+            && !store.is_root_directory(tree.id) && !store.is_root_directory(file.id) && !store.is_root_directory(0u64);
+        passed = passed && service::xfs_operation(store, "./disk//hello", 17u64, root.id) == 18u64
+            && service::xfs_operation(store, "disk/hello", 17u64, tree.id) == 0u64 && service::xfs_operation(store,
+            "/disk/hello", 17u64, root.id) == 0u64 && service::xfs_operation(store, "../disk/hello", 17u64, root.id)
+            == 0u64 && service::xfs_operation(store, "/disk/../tree/a", 18u64, 0u64) == 18u64
+            && service::xfs_operation(store, "/tree/a", 18u64, 0u64) == 0u64 && service::xfs_operation(store,
+            "/disk/new", 21u64, 0u64) == 21u64;
+        const service::Reply nested = store.open(1u64, tree.id, "disk/hello");
+        const service::Reply escape = store.open(1u64, root.id, "/disk/hello");
+        passed = passed && nested.status == kernel::FileStatus::success && escape.status == kernel::FileStatus::escape;
+        missing.prepare(21u64, 0u64, 0u64, "/disk/new");
+        const service::Reply denied = missing.response();
+        missing.prepare(18u64, 0u64, 0u64, "/disk/../tree/a");
+        const service::Reply refused = missing.response();
+        passed = passed && denied.status == kernel::FileStatus::denied && refused.status == kernel::FileStatus::escape;
+        missing.prepare(18u64, 0u64, 0u64, "/disk/hello");
+        const service::Reply absent = missing.response();
+        const service::Reply readable = store.read_file(file.id, 0u64);
+        passed = passed && absent.status == kernel::FileStatus::failed && missing.read_byte(0u64) == 0u8
+            && readable.status == kernel::FileStatus::success && readable.count == 1u64 && store.read_byte(0u64)
+            == 65u8;
+        if (fault == 5u64) {
+            passed = write_exports(store) && passed;
+        }
+        const service::Reply closed = store.close(root.id);
+        passed = passed && closed.status == kernel::FileStatus::success && !store.is_root_directory(root.id)
+            && service::xfs_operation(store, "disk/hello", 17u64, root.id) == 0u64 && store.finish(41u64)
+            && missing.finish(41u64) && store.active() == 0u64 && missing.active() == 0u64;
+        if (fault == 5u64) {
+            passed = verify_exports(store) && passed;
+        }
+        files.close(image.id);
+        if (passed) {
+            files.print(builtin::HostStream::stdout, "PASS XFS routing and optional backend\n");
+            return builtin::HostExit::success;
+        }
+        return builtin::HostExit::failure;
+    }
+    if (image.size % 512u64 != 0u64) {
+        return builtin::HostExit::failure;
+    }
+    builtin::OwnedBytes cache = region.try_allocate(1536);
+    builtin::OwnedBytes scratch = region.try_allocate(512);
+    const fs::XfsLogTopology topology = fs::XfsLogTopology();
+    fs::XfsReadonlyMount mount = fs::XfsReadonlyMount(region, move(cache), image.size / 512u64,
+        fs::XfsReadonlyProfile::fresh_format, topology);
+    service::XfsFiles disk = service::XfsFiles(region, 1u64, image.size / 512u64);
+    if (!scratch.ok()) {
+        return builtin::HostExit::failure;
+    }
+    u64 root = 0u64;
+    u64 file = 0u64;
+    u64 old = 0u64;
+    u64 position = 0u64;
+    u64 opened = 0u64;
+    i64 stage = 0;
+    bool passed = true;
+    while (passed && stage < 19) {
+        if (disk.ok() && mount.needs_read()) {
+            const u64 lba = mount.requested_lba();
+            // Fail after the first eight bytes of an offset-504 read have
+            // been assembled, but before the second sector can complete it.
+            if (fault != 0u64 && stage == 3 && disk.sector_index() == 1 && mount.status()
+                == fs::XfsMountStatus::reading_file_data) {
+                const service::Reply partial = disk.response();
+                passed = partial.count == 0u64 && disk.read_byte(0u64) == 0u8;
+                if (fault == 1u64) {
+                    mount.accept(lba, storage::SectorIoStatus::invalid_source, borrow_bytes(scratch));
+                    service::advance_xfs(disk, mount);
+                } else {
+                    disk.check_generation(2u64);
+                }
+                const service::Reply failed = disk.response();
+                disk.prepare(19u64, file, 0u64, "");
+                const service::Reply later = disk.response();
+                if (passed && !disk.ok() && failed.status == kernel::FileStatus::failed && failed.count == 0u64
+                    && later.status == kernel::FileStatus::failed && later.count == 0u64 && disk.read_byte(0u64)
+                    == 0u8) {
+                    files.print(builtin::HostStream::stdout, "PASS XFS partial read quarantine\n");
+                    files.close(image.id);
+                    return builtin::HostExit::success;
+                }
+                return builtin::HostExit::failure;
+            }
+            const storage::SectorReadResult read = image_sector(files, image.id, lba);
+            const storage::Sector512 sector = read.sector_or_zero();
+            at = 0;
+            while (at < 512) {
+                const std::ByteReadResult byte = sector.read_byte(at);
+                scratch.set(at, u8(byte.value_or(0u64)));
+                at = at + 1;
+            }
+            if (disk.check_generation(1u64)) {
+                mount.accept(lba, read.status(), borrow_bytes(scratch));
+                service::advance_xfs(disk, mount);
+            }
+        } else {
+            const service::Reply result = disk.response();
+            const i64 current = stage;
+            if (current == 0) {
+                if (!disk.ready()) {
+                    files.print(builtin::HostStream::stderr, "unavailable\n");
+                    return builtin::HostExit::failure;
+                }
+                passed = disk.begin(11u64);
+                disk.prepare(16u64, 0u64, 0u64, "/disk");
+                stage = 1;
+            }
+            if (current == 1) {
+                passed = result.status == kernel::FileStatus::success && result.device == 3u64 && result.inode != 0u64
+                    && service::xfs_handle(result.id);
+                root = result.id;
+                disk.prepare(17u64, root, 0u64, "pattern");
+                service::start_xfs(disk, mount);
+                stage = 2;
+            }
+            if (current == 2) {
+                passed = result.status == kernel::FileStatus::success && result.size == 9001u64 && result.device == 3u64
+                    && result.inode != 0u64;
+                file = result.id;
+                disk.prepare(19u64, file, 0u64, "");
+                service::start_xfs(disk, mount);
+                stage = 3;
+            }
+            if (current == 3) {
+                u64 count = 9001u64 - position;
+                if (count > 504u64) {
+                    count = 504u64;
+                }
+                passed = result.status == kernel::FileStatus::success && result.count == count;
+                u64 byte = 0u64;
+                while (byte < count) {
+                    if (disk.read_byte(byte) != u8(((position + byte) * 37u64 + 11u64) % 256u64)) {
+                        passed = false;
+                    }
+                    byte = byte + 1u64;
+                }
+                position = position + count;
+                disk.prepare(19u64, file, position, "");
+                service::start_xfs(disk, mount);
+                if (position == 9001u64) {
+                    stage = 4;
+                }
+            }
+            if (current == 4) {
+                passed = result.status == kernel::FileStatus::success && result.count == 0u64;
+                disk.prepare(19u64, file, 9223372036854775808u64, "");
+                stage = 5;
+            }
+            if (current == 5) {
+                passed = result.status == kernel::FileStatus::failed;
+                disk.prepare(19u64, root, 0u64, "");
+                stage = 6;
+            }
+            if (current == 6) {
+                passed = result.status == kernel::FileStatus::invalid_handle;
+                disk.prepare(22u64, file, 0u64, "x");
+                stage = 7;
+            }
+            if (current == 7) {
+                passed = result.status == kernel::FileStatus::denied;
+                disk.prepare(20u64, file, 0u64, "");
+                stage = 8;
+            }
+            if (current == 8) {
+                passed = result.status == kernel::FileStatus::success;
+                disk.prepare(19u64, file, 0u64, "");
+                stage = 9;
+            }
+            if (current == 9) {
+                passed = result.status == kernel::FileStatus::invalid_handle;
+                disk.prepare(17u64, root, 0u64, "../hello");
+                stage = 10;
+            }
+            if (current == 10) {
+                passed = result.status == kernel::FileStatus::escape;
+                disk.prepare(18u64, 0u64, 0u64, "/disk/hello/.");
+                stage = 11;
+            }
+            if (current == 11) {
+                passed = result.status == kernel::FileStatus::escape;
+                disk.prepare(18u64, 0u64, 0u64, "/disk/../boot");
+                stage = 12;
+            }
+            if (current == 12) {
+                passed = result.status == kernel::FileStatus::escape;
+                disk.prepare(18u64, 0u64, 0u64, "./disk//hello");
+                service::start_xfs(disk, mount);
+                stage = 13;
+            }
+            if (current == 13) {
+                passed = result.status == kernel::FileStatus::success && result.size == 64u64;
+                old = result.id;
+                passed = disk.finish(11u64) && disk.begin(12u64) && passed;
+                disk.prepare(19u64, old, 0u64, "");
+                stage = 14;
+            }
+            if (current == 14) {
+                passed = result.status == kernel::FileStatus::invalid_handle;
+                disk.prepare(18u64, 0u64, 0u64, "/disk/absent");
+                service::start_xfs(disk, mount);
+                stage = 15;
+            }
+            if (current == 15) {
+                passed = result.status == kernel::FileStatus::not_found;
+                disk.prepare(18u64, 0u64, 0u64, "/disk/hello");
+                service::start_xfs(disk, mount);
+                stage = 16;
+            }
+            if (current == 16) {
+                passed = result.status == kernel::FileStatus::success && result.id != old && result.size == 64u64;
+                opened = 1u64;
+                disk.prepare(16u64, 0u64, 0u64, "/disk");
+                stage = 17;
+            }
+            if (current == 17) {
+                if (opened < 16u64) {
+                    passed = result.status == kernel::FileStatus::success;
+                    opened = opened + 1u64;
+                    disk.prepare(16u64, 0u64, 0u64, "/disk");
+                } else {
+                    passed = result.status == kernel::FileStatus::exhausted && disk.finish(12u64) && disk.begin(13u64);
+                    disk.prepare(18u64, 0u64, 0u64, "/disk/hello");
+                    service::start_xfs(disk, mount);
+                    stage = 18;
+                }
+            }
+            if (current == 18) {
+                passed = result.status == kernel::FileStatus::success;
+                disk.prepare(18u64, 0u64, 0u64, "/disk/.aurora-stage");
+                const service::Reply private_absolute = disk.response();
+                disk.prepare(16u64, 0u64, 0u64, "/disk");
+                const service::Reply private_root = disk.response();
+                disk.prepare(17u64, private_root.id, 0u64, ".aurora-stage");
+                const service::Reply private_beneath = disk.response();
+                passed = passed && private_absolute.status == kernel::FileStatus::denied && private_root.status
+                    == kernel::FileStatus::success && private_beneath.status == kernel::FileStatus::denied;
+                passed = passed && !disk.check_generation(2u64) && !disk.ok();
+                disk.prepare(19u64, result.id, 0u64, "");
+                const service::Reply dead = disk.response();
+                passed = passed && dead.status == kernel::FileStatus::failed && disk.read_byte(0u64) == 0u8;
+                stage = 19;
+            }
+        }
+    }
+    if (!passed) {
+        files.print(builtin::HostStream::stderr, "service-case-failed\n");
+        return builtin::HostExit::failure;
+    }
+    files.print(builtin::HostStream::stdout, "PASS XFS service\n");
+    files.close(image.id);
+    return builtin::HostExit::success;
+}

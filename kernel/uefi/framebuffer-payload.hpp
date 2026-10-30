@@ -136,9 +136,10 @@ public:
     // owned root/stack, WP, NXE, the immutable record page and the complete tree
     // (owned arena plus exactly the admitted LAPIC leaf, no framebuffer leaf
     // yet) are re-established before the firmware rule rebuilds the token.
-    [[nodiscard]] static auto restore_terminal(U64 arena, const LocalApicAdmission &apic)
+private:
+    [[nodiscard]] static auto restore_terminal_view(U64 arena, const LocalApicAdmission *apic, bool storage_boot)
         -> std::optional<FramebufferAdmission> {
-        if (!RuntimeLayout::valid(arena) || apic.owned_arena() != arena)
+        if (!RuntimeLayout::valid(arena) || (apic && apic->owned_arena() != arena) || storage_boot == (apic != nullptr))
             return std::nullopt;
         U64 root, cr0, cr4, flags, stack;
         asm volatile("mov %%cr3,%0; mov %%cr0,%1; mov %%cr4,%2; pushfq; pop %3; mov %%rsp,%4"
@@ -151,15 +152,17 @@ public:
         if (!Handoff::valid(header, arena))
             return std::nullopt;
         const Bytes h{header};
-        if (h.get(8, 4) != 7 || !h.get(112) || h.get(88) != root ||
+        if (storage_boot && (h.get(8, 4) != 10 || h.get(Handoff::composition_word) != 4))
+            return std::nullopt;
+        if (h.get(8, 4) != Handoff::terminal_version || !h.get(112) || h.get(88) != root ||
             h.get(120) != arena + RuntimeLayout::metadata_offset ||
             h.get(Handoff::framebuffer_word) != arena + Handoff::framebuffer_record_offset)
             return std::nullopt;
         const PageTables tables{root, static_cast<std::size_t>(h.get(96))};
-        if (!tables.verify(arena, h, &apic) || !tables.window_slot() || !tables.interrupt_slot() ||
+        if (!tables.verify(arena, h, apic) || !tables.window_slot() || !tables.interrupt_slot() ||
             tables.entry(PageTables::window_address) ||
             (tables.entry(LocalApicAdmission::virtual_address) & ~0x60ULL) !=
-                apic.mapping(LocalApicAdmission::virtual_address) ||
+                (apic ? apic->mapping(LocalApicAdmission::virtual_address) : 0) ||
             tables.entry(FramebufferAdmission::virtual_address - 4096) ||
             (tables.entry(arena + Handoff::framebuffer_record_offset) & ~0x60ULL) !=
                 ((arena + Handoff::framebuffer_record_offset) | 0x8000000000000001ULL))
@@ -204,6 +207,19 @@ public:
                 return std::nullopt;
         return admitted;
     }
+
+public:
+    [[nodiscard]] static auto restore_terminal(U64 arena, const LocalApicAdmission &apic)
+        -> std::optional<FramebufferAdmission> {
+        return restore_terminal_view(arena, &apic, false);
+    }
+#if defined(AURORA_PRODUCTION) && defined(AURORA_UEFI_NVME)
+    // Only the closed production-storage handoff may restore this token before
+    // LAPIC installation. The existing firmware rule and empty FB tree remain.
+    [[nodiscard]] static auto restore_storage_boot(U64 arena) -> std::optional<FramebufferAdmission> {
+        return restore_terminal_view(arena, nullptr, true);
+    }
+#endif
 #endif
 };
 } // namespace aurora::uefi

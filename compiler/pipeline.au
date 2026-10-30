@@ -436,6 +436,8 @@ export namespace compiler_ir_instructions {
             "span borrow, reborrow, window or byte load changes the span element type");
         value.typed(r == InstructionError::storage_span_values,
             "typed span element copy requires a typed span and an exact element object");
+        value.typed(r == InstructionError::block_platform, "read-only block primitive requires the Aurora target");
+        value.typed(r == InstructionError::endpoint_platform, "retained process endpoint requires the Aurora target");
         value.typed(r == InstructionError::service_platform,
             "HostFiles primitive does not belong to the selected target");
         return value;
@@ -1474,6 +1476,7 @@ export namespace compiler_pipeline {
         // A hosted entry taking a region also reaches the memory runtime,
         // through the byte runtime entries the backend emits.
         const bool memory = compiler_x86::hosted_region(metadata);
+        const bool endpoint = compiler_x86::hosted_endpoint(metadata);
         i64 edge = 0;
         i64 callable = 0;
         while (callable < instructions.body_count()) {
@@ -1496,9 +1499,9 @@ export namespace compiler_pipeline {
             const bool receiver = declaration.borrowed_root_count() != 0
                 || compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver());
             // The hosted entry calls host::start and host::finish, so they are roots.
-            const bool root = declaration.scope() == 0 || compiler_x86::hosted_hook(metadata, callable, 0)
-                || compiler_x86::hosted_hook(metadata, callable, 1) || (memory && compiler_x86::memory_runtime(metadata,
-                callable));
+            const bool root = declaration.scope() == 0 || (!endpoint && (compiler_x86::hosted_hook(metadata, callable,
+                0) || compiler_x86::hosted_hook(metadata, callable, 1))) || (memory
+                && compiler_x86::memory_runtime(metadata, callable));
             const compiler_ir_graph::FunctionRow function = compiler_ir_graph::FunctionRow(first, edge - first,
                 receiver, service_entry(metadata, declaration), root);
             if (!compiler_ir_graph::set_function(input, callable, function)) {

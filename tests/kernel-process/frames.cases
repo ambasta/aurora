@@ -304,3 +304,33 @@ op transition 3 5 16 0 0
 op transition 3 1000000004 16 0 0
 op transition 3 f00000002 16 0 0
 end
+
+# Exactly two simultaneous owners: a third fails without claiming a frame,
+# failed foreign/stale releases preserve counts, and a retired slot is reused.
+# The complete audit independently detects a record naming an unknown owner.
+case resident-owners
+arena 0x800000
+desc 1 0x800000 0x200
+desc 7 0xa00000 0x10
+op allocate 16
+op allocate 17
+op allocate 18
+op owner 16
+op owner 17
+op owner 18
+op release 5 0 17
+op release 5 1 16
+op owner 16
+op audit
+op corrupt-owner 5 19
+op audit
+op corrupt-owner 5 16
+op audit
+op release 5 0 16
+op allocate 18
+op owner 16
+op owner 18
+op release 6 0 17
+op release 5 1 18
+op audit
+end

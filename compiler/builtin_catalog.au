@@ -21,7 +21,9 @@ export namespace compiler_catalog {
         Call,
         Port,
         Serve,
-        HostFiles
+        HostFiles,
+        ReadOnlyBlock,
+        WritableBlock
     };
     enum class ServiceOperation {
         Next,
@@ -55,7 +57,21 @@ export namespace compiler_catalog {
         MemoryAddress,
         KernelPrint,
         KernelChunk,
-        KernelFile
+        KernelFile,
+        MessageExchange,
+        MessageLoad,
+        MessageStore,
+        MessageIdentity,
+        BlockRead,
+        BlockByte,
+        BlockDescriptor,
+        WriterRead,
+        WriterByte,
+        WriterDescriptor,
+        WriterStageByte,
+        WriterWrite,
+        WriterFlush,
+        WriterBudget
     };
     // Catalog extents for the host's loose resolution quota.
     class Summary {
@@ -152,7 +168,7 @@ export namespace compiler_catalog {
     // 2 (Port), 3 (Serve) and 4 (HostFiles) only when admitted syntax names one
     // of their types.
     auto type_count() -> i64 {
-        return 34;
+        return 36;
     }
     auto type_kind(i64 type) -> compiler_resolver::ResolvedTypeKind {
         if (type == 0) {
@@ -194,6 +210,12 @@ export namespace compiler_catalog {
         if (type == 26) {
             return compiler_resolver::ResolvedTypeKind::host_files;
         }
+        if (type == 35) {
+            return compiler_resolver::ResolvedTypeKind::writable_block;
+        }
+        if (type == 34) {
+            return compiler_resolver::ResolvedTypeKind::read_only_block;
+        }
         if (type == 12 || type == 17 || type == 21 || type == 24 || (type > 29 && type < 34)) {
             return compiler_resolver::ResolvedTypeKind::class_value;
         }
@@ -203,6 +225,12 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::invalid;
     }
     auto type_family(i64 type) -> i64 {
+        if (type == 35) {
+            return 6;
+        }
+        if (type == 34) {
+            return 5;
+        }
         if (type == 9 || type == 21 || type == 22) {
             return 1;
         }
@@ -308,6 +336,12 @@ export namespace compiler_catalog {
             return use_word(session,
                 "builtin::IommuEventSession;builtin::CallSession;builtin::Com1UartGrant;builtin::ServeSession", type
                 - 8, begin, end);
+        }
+        if (type == 35) {
+            return use_word(session, "builtin::WritableBlock", part, begin, end);
+        }
+        if (type == 34) {
+            return use_word(session, "builtin::ReadOnlyBlock", part, begin, end);
         }
         if (type > 25) {
             return host_type_word(session, type, part, begin, end);
@@ -451,9 +485,15 @@ export namespace compiler_catalog {
 
     // Sealed service operations, indexed by ServiceOperation.
     auto operation_count() -> i64 {
-        return 32;
+        return 46;
     }
     auto operation_kind(i64 operation) -> i64 {
+        if (operation >= 39 && operation < 46) {
+            return 8;
+        }
+        if (operation >= 36 && operation < 39) {
+            return 7;
+        }
         if (operation < 2) {
             return 0;
         }
@@ -469,13 +509,19 @@ export namespace compiler_catalog {
         if (operation < 8) {
             return 4;
         }
-        if (operation == 8) {
+        if (operation == 8 || (operation >= 32 && operation < 36)) {
             return 5;
         }
         return 6;
     }
     // Catalog type of a capability kind.
     auto kind_type(i64 kind) -> i64 {
+        if (kind == 8) {
+            return 35;
+        }
+        if (kind == 7) {
+            return 34;
+        }
         if (kind == 6) {
             return 26;
         }
@@ -489,6 +535,18 @@ export namespace compiler_catalog {
     }
     // Catalog type of the operation's result.
     auto operation_result(i64 operation) -> i64 {
+        if (operation >= 39 && operation < 46) {
+            if (operation == 40) {
+                return 2;
+            }
+            return 1;
+        }
+        if (operation == 36 || operation == 38) {
+            return 1;
+        }
+        if (operation == 37) {
+            return 2;
+        }
         if (operation == 0) {
             return 12;
         }
@@ -513,13 +571,15 @@ export namespace compiler_catalog {
         if (operation == 7) {
             return 23;
         }
-        if (operation == 8) {
+        if (operation == 8 || operation == 32) {
             return 24;
         }
-        if (operation == 9 || operation == 10 || operation == 24 || operation == 25 || operation == 28) {
+        if (operation == 9 || operation == 10 || operation == 24 || operation == 25 || operation == 28 || operation
+            == 35) {
             return 1;
         }
-        if (operation == 11 || operation == 12 || operation == 26 || operation == 27) {
+        if (operation == 11 || operation == 12 || operation == 26 || operation == 27 || operation == 33 || operation
+            == 34) {
             return 2;
         }
         if (operation == 14 || operation == 30) {
@@ -528,6 +588,12 @@ export namespace compiler_catalog {
         return 0;
     }
     auto parameter_count(i64 operation) -> i64 {
+        if (operation == 44 || operation == 45) {
+            return 0;
+        }
+        if (operation == 42) {
+            return 2;
+        }
         if (operation == 0 || operation == 3 || operation == 4 || operation == 20) {
             return 0;
         }
@@ -538,7 +604,7 @@ export namespace compiler_catalog {
             return 4;
         }
         if (operation == 7 || operation == 10 || operation == 12 || operation == 14 || operation == 19 || operation
-            == 21 || operation == 22 || operation == 24 || operation == 26 || operation == 30) {
+            == 21 || operation == 22 || operation == 24 || operation == 26 || operation == 30 || operation == 34) {
             return 2;
         }
         if (operation == 15 || operation == 17 || operation == 25 || operation == 27 || operation == 28 || operation
@@ -548,8 +614,9 @@ export namespace compiler_catalog {
         return 1;
     }
     auto parameter_kind(i64 operation, i64 index) -> compiler_resolver::ResolvedTypeKind {
-        if (operation == 1 || (operation == 2 && index > 1) || (operation == 7 && index == 1) || (operation == 12
-            && index == 1) || (operation == 27 && index == 2)) {
+        if ((operation == 42 && index == 1) || operation == 1 || (operation == 2 && index > 1) || (operation == 7
+            && index == 1) || (operation == 12 && index == 1) || (operation == 27 && index == 2) || (operation == 34
+            && index == 1)) {
             return compiler_resolver::ResolvedTypeKind::u8_value;
         }
         if (operation > 12 && operation < 20 && index == 0) {
@@ -558,6 +625,17 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::u64_value;
     }
     auto append_spelling(compiler_resolver::Session& session, i64 operation) -> i64 {
+        if (operation >= 39 && operation < 46) {
+            return use_word(session, "read_sector;sector_byte;descriptor;stage_byte;write_sector;flush;budget",
+                operation - 39, -1, 0);
+        }
+        if (operation >= 36 && operation < 39) {
+            return use_word(session, "read_sector;sector_byte;descriptor", operation - 36, -1, 0);
+        }
+        if (operation >= 32 && operation < 36) {
+            return use_word(session, "message_exchange;message_load;message_store;message_identity", operation - 32, -1,
+                0);
+        }
         if (operation > 28) {
             return use_word(session, "kernel_print;kernel_chunk;kernel_file", operation - 29, -1, 0);
         }
@@ -631,10 +709,36 @@ export namespace compiler_catalog {
     auto serve_service_group() -> i64 {
         return 4294967296;
     }
-    auto service_groups(bool call, bool port, bool serve, bool host) -> i64 {
+    // Explicit tags for groups whose capability masks exceed the legacy word.
+    // They are not permission for the old mask6 pair or mask7 triple.
+    auto block_service_group() -> i64 {
+        return 64;
+    }
+    auto serve_block_service_group() -> i64 {
+        return 128;
+    }
+    auto writer_service_group() -> i64 {
+        return 512;
+    }
+    auto serve_writer_service_group() -> i64 {
+        return 1024;
+    }
+    auto service_groups(bool call, bool port, bool serve, bool host, bool block, bool writer) -> i64 {
         i64 groups = base_service_groups();
+        if (writer) {
+            groups = groups + writer_service_group();
+            if (serve) {
+                groups = groups + serve_writer_service_group();
+            }
+        }
         if (host) {
             groups = groups + host_service_group();
+        }
+        if (block) {
+            groups = groups + block_service_group();
+            if (serve) {
+                groups = groups + serve_block_service_group();
+            }
         }
         if (call) {
             groups = groups + call_service_group();
@@ -667,7 +771,7 @@ export namespace compiler_catalog {
         }
         texts = texts + operation_count();
         Summary result = Summary(type_count(), texts, texts * maximum_word(), members, operation_count(), parameters);
-        result.set_policy(scalar_count(), service_groups(true, true, true, true));
+        result.set_policy(scalar_count(), service_groups(true, true, true, true, true, true));
         return result;
     }
 }

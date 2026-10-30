@@ -218,7 +218,7 @@ def validate_native_abi(facts, source):
         enum(
             "console::ProgramEffect",
             "invalid ready file_ready input note files upper read_note upper_note file peek wc crc unknown "
-            "note_saved file_reply abort_file exited failed",
+            "note_saved file_reply abort_file exited failed run",
         )
         record(
             "console::ProgramSessionUpdate",
@@ -336,16 +336,20 @@ def validate_native_abi(facts, source):
         )
         enum("console::FileEvent", "unknown written read removed listed missing invalid full reserved")
         record(
-            "FileUpdate",
+            "console::ProtectedFileCommand",
             520,
             [
                 ("files", "console::ProtectedFiles", 0),
                 ("reply", "console::FileReply", 0),
-                ("action", "u64", 0),
-                ("selection", "console::FileSelection", 0),
+                ("event", "u64", 0),
+                ("selected", "console::FileSelection", 0),
             ],
         )
-        entry("update_files", ["console::ProtectedFiles", "std::BinaryBuffer64", "i64", "u64"], "FileUpdate")
+        entry(
+            "update_files",
+            ["console::ProtectedFiles", "std::BinaryBuffer64", "i64", "u64"],
+            "console::ProtectedFileCommand",
+        )
         if "@replace_files@" in source:
             record("FileMutation", 352, [("files", "console::ProtectedFiles", 0), ("reply", "console::FileReply", 0)])
             entry(
@@ -439,6 +443,9 @@ def validate_native_abi(facts, source):
         entry("process_memory_find", ["span", "u64", "u64"], "u64")
         entry("process_memory_fault", ["span", "u64", "u64", "u64"], "u64")
         entry("process_memory_budget", ["span", "u64", "u64", "u64", "u64"], "kernel::MemoryBudget")
+        entry("process_path_text", ["u64"], "u64")
+
+    if "# PROCESS_FILES_ABI:" in source:
         enum(
             "kernel::FileStatus",
             "success invalid_handle not_found denied escape not_regular exhausted too_large invalid_path failed",
@@ -459,7 +466,6 @@ def validate_native_abi(facts, source):
         entry("process_file_write", ["span", "u64", "u64", "u64", "u64"], "kernel::FileChange")
         entry("process_file_commit", ["span", "span", "span", "u64"], "kernel::FileChange")
         entry("process_file_discard", ["span", "u64"], "kernel::FileChange")
-        entry("process_path_text", ["u64"], "u64")
         entry("process_directory_prefix", ["span", "u64", "u64"], "u64")
 
 

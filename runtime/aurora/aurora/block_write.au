@@ -1,0 +1,61 @@
+export module aurora.block_write;
+import storage.block_io;
+import storage.sector;
+import std.binary;
+import std.binary_buffer;
+
+// Only an independently minted recovery or mounted-service writer grant backs this binding.
+// Counts and budgets are observations, never write authority or reservations.
+export namespace block_write {
+    auto sector_count(builtin::WritableBlock& blocks) -> u64 {
+        return blocks.descriptor(0u64);
+    }
+    auto volume_generation(builtin::WritableBlock& blocks) -> u64 {
+        return blocks.descriptor(1u64);
+    }
+    auto remaining_commands(builtin::WritableBlock& blocks) -> u64 {
+        return blocks.budget();
+    }
+    auto read_sector(builtin::WritableBlock& blocks, u64 lba) -> storage::SectorReadResult {
+        const u64 raw = blocks.read_sector(lba);
+        storage::Sector512 sector = storage::Sector512();
+        storage::SectorIoStatus status = storage::SectorIoStatus::invalid_source;
+        if (raw == 0u64) {
+            status = storage::SectorIoStatus::success;
+            i64 index = 0;
+            while (index < 512) {
+                sector.write_byte(index, blocks.sector_byte(u64(index)));
+                index = index + 1;
+            }
+        }
+        if (raw == 1u64) {
+            status = storage::SectorIoStatus::out_of_range;
+        }
+        const storage::SectorReadResult result = storage::SectorReadResult(status, sector);
+        return result;
+    }
+    auto write_sector(builtin::WritableBlock& blocks, u64 lba, storage::Sector512 sector) -> storage::SectorIoStatus {
+        i64 index = 0;
+        while (index < 512) {
+            const std::ByteReadResult byte = sector.read_byte(index);
+            if (blocks.stage_byte(u64(index), u8(byte.value_or(0u64))) != 0u64) {
+                return storage::SectorIoStatus::invalid_source;
+            }
+            index = index + 1;
+        }
+        const u64 raw = blocks.write_sector(lba);
+        if (raw == 0u64) {
+            return storage::SectorIoStatus::success;
+        }
+        if (raw == 1u64) {
+            return storage::SectorIoStatus::out_of_range;
+        }
+        return storage::SectorIoStatus::invalid_source;
+    }
+    auto flush(builtin::WritableBlock& blocks) -> storage::SectorIoStatus {
+        if (blocks.flush() == 0u64) {
+            return storage::SectorIoStatus::success;
+        }
+        return storage::SectorIoStatus::invalid_source;
+    }
+}

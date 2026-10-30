@@ -257,6 +257,12 @@ Acceptance:
 Dependencies: X0, protected volume reads, S1 parsers/resources, explicit feature
 allowlist and bounded validated clean-log recognition.
 
+The fresh-format production slice is qualified. A separate pinned Linux 6.12.107
+clean-log profile has genuine used/wrapped reads and dirty-refusal evidence both
+hosted and through the protected NVMe source owner, plus explicit production
+activation with shipped clients. The namespace/security gaps below still keep
+X1 open; neither profile performs replay or writes.
+
 Acceptance:
 - Read the advertised inode/directory/extent forms, sparse/unwritten data,
   symlinks and supported security metadata from disposable mkfs.xfs images.

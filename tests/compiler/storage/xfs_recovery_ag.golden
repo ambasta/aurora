@@ -1,0 +1,261 @@
+Linux AG 0	1,64,59,32751
+Linux AG 1	1,0,0,32763
+Linux AG 2	1,0,0,16379
+Linux AG 3	1,0,0,32763
+invalid AG number 4	0,0,0,0
+invalid AG number 18446744073709551615	0,0,0,0
+short AGF	0,0,0,0
+invalid head	0,0,0,0
+torn AGF 0	0,0,0,0
+torn AGF 216	0,0,0,0
+torn AGF 511	0,0,0,0
+torn AGI 0	0,0,0,0
+torn AGI 312	0,0,0,0
+torn AGI 511	0,0,0,0
+AGF rejected field 0	0,0,0,0
+AGF rejected field 4	0,0,0,0
+AGF rejected field 8	0,0,0,0
+AGF rejected field 12	0,0,0,0
+AGF rejected field 16	0,0,0,0
+AGF rejected field 20	0,0,0,0
+AGF rejected field 24	0,0,0,0
+AGF rejected field 28	0,0,0,0
+AGF rejected field 36	0,0,0,0
+AGF rejected field 40	0,0,0,0
+AGF rejected field 44	0,0,0,0
+AGF rejected field 48	0,0,0,0
+AGF rejected field 52	0,0,0,0
+AGF rejected field 56	0,0,0,0
+AGF rejected field 60	0,0,0,0
+AGF rejected field 64	0,0,0,0
+AGF rejected field 80	0,0,0,0
+AGF rejected field 208	0,0,0,0
+AGF rejected field 220	0,0,0,0
+AGI rejected field 0	0,0,0,0
+AGI rejected field 4	0,0,0,0
+AGI rejected field 8	0,0,0,0
+AGI rejected field 12	0,0,0,0
+AGI rejected field 16	0,0,0,0
+AGI rejected field 20	0,0,0,0
+AGI rejected field 24	0,0,0,0
+AGI rejected field 28	0,0,0,0
+AGI rejected field 32	0,0,0,0
+AGI rejected field 36	0,0,0,0
+AGI rejected field 296	0,0,0,0
+AGI rejected field 316	0,0,0,0
+AGI rejected field 320	0,0,0,0
+AGI rejected field 328	0,0,0,0
+AGI rejected field 332	0,0,0,0
+AGI rejected field 336	0,0,0,0
+AGI rejected field 511	0,0,0,0
+unlinked bucket 0	0,0,0,0
+unlinked bucket 1	0,0,0,0
+unlinked bucket 2	0,0,0,0
+unlinked bucket 3	0,0,0,0
+unlinked bucket 4	0,0,0,0
+unlinked bucket 5	0,0,0,0
+unlinked bucket 6	0,0,0,0
+unlinked bucket 7	0,0,0,0
+unlinked bucket 8	0,0,0,0
+unlinked bucket 9	0,0,0,0
+unlinked bucket 10	0,0,0,0
+unlinked bucket 11	0,0,0,0
+unlinked bucket 12	0,0,0,0
+unlinked bucket 13	0,0,0,0
+unlinked bucket 14	0,0,0,0
+unlinked bucket 15	0,0,0,0
+unlinked bucket 16	0,0,0,0
+unlinked bucket 17	0,0,0,0
+unlinked bucket 18	0,0,0,0
+unlinked bucket 19	0,0,0,0
+unlinked bucket 20	0,0,0,0
+unlinked bucket 21	0,0,0,0
+unlinked bucket 22	0,0,0,0
+unlinked bucket 23	0,0,0,0
+unlinked bucket 24	0,0,0,0
+unlinked bucket 25	0,0,0,0
+unlinked bucket 26	0,0,0,0
+unlinked bucket 27	0,0,0,0
+unlinked bucket 28	0,0,0,0
+unlinked bucket 29	0,0,0,0
+unlinked bucket 30	0,0,0,0
+unlinked bucket 31	0,0,0,0
+unlinked bucket 32	0,0,0,0
+unlinked bucket 33	0,0,0,0
+unlinked bucket 34	0,0,0,0
+unlinked bucket 35	0,0,0,0
+unlinked bucket 36	0,0,0,0
+unlinked bucket 37	0,0,0,0
+unlinked bucket 38	0,0,0,0
+unlinked bucket 39	0,0,0,0
+unlinked bucket 40	0,0,0,0
+unlinked bucket 41	0,0,0,0
+unlinked bucket 42	0,0,0,0
+unlinked bucket 43	0,0,0,0
+unlinked bucket 44	0,0,0,0
+unlinked bucket 45	0,0,0,0
+unlinked bucket 46	0,0,0,0
+unlinked bucket 47	0,0,0,0
+unlinked bucket 48	0,0,0,0
+unlinked bucket 49	0,0,0,0
+unlinked bucket 50	0,0,0,0
+unlinked bucket 51	0,0,0,0
+unlinked bucket 52	0,0,0,0
+unlinked bucket 53	0,0,0,0
+unlinked bucket 54	0,0,0,0
+unlinked bucket 55	0,0,0,0
+unlinked bucket 56	0,0,0,0
+unlinked bucket 57	0,0,0,0
+unlinked bucket 58	0,0,0,0
+unlinked bucket 59	0,0,0,0
+unlinked bucket 60	0,0,0,0
+unlinked bucket 61	0,0,0,0
+unlinked bucket 62	0,0,0,0
+unlinked bucket 63	0,0,0,0
+Linux allocated inode 0	1,0,0,0
+Linux allocated inode 95	1,0,0,0
+Linux allocated inode 96	1,1,0,0
+Linux allocated inode 97	1,1,0,0
+Linux allocated inode 98	1,1,0,0
+Linux allocated inode 99	1,1,0,0
+Linux allocated inode 100	1,1,0,0
+Linux allocated inode 101	1,0,0,0
+Linux allocated inode 159	1,0,0,0
+Linux allocated inode 160	1,0,0,0
+Linux allocated inode 18446744073709551615	1,0,0,0
+Linux empty INOBT AG 1	1,0,0,0
+Linux empty INOBT AG 2	1,0,0,0
+Linux empty INOBT AG 3	1,0,0,0
+short INOBT	0,0,0,0
+torn INOBT 0	0,0,0,0
+torn INOBT 52	0,0,0,0
+torn INOBT 56	0,0,0,0
+torn INOBT 4095	0,0,0,0
+INOBT rejected field 0 value 0	0,0,0,0
+INOBT rejected field 4 value 1	0,0,0,0
+INOBT rejected field 6 value 253	0,0,0,0
+INOBT rejected field 8 value 3	0,0,0,0
+INOBT rejected field 12 value 3	0,0,0,0
+INOBT rejected field 16 value 25	0,0,0,0
+INOBT rejected field 24 value 4294967304	0,0,0,0
+INOBT rejected field 32 value 0	0,0,0,0
+INOBT rejected field 48 value 1	0,0,0,0
+INOBT rejected field 56 value 97	0,0,0,0
+INOBT rejected field 56 value 262136	0,0,0,0
+INOBT rejected field 60 value 58	0,0,0,0
+INOBT rejected field 60 value 65	0,0,0,0
+INOBT rejected field 64 value 18446744073709551615	0,0,0,0
+INOBT AGI count mismatch	0,0,0,0
+INOBT AGI free count mismatch	0,0,0,0
+synthetic two ordered chunks	1,1,0,0
+later overlapping record rejects allocated target	0,0,0,0
+later malformed count rejects allocated target	0,0,0,0
+mounted ownership complete headers	1,0,0,0
+mounted ownership headers sb field128	0,0,0,0
+mounted ownership headers sb field136	0,0,0,0
+mounted ownership headers sb field16	0,0,0,0
+mounted ownership headers sb field64	0,0,0,0
+mounted ownership headers agf field16	0,0,0,0
+mounted ownership headers agf field20	0,0,0,0
+mounted ownership headers agf field40	0,0,0,0
+mounted ownership headers agf field48	0,0,0,0
+mounted ownership headers agf field52	0,0,0,0
+mounted ownership headers agf field60	0,0,0,0
+mounted ownership headers agi field16	0,0,0,0
+mounted ownership headers agi field28	0,0,0,0
+mounted ownership headers agi field20	0,0,0,0
+mounted ownership headers agi field328	0,0,0,0
+mounted ownership AGFL field40	0,0,0,0
+mounted ownership AGFL field44	0,0,0,0
+mounted ownership AGFL field36	0,0,0,0
+mounted ownership AGFL field4	0,0,0,0
+mounted ownership AGFL field8	0,0,0,0
+mounted ownership AGFL field24	0,0,0,0
+mounted ownership complete leaf1	1,0,0,0
+mounted ownership leaf1 field0	0,0,0,0
+mounted ownership leaf1 field4	0,0,0,0
+mounted ownership leaf1 field6	0,0,0,0
+mounted ownership leaf1 field8	0,0,0,0
+mounted ownership leaf1 field16	0,0,0,0
+mounted ownership leaf1 field24	0,0,0,0
+mounted ownership leaf1 field32	0,0,0,0
+mounted ownership leaf1 field48	0,0,0,0
+mounted ownership leaf1 field72	0,0,0,0
+mounted ownership leaf1 field4095	0,0,0,0
+mounted ownership leaf1 field56	0,0,0,0
+mounted ownership leaf1 field56	0,0,0,0
+mounted ownership leaf1 field64	0,0,0,0
+mounted ownership leaf1 field68	0,0,0,0
+mounted ownership leaf1 torn checksum	0,0,0,0
+mounted ownership complete leaf2	1,0,0,0
+mounted ownership leaf2 field0	0,0,0,0
+mounted ownership leaf2 field4	0,0,0,0
+mounted ownership leaf2 field6	0,0,0,0
+mounted ownership leaf2 field8	0,0,0,0
+mounted ownership leaf2 field16	0,0,0,0
+mounted ownership leaf2 field24	0,0,0,0
+mounted ownership leaf2 field32	0,0,0,0
+mounted ownership leaf2 field48	0,0,0,0
+mounted ownership leaf2 field72	0,0,0,0
+mounted ownership leaf2 field4095	0,0,0,0
+mounted ownership leaf2 field56	0,0,0,0
+mounted ownership leaf2 field56	0,0,0,0
+mounted ownership leaf2 field64	0,0,0,0
+mounted ownership leaf2 field68	0,0,0,0
+mounted ownership leaf2 torn checksum	0,0,0,0
+mounted ownership complete leaf3	1,0,0,0
+mounted ownership leaf3 field0	0,0,0,0
+mounted ownership leaf3 field4	0,0,0,0
+mounted ownership leaf3 field6	0,0,0,0
+mounted ownership leaf3 field8	0,0,0,0
+mounted ownership leaf3 field16	0,0,0,0
+mounted ownership leaf3 field24	0,0,0,0
+mounted ownership leaf3 field32	0,0,0,0
+mounted ownership leaf3 field48	0,0,0,0
+mounted ownership leaf3 field72	0,0,0,0
+mounted ownership leaf3 field4095	0,0,0,0
+mounted ownership leaf3 field56	0,0,0,0
+mounted ownership leaf3 field60	0,0,0,0
+mounted ownership leaf3 field64	0,0,0,0
+mounted ownership leaf3 torn checksum	0,0,0,0
+mounted ownership complete leaf4	1,0,0,0
+mounted ownership leaf4 field0	0,0,0,0
+mounted ownership leaf4 field4	0,0,0,0
+mounted ownership leaf4 field6	0,0,0,0
+mounted ownership leaf4 field8	0,0,0,0
+mounted ownership leaf4 field16	0,0,0,0
+mounted ownership leaf4 field24	0,0,0,0
+mounted ownership leaf4 field32	0,0,0,0
+mounted ownership leaf4 field48	0,0,0,0
+mounted ownership leaf4 field72	0,0,0,0
+mounted ownership leaf4 field4095	0,0,0,0
+mounted ownership leaf4 field56	0,0,0,0
+mounted ownership leaf4 field60	0,0,0,0
+mounted ownership leaf4 field64	0,0,0,0
+mounted ownership leaf4 torn checksum	0,0,0,0
+mounted ownership empty special97	1,0,0,0
+mounted ownership special97 field56	0,0,0,0
+mounted ownership special97 field64	0,0,0,0
+mounted ownership special97 field76	0,0,0,0
+mounted ownership special97 field78	0,0,0,0
+mounted ownership special97 field82	0,0,0,0
+mounted ownership special97 field83	0,0,0,0
+mounted ownership special97 field120	0,0,0,0
+mounted ownership special97 field152	0,0,0,0
+mounted ownership special97 field176	0,0,0,0
+mounted ownership special97 field184	0,0,0,0
+mounted ownership special97 field112	0,0,0,0
+mounted ownership empty special98	1,0,0,0
+mounted ownership special98 field56	0,0,0,0
+mounted ownership special98 field64	0,0,0,0
+mounted ownership special98 field76	0,0,0,0
+mounted ownership special98 field78	0,0,0,0
+mounted ownership special98 field82	0,0,0,0
+mounted ownership special98 field83	0,0,0,0
+mounted ownership special98 field120	0,0,0,0
+mounted ownership special98 field152	0,0,0,0
+mounted ownership special98 field176	0,0,0,0
+mounted ownership special98 field184	0,0,0,0
+mounted ownership special98 field112	0,0,0,0
+mounted ownership short leaf	0,0,0,0
+mounted ownership unknown leaf	0,0,0,0

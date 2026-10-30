@@ -26,7 +26,8 @@ frontend_modules = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler
                         'compiler/x86_storage.au', 'compiler/x86_object_storage.au',
                         'compiler/x86_helpers.au', 'compiler/x86_scalar.au',
                         'compiler/x86_objects.au', 'compiler/x86_resources.au', 'compiler/x86_facts.au',
-                        'compiler/x86_module.au', 'compiler/private_object.au', 'compiler/frontend_wrapper.au',
+                        'compiler/x86_module.au', 'compiler/private_object.au', 'compiler/static_link.au',
+                        'compiler/frontend_wrapper.au',
                         'library/std/decimal_digits.au', 'library/std/binary.au',
                         'compiler/lowering_common.au', 'compiler/lowering_configuration.au',
                         'compiler/lowering_types.au', 'compiler/lowering_values.au', 'compiler/lowering_frames.au',
@@ -58,7 +59,10 @@ if (hosted_runtime_root.contains('"') or hosted_runtime_root.contains('\\') or k
 endif
 hosted_runtime_sources = files('runtime/linux/aurora/host.au', 'runtime/linux/aurora/memory.au')
 subdir('runtime/aurora/aurora')
-kernel_runtime_sources = files('runtime/aurora/aurora/host.au', 'runtime/linux/aurora/memory.au')
+kernel_runtime_sources = files('runtime/aurora/aurora/host.au', 'runtime/aurora/aurora/endpoint.au',
+                               'runtime/aurora/aurora/block.au', 'runtime/aurora/aurora/block_write.au', 'library/storage/block_io.au',
+                               'library/storage/sector.au', 'library/std/binary.au',
+                               'library/std/binary_buffer.au', 'runtime/linux/aurora/memory.au')
 hosted_linker = find_program('ld', native: true)
 compiler_driver = configure_file(input: 'compiler/aurorac.au', output: 'aurorac.au',
                                  configuration: {'AURORA_RUNTIME_ROOT': hosted_runtime_root,
@@ -148,9 +152,12 @@ endforeach
 # --target aurora objects linked like the hosted programs, the --target aurora
 # build of the compiler itself, and GNU as programs.
 process_programs = {}
+process_linked = []
 if get_option('kernel_images')
+  guest_compiler_driver = configure_file(input: 'compiler/aurorac.au', output: 'aurorac-guest.au',
+      configuration: {'AURORA_RUNTIME_ROOT': '/runtime/linux', 'AURORA_KERNEL_RUNTIME_ROOT': '/runtime/aurora'})
   aurorac_aurora_object = custom_target(
-    'aurorac-aurora-object', input: [compiler_driver] + frontend_modules, output: 'aurorac-aurora.o',
+    'aurorac-aurora-object', input: [guest_compiler_driver] + frontend_modules, output: 'aurorac-aurora.o',
     command: compiler_stage + [aurorac, '--program', kernel_runtime_root, '--target', 'aurora', '--output',
                                '@OUTPUT@', '@INPUT@'],
     depend_files: kernel_runtime_sources, build_by_default: false,
@@ -158,16 +165,77 @@ if get_option('kernel_images')
   process_programs += {'aurora:aurorac': custom_target('aurorac-aurora', input: aurorac_aurora_object,
                                                        output: 'aurorac-aurora', command: compiler_link,
                                                        build_by_default: false)}
+  file_service_sources = files('services/service/files.au', 'services/service/xfs.au', 'services/service/console.au',
+      'services/service/protocol.au',
+      'kernel/policies/kernel/process_files.au', 'kernel/policies/kernel/boot_volume.au',
+      'library/fs/xfs_mount.au', 'library/fs/xfs_log.au', 'library/fs/xfs_geometry.au', 'library/fs/xfs_probe.au',
+      'library/fs/xfs_root.au', 'library/fs/xfs_file.au', 'library/storage/sector.au',
+      'library/storage/sector_window.au', 'library/storage/block_io.au', 'library/std/binary.au',
+      'library/std/binary_buffer.au', 'library/std/bytes.au', 'library/std/bit.au', 'library/std/checksum.au',
+      'library/console/protected_commands.au', 'library/console/protected_files.au', 'library/console/session_note.au',
+      'library/console/session_files.au', 'library/console/file_namespace.au', 'library/std/array.au', 'library/std/decimal.au')
+  file_service_object = custom_target('file-service-aurora-object', input: 'services/file-service.au',
+      output: 'file-service-aurora.o',
+      command: [aurorac, '--emit-object', '--target', 'aurora', '--module-root',
+                meson.current_source_dir() / 'services', '--module-root',
+                meson.current_source_dir() / 'kernel/policies', '--module-root',
+                meson.current_source_dir() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+      depend_files: kernel_runtime_sources + file_service_sources)
+  process_programs += {'aurora:file-service': custom_target('file-service-aurora', input: file_service_object,
+      output: 'file-service-aurora', command: compiler_link)}
+  xfs_recovery_sources = files('library/fs/xfs_recovery.au', 'library/fs/xfs_recovery_ag.au',
+      'library/fs/xfs_core_log.au', 'library/fs/xfs_core_redo.au', 'library/fs/xfs_log.au',
+      'library/fs/xfs_geometry.au', 'library/fs/xfs_probe.au', 'library/fs/xfs_root.au', 'library/fs/xfs_file.au',
+      'library/storage/sector.au', 'library/storage/sector_window.au', 'library/storage/block_io.au',
+      'library/std/binary.au', 'library/std/binary_buffer.au', 'library/std/bytes.au',
+      'library/std/bit.au', 'library/std/checksum.au')
+  xfs_recovery_object = custom_target('xfs-recover-aurora-object', input: 'services/xfs-recover.au',
+      output: 'xfs-recover-aurora.o',
+      command: [aurorac, '--emit-object', '--target', 'aurora', '--module-root',
+                meson.current_source_dir() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+      depend_files: kernel_runtime_sources + xfs_recovery_sources, build_by_default: false)
+  process_programs += {'aurora:xfs-recover': custom_target('xfs-recover-aurora', input: xfs_recovery_object,
+      output: 'xfs-recover-aurora', command: [aurorac, '--link-object', '@INPUT@', '-o', '@OUTPUT@'],
+      build_by_default: false)}
+  mounted_service_object = custom_target('file-service-mounted-aurora-object',
+      input: 'services/file-service-mounted.au', output: 'file-service-mounted-aurora.o',
+      command: [aurorac, '--emit-object', '--target', 'aurora', '--module-root',
+                meson.current_source_dir() / 'services', '--module-root',
+                meson.current_source_dir() / 'kernel/policies', '--module-root',
+                meson.current_source_dir() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+      depend_files: kernel_runtime_sources + file_service_sources + xfs_recovery_sources +
+                    files('services/service/xfs_output.au', 'library/fs/xfs_commit.au', 'library/fs/xfs_commit_log.au'),
+      build_by_default: false)
+  process_programs += {'aurora:file-service-mounted': custom_target('file-service-mounted-aurora',
+      input: mounted_service_object, output: 'file-service-mounted-aurora',
+      command: [aurorac, '--link-object', '@INPUT@', '-o', '@OUTPUT@'], build_by_default: false)}
+  console_commit_hostile_object = custom_target('console-commit-hostile-aurora-object',
+      input: 'tests/kernel-process/console-commit-hostile.au', output: 'console-commit-hostile-aurora.o',
+      command: [aurorac, '--emit-object', '--target', 'aurora', '--module-root',
+                meson.current_source_dir() / 'services', '--module-root',
+                meson.current_source_dir() / 'kernel/policies', '--module-root',
+                meson.current_source_dir() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+      depend_files: kernel_runtime_sources + file_service_sources, build_by_default: false)
+  process_programs += {'aurora:console-commit-hostile': custom_target('console-commit-hostile-aurora',
+      input: console_commit_hostile_object, output: 'console-commit-hostile-aurora',
+      command: compiler_link, build_by_default: false)}
   foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
                           'host-files-probe': 'tests/host-files/probe.au',
                           'host-sort': 'examples/host-sort.au',
                           'host-memory-probe': 'tests/host-files/memory.au',
-                          'process-hostile': 'tests/kernel-process/hostile.au'}
+                          'process-hostile': 'tests/kernel-process/hostile.au',
+                          'process-lifecycle': 'tests/kernel-process/lifecycle.au'}
     process_object = custom_target(name + '-aurora-object', input: source, output: name + '-aurora.o',
         command: [aurorac, '--emit-object', '--target', 'aurora', '@INPUT@', '-o', '@OUTPUT@'],
         depend_files: kernel_runtime_sources)
     process_programs += {'aurora:' + name: custom_target(name + '-aurora', input: process_object,
                                                          output: name + '-aurora', command: compiler_link)}
+    if name == 'host-sort'
+      # The process-compile row emits these bytes itself, without a host link.
+      process_linked += custom_target('host-sort-aurora-native', input: process_object,
+          output: 'host-sort-aurora-native', build_by_default: false,
+          command: [aurorac, '--link-object', '@INPUT@', '-o', '@OUTPUT@'])
+    endif
   endforeach
   recurse_object = custom_target('process-recurse-object', input: 'tests/kernel-process/recurse.S',
       output: 'process-recurse.o', command: [find_program('as', native: true), '--64', '-mx86-used-note=no',
@@ -188,10 +256,13 @@ if get_option('kernel_images')
 endif
 # The build products a guest row's exports must equal (tests/kernel-process-smoke.py
 # reads them from the build root).
-process_references = {'process-compile': [hosted_objects['host-sort']], 'process-self-host': [aurorac_stage2_object]}
-process_reference_objects = [hosted_objects['host-sort'], aurorac_stage2_object]
+process_references = {'process-compile': [hosted_objects['host-sort']] + process_linked,
+                      'process-self-host': [aurorac_stage2_object]}
+process_reference_objects = [hosted_objects['host-sort'], aurorac_stage2_object] + process_linked
 # Sources a volume holds as configured (the compiler's driver, which C1 compiles).
-process_sources = {'source:aurorac': compiler_driver}
+process_sources = {'source:aurorac': compiler_driver, 'source:aurora-memory': hosted_runtime_sources[1],
+                   'source:host-sort': files('examples/host-sort.au')[0],
+                   'source:host-sort-input': files('examples/host-sort-input.txt')[0]}
 
 # Preserve the configured compiler command (including wrappers and quoted paths)
 # for the existing Python native observer. This does not build or run a test.

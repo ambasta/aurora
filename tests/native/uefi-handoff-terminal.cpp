@@ -1,4 +1,4 @@
-// The handoff layout tables for the graphical-terminal (v7) header.
+// The handoff layout tables for the graphical-terminal (v10 production) header.
 #include "../kernel-uefi-handoff.cpp"
 #include "driver.hpp"
 

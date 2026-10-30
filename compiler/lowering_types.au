@@ -1041,6 +1041,9 @@ export namespace compiler_lowering {
     auto memory_runtime_unit(compiler_resolver::Session& session, i64 unit) -> bool {
         return runtime_unit(session, unit, "memory");
     }
+    auto endpoint_runtime_unit(compiler_resolver::Session& session, i64 unit) -> bool {
+        return runtime_unit(session, unit, "endpoint");
+    }
     auto runtime_unit(compiler_resolver::Session& session, i64 unit, builtin::span<const u8> leaf) -> bool {
         if (unit < 0 || unit >= session.module_count() || compiler_resolver::mw(session, unit, 13) == 0) {
             return false;
@@ -1055,9 +1058,9 @@ export namespace compiler_lowering {
         const i64 parent = compiler_resolver::prefix_parent(session, name);
         return compiler_resolver::plain_is(session, parent, "aurora");
     }
-    // A root-module `main` naming HostFiles or HostExit is the hosted entry and
-    // must have exactly its signature; nothing else receives HostFiles from the
-    // host.
+    // Source process entries receive only the exact explicitly named grants.
+    // A block-enabled retained server adds one distinct leading capability;
+    // it never derives block authority from Serve or the allocation region.
     auto hosted_entry_admitted(compiler_resolver::Session& session, i64 symbol) -> bool {
         const i64 unit = tm(session, symbol, 1);
         const i64 name = tm(session, symbol, 3);
@@ -1068,23 +1071,80 @@ export namespace compiler_lowering {
         const i64 count = signature_count(session, symbol);
         const i64 result = signature_result(session, symbol);
         const i64 exit = compiler_resolver::catalog_type(session, 27);
-        bool hosted = exit >= 0 && result == exit;
+        bool process = exit >= 0 && result == exit;
         i64 at = 0;
         while (at < count && session.good()) {
-            hosted = hosted || parameter_kind(session, symbol, at) == compiler_resolver::ResolvedTypeKind::host_files;
+            const compiler_resolver::ResolvedTypeKind kind = parameter_kind(session, symbol, at);
+            process = process || kind == compiler_resolver::ResolvedTypeKind::host_files || kind
+                == compiler_resolver::ResolvedTypeKind::serve_session || kind
+                == compiler_resolver::ResolvedTypeKind::read_only_block || kind
+                == compiler_resolver::ResolvedTypeKind::writable_block;
             at = at + 1;
         }
-        if (!hosted) {
+        if (!process) {
             return true;
         }
-        // The optional region follows the capability: main(files, region, arguments).
-        const i64 span = count - 1;
-        return (count == 2 || (count == 3 && parameter_kind(session, symbol, 1)
-            == compiler_resolver::ResolvedTypeKind::byte_region && !parameter_borrowed(session, symbol, 1))) && result
-            == exit && parameter_kind(session, symbol, 0) == compiler_resolver::ResolvedTypeKind::host_files
-            && parameter_borrowed(session, symbol, 0) && !parameter_const(session, symbol, 0) && parameter_kind(session,
-            symbol, span) == compiler_resolver::ResolvedTypeKind::byte_span && !parameter_borrowed(session, symbol,
-            span);
+        if (count < 2 || result != exit || !parameter_borrowed(session, symbol, 0) || parameter_const(session, symbol,
+            0)) {
+            return false;
+        }
+        const compiler_resolver::ResolvedTypeKind first = parameter_kind(session, symbol, 0);
+        i64 region = -1;
+        if (first == compiler_resolver::ResolvedTypeKind::host_files && (count == 2 || count == 3)) {
+            if (count == 3) {
+                region = 1;
+            }
+        } else {
+            if (first == compiler_resolver::ResolvedTypeKind::writable_block) {
+                if (count != 3) {
+                    return false;
+                }
+                region = 1;
+            } else {
+                if (first != compiler_resolver::ResolvedTypeKind::serve_session || (count != 3 && count != 4)) {
+                    return false;
+                }
+                region = count - 2;
+                if (count == 4 && ((parameter_kind(session, symbol, 1)
+                    != compiler_resolver::ResolvedTypeKind::read_only_block && parameter_kind(session, symbol, 1)
+                    != compiler_resolver::ResolvedTypeKind::writable_block) || !parameter_borrowed(session, symbol, 1)
+                    || parameter_const(session, symbol, 1))) {
+                    return false;
+                }
+            }
+        }
+        if (region >= 0 && (parameter_kind(session, symbol, region) != compiler_resolver::ResolvedTypeKind::byte_region
+            || parameter_borrowed(session, symbol, region))) {
+            return false;
+        }
+        return parameter_kind(session, symbol, count - 1) == compiler_resolver::ResolvedTypeKind::byte_span
+            && !parameter_borrowed(session, symbol, count - 1);
+    }
+    auto service_region_parameter(compiler_resolver::Session& session, i64 symbol) -> i64 {
+        const i64 count = signature_count(session, symbol);
+        if (count < 2) {
+            return -1;
+        }
+        const compiler_resolver::ResolvedTypeKind first = parameter_kind(session, symbol, 0);
+        const compiler_resolver::ResolvedTypeKind second = parameter_kind(session, symbol, 1);
+        if ((first == compiler_resolver::ResolvedTypeKind::console_session || first
+            == compiler_resolver::ResolvedTypeKind::host_files || first
+            == compiler_resolver::ResolvedTypeKind::serve_session || first
+            == compiler_resolver::ResolvedTypeKind::read_only_block || first
+            == compiler_resolver::ResolvedTypeKind::writable_block) && second
+            == compiler_resolver::ResolvedTypeKind::byte_region) {
+            return 1;
+        }
+        if (count >= 3 && ((first == compiler_resolver::ResolvedTypeKind::serve_session && (second
+            == compiler_resolver::ResolvedTypeKind::read_only_block || second
+            == compiler_resolver::ResolvedTypeKind::writable_block)) || ((first
+            == compiler_resolver::ResolvedTypeKind::read_only_block || first
+            == compiler_resolver::ResolvedTypeKind::writable_block) && second
+            == compiler_resolver::ResolvedTypeKind::serve_session)) && parameter_kind(session, symbol, 2)
+            == compiler_resolver::ResolvedTypeKind::byte_region) {
+            return 2;
+        }
+        return -1;
     }
     // Whether the runtime module defines host::LEAF, a hook the hosted entry calls.
     auto host_runtime_hook(compiler_resolver::Session& session, builtin::span<const u8> leaf) -> bool {
@@ -1178,11 +1238,8 @@ export namespace compiler_lowering {
             const i64 first_type = parameter_type(session, symbol, 0);
             service = compiler_resolver::service_kind(tk(session, first_type));
         }
-        // The mixed prefixes ConsoleSession& or HostFiles&, then one ByteRegion.
-        const bool console_region = service && count >= 2 && (parameter_kind(session, symbol, 0)
-            == compiler_resolver::ResolvedTypeKind::console_session || parameter_kind(session, symbol, 0)
-            == compiler_resolver::ResolvedTypeKind::host_files) && parameter_kind(session, symbol, 1)
-            == compiler_resolver::ResolvedTypeKind::byte_region;
+        const i64 service_region = service_region_parameter(session, symbol);
+        const bool console_region = service && service_region >= 0;
         if (service) {
             i64 services = 0;
             i64 first = -1;
@@ -1220,7 +1277,7 @@ export namespace compiler_lowering {
             }
             at = services;
             if (console_region) {
-                at = 2;
+                at = service_region + 1;
             }
             while (at < count && session.good()) {
                 const i64 type = parameter_type(session, symbol, at);
@@ -1253,9 +1310,12 @@ export namespace compiler_lowering {
             || !host_runtime_hook(session, "finish"))) {
             return fail(session, LoweringError::host_operation_requires_runtime_module, source);
         }
-        if (count == 3 && parameter_kind(session, symbol, 0) == compiler_resolver::ResolvedTypeKind::host_files
-            && entry_unit >= 0 && compiler_resolver::mw(session, entry_unit, 13) == 0
-            && compiler_resolver::plain_is(session, entry_name, "main") && !host_memory_runtime(session)) {
+        if (service_region >= 0 && (parameter_kind(session, symbol, 0)
+            == compiler_resolver::ResolvedTypeKind::host_files || parameter_kind(session, symbol, 0)
+            == compiler_resolver::ResolvedTypeKind::serve_session || parameter_kind(session, symbol, 0)
+            == compiler_resolver::ResolvedTypeKind::writable_block) && entry_unit >= 0 && compiler_resolver::mw(session,
+            entry_unit, 13) == 0 && compiler_resolver::plain_is(session, entry_name, "main")
+            && !host_memory_runtime(session)) {
             return fail(session, LoweringError::hosted_region_requires_memory_runtime, source);
         }
         if (borrowed > 0 && !service) {

@@ -1,0 +1,8 @@
+{
+  "append-clean.img": "a764493bba9ea4501ed0b8c73bf5af50c191bd22b4ef4578fc36c259f53a4406",
+  "append-clean.img.xz": "a99963669b1e420bada1a2178dd11bd2c5bee50a9a513bc859d0e48f09911ea7",
+  "append-root-linux-data.hex": "805e5b149e3c9d675caeb9c07a3602bb393d7bcc7dc9cf68d47c7f24cfc1dffa",
+  "append-stage-linux-data.hex": "805e5b149e3c9d675caeb9c07a3602bb393d7bcc7dc9cf68d47c7f24cfc1dffa",
+  "append-stage-linux.hex": "33f96d4a43baae70c8d659cb3b137665a61ee07276c4273be6240542051add71",
+  "append-writes.hex": "8bea31768b7e47b8a76612bde2dc34be0776fb353df6e0c9884cb5d385faff45"
+}

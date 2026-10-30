@@ -1,0 +1,95 @@
+module xfs_recovery_program;
+import aurora.memory;
+import aurora.block_write;
+import std.binary;
+import std.binary_buffer;
+import storage.block_io;
+import storage.sector;
+import fs.xfs_log;
+import fs.xfs_geometry;
+import fs.xfs_probe;
+import fs.xfs_root;
+import fs.xfs_file;
+import fs.xfs_core_log;
+import fs.xfs_core_redo;
+import fs.xfs_recovery_ag;
+import fs.xfs_recovery;
+
+// A closed boot-selected role receives this singleton grant. A path, argument,
+// or copied plan cannot obtain write authority. No operation is retried.
+auto main(builtin::WritableBlock& blocks, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const u64 capacity = block_write::sector_count(blocks);
+    const u64 generation = block_write::volume_generation(blocks);
+    if (capacity == 0u64 || generation == 0u64) {
+        return builtin::HostExit::failure;
+    }
+    builtin::OwnedBytes cache = region.try_allocate(49152);
+    builtin::OwnedBytes input = region.try_allocate(512);
+    if (!input.ok()) {
+        return builtin::HostExit::failure;
+    }
+    const fs::XfsRecoveryConfig config = fs::XfsRecoveryConfig(capacity,
+        fs::XfsRecoveryProfile::linux_6_12_x86_64_core);
+    const fs::XfsLogTopology topology = fs::XfsLogTopology();
+    fs::XfsCoreRecoveryPlan plan = fs::XfsCoreRecoveryPlan(region, move(cache), config, topology);
+    while (plan.needs_read()) {
+        const u64 lba = plan.requested_lba();
+        const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
+        if (read.status() != storage::SectorIoStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        const storage::Sector512 sector = read.sector_or_zero();
+        i64 at = 0;
+        while (at < 512) {
+            const std::ByteReadResult byte = sector.read_byte(at);
+            input.set(at, u8(byte.value_or(0u64)));
+            at = at + 1;
+        }
+        plan.accept(lba, read.status(), borrow_bytes(input));
+    }
+    if ((plan.status() != fs::XfsRecoveryStatus::ready && plan.status() != fs::XfsRecoveryStatus::already_clean)
+        || block_write::volume_generation(blocks) != generation || block_write::sector_count(blocks) != capacity
+        || block_write::remaining_commands(blocks) < plan.required_remaining_commands()) {
+        return builtin::HostExit::failure;
+    }
+    if (plan.status() == fs::XfsRecoveryStatus::already_clean) {
+        if (block_write::flush(blocks) != storage::SectorIoStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        return builtin::HostExit::success;
+    }
+    u64 index = 0u64;
+    while (index < plan.write_count()) {
+        const fs::XfsRecoveryWrite write = plan.write_at(index);
+        if (!write.valid()) {
+            return builtin::HostExit::failure;
+        }
+        const storage::Sector512 sector = write.sector_or_zero();
+        if (block_write::write_sector(blocks, write.lba(), sector) != storage::SectorIoStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        index = index + 1u64;
+    }
+    // The clean header is not published until every home and then the exact
+    // completion body has acknowledged its own durable Flush.
+    if (block_write::flush(blocks) != storage::SectorIoStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    index = 0u64;
+    while (index < 2u64) {
+        const fs::XfsRecoveryWrite completion = plan.completion_at(index);
+        if (!completion.valid()) {
+            return builtin::HostExit::failure;
+        }
+        const storage::Sector512 sector = completion.sector_or_zero();
+        if (block_write::write_sector(blocks, completion.lba(), sector) != storage::SectorIoStatus::success
+            || block_write::flush(blocks) != storage::SectorIoStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        index = index + 1u64;
+    }
+    // The kernel still must revoke/retire this role before minting a fresh RO
+    // grant; the file service independently validates the resulting volume.
+    return builtin::HostExit::success;
+}

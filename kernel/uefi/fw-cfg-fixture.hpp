@@ -8,6 +8,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <array>
+#include <span>
+#include <string_view>
 namespace aurora::uefi::fw_cfg {
 enum class Fixture : unsigned char {
 #define AURORA_FIXTURE(name, mode, image, value) name = value,
@@ -15,6 +18,13 @@ enum class Fixture : unsigned char {
 #undef AURORA_FIXTURE
 };
 // Legacy I/O interface: 16-bit selector at 0x510, data bytes at 0x511.
+enum class Storage {
+    ram,
+    nvme,
+    nvme_linux_6_12_clean,
+    nvme_linux_6_12_recover,
+    nvme_linux_6_12_write
+};
 class FwCfg final {
     static auto select(std::uint16_t key) -> void {
         asm volatile("outw %0, %1" : : "a"(key), "Nd"(std::uint16_t{0x510}) : "memory");
@@ -32,6 +42,70 @@ class FwCfg final {
     }
 
 public:
+    [[nodiscard]] static auto storage_word(std::span<const std::byte> value) -> std::optional<Storage> {
+        // QEMU system/vl.c parse_fw_cfg uses strlen: the CLI string excludes NUL.
+        if (value.size() != 4 && value.size() != 21 && value.size() != 23)
+            return std::nullopt;
+        constexpr std::string_view names[] = {
+            "nvme", "nvme-linux-6.12-clean", "nvme-linux-6.12-recover", "nvme-linux-6.12-write"};
+        for (unsigned kind = 0; kind < 4; ++kind) {
+            const auto name = names[kind];
+            if (value.size() != name.size())
+                continue;
+            bool same = true;
+            for (std::size_t i = 0; same && i < value.size(); ++i)
+                same = value[i] == static_cast<std::byte>(name[i]);
+            if (same)
+                return static_cast<Storage>(kind + 1);
+        }
+        return std::nullopt;
+    }
+#if defined(AURORA_PRODUCTION) && defined(AURORA_UEFI_NVME)
+    // Explicit production opt-in, independent of fixture/case selectors. No
+    // fw_cfg provider or an absent file keeps the ordinary RAM composition.
+    [[nodiscard]] static auto read_storage() -> std::optional<Storage> {
+        select(0);
+        bool provider = true;
+        for (unsigned i = 0; i < 4; ++i)
+            provider = (byte() == static_cast<unsigned char>("QEMU"[i])) && provider;
+        if (!provider)
+            return Storage::ram;
+        static constexpr char wanted[] = "opt/aurora/storage";
+        select(0x19);
+        const auto count = big(4);
+        if (count > 4096)
+            return std::nullopt;
+        std::optional<std::uint16_t> key;
+        std::uint32_t selected_size{};
+        for (std::uint32_t entry = 0; entry < count; ++entry) {
+            const auto size = big(4);
+            const auto selector = static_cast<std::uint16_t>(big(2));
+            const auto reserved = big(2);
+            bool match = true, padded = true;
+            for (std::size_t i = 0; i < 56; ++i) {
+                const auto value = byte();
+                if (i < sizeof(wanted))
+                    match = (value == static_cast<unsigned char>(wanted[i])) && match;
+                else
+                    padded = (value == 0) && padded;
+            }
+            if (match) {
+                if (!padded || key || reserved || (size != 4 && size != 21 && size != 23) || selector < 0x20 ||
+                    selector >= 0x4000)
+                    return std::nullopt;
+                key = selector;
+                selected_size = size;
+            }
+        }
+        if (!key)
+            return Storage::ram;
+        select(*key);
+        std::array<std::byte, 23> value{};
+        for (std::uint32_t i = 0; i < selected_size; ++i)
+            value[i] = static_cast<std::byte>(byte());
+        return storage_word(std::span{value}.first(selected_size));
+    }
+#endif
     // The exact decimal selector in opt/aurora/fixture within [first, last].
     [[nodiscard]] static auto read(Fixture first, Fixture last) -> std::optional<Fixture> {
         static constexpr char signature[] = "QEMU";
@@ -80,8 +154,8 @@ public:
             return std::nullopt;
         return static_cast<Fixture>(value);
     }
-#ifdef AURORA_PROCESS_FIXTURE
-    // The process image's case word: the decimal 1..255 in opt/aurora/case,
+#if defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_UEFI_NVME)
+    // The image's case word: the decimal 1..255 in opt/aurora/case,
     // 0 when the file is absent (process.md#guest-rows), nullopt otherwise.
     [[nodiscard]] static auto read_case() -> std::optional<unsigned> {
         static constexpr char wanted[] = "opt/aurora/case";

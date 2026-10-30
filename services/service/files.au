@@ -1,0 +1,711 @@
+export module service.files;
+import kernel.boot_volume;
+import kernel.process_files;
+import std.binary;
+
+// The retained file owner's state. No kernel address, frame, handle table or
+// mutable file byte is kept outside this Aurora value. A client incarnation
+// owns only the current handle/output table; linked records outlive clients.
+export namespace service {
+    // Copied bootstrap shape only. The Serve endpoint authenticates source0
+    // separately; a valid record is not a volume or mount grant.
+    auto bootstrap_valid(builtin::span<const u8> bytes) -> bool {
+        if (bytes.size() != 64) {
+            return false;
+        }
+        const std::ByteReadResult operation = std::read_le64(bytes, 0);
+        const std::ByteReadResult volume = std::read_le64(bytes, 8);
+        const std::ByteReadResult profile = std::read_le64(bytes, 16);
+        if (operation.value_or(0u64) != 1u64 || volume.value_or(268435457u64) > 268435456u64 || profile.value_or(2u64)
+            > 1u64) {
+            return false;
+        }
+        i64 at = 24;
+        while (at < 64) {
+            if (bytes.at(at) != 0u8) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+
+    class Reply {
+    public:
+        kernel::FileStatus status;
+        u64 count;
+        u64 id;
+        u64 size;
+        u64 device;
+        u64 inode;
+        u64 directory_device;
+        u64 directory_inode;
+    };
+
+    auto reply(kernel::FileStatus status) -> Reply {
+        const Reply result = Reply{
+            .status = status,
+            .count = 0u64,
+            .id = 0u64,
+            .size = 0u64,
+            .device = 0u64,
+            .inode = 0u64,
+            .directory_device = 0u64,
+            .directory_inode = 0u64
+        };
+        return result;
+    }
+
+    auto status_word(kernel::FileStatus status) -> u64 {
+        if (status == kernel::FileStatus::success) {
+            return 0u64;
+        }
+        if (status == kernel::FileStatus::invalid_handle) {
+            return 1u64;
+        }
+        if (status == kernel::FileStatus::not_found) {
+            return 2u64;
+        }
+        if (status == kernel::FileStatus::denied) {
+            return 3u64;
+        }
+        if (status == kernel::FileStatus::escape) {
+            return 4u64;
+        }
+        if (status == kernel::FileStatus::not_regular) {
+            return 5u64;
+        }
+        if (status == kernel::FileStatus::exhausted) {
+            return 6u64;
+        }
+        if (status == kernel::FileStatus::too_large) {
+            return 7u64;
+        }
+        if (status == kernel::FileStatus::invalid_path) {
+            return 8u64;
+        }
+        return 9u64;
+    }
+
+    class PageIndex {
+    public:
+        u64 value;
+    };
+    auto page_index(u64 value) -> PageIndex {
+        const PageIndex result = PageIndex{
+            .value = value
+        };
+        return result;
+    }
+
+    auto make_indices(builtin::ByteRegion region) -> builtin::OwnedValues<PageIndex> {
+        const PageIndex empty = page_index(0u64);
+        builtin::OwnedValues<PageIndex> result = region.try_allocate(1048576, empty);
+        return move(result);
+    }
+
+    class PayloadWord {
+    public:
+        u64 value;
+    };
+    auto payload_word(u64 value) -> PayloadWord {
+        const PayloadWord result = PayloadWord{
+            .value = value
+        };
+        return result;
+    }
+    auto make_payload(builtin::ByteRegion region) -> builtin::OwnedValues<PayloadWord> {
+        const PayloadWord empty = payload_word(0u64);
+        builtin::OwnedValues<PayloadWord> result = region.try_allocate(0, empty);
+        return move(result);
+    }
+
+    class Store {
+        builtin::OwnedBytes volume;
+        builtin::OwnedBytes table;
+        builtin::OwnedBytes records;
+        // One reusable payload arena, addressed by checked page indices. Each
+        // record has up to 16384 page indices (64 MiB); the index owner is 8 MiB.
+        // Free pages link through their first word. This is a service-local
+        // allocation policy, not a physical frame or DMA capability.
+        builtin::OwnedValues<PageIndex> indices;
+        builtin::OwnedValues<PayloadWord> data;
+        u64 pages;
+        u64 free_head;
+        u64 client;
+        bool valid;
+        bool admitted;
+        u64 read_kind;
+        u64 read_target;
+        u64 read_offset;
+        u64 read_count;
+        u64 export_record;
+        u64 export_revision;
+        u64 export_inode;
+        u64 export_base;
+        u64 export_prefix;
+        u64 export_length;
+        u64 export_kind;
+
+        auto export_selected() const -> bool {
+            return ok() && admitted && client == 0u64 && export_record > 0u64 && export_record <= 64u64
+                && table_word(1280u64) == export_revision && record_word(export_record - 1u64, 0u64) == 2u64
+                && record_word(export_record - 1u64, 5u64) == export_inode;
+        }
+
+        auto table_word(u64 offset) const -> u64 {
+            const builtin::span<const u8> bytes = borrow_bytes(table);
+            return kernel::file_word(bytes, offset);
+        }
+        auto record_word(u64 record, u64 field) const -> u64 {
+            const builtin::span<const u8> bytes = borrow_bytes(records);
+            return kernel::record_word(bytes, record, field);
+        }
+        auto set_table(u64 offset, u64 value) -> bool {
+            u64 byte = 0u64;
+            while (byte < 8u64) {
+                if (!table.set(i64(offset + byte), u8((value >> i64(byte * 8u64)) & 255u64))) {
+                    valid = false;
+                }
+                byte = byte + 1u64;
+            }
+            return valid;
+        }
+        auto set_record(u64 record, u64 field, u64 value) -> bool {
+            u64 byte = 0u64;
+            while (byte < 8u64) {
+                if (!records.set(i64(record * 320u64 + field * 8u64 + byte), u8((value >> i64(byte * 8u64))
+                    & 255u64))) {
+                    valid = false;
+                }
+                byte = byte + 1u64;
+            }
+            return valid;
+        }
+        auto set_data_word(u64 page, u64 value) -> bool {
+            const PayloadWord word = payload_word(value);
+            if (!data.set(i64(page * 512u64), word)) {
+                valid = false;
+            }
+            return valid;
+        }
+        auto take_page() -> u64 {
+            if (free_head != 0u64) {
+                const u64 page = free_head - 1u64;
+                const PayloadWord next = data.at(i64(page * 512u64));
+                free_head = next.value;
+                if (free_head > pages) {
+                    valid = false;
+                    return 0u64;
+                }
+                return page + 1u64;
+            }
+            // Reserve in 64 KiB batches, with at most 15 unused pages. The
+            // exact-page fallback preserves capacity at the memory quota;
+            // refusal changes neither the acquired-page count nor a file.
+            if (pages == 65536u64) {
+                return 0u64;
+            }
+            if (u64(data.size()) < (pages + 1u64) * 512u64) {
+                u64 capacity = pages + 16u64;
+                if (capacity > 65536u64) {
+                    capacity = 65536u64;
+                }
+                const PayloadWord empty = payload_word(0u64);
+                if (!data.try_resize(i64(capacity * 512u64), empty) && !data.try_resize(i64((pages + 1u64) * 512u64),
+                    empty)) {
+                    return 0u64;
+                }
+            }
+            pages = pages + 1u64;
+            return pages;
+        }
+        auto free_record(u64 record) -> bool {
+            const u64 count = (record_word(record, 4u64) + 4095u64) / 4096u64;
+            u64 page = 0u64;
+            while (page < count) {
+                const i64 index = i64(record * 16384u64 + page);
+                const PageIndex entry = indices.at(index);
+                const u64 held = entry.value;
+                if (held == 0u64 || held > pages) {
+                    valid = false;
+                    return false;
+                }
+                set_data_word(held - 1u64, free_head);
+                free_head = held;
+                const PageIndex empty = page_index(0u64);
+                if (!indices.set(index, empty)) {
+                    valid = false;
+                }
+                page = page + 1u64;
+            }
+            i64 at = i64(record * 320u64);
+            const i64 end = at + 320;
+            while (at < end) {
+                if (!records.set(at, 0u8)) {
+                    valid = false;
+                }
+                at = at + 1;
+            }
+            return valid;
+        }
+        auto end_output(u64 slot, bool release) -> bool {
+            const u64 record = table_word(1024u64 + slot * 64u64 + 16u64);
+            set_table(1024u64 + slot * 64u64, 0u64);
+            if (release) {
+                return free_record(record);
+            }
+            return valid;
+        }
+        auto decide_open(u64 operation, u64 directory, builtin::span<const u8> path) const -> kernel::FileOpen {
+            const builtin::span<const u8> v = borrow_bytes(volume);
+            const builtin::span<const u8> r = borrow_bytes(records);
+            const builtin::span<const u8> t = borrow_bytes(table);
+            return kernel::file_open(v, r, t, path, operation, directory);
+        }
+        auto decide_create(builtin::span<const u8> path) const -> kernel::FileCreate {
+            const builtin::span<const u8> v = borrow_bytes(volume);
+            const builtin::span<const u8> r = borrow_bytes(records);
+            const builtin::span<const u8> t = borrow_bytes(table);
+            return kernel::file_create(v, r, t, path);
+        }
+        auto decide_read(u64 id, u64 offset) const -> kernel::FileRead {
+            const builtin::span<const u8> t = borrow_bytes(table);
+            return kernel::file_read(t, id, offset);
+        }
+        auto decide_write(u64 id, u64 count) const -> kernel::FileChange {
+            const builtin::span<const u8> t = borrow_bytes(table);
+            // This policy admits handle state and the 64 MiB file bound. Actual
+            // allocation is through checked owners, not the old kernel frames.
+            return kernel::file_write(t, id, count, 0u64, 18446744073709551615u64);
+        }
+        auto checked_write(u64 id, u64 count) -> kernel::FileChange {
+            read_count = 0u64;
+            const kernel::FileChange decision = decide_write(id, count);
+            if (decision.slot != 0u64) {
+                set_table(1024u64 + (decision.slot - 1u64) * 64u64, decision.state);
+            }
+            return decision;
+        }
+        auto decide_commit(u64 id) const -> kernel::FileChange {
+            const builtin::span<const u8> v = borrow_bytes(volume);
+            const builtin::span<const u8> r = borrow_bytes(records);
+            const builtin::span<const u8> t = borrow_bytes(table);
+            return kernel::file_commit(v, r, t, id);
+        }
+        auto decide_close(u64 id) const -> kernel::FileChange {
+            const builtin::span<const u8> r = borrow_bytes(records);
+            const builtin::span<const u8> t = borrow_bytes(table);
+            return kernel::file_close(r, t, id);
+        }
+        auto decide_discard(u64 id) const -> kernel::FileChange {
+            const builtin::span<const u8> t = borrow_bytes(table);
+            return kernel::file_discard(t, id);
+        }
+        auto volume_offset(u64 index) const -> u64 {
+            const builtin::span<const u8> v = borrow_bytes(volume);
+            const kernel::VolumeEntry entry = kernel::volume_entry(v, i64(index));
+            return entry.offset();
+        }
+    public:
+        Store(builtin::ByteRegion region, i64 volume_bytes) : volume(region.try_allocate(volume_bytes)),
+            table(region.try_allocate(1344)), records(region.try_allocate(20480)), indices(make_indices(region)),
+            data(make_payload(region)), pages(0u64), free_head(0u64), client(0u64), valid(true), admitted(false),
+            read_kind(0u64), read_target(0u64), read_offset(0u64), read_count(0u64), export_record(0u64),
+            export_revision(0u64), export_inode(0u64), export_base(0u64), export_prefix(0u64), export_length(0u64),
+            export_kind(0u64) {
+        }
+        auto ok() const -> bool {
+            return valid && volume.ok() && table.ok() && records.ok() && indices.ok() && data.ok();
+        }
+        auto active() const -> u64 {
+            return client;
+        }
+        auto is_root_directory(u64 id) const -> bool {
+            const builtin::span<const u8> bytes = borrow_bytes(table);
+            const i64 slot = kernel::handle_slot(bytes, id, 2u64);
+            return slot >= 0 && kernel::handle_word(bytes, u64(slot), 2u64) == 0u64 && kernel::handle_word(bytes,
+                u64(slot), 3u64) == 0u64;
+        }
+        auto disk_collision() const -> bool {
+            const kernel::FileOpen decision = decide_open(0u64, 0u64, "/disk");
+            return decision.status != kernel::FileStatus::not_found;
+        }
+        auto volume_byte(i64 offset, u8 byte) -> bool {
+            if (admitted || !volume.set(offset, byte)) {
+                valid = false;
+            }
+            return valid;
+        }
+        auto admit_volume() -> bool {
+            if (!ok() || admitted) {
+                return false;
+            }
+            const builtin::span<const u8> v = borrow_bytes(volume);
+            admitted = kernel::volume_admit(v) == kernel::VolumeVerdict::valid;
+            return admitted;
+        }
+        auto begin(u64 incarnation) -> bool {
+            read_count = 0u64;
+            export_record = 0u64;
+            export_kind = 0u64;
+            if (!ok() || !admitted || incarnation == 0u64 || client != 0u64) {
+                return false;
+            }
+            client = incarnation;
+            return true;
+        }
+        // Supervisor-only protocol consumers call this after client cleanup.
+        // No selection is a handle, and no pointer/view escapes the owner.
+        auto export_select(u64 record) -> Reply {
+            export_record = 0u64;
+            export_kind = 0u64;
+            read_count = 0u64;
+            if (!ok() || !admitted || client != 0u64) {
+                return reply(kernel::FileStatus::failed);
+            }
+            if (record >= 64u64 || record_word(record, 0u64) != 2u64) {
+                return reply(kernel::FileStatus::not_found);
+            }
+            const builtin::span<const u8> bytes = borrow_bytes(volume);
+            const u64 first = record_word(record, 1u64);
+            const i64 prefix = kernel::directory_prefix(bytes, first, record_word(record, 2u64));
+            const u64 leaf = record_word(record, 3u64);
+            if (prefix < 0 || prefix > 4095 || leaf == 0u64 || leaf > 255u64) {
+                return reply(kernel::FileStatus::failed);
+            }
+            export_prefix = u64(prefix);
+            export_length = export_prefix + leaf;
+            export_base = 0u64;
+            if (prefix != 0) {
+                export_length = export_length + 1u64;
+                export_base = u64(kernel::name_at(bytes, i64(first)));
+            }
+            if (export_length > 4095u64 || record_word(record, 4u64) > 67108864u64) {
+                return reply(kernel::FileStatus::failed);
+            }
+            export_record = record + 1u64;
+            export_revision = table_word(1280u64);
+            export_inode = record_word(record, 5u64);
+            Reply result = reply(kernel::FileStatus::success);
+            result.count = 16u64;
+            return result;
+        }
+        auto export_path_size() const -> u64 {
+            if (!export_selected()) {
+                return 0u64;
+            }
+            return export_length;
+        }
+        auto export_file_size() const -> u64 {
+            if (!export_selected()) {
+                return 0u64;
+            }
+            return record_word(export_record - 1u64, 4u64);
+        }
+        auto export_read(u64 offset, bool path) -> Reply {
+            read_count = 0u64;
+            export_kind = 0u64;
+            if (!export_selected() || offset > 9223372036854775807u64) {
+                return reply(kernel::FileStatus::failed);
+            }
+            u64 size = record_word(export_record - 1u64, 4u64);
+            export_kind = 2u64;
+            if (path) {
+                size = export_length;
+                export_kind = 1u64;
+            }
+            Reply result = reply(kernel::FileStatus::success);
+            if (offset >= size) {
+                return result;
+            }
+            read_count = size - offset;
+            if (read_count > 504u64) {
+                read_count = 504u64;
+            }
+            read_kind = 3u64;
+            read_target = export_record - 1u64;
+            read_offset = offset;
+            result.count = read_count;
+            return result;
+        }
+        auto export_byte(u64 index) -> u8 {
+            if (!export_selected() || index >= read_count || export_kind == 0u64) {
+                return 0u8;
+            }
+            if (export_kind == 2u64) {
+                return read_byte(index);
+            }
+            const u64 position = read_offset + index;
+            if (position < export_prefix) {
+                return volume.at(i64(export_base + position));
+            }
+            u64 leaf = position;
+            if (export_prefix != 0u64) {
+                if (position == export_prefix) {
+                    return 47u8;
+                }
+                leaf = position - export_prefix - 1u64;
+            }
+            return records.at(i64((export_record - 1u64) * 320u64 + 64u64 + leaf));
+        }
+        auto open(u64 operation, u64 directory, builtin::span<const u8> path) -> Reply {
+            read_count = 0u64;
+            const kernel::FileOpen decision = decide_open(operation, directory, path);
+            Reply result = reply(decision.status);
+            if (decision.status != kernel::FileStatus::success) {
+                return result;
+            }
+            const u64 slot = decision.slot * 32u64;
+            set_table(slot, decision.kind);
+            set_table(slot + 8u64, decision.generation);
+            set_table(slot + 16u64, decision.target);
+            set_table(slot + 24u64, decision.extent);
+            if (decision.kind == 3u64) {
+                set_record(decision.target, 6u64, record_word(decision.target, 6u64) + 1u64);
+            }
+            result.id = decision.id;
+            result.size = decision.size;
+            result.device = decision.device;
+            result.inode = decision.inode;
+            return result;
+        }
+        auto create(builtin::span<const u8> path) -> Reply {
+            read_count = 0u64;
+            const kernel::FileCreate decision = decide_create(path);
+            Reply result = reply(decision.status);
+            if (decision.status != kernel::FileStatus::success) {
+                return result;
+            }
+            const u64 slot = 1024u64 + decision.slot * 64u64;
+            set_table(slot, 1u64);
+            set_table(slot + 8u64, decision.generation);
+            set_table(slot + 16u64, decision.file);
+            set_table(slot + 24u64, 0u64);
+            set_record(decision.file, 0u64, 1u64);
+            set_record(decision.file, 1u64, decision.first);
+            set_record(decision.file, 2u64, decision.depth);
+            set_record(decision.file, 3u64, decision.leaf_length);
+            u64 at = 0u64;
+            while (at < decision.leaf_length) {
+                if (!records.set(i64(decision.file * 320u64 + 64u64 + at), path.at(i64(decision.leaf + at)))) {
+                    valid = false;
+                }
+                at = at + 1u64;
+            }
+            result.id = decision.id;
+            result.device = decision.device;
+            result.inode = decision.inode;
+            result.directory_device = decision.directory_device;
+            result.directory_inode = decision.directory_inode;
+            return result;
+        }
+        auto read_file(u64 id, u64 offset) -> Reply {
+            const kernel::FileRead decision = decide_read(id, offset);
+            Reply result = reply(decision.status);
+            read_count = 0u64;
+            if (decision.status != kernel::FileStatus::success) {
+                return result;
+            }
+            read_kind = decision.kind;
+            read_target = decision.target;
+            read_offset = offset;
+            if (decision.kind == 2u64) {
+                read_offset = offset + volume_offset(decision.target);
+            }
+            read_count = decision.count;
+            result.count = decision.count;
+            return result;
+        }
+        // The current authenticated read only. Every mutation invalidates this
+        // bounded observation; no span into an owner's mutable bytes escapes.
+        auto read_byte(u64 index) -> u8 {
+            if (index >= read_count) {
+                valid = false;
+                return 0u8;
+            }
+            if (read_kind == 2u64) {
+                return volume.at(i64(read_offset + index));
+            }
+            const u64 position = read_offset + index;
+            const PageIndex entry = indices.at(i64(read_target * 16384u64 + position / 4096u64));
+            const u64 page = entry.value;
+            if (page == 0u64 || page > pages) {
+                valid = false;
+                return 0u8;
+            }
+            const u64 address = (page - 1u64) * 4096u64 + position % 4096u64;
+            const PayloadWord word = data.at(i64(address / 8u64));
+            return u8((word.value >> i64((address % 8u64) * 8u64)) & 255u64);
+        }
+        // Whole-message admission precedes local staging. It reserves no bytes;
+        // it preserves the ordinary write's invalid/poisoned/too-large ordering.
+        auto prepare_write(u64 id, u64 count) -> Reply {
+            const kernel::FileChange decision = checked_write(id, count);
+            return reply(decision.status);
+        }
+        auto write_file(u64 id, builtin::span<const u8> bytes) -> Reply {
+            const kernel::FileChange decision = checked_write(id, u64(bytes.size()));
+            Reply result = reply(decision.status);
+            if (decision.slot == 0u64 || decision.status != kernel::FileStatus::success) {
+                return result;
+            }
+            const u64 slot = 1024u64 + (decision.slot - 1u64) * 64u64;
+            const u64 record = decision.file - 1u64;
+            u64 size = record_word(record, 4u64);
+            u64 done = 0u64;
+            while (done < u64(bytes.size())) {
+                const u64 page = size / 4096u64;
+                const i64 index = i64(record * 16384u64 + page);
+                const PageIndex entry = indices.at(index);
+                u64 held = entry.value;
+                if (size % 4096u64 == 0u64) {
+                    if (held != 0u64) {
+                        valid = false;
+                        return reply(kernel::FileStatus::failed);
+                    }
+                    held = take_page();
+                    if (held == 0u64) {
+                        set_table(slot, 2u64);
+                        return reply(kernel::FileStatus::failed);
+                    }
+                    const PageIndex acquired = page_index(held);
+                    if (!indices.set(index, acquired)) {
+                        valid = false;
+                    }
+                }
+                if (held == 0u64 || held > pages) {
+                    valid = false;
+                    return reply(kernel::FileStatus::failed);
+                }
+                const u64 within = size % 4096u64;
+                u64 count = 4096u64 - within;
+                if (count > u64(bytes.size()) - done) {
+                    count = u64(bytes.size()) - done;
+                }
+                const u64 destination = (held - 1u64) * 4096u64 + within;
+                u64 copied = 0u64;
+                while (copied < count) {
+                    const u64 address = destination + copied;
+                    const u64 first = address % 8u64;
+                    u64 part = 8u64 - first;
+                    if (part > count - copied) {
+                        part = count - copied;
+                    }
+                    u64 value = 0u64;
+                    if (part == 8u64) {
+                        // A complete aligned word needs no old payload bits or
+                        // per-byte mask/shift loop. Keep the checked byte codec.
+                        const std::ByteReadResult read = std::read_le64(bytes, i64(done + copied));
+                        if (read.status() != std::ByteReadStatus::success) {
+                            valid = false;
+                            return reply(kernel::FileStatus::failed);
+                        }
+                        value = read.value_or(0u64);
+                    } else {
+                        const PayloadWord old = data.at(i64(address / 8u64));
+                        value = old.value;
+                        u64 byte = 0u64;
+                        while (byte < part) {
+                            const i64 shift = i64((first + byte) * 8u64);
+                            value = (value & ~(255u64 << shift)) | (u64(bytes.at(i64(done + copied + byte))) << shift);
+                            byte = byte + 1u64;
+                        }
+                    }
+                    const PayloadWord word = payload_word(value);
+                    if (!data.set(i64(address / 8u64), word)) {
+                        valid = false;
+                    }
+                    copied = copied + part;
+                }
+                size = size + count;
+                done = done + count;
+                // Publish each completed page fragment before the next page
+                // allocation can refuse. Cancellation therefore sees every
+                // acquired page, without eight checked record stores per byte.
+                set_record(record, 4u64, size);
+            }
+            set_table(slot + 24u64, size);
+            return result;
+        }
+        auto commit(u64 id) -> Reply {
+            read_count = 0u64;
+            const kernel::FileChange decision = decide_commit(id);
+            Reply result = reply(decision.status);
+            if (decision.slot == 0u64) {
+                return result;
+            }
+            if (decision.status == kernel::FileStatus::success) {
+                if (decision.replaced != 0u64) {
+                    if (decision.state == 3u64) {
+                        set_record(decision.replaced - 1u64, 0u64, 3u64);
+                    } else {
+                        free_record(decision.replaced - 1u64);
+                    }
+                }
+                set_record(decision.file - 1u64, 0u64, 2u64);
+                set_record(decision.file - 1u64, 5u64, decision.inode);
+                set_table(1280u64, decision.inode);
+            }
+            end_output(decision.slot - 1u64, decision.release != 0u64);
+            return result;
+        }
+        auto discard(u64 id) -> Reply {
+            read_count = 0u64;
+            const kernel::FileChange decision = decide_discard(id);
+            if (decision.slot != 0u64) {
+                end_output(decision.slot - 1u64, true);
+            }
+            return reply(decision.status);
+        }
+        auto close(u64 id) -> Reply {
+            read_count = 0u64;
+            const kernel::FileChange decision = decide_close(id);
+            if (decision.slot == 0u64) {
+                return reply(decision.status);
+            }
+            if (decision.file != 0u64) {
+                const u64 record = decision.file - 1u64;
+                const u64 opens = record_word(record, 6u64);
+                if (opens == 0u64) {
+                    valid = false;
+                    return reply(kernel::FileStatus::failed);
+                }
+                set_record(record, 6u64, opens - 1u64);
+                if (decision.release != 0u64) {
+                    free_record(record);
+                }
+            }
+            set_table((decision.slot - 1u64) * 32u64, 0u64);
+            return reply(decision.status);
+        }
+        auto finish(u64 incarnation) -> bool {
+            read_count = 0u64;
+            export_record = 0u64;
+            export_kind = 0u64;
+            if (client != incarnation || incarnation == 0u64 || !valid) {
+                return false;
+            }
+            u64 slot = 0u64;
+            while (slot < 4u64) {
+                if (table_word(1024u64 + slot * 64u64) != 0u64) {
+                    end_output(slot, true);
+                }
+                slot = slot + 1u64;
+            }
+            slot = 0u64;
+            while (slot < 32u64) {
+                if (table_word(slot * 32u64) != 0u64) {
+                    const u64 generation = table_word(slot * 32u64 + 8u64);
+                    const Reply closed = close(kernel::make_id(generation, slot));
+                    if (closed.status != kernel::FileStatus::success) {
+                        valid = false;
+                    }
+                }
+                slot = slot + 1u64;
+            }
+            client = 0u64;
+            return valid;
+        }
+    };
+}

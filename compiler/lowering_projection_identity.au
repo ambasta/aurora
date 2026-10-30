@@ -301,6 +301,12 @@ export namespace compiler_lowering_projection {
         if (kind == compiler_resolver::ResolvedTypeKind::host_files) {
             return 22;
         }
+        if (kind == compiler_resolver::ResolvedTypeKind::writable_block) {
+            return 24;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::read_only_block) {
+            return 23;
+        }
         return -1;
     }
     auto push_type(ProjectionWorkspace& workspace, i64 identity, i64 base) -> bool {

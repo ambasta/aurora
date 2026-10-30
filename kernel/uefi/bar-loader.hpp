@@ -1,5 +1,6 @@
 #pragma once
 #include "acpi-policy.hpp"
+#include "dma-capture-layout.hpp"
 #include "../console.hpp"
 namespace aurora::uefi {
 // Temporary UEFI64 transport only. No PCI writes, driver connection, MMIO or DMA
@@ -105,11 +106,13 @@ public:
     BarLoader(const Bytes &boot, U64 arena, unsigned bits) : boot_(boot), arena_(arena), bits_(bits) {
     }
 
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
 private:
-    [[nodiscard]] auto capture_profile(bool event) -> bool {
+    template <bool graphics> [[nodiscard]] auto capture_profile(bool inventory, bool event) -> bool {
+        using Layout = DmaCaptureLayout<graphics>;
 #else
     [[nodiscard]] auto capture() -> bool {
+        using Layout = DmaCaptureLayout<false>;
 #endif
         if (bits_ < 32 || bits_ > 52 || !boot_.get(72))
             return false;
@@ -121,7 +124,13 @@ private:
         U64 handles{}, count{};
         if (!locate(pci_guid, count, handles))
             return false;
-        auto record = view(arena_ + offset, record_bytes);
+        auto record = view(arena_ +
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
+                               (graphics ? Handoff::production_bar_record_offset : offset),
+#else
+                               offset,
+#endif
+                           record_bytes);
         unsigned found = 0;
         for (U64 index = 0; index < count; ++index) {
             const auto current = protocol(Bytes{view(handles, count * 8)}.get(index * 8), pci_guid, 160);
@@ -141,18 +150,18 @@ private:
                     reinterpret_cast<void *>(*current), &where[0], &where[1], &where[2], &where[3]) ||
                 where[0] != 0 || where[1] > 255 || where[2] > 31 || where[3] > 7)
                 return false;
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
             const bool target = event ? header.get(0, 4) == 0x11e81234 && header.get(9, 3) == 0x00ff00 &&
                                             header.get(14, 1) == 0 && where[1] == 0 && where[2] == 4 && where[3] == 0
                                       : header.get(0, 4) == 0x00101b36 && header.get(9, 3) == 0x010802 &&
                                             header.get(14, 1) == 0 && where[1] == 0 && where[2] == 2 && where[3] == 0;
             if (!event && header.get(9, 3) == 0x010802 && !target)
                 return false;
-            if (event) {
+            if (inventory) {
                 const auto facts = Bytes{record}.get(96);
-                if (facts >= 6)
+                if (facts >= Layout::functions)
                     return false;
-                auto fact = record.subspan(576 + facts * 72, 72);
+                auto fact = record.subspan(Layout::headers + facts * Layout::header_bytes, Layout::header_bytes);
                 put(fact, 0, where[0], 2);
                 put(fact, 2, where[1], 1);
                 put(fact, 3, where[2], 1);
@@ -197,7 +206,9 @@ private:
                     const auto reservation_count = Bytes{record}.get(88);
                     if (reservation_count >= 8)
                         return false;
-                    auto reservation = record.subspan(2048 + reservation_count * 256, 256);
+                    auto reservation =
+                        record.subspan(Layout::reservations + reservation_count * Layout::reservation_bytes,
+                                       Layout::reservation_bytes);
                     U64 source{}, supported{};
                     if (reinterpret_cast<Bar>(io.get(128))(reinterpret_cast<void *>(*current),
                                                            static_cast<std::uint8_t>(bar_index),
@@ -218,9 +229,9 @@ private:
                 if (type == 2)
                     ++bar_index;
             }
-#ifdef AURORA_UEFI_IOMMU_EVENT
-            if (event ? !target
-                      : (header.get(0, 4) != 0x00101b36 || header.get(9, 3) != 0x010802 || header.get(14, 1) != 0))
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
+            if (inventory ? !target
+                          : (header.get(0, 4) != 0x00101b36 || header.get(9, 3) != 0x010802 || header.get(14, 1) != 0))
 #else
             if (header.get(0, 4) != 0x00101b36 || header.get(9, 3) != 0x010802 || header.get(14, 1) != 0)
 #endif
@@ -233,12 +244,12 @@ private:
             const auto size = descriptors(resources, record.subspan(512, 512), 1);
             if (!size || !release(resources))
                 return false;
-#ifdef AURORA_UEFI_IOMMU_EVENT
-            put(record, 0, event ? event_magic : magic);
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
+            put(record, 0, inventory ? (event ? event_magic : nvme_magic) : magic);
 #else
             put(record, 0, magic);
 #endif
-            put(record, 8, 1, 4);
+            put(record, 8, Layout::version, 4);
             put(record, 12, record_bytes, 4);
             for (unsigned i = 0; i < 4; ++i)
                 put(record, 16 + i * 8, where[i]);
@@ -283,25 +294,32 @@ private:
             put(record, 48, root.get(144, 4));
             put(record, 64, *size);
             for (std::size_t i = 0; i < *size; ++i)
-                record[1024 + i] = copied[i];
-            print_descriptor("root", record.subspan(1024, *size));
+                record[Layout::root + i] = copied[i];
+            print_descriptor("root", record.subspan(Layout::root, *size));
         }
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
         return release(handles) && roots == 1 &&
-               (!event || (Bytes{record}.get(96) == 6 && Bytes{record}.get(104) == 1));
+               (!inventory || (Bytes{record}.get(96) == Layout::functions && Bytes{record}.get(104) == 1));
 #else
         return release(handles) && roots == 1;
 #endif
     }
 
-#ifdef AURORA_UEFI_IOMMU_EVENT
+#if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
 public:
+    static constexpr U64 nvme_magic = 0x314d564e41525541ULL;
+    [[nodiscard]] auto capture_nvme() -> bool {
+        return capture_profile<false>(true, false);
+    }
+    [[nodiscard]] auto capture_nvme_graphics() -> bool {
+        return capture_profile<true>(true, false);
+    }
     static constexpr U64 event_magic = 0x3154564541525541ULL;
     [[nodiscard]] auto capture() -> bool {
-        return capture_profile(false);
+        return capture_profile<false>(false, false);
     }
     [[nodiscard]] auto capture_event() -> bool {
-        return capture_profile(true);
+        return capture_profile<false>(true, true);
     }
 #endif
 };

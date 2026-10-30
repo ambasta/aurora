@@ -1,7 +1,8 @@
 # CPU-only NVMe queue-page preparation
 
 This is CPU-only page preparation, not a device driver, Identify command, disk
-read or DMA-isolation gate.
+read or DMA-isolation gate. The separate active [NVMe broker](../../storage/README.md#protected-file-backed-nvme)
+does not publish or reinterpret this API's CPU-only handles.
 
 ## Authority and fixed layout
 

@@ -1,9 +1,9 @@
 #pragma once
 #include "handoff.hpp"
+#include "event-profile-policy.hpp"
 #include <array>
 
 namespace aurora::uefi {
-class EventAdmission;
 
 // Copied terminal evidence for a stopped supervisor. Addresses describe retained
 // bytes, not capabilities. Serial failure never turns an incomplete result into
@@ -23,8 +23,12 @@ public:
     // Every byte of each 16-byte left guard, 4-byte value and 16-byte right guard.
     // These are data guards; they are not described as adjacent ring guards.
     std::array<std::byte, 144> before_data{}, after_data{};
+    // Actual transient observations: permitted DMA before revocation and the
+    // one-shot command batch. Completion never authorizes page reclamation.
+    std::uint64_t prime_read{}, prime_write{}, invalidation_submitted{}, invalidation_completed{};
+    std::uint64_t invalidation_reads{}, invalidation_store{};
 };
-static_assert(sizeof(EventTerminal) == 672 && alignof(EventTerminal) == 8 && offsetof(EventTerminal, backing) == 48 &&
+static_assert(sizeof(EventTerminal) == 720 && alignof(EventTerminal) == 8 && offsetof(EventTerminal, backing) == 48 &&
               offsetof(EventTerminal, ring) == 56 && offsetof(EventTerminal, before_ring) == 64 &&
               offsetof(EventTerminal, after_ring) == 72 && offsetof(EventTerminal, ring_bytes) == 80 &&
               offsetof(EventTerminal, before_registers) == 192 && offsetof(EventTerminal, after_registers) == 288 &&

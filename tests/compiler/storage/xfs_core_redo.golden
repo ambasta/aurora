@@ -1,0 +1,50 @@
+Linux inode 99 committed CORE	converted Linux sector
+Linux inode 99 equal LSN reapplies	converted Linux sector
+inode 99 equal LSN stale timestamps reapplied	converted Linux sector
+inode 99 newer intact home	already_newer zero
+Linux inode 100 committed CORE	converted Linux sector
+Linux inode 100 equal LSN reapplies	converted Linux sector
+inode 100 equal LSN stale timestamps reapplied	converted Linux sector
+inode 100 newer intact home	already_newer zero
+logged LSN ignored	converted Linux sector
+short superblock	invalid_input zero
+short home	invalid_input zero
+short CORE	invalid_input zero
+oversized CORE	invalid_input zero
+zero transaction LSN	invalid_input zero
+out-of-log LSN	invalid_input zero
+wrong inode	invalid_home zero
+short volume	invalid_home zero
+torn home byte 0	invalid_home zero
+torn home byte 32	invalid_home zero
+torn home byte 100	invalid_home zero
+torn home byte 176	invalid_home zero
+torn home byte 511	invalid_home zero
+immutable CORE byte 2	unsupported_change zero
+immutable CORE byte 8	unsupported_change zero
+immutable CORE byte 16	unsupported_change zero
+immutable CORE byte 64	unsupported_change zero
+immutable CORE byte 76	unsupported_change zero
+immutable CORE byte 152	unsupported_change zero
+immutable CORE byte 160	unsupported_change zero
+invalid timestamp nanoseconds 36	unsupported_change zero
+invalid timestamp nanoseconds 44	unsupported_change zero
+invalid timestamp nanoseconds 52	unsupported_change zero
+invalid timestamp nanoseconds 148	unsupported_change zero
+newer home cannot hide unsupported CORE	unsupported_change zero
+unsupported CORE field 24	unsupported_change zero
+unsupported CORE field 120	unsupported_change zero
+Linux one-block growth64 to777	converted Linux sector
+grown inode equal LSN reapplies	converted Linux sector
+synthetic one-block size 1	converted Linux sector
+synthetic one-block size 64	converted Linux sector
+synthetic one-block size 4096	converted Linux sector
+rejected one-block size 0	unsupported_change zero
+rejected one-block size 4097	unsupported_change zero
+rejected one-block size 9223372036854775808	unsupported_change zero
+rejected one-block size 18446744073709551615	unsupported_change zero
+newer home cannot hide cross-block size	unsupported_change zero
+encode Linux inode99	encoded Linux payload
+encode Linux inode100	encoded Linux payload
+encode Linux grown inode100	encoded Linux payload
+encode short home	encoded zero

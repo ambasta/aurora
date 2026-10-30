@@ -1,0 +1,243 @@
+export module fs.xfs_log;
+import std.binary;
+import std.checksum;
+
+namespace fs {
+    auto xl32(builtin::span<const u8> bytes, i64 at) -> u64 {
+        const std::ByteReadResult word = std::read_be32(bytes, at);
+        return word.value_or(0u64);
+    }
+    auto xl64(builtin::span<const u8> bytes, i64 at) -> u64 {
+        const std::ByteReadResult word = std::read_be64(bytes, at);
+        return word.value_or(0u64);
+    }
+    auto xl_zero(builtin::span<const u8> bytes, i64 begin, i64 end) -> bool {
+        i64 at = begin;
+        while (at < end) {
+            if (bytes.at(at) != 0u8) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+}
+
+export namespace fs {
+    enum class XfsLogSectorKind {
+        data,
+        record,
+        stale_clear,
+        invalid
+    };
+    // These copied-byte predicates do not prove a stable backend or grant a mount.
+    auto xfs_log_lsn_valid(u64 value, u64 sectors) -> bool {
+        const u64 cycle = value >> 32;
+        return sectors > 0u64 && sectors <= 131072u64 && cycle > 0u64 && cycle < 4276992701u64 && (value
+            & 4294967295u64) < sectors;
+    }
+    // Linux 6.12.107 x86_64, logbsize=32k, 512-byte log sectors. Classify
+    // stamped headers, not arbitrary payload. The magic cycle is never written
+    // as a payload cycle; this bounded profile excludes its adjacent cycles too.
+    auto xfs_log_header_kind(builtin::span<const u8> sb, builtin::span<const u8> bytes, u64 sector,
+        u64 sectors) -> XfsLogSectorKind {
+        if (sb.size() != 512 || bytes.size() != 512 || sectors == 0u64 || sectors > 131072u64 || sector >= sectors) {
+            return XfsLogSectorKind::invalid;
+        }
+        if (xl32(bytes, 0) != 4276992702u64) {
+            return XfsLogSectorKind::data;
+        }
+        const u64 cycle = xl32(bytes, 4);
+        const u64 tail = xl64(bytes, 24);
+        if (cycle >= 4276992701u64 || xl32(bytes, 8) != 2u64 || xl64(bytes, 16) != ((cycle << 32) | sector)
+            || xl32(bytes, 300) != 1u64 || !xfs_log_lsn_valid(tail, sectors) || !xl_zero(bytes, 324, 512)) {
+            return XfsLogSectorKind::invalid;
+        }
+        i64 at = 0;
+        while (at < 16) {
+            if (bytes.at(304 + at) != sb.at(32 + at)) {
+                return XfsLogSectorKind::invalid;
+            }
+            at = at + 1;
+        }
+        const u64 length = xl32(bytes, 12);
+        if (length == 0u64) {
+            // xlog_add_record zeroes a complete sector, then fills only the
+            // common identity fields checked above. Its tail may be newer than
+            // its own deliberately old cycle; it is never a clean candidate.
+            if (xl32(bytes, 32) != 0u64 || xl32(bytes, 36) != 0u64 || xl32(bytes, 40) != 0u64 || xl32(bytes, 320)
+                != 0u64 || !xl_zero(bytes, 44, 300)) {
+                return XfsLogSectorKind::invalid;
+            }
+            return XfsLogSectorKind::stale_clear;
+        }
+        const u64 operations = xl32(bytes, 40);
+        const u64 previous = xl32(bytes, 36);
+        if (cycle == 0u64 || length > 32256u64 || length % 512u64 != 0u64 || operations == 0u64 || operations > length
+            / 12u64 || xl32(bytes, 320) != 32768u64 || tail > xl64(bytes, 16) || !xl_zero(bytes, 44 + i64(length
+            / 512u64) * 4, 300)) {
+            return XfsLogSectorKind::invalid;
+        }
+        if (previous == 4294967295u64) {
+            if (cycle != 1u64 || sector != 0u64) {
+                return XfsLogSectorKind::invalid;
+            }
+        } else {
+            if (previous >= sectors || previous == sector) {
+                return XfsLogSectorKind::invalid;
+            }
+        }
+        return XfsLogSectorKind::record;
+    }
+    // Only a checksum predicate; identity/topology admission is separate.
+    // The producer stores a 512-byte header sector but hashes its 328-byte ABI.
+    auto xfs_log_record_checksum(builtin::span<const u8> header, builtin::span<const u8> payload) -> bool {
+        if (header.size() != 512 || payload.size() < 512 || payload.size() > 32256 || payload.size() % 512 != 0
+            || xl32(header, 12) != u64(payload.size())) {
+            return false;
+        }
+        // sizeof(xlog_rec_header) is 328 on this producer, not the 324-byte
+        // field end or its padded 512-byte sector. Checksum the stamped payload
+        // before restoring cycle words, including opaque reused padding.
+        const builtin::array<u8, 4> zero = {
+            0u8,
+            0u8,
+            0u8,
+            0u8
+        };
+        const std::ChecksumResult prefix = std::crc32c(header, 0, 32);
+        const std::ChecksumResult cleared = std::crc32c_extend(prefix.value_or(4294967296u64), borrow_bytes(zero), 0,
+            4);
+        const std::ChecksumResult rest = std::crc32c_extend(cleared.value_or(4294967296u64), header, 36, 292);
+        const std::ChecksumResult complete = std::crc32c_extend(rest.value_or(4294967296u64), payload, 0,
+            payload.size());
+        const std::ByteReadResult stored = std::read_le32(header, 32);
+        return complete.status() == std::ChecksumStatus::success && complete.value_or(4294967296u64)
+            == stored.value_or(4294967297u64);
+    }
+    // Body/CRC only: callers separately admit header identity and complete topology.
+    auto xfs_log_unmount(builtin::span<const u8> header, builtin::span<const u8> bytes, u64 cycle) -> bool {
+        if (header.size() != 512 || bytes.size() != 512 || xl32(header, 12) != 512u64) {
+            return false;
+        }
+        // The Linux writer stores the ticket ID in h_cycle_data[0] and stamps
+        // its cycle over the payload's first word. Do not pin that random ID.
+        // Unlike mkfs, the pinned kernel emits oh_len=0 for this operation.
+        if (xl32(bytes, 0) != cycle || xl32(bytes, 4) != 0u64 || bytes.at(8) != 170u8 || bytes.at(9) != 32u8
+            || !xl_zero(bytes, 10, 12) || bytes.at(12) != 110u8 || bytes.at(13) != 85u8 || !xl_zero(bytes, 14, 20)) {
+            return false;
+        }
+        return xfs_log_record_checksum(header, bytes);
+    }
+
+    // Ordered copied-sector topology, shared by readonly admission and recovery
+    // preflight. This value owns no backend authority and never proves clean.
+    class XfsLogTopology {
+        u64 _sectors;
+        u64 _seen;
+        u64 _first_cycle;
+        u64 _head_block;
+        u64 _newest;
+        u64 _max_tail;
+        u64 _head;
+        bool _boundary;
+        bool _begun;
+        bool _valid;
+        bool _selected;
+    public:
+        XfsLogTopology() : _sectors(0u64), _seen(0u64), _first_cycle(0u64), _head_block(0u64), _newest(0u64),
+            _max_tail(0u64), _head(0u64), _boundary(false), _begun(false), _valid(true), _selected(false) {
+        }
+        auto pristine() const -> bool {
+            return _valid && !_begun;
+        }
+        auto begin(u64 sectors) -> bool {
+            if (!pristine() || sectors == 0u64 || sectors > 131072u64) {
+                _valid = false;
+                return false;
+            }
+            _sectors = sectors;
+            _begun = true;
+            return true;
+        }
+        auto accept(builtin::span<const u8> sb, builtin::span<const u8> bytes) -> bool {
+            _selected = false;
+            if (!_valid || !_begun || _seen >= _sectors || sb.size() != 512 || bytes.size() != 512) {
+                _valid = false;
+                return false;
+            }
+            u64 cycle = xl32(bytes, 0);
+            if (cycle == 4276992702u64) {
+                cycle = xl32(bytes, 4);
+            }
+            if (_seen == 0u64) {
+                if (cycle == 0u64 || cycle >= 4276992701u64) {
+                    _valid = false;
+                    return false;
+                }
+                _first_cycle = cycle;
+            }
+            if (!_boundary && cycle != _first_cycle) {
+                if (cycle + 1u64 != _first_cycle) {
+                    _valid = false;
+                    return false;
+                }
+                _boundary = true;
+                _head_block = _seen;
+            }
+            if (_boundary && cycle + 1u64 != _first_cycle) {
+                _valid = false;
+                return false;
+            }
+            const XfsLogSectorKind kind = xfs_log_header_kind(sb, bytes, _seen, _sectors);
+            if (kind == XfsLogSectorKind::invalid || (cycle == 0u64 && kind == XfsLogSectorKind::data && !xl_zero(bytes,
+                0, 512))) {
+                _valid = false;
+                return false;
+            }
+            if (kind == XfsLogSectorKind::record || kind == XfsLogSectorKind::stale_clear) {
+                const u64 tail = xl64(bytes, 24);
+                if (tail > _max_tail) {
+                    _max_tail = tail;
+                }
+            }
+            if (kind == XfsLogSectorKind::record && xl64(bytes, 16) > _newest) {
+                _newest = xl64(bytes, 16);
+                _selected = true;
+            }
+            _seen = _seen + 1u64;
+            if (_seen == _sectors) {
+                u64 cycle = _first_cycle;
+                if (!_boundary) {
+                    cycle = cycle + 1u64;
+                }
+                _head = (cycle << 32) | _head_block;
+                if (_newest == 0u64 || _max_tail > _head) {
+                    _valid = false;
+                    _selected = false;
+                }
+            }
+            return _valid;
+        }
+        // A caller may retain this sector as the candidate header; it remains
+        // untrusted for readiness until the entire scan and record proof finish.
+        auto selected_header() const -> bool {
+            return _valid && _selected;
+        }
+        auto complete() const -> bool {
+            return _valid && _begun && _seen == _sectors;
+        }
+        auto head_lsn() const -> u64 {
+            if (complete()) {
+                return _head;
+            }
+            return 0u64;
+        }
+        auto newest_lsn() const -> u64 {
+            if (complete()) {
+                return _newest;
+            }
+            return 0u64;
+        }
+    };
+}

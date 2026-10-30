@@ -1,14 +1,13 @@
 #pragma once
-// The file service of the running process (kernel/uefi/process.md#files):
+// Test-only reference storage adapter for the existing policy golden driver:
 // the storage behind kernel.process_files's decisions. It keeps the handle
 // and output table, the overlay records and the frames that hold the
 // overlay's bytes, applies each Aurora decision after its decoder admitted
 // its closed shape, and copies bytes. Each overlay record's bytes live in
 // data frames listed by up to 32 index frames of 512 entries (64 MiB). The
 // Store supplies charged frames and copies through them: the process's
-// frames through the kernel's window in the image (process.cpp), heap pages
-// in the hosted driver (tests/kernel-process.cpp).
-#include "process-policy.hpp"
+// heap pages in the hosted driver (tests/kernel-process.cpp).
+#include "kernel-process-file-policy.hpp"
 
 namespace aurora::uefi {
 [[nodiscard]] constexpr auto least(std::uint64_t first, std::uint64_t second) -> std::uint64_t {

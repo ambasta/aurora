@@ -696,6 +696,9 @@ export namespace compiler_x86 {
         if (entry < 0) {
             return w.ok();
         }
+        if (hosted_endpoint(m) || hosted_writer(m)) {
+            return module_emit_endpoint_entry(w, o, m, entry);
+        }
         const i64 start = hosted_hook_callable(m, 0);
         const i64 finish = hosted_hook_callable(m, 1);
         if (start < 0 || finish < 0) {
@@ -847,6 +850,149 @@ export namespace compiler_x86 {
         }
         if (!w.finish_function() || !memory) {
             return w.ok();
+        }
+        return module_emit_memory_entries(w, o, m);
+    }
+    // A retained Aurora process receives a kernel-selected endpoint generation
+    // in RDX, independently of its readonly argument block in RDI/RSI. The
+    // source main record and the memory-only bootstrap record are disjoint.
+    // No host hook runs and no source HostFiles parameter is manufactured.
+    auto module_emit_endpoint_entry(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
+        i64 entry) -> bool {
+        const i64 start = memory_hook_callable(m, 0);
+        const i64 finish = memory_hook_callable(m, 1);
+        if (!w.kernel_target() || !w.hosted_memory() || start < 0 || finish < 0) {
+            return w.fail();
+        }
+        const bool writer = hosted_writer(m);
+        const bool endpoint = hosted_endpoint(m);
+        const bool block = hosted_block(m) || writer;
+        i64 record_bytes = 112;
+        i64 block_bytes = 0;
+        i64 region_offset = 16;
+        if (block) {
+            record_bytes = 128;
+            block_bytes = block_window_bytes();
+            region_offset = 32;
+            if (writer) {
+                block_bytes = 544;
+                if (!endpoint) {
+                    record_bytes = 112;
+                    region_offset = 16;
+                }
+            }
+        }
+        const i64 name = w.intern_runtime("_start");
+        if (!w.begin_function(2, name, -1)) {
+            return false;
+        }
+        if (o.object_mode()) {
+            o.begin_function_labels(4);
+            o.begin_object_symbol(4, 512, false);
+            o.object_name_text("_start");
+            o.end_object_symbol_name();
+            emit_object_status(w, o);
+        } else {
+            w.text(".globl _start\n.type _start, @function\n_start:\n");
+        }
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rbp, Register::rbp);
+        emit_alu_rr(w, o, AluOp::test, Register::rdx, Register::rdx);
+        if (!endpoint) {
+            emit_branch(w, o, 5, 4, 0);
+        } else {
+            emit_branch(w, o, 4, 4, 0);
+        }
+        if (block) {
+            // Preserve the independent loader grant before argv staging reuses
+            // R9 and the window setup reuses R8. Absence is exactly zero/zero.
+            emit_mov_rr(w, o, Register::r8, Register::rbx);
+            emit_mov_rr(w, o, Register::r9, Register::r11);
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::rcx, Register::rcx);
+            emit_alu_rr(w, o, AluOp::test, Register::r8, Register::r8);
+            emit_set_condition(w, o, 4, Register::rax);
+            emit_alu_rr(w, o, AluOp::test, Register::r9, Register::r9);
+            emit_set_condition(w, o, 4, Register::rcx);
+            emit_alu_rr(w, o, AluOp::compare, Register::rax, Register::rcx);
+            emit_branch(w, o, 5, 4, 0);
+            if (writer) {
+                emit_alu_rr(w, o, AluOp::test, Register::r8, Register::r8);
+                emit_branch(w, o, 4, 4, 0);
+            }
+        }
+        emit_mov_rr(w, o, Register::rdi, Register::r9);
+        emit_mov_rr(w, o, Register::rsi, Register::r10);
+        emit_alu_imm(w, o, AluOp::bit_and, -16, Register::rsp);
+        const i64 memory_bytes = host_memory_block_bytes();
+        i64 window_bytes = endpoint_window_bytes();
+        if (!endpoint) {
+            window_bytes = 0;
+        }
+        emit_reserve_stack(w, o, memory_bytes + window_bytes + block_bytes + record_bytes);
+        emit_mov_rr(w, o, Register::rsp, Register::rdi);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
+        emit_mov_imm(w, o, memory_bytes + window_bytes + block_bytes + record_bytes, Register::rcx);
+        emit_cld(w, o);
+        emit_rep_stosb(w, o);
+        if (endpoint) {
+            const i64 window_address = w.pack_address(1, record_bytes);
+            emit_lea(w, o, window_address, Register::r8);
+            const i64 endpoint_grant = w.pack_address(1, 0);
+            emit_store(w, o, Register::r8, endpoint_grant, false);
+            const i64 endpoint_generation = w.pack_address(1, 8);
+            emit_store(w, o, Register::rdx, endpoint_generation, false);
+        }
+        if (block) {
+            const i64 block_address = w.pack_address(1, record_bytes + window_bytes);
+            emit_lea(w, o, block_address, Register::r8);
+            const i64 block_grant = w.pack_address(1, region_offset - 16);
+            const i64 block_generation = w.pack_address(1, region_offset - 8);
+            emit_store(w, o, Register::r8, block_grant, false);
+            emit_store(w, o, Register::rbx, block_generation, false);
+            emit_store(w, o, Register::r11, block_address, false);
+            const i64 block_status = w.pack_address(1, record_bytes + window_bytes + 8);
+            emit_store_imm(w, o, 3, block_status, false);
+        }
+        const i64 memory_address = w.pack_address(1, record_bytes + window_bytes + block_bytes);
+        emit_lea(w, o, memory_address, Register::r8);
+        const i64 self = w.pack_address(1, record_bytes + window_bytes + block_bytes + host_session_self());
+        emit_store(w, o, Register::r8, self, false);
+        const i64 region = w.pack_address(1, region_offset);
+        emit_store(w, o, Register::r8, region, false);
+        const i64 memory_grant = w.pack_address(1, record_bytes - 16);
+        emit_store(w, o, Register::r8, memory_grant, false);
+        const i64 memory_generation = w.pack_address(1, record_bytes - 8);
+        emit_store_imm(w, o, 1, memory_generation, false);
+        const i64 arguments_address = w.pack_address(1, region_offset + 16);
+        const i64 arguments_length = w.pack_address(1, region_offset + 56);
+        emit_store(w, o, Register::r9, arguments_address, false);
+        emit_store(w, o, Register::r10, arguments_length, false);
+        const i64 status = w.pack_address(1, region_offset + 64);
+        emit_store_imm(w, o, 1, status, false);
+        emit_lea(w, o, memory_grant, Register::r11);
+        direct_target(w, o, m, start);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 5, 0, 3);
+        emit_mov_rr(w, o, Register::rsp, Register::r11);
+        direct_target(w, o, m, entry);
+        emit_alu_imm(w, o, AluOp::compare, 2, Register::rax);
+        emit_branch(w, o, 7, 4, 0);
+        emit_store(w, o, Register::rax, status, false);
+        emit_lea(w, o, memory_grant, Register::r11);
+        direct_target(w, o, m, finish);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 5, 4, 0);
+        emit_bind_label(w, o, 0, 3);
+        emit_load(w, o, status, Register::rdi, false);
+        host_kernel_call(w, o, 1);
+        emit_trap_instruction(w, o);
+        if (o.object_mode()) {
+            o.end_object_symbol();
+        } else {
+            w.text(".size _start, .-_start\n");
+        }
+        if (!w.finish_function()) {
+            return false;
         }
         return module_emit_memory_entries(w, o, m);
     }

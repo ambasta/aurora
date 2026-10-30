@@ -6,3 +6,9 @@
 --target aurora --runtime-root runtime/linux tests/host-files/probe.au	exit 1 | stderr: aurorac: error AU3001: invalid typed IR: HostFiles primitive does not belong to the selected target
 --runtime-root runtime/aurora tests/host-files/probe.au	exit 1 | stderr: aurorac: error AU3001: invalid typed IR: HostFiles primitive does not belong to the selected target
 --target aurora tests/host-files/memory.au	exit 0
+--target aurora tests/host-files/endpoint.au	exit 0
+--target aurora tests/host-files/endpoint-empty.au	exit 0
+--target linux tests/host-files/endpoint-empty.au	exit 1 | stderr: aurorac: error AU3001: invalid typed IR: retained process endpoint requires the Aurora target
+--target aurora --module-root library tests/host-files/endpoint-block.au	exit 0
+--target aurora tests/host-files/endpoint-block-empty.au	exit 0
+--target linux tests/host-files/endpoint-block-empty.au	exit 1 | stderr: aurorac: error AU3001: invalid typed IR: retained process endpoint requires the Aurora target

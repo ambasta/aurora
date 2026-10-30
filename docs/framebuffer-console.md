@@ -86,7 +86,10 @@ from capture QMP termination 0.
 
 Guests use original-clock q35/TCG, one CPU and disposable snapshot media, without
 network or physical-device access. Each graphical guest has a 90-second wall
-limit; restoration has 30 seconds. Production probes at most 80 small 56,032-byte
+limit except `idle4096`, whose outer bound is 105 seconds: its fixed one-shots
+alone consume about 81.92 seconds before setup and host delivery overhead. The
+native 4096-wake bound and original emulator clock are unchanged. Restoration
+has 30 seconds. Production probes at most 80 small 56,032-byte
 states per chunk, taking full pairs only at matches. Serial is limited to 1 MiB,
 cumulative QMP and each child output file to 4 MiB. First failure stops remaining
 cases and retains raw pairs/input/serial/QMP/stderr/summary; owned QEMU is reaped

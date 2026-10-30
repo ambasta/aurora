@@ -680,12 +680,276 @@ export namespace compiler_x86 {
         emit_load(workspace, object, base, Register::rax, false);
         return emit_alu_rr(workspace, object, AluOp::add, Register::rdx, Register::rax);
     }
+    // Private Serve primitives of aurora.endpoint. The opaque grant addresses
+    // only this process's endpoint window, never the memory bootstrap block.
+    auto emit_endpoint_operation(EmitWorkspace& w, ObjectWorkspace& o,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+        if (!w.kernel_target()) {
+            return w.fail();
+        }
+        // Even local window access belongs to the process ABI, not the old
+        // protected scalar Serve grant. Its fact marker keeps isolated private
+        // operations out of protected images as well as actual exchanges.
+        const i64 marker = w.intern_runtime("__au_kernel_service_call");
+        w.record_call(2, marker);
+        const i64 offset = operand_value(store, instruction, 0);
+        const i64 operation = operand_value(store, instruction, 1);
+        const i64 result = operand_value(store, instruction, 2);
+        const i64 grant = w.pack_address(0, offset);
+        const i64 generation = w.pack_address(0, offset - 8);
+        emit_load(w, o, grant, Register::rdi, false);
+        emit_load(w, o, generation, Register::rdx, false);
+        emit_alu_rr(w, o, AluOp::test, Register::rdx, Register::rdx);
+        emit_branch(w, o, 4, 4, 0);
+        if (operation == 34) {
+            emit_pop(w, o, Register::rax);
+            emit_pop(w, o, Register::rcx);
+            host_bound(w, o, Register::rcx, endpoint_payload_bytes() - 1);
+            host_bound(w, o, Register::rax, 255);
+            emit_indexed_store(w, o, Register::rdi, Register::rcx, indexed_address(1, endpoint_reply_offset()), true);
+            return emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
+        }
+        emit_mov_rr(w, o, Register::rax, Register::r8);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::r11, Register::r11);
+        if (operation == 32) {
+            host_bound(w, o, Register::r8, endpoint_payload_bytes());
+            emit_mov_rr(w, o, Register::r8, Register::rsi);
+            emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 16), false);
+            emit_mov_rr(w, o, Register::rax, Register::r10);
+            host_kernel_call(w, o, 15);
+            host_bound(w, o, Register::rax, 1);
+            host_bound(w, o, Register::rdx, endpoint_payload_bytes());
+            emit_mov_rr(w, o, Register::rax, Register::r8);
+            emit_mov_rr(w, o, Register::rdx, Register::r9);
+            emit_load(w, o, grant, Register::rdi, false);
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::r11, Register::r11);
+            // Cancelled carries zero count. Every returned metadata channel is
+            // checked before any typed ServeRequest or Message is published.
+            emit_mov_rr(w, o, Register::r8, Register::rcx);
+            emit_unary(w, o, UnaryOp::negate, Register::rcx);
+            emit_alu_rr(w, o, AluOp::bit_and, Register::r9, Register::rcx);
+            emit_branch(w, o, 5, 4, 0);
+            emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 0), false);
+            emit_alu_rr(w, o, AluOp::compare, Register::r9, Register::rax);
+            emit_branch(w, o, 5, 4, 0);
+            emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 8), false);
+            emit_mov_rr(w, o, Register::r8, Register::rcx);
+            emit_unary(w, o, UnaryOp::negate, Register::rcx);
+            emit_alu_rr(w, o, AluOp::bit_and, Register::rax, Register::rcx);
+            emit_branch(w, o, 5, 4, 0);
+            emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 16), false);
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::rcx, Register::rcx);
+            emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+            emit_set_condition(w, o, 4, Register::rcx);
+            emit_alu_rr(w, o, AluOp::compare, Register::r8, Register::rcx);
+            emit_branch(w, o, 5, 4, 0);
+            emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 24), false);
+            emit_mov_imm(w, o, 1, Register::rcx);
+            emit_alu_rr(w, o, AluOp::subtract, Register::r8, Register::rcx);
+            emit_alu_rr(w, o, AluOp::compare, Register::rcx, Register::rax);
+            emit_branch(w, o, 5, 4, 0);
+            i64 reserved = 32;
+            while (reserved < 64) {
+                emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, reserved), false);
+                emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+                emit_branch(w, o, 5, 4, 0);
+                reserved = reserved + 8;
+            }
+            const i64 status = w.pack_address(0, result);
+            const i64 count = w.pack_address(0, result - 8);
+            emit_store(w, o, Register::r8, status, false);
+            return emit_store(w, o, Register::r9, count, false);
+        }
+        emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 24), false);
+        emit_alu_imm(w, o, AluOp::compare, 1, Register::rax);
+        emit_branch(w, o, 5, 4, 0);
+        if (operation == 35) {
+            host_bound(w, o, Register::r8, 1);
+            return emit_indexed_load(w, o, Register::rdi, Register::r8, indexed_address(8, 8), false);
+        }
+        if (operation == 33) {
+            emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 0), false);
+            host_bound(w, o, Register::rax, endpoint_payload_bytes());
+            emit_alu_rr(w, o, AluOp::compare, Register::rax, Register::r8);
+            emit_branch(w, o, 3, 4, 0);
+            return emit_indexed_load(w, o, Register::rdi, Register::r8, indexed_address(1, endpoint_request_offset()),
+                true);
+        }
+        return w.fail();
+    }
+    // The read-only block grant has an independent descriptor/window and
+    // generation. Neither a Serve grant nor a memory region can select it.
+    auto emit_block_operation(EmitWorkspace& w, ObjectWorkspace& o,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+        if (!w.kernel_target()) {
+            return w.fail();
+        }
+        const i64 marker = w.intern_runtime("__au_kernel_service_call");
+        w.record_call(2, marker);
+        const i64 offset = operand_value(store, instruction, 0);
+        const i64 operation = operand_value(store, instruction, 1);
+        const i64 grant = w.pack_address(0, offset);
+        const i64 generation = w.pack_address(0, offset - 8);
+        emit_mov_rr(w, o, Register::rax, Register::rsi);
+        emit_load(w, o, grant, Register::rdi, false);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::r11, Register::r11);
+        if (operation == 38 || operation == 41) {
+            host_bound(w, o, Register::rsi, 1);
+            // A mask selects one of two copied observations, never authority.
+            emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 0), false);
+            emit_load(w, o, generation, Register::rdx, false);
+            emit_mov_rr(w, o, Register::rsi, Register::rcx);
+            emit_unary(w, o, UnaryOp::negate, Register::rcx);
+            emit_alu_rr(w, o, AluOp::bit_and, Register::rcx, Register::rdx);
+            emit_unary(w, o, UnaryOp::bit_not, Register::rcx);
+            emit_alu_rr(w, o, AluOp::bit_and, Register::rcx, Register::rax);
+            return emit_alu_rr(w, o, AluOp::bit_or, Register::rdx, Register::rax);
+        }
+        if (operation == 37 || operation == 40) {
+            host_bound(w, o, Register::rsi, 511);
+            emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 8), false);
+            emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+            emit_branch(w, o, 5, 4, 0);
+            return emit_indexed_load(w, o, Register::rdi, Register::rsi, indexed_address(1, 16), true);
+        }
+        if (operation != 36 && operation != 39) {
+            return w.fail();
+        }
+        if (operation == 39) {
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
+            emit_indexed_store(w, o, Register::rdi, Register::r11, indexed_address(1, 528), false);
+        }
+        // Invalidate the previous read before entering the kernel, then clear
+        // exactly the copied512 destination. Preserve the volume descriptor.
+        emit_mov_imm(w, o, 3, Register::rax);
+        emit_indexed_store(w, o, Register::rdi, Register::r11, indexed_address(1, 8), false);
+        emit_indexed_lea(w, o, Register::rdi, Register::r11, 16, Register::r8);
+        emit_mov_rr(w, o, Register::r8, Register::rdi);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
+        emit_mov_imm(w, o, 512, Register::rcx);
+        emit_cld(w, o);
+        emit_rep_stosb(w, o);
+        emit_mov_rr(w, o, Register::r8, Register::rdi);
+        emit_load(w, o, generation, Register::rdx, false);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::r10, Register::r10);
+        if (operation == 39) {
+            host_kernel_call(w, o, 17);
+        } else {
+            host_kernel_call(w, o, 16);
+        }
+        host_bound(w, o, Register::rax, 3);
+        emit_mov_rr(w, o, Register::rax, Register::r9);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rcx, Register::rcx);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_set_condition(w, o, 4, Register::rcx);
+        emit_shift_imm(w, o, true, 9, Register::rcx);
+        emit_alu_rr(w, o, AluOp::compare, Register::rdx, Register::rcx);
+        emit_branch(w, o, 5, 4, 0);
+        emit_load(w, o, grant, Register::rdi, false);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::r11, Register::r11);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::r8, Register::r8);
+        i64 byte = 16;
+        while (byte < block_window_bytes()) {
+            emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, byte), false);
+            emit_alu_rr(w, o, AluOp::bit_or, Register::rax, Register::r8);
+            byte = byte + 8;
+        }
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rcx, Register::rcx);
+        emit_alu_rr(w, o, AluOp::test, Register::r9, Register::r9);
+        emit_set_condition(w, o, 5, Register::rcx);
+        emit_unary(w, o, UnaryOp::negate, Register::rcx);
+        emit_alu_rr(w, o, AluOp::bit_and, Register::rcx, Register::r8);
+        emit_branch(w, o, 5, 4, 0);
+        emit_mov_rr(w, o, Register::r9, Register::rax);
+        return emit_indexed_store(w, o, Register::rdi, Register::r11, indexed_address(1, 8), false);
+    }
+    // Writer staging is sequential and consumed exactly once. Invalid local
+    // calls trap, ending the isolated process rather than retaining a partial
+    // stage. Actual write authority is independently checked by the kernel.
+    auto emit_writer_operation(EmitWorkspace& w, ObjectWorkspace& o,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+        if (!w.kernel_target()) {
+            return w.fail();
+        }
+        const i64 operation = operand_value(store, instruction, 1);
+        if (operation < 42) {
+            return emit_block_operation(w, o, store, instruction);
+        }
+        const i64 marker = w.intern_runtime("__au_kernel_service_call");
+        w.record_call(2, marker);
+        const i64 offset = operand_value(store, instruction, 0);
+        const i64 grant = w.pack_address(0, offset);
+        const i64 generation = w.pack_address(0, offset - 8);
+        emit_mov_rr(w, o, Register::rax, Register::rsi);
+        emit_load(w, o, grant, Register::rdi, false);
+        emit_load(w, o, generation, Register::rdx, false);
+        emit_alu_rr(w, o, AluOp::test, Register::rdx, Register::rdx);
+        emit_branch(w, o, 4, 4, 0);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::r11, Register::r11);
+        if (operation == 42) {
+            emit_pop(w, o, Register::r8);
+            emit_pop(w, o, Register::rcx);
+            host_bound(w, o, Register::rcx, 511);
+            host_bound(w, o, Register::r8, 255);
+            emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 528), false);
+            emit_alu_rr(w, o, AluOp::compare, Register::rcx, Register::rax);
+            emit_branch(w, o, 5, 4, 0);
+            emit_mov_rr(w, o, Register::r8, Register::rax);
+            emit_indexed_store(w, o, Register::rdi, Register::rcx, indexed_address(1, 16), true);
+            emit_mov_rr(w, o, Register::rcx, Register::rax);
+            emit_alu_imm(w, o, AluOp::add, 1, Register::rax);
+            emit_indexed_store(w, o, Register::rdi, Register::r11, indexed_address(1, 528), false);
+            emit_mov_imm(w, o, 3, Register::rax);
+            emit_indexed_store(w, o, Register::rdi, Register::r11, indexed_address(1, 8), false);
+            return emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
+        }
+        if (operation == 43) {
+            emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 528), false);
+            emit_alu_imm(w, o, AluOp::compare, 512, Register::rax);
+            emit_branch(w, o, 5, 4, 0);
+        }
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
+        emit_indexed_store(w, o, Register::rdi, Register::r11, indexed_address(1, 528), false);
+        emit_mov_imm(w, o, 3, Register::rax);
+        emit_indexed_store(w, o, Register::rdi, Register::r11, indexed_address(1, 8), false);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::r10, Register::r10);
+        if (operation == 43) {
+            emit_indexed_lea(w, o, Register::rdi, Register::r11, 16, Register::rdi);
+            host_kernel_call(w, o, 18);
+        } else {
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::rdi, Register::rdi);
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::rsi, Register::rsi);
+            if (operation == 44) {
+                host_kernel_call(w, o, 19);
+            } else {
+                if (operation != 45) {
+                    return w.fail();
+                }
+                host_kernel_call(w, o, 20);
+                emit_alu_rr(w, o, AluOp::test, Register::rdx, Register::rdx);
+                emit_branch(w, o, 5, 4, 0);
+                return host_bound(w, o, Register::rax, 65535);
+            }
+        }
+        host_bound(w, o, Register::rax, 3);
+        emit_alu_rr(w, o, AluOp::test, Register::rdx, Register::rdx);
+        return emit_branch(w, o, 5, 4, 0);
+    }
     auto emit_service_operation(EmitWorkspace& workspace, ObjectWorkspace& object,
         const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
         const i64 offset = operand_value(store, instruction, 0);
         const i64 operation = operand_value(store, instruction, 1);
         const i64 result = operand_value(store, instruction, 2);
-        if (operation > 8) {
+        if (operation >= 39 && operation < 46) {
+            return emit_writer_operation(workspace, object, store, instruction);
+        }
+        if (operation >= 36 && operation < 39) {
+            return emit_block_operation(workspace, object, store, instruction);
+        }
+        if (operation >= 32 && operation < 36) {
+            return emit_endpoint_operation(workspace, object, store, instruction);
+        }
+        if (operation > 8 && operation < 32) {
             return emit_host_operation(workspace, object, store, instruction);
         }
         const i64 address_token3 = workspace.pack_address(0, offset);

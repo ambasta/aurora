@@ -226,7 +226,9 @@ export namespace compiler_ir_instructions {
         call_span_type,
         storage_span_type,
         storage_span_values,
-        service_platform
+        service_platform,
+        endpoint_platform,
+        block_platform
     };
     // The eight OutputRow-width leaves remain raw integers. The codec preserves
     // unknown scalar operators for source admission to reject without enum

@@ -1,0 +1,2 @@
+1 bin/file-service-mounted file-service	exit 0
+2 bin/lifecycle lifecycle mounted-small	exit 0 | stdout: xfs mounted 113 committed old 777 retained ram intact

@@ -48,6 +48,7 @@ help:
 	  'make smoke-program-console-uefi  Build/check and test the protected command console' \
 	  'make smoke-production  Build/check and test the production UEFI image (both consoles)' \
 	  'make capture-framebuffer  Build/check and save a local PNG preview under build/' \
+	  'make smoke-nvme         Disposable protected NVMe write/Flush/cold-read guests' \
 	  'make smoke-iommu-event  Opt-in custom-model Event guests with current admission and normal restoration' \
 	  'make smoke-graphical-console  Build/check graphical guests, capture pixels and restore normal UEFI' \
 	  'make smoke-console    Build and verify BIOS console PTY acceptance' \
@@ -201,6 +202,10 @@ test-storage-model:
 .PHONY: test-nvme-queues
 test-nvme-queues:
 	$(MESON_TEST) kernel-nvme-queues kernel-nvme-queues-generation-3 kernel-nvme-queues-api kernel-compile-fail
+
+.PHONY: smoke-nvme
+smoke-nvme:
+	./scripts/kernel-run.sh nvme --smoke
 
 .PHONY: smoke-nvme-prepare
 smoke-nvme-prepare:

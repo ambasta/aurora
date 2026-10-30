@@ -1,0 +1,19 @@
+{
+  "inode-99-after.hex": "fb60faa0835a32451a50505fe8d9b359f699a50fa29c7c49ca2b1e82d046a273",
+  "inode-100-before.hex": "0f62c33648ad34eb0c3cdd0ad1bb7710f73ff750a9e39b2fa51dea99bada1615",
+  "inode-99-before.hex": "e9b9a4de54ffbc9610a4fd3ed8011cac092927357cfdd4be14fafe9a2e2a5456",
+  "inode-100-after.hex": "309a4383744118465642bac2e38c63c5b5058198ca5260d2a0107a1bd7e17674",
+  "log-record-2-inode-100-core.hex": "b2ca16a92e6e860177e57cd834bf5b90b9467ab0f580a6754ea79d88c2b17564",
+  "log-record-5-inode-99-core.hex": "5f1b39692759a1afe351f4a40cb6c3825ba84e6faf7db00a871cd3e74a20de93",
+  "log-record-2-inode-99-core.hex": "37dc6c445be8615e534c5e6e60a934d5492d6cb33c13ee165ea7b62fdf4b7364",
+  "superblock.hex": "090d647073b2e19e2ba7d89674dadaf89007da36292e4b9db6f1aaac3bd792ca",
+  "log-record-2-header.hex": "7a3e8b6185cc850ab2b4e2791a0f0f4cd9598eda4284a2fea3b64889c80db40a",
+  "log-record-2-stamped.hex": "17016b10f4f132ca74c3eba7d9db1e5eb2fdcc10ae20e17c930badc66af5dabc",
+  "log-record-5-header.hex": "114b849aaabaa6bad9c2ff49f73073a49d21f44635c98f172b18028934654918",
+  "log-record-5-stamped.hex": "fd930091e4419bf89de391e3a3e00ae1d26c5c2fda825dcffc83362dbda809b3",
+  "root-before.hex": "158e3beb827600e7ee052ff3a6d0aa3a7891829bfa627ed73071272b1e5a3d49",
+  "dirty-log-prefix.hex": "cb467c02c92b220b1dff6c6ac984fc2f2812754fa9b622546e1fb659124c2bfc",
+  "dirty-stale-header.hex": "919c50cfcfb99a47e4a696d0ff1c853c2555ed844e469809c74afe007f3ffd3e",
+  "hello-data.hex": "94eb5de4943613fd048dc93393ab06877405faa39c11f53e9386083339833e7e",
+  "pattern-data.hex": "835e374ae7c3c8942fdaf4cb0abde0d5da0cd3c8e57be98654a590a0b37a055d"
+}

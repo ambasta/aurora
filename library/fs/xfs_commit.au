@@ -1,0 +1,488 @@
+export module fs.xfs_commit;
+import std.binary;
+import std.binary_buffer;
+import storage.block_io;
+import storage.sector;
+import fs.xfs_geometry;
+import fs.xfs_probe;
+import fs.xfs_root;
+import fs.xfs_file;
+import fs.xfs_log;
+import fs.xfs_recovery;
+import fs.xfs_recovery_ag;
+import fs.xfs_core_redo;
+import fs.xfs_core_log;
+import fs.xfs_commit_log;
+import fs.xfs_mount;
+
+export namespace fs {
+    class XfsCommitCleanFacts {
+    public:
+        u64 head;
+        u64 latest;
+        u64 capacity;
+    };
+    // One copied, completely prepared replacement. Neither preparation nor
+    // write_at grants permission to submit a disk command. The service must
+    // reserve its finite boot-global budget before the first submitted write.
+    class XfsMountedCommitPlan {
+        builtin::OwnedBytes _cache;
+        u64 _head;
+        u64 _log_begin;
+        u64 _stage_data;
+        u64 _stage_home;
+        u64 _root_home;
+        u64 _destination;
+        u64 _append_seen;
+        bool _prepared;
+        bool _failed;
+        u64 _allocation_step;
+        bool _allocation_started;
+        bool _profile_ready;
+        u64 _staging;
+        u64 _root_size;
+        u64 _latest;
+        u64 _capacity;
+        u64 _confirmation_seen;
+
+        auto view(i64 offset, i64 count) const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(_cache);
+            return all.subspan(offset, count);
+        }
+        auto save(i64 offset, storage::Sector512 sector) -> bool {
+            i64 at = 0;
+            while (at < 512) {
+                const std::ByteReadResult byte = sector.read_byte(at);
+                _cache.set(offset + at, u8(byte.value_or(0u64)));
+                at = at + 1;
+            }
+            return true;
+        }
+        auto word(i64 offset, u64 value, i64 width, bool little) -> bool {
+            i64 at = 0;
+            while (at < width) {
+                i64 shift = (width - 1 - at) * 8;
+                if (little) {
+                    shift = at * 8;
+                }
+                _cache.set(offset + at, u8((value >> shift) & 255u64));
+                at = at + 1;
+            }
+            return true;
+        }
+        auto copied(i64 offset) const -> storage::Sector512 {
+            storage::Sector512 sector = storage::Sector512();
+            i64 at = 0;
+            while (at < 512) {
+                sector.write_byte(at, _cache.at(offset + at));
+                at = at + 1;
+            }
+            return sector;
+        }
+        auto refuse() -> bool {
+            _failed = true;
+            return false;
+        }
+    public:
+        XfsMountedCommitPlan(builtin::ByteRegion region, builtin::OwnedBytes cache) : _cache(move(cache)), _head(0u64),
+            _log_begin(0u64), _stage_data(0u64), _stage_home(0u64), _root_home(0u64), _destination(0u64),
+            _append_seen(0u64), _prepared(false), _failed(false), _allocation_step(0u64), _allocation_started(false),
+            _profile_ready(false), _staging(0u64), _root_size(0u64), _latest(0u64), _capacity(0u64),
+            _confirmation_seen(0u64) {
+        }
+        auto input(u64 index, storage::Sector512 sector) -> bool {
+            if (!_cache.ok() || _cache.size() != 16384 || _prepared || _failed || _allocation_started || index > 3u64) {
+                return refuse();
+            }
+            return save(i64(index) * 512, sector);
+        }
+        auto begin_allocation(XfsCommitCleanFacts facts) -> bool {
+            if (!_cache.ok() || _cache.size() != 16384 || _prepared || _failed || _allocation_started || facts.capacity
+                == 0u64) {
+                return refuse();
+            }
+            _head = facts.head;
+            _latest = facts.latest;
+            _capacity = facts.capacity;
+            _allocation_started = true;
+            return true;
+        }
+        auto allocation_lba() const -> u64 {
+            if (!_allocation_started || _failed || _allocation_step >= 37u64) {
+                return 0u64;
+            }
+            if (_allocation_step < 3u64) {
+                return _allocation_step + 1u64;
+            }
+            if (_allocation_step < 35u64) {
+                return 8u64 + _allocation_step - 3u64;
+            }
+            return 97u64 + _allocation_step - 35u64;
+        }
+        auto accept_allocation(u64 lba, builtin::span<const u8> bytes) -> bool {
+            if (allocation_lba() == 0u64 || lba != allocation_lba() || bytes.size() != 512) {
+                return refuse();
+            }
+            i64 offset = 4096;
+            if (_allocation_step < 3u64) {
+                offset = 2048 + i64(_allocation_step) * 512;
+            }
+            if (_allocation_step >= 3u64 && _allocation_step < 35u64) {
+                offset = 4096 + i64((_allocation_step - 3u64) % 8u64) * 512;
+            }
+            i64 at = 0;
+            while (at < 512) {
+                _cache.set(offset + at, bytes.at(at));
+                at = at + 1;
+            }
+            if (_allocation_step == 2u64 && !inspect_xfs_mounted_headers(view(0, 512), view(2048, 512), view(2560, 512),
+                view(3072, 512), _head)) {
+                return refuse();
+            }
+            if (_allocation_step >= 3u64 && _allocation_step < 35u64 && (_allocation_step - 3u64) % 8u64 == 7u64
+                && !inspect_xfs_mounted_leaf(view(0, 512), view(4096, 4096), 1u64 + (_allocation_step - 3u64) / 8u64,
+                _head)) {
+                return refuse();
+            }
+            if (_allocation_step >= 35u64 && !inspect_xfs_mounted_empty_inode(view(0, 512), view(4096, 512), lba,
+                _head)) {
+                return refuse();
+            }
+            _allocation_step = _allocation_step + 1u64;
+            return true;
+        }
+        auto allocation_ready() const -> bool {
+            return _allocation_started && !_failed && _allocation_step == 37u64;
+        }
+        auto admitted_destination() const -> u64 {
+            if (!_profile_ready || _failed) {
+                return 0u64;
+            }
+            return _destination;
+        }
+        auto admit_files(XfsCommitCleanFacts admitted) -> bool {
+            if (!allocation_ready() || _prepared || admitted.head != _head || admitted.latest != _latest
+                || admitted.capacity != _capacity) {
+                return refuse();
+            }
+            if (_profile_ready) {
+                return true;
+            }
+            const XfsRootReport target = lookup_xfs_v5_512_root(view(0, 512), view(512, 512), "hello");
+            const XfsRootReport stage = lookup_xfs_v5_512_root(view(0, 512), view(512, 512), ".aurora-stage");
+            const XfsRootFacts root = target.facts();
+            const XfsRootMatch target_match = target.match();
+            const XfsRootMatch stage_match = stage.match();
+            _destination = target_match.inode_number();
+            const u64 staging = stage_match.inode_number();
+            if (!target.found() || !stage.found() || root.entry_count() != 2u64 || root.root_inode() != 96u64
+                || _destination == staging || target_match.file_type() != 1u64 || stage_match.file_type() != 1u64
+                || root.payload_bytes() > 192u64) {
+                return refuse();
+            }
+            if ((_destination != 99u64 && _destination != 100u64) || (staging != 99u64 && staging != 100u64)) {
+                return refuse();
+            }
+            if (_destination == 100u64) {
+                const storage::Sector512 first = copied(1024);
+                const storage::Sector512 second = copied(1536);
+                save(1024, second);
+                save(1536, first);
+            }
+            const storage::SectorGeometry geometry = storage::SectorGeometry(admitted.capacity, false);
+            const XfsFileRequest target_request = XfsFileRequest(_destination, 0);
+            const XfsFileRequest stage_request = XfsFileRequest(staging, 0);
+            const XfsFileReport old = plan_xfs_v5_512_file_sector(geometry, view(0, 512), view(1024, 512),
+                target_request);
+            const XfsFileReport pending = plan_xfs_v5_512_file_sector(geometry, view(0, 512), view(1536, 512),
+                stage_request);
+            const XfsFileFacts old_facts = old.facts();
+            const XfsFileFacts pending_facts = pending.facts();
+            const XfsFileSector old_sector = old.sector();
+            const XfsFileSector pending_sector = pending.sector();
+            u64 target_block = 9u64;
+            u64 stage_block = 20u64;
+            if (_destination == 100u64) {
+                target_block = 20u64;
+                stage_block = 9u64;
+            }
+            if (old_sector.source_lba() != target_block * 8u64 || pending_sector.source_lba() != stage_block * 8u64) {
+                return refuse();
+            }
+            _stage_data = pending_sector.source_lba();
+            _stage_home = pending_facts.inode_lba();
+            _root_home = xfs_v5_512_inode_lba(view(0, 512), root.root_inode());
+            const std::ByteReadResult old_links = std::read_be32(view(1024, 512), 16);
+            const std::ByteReadResult stage_links = std::read_be32(view(1536, 512), 16);
+            if (old_facts.size_bytes() < 1u64 || old_facts.size_bytes() > 4096u64 || pending_facts.size_bytes() < 1u64
+                || pending_facts.size_bytes() > 4096u64 || old_links.value_or(0u64) != 1u64
+                || stage_links.value_or(0u64) != 1u64) {
+                return refuse();
+            }
+            if (old.status() != XfsFileStatus::ready || pending.status() != XfsFileStatus::ready
+                || old_facts.allocated_blocks() != 1u64 || pending_facts.allocated_blocks() != 1u64
+                || old_facts.extent_count() != 1u64 || pending_facts.extent_count() != 1u64 || old_sector.kind()
+                != XfsFileSectorKind::written || pending_sector.kind() != XfsFileSectorKind::written
+                || old_sector.source_lba() == _stage_data || _stage_data % 8u64 != 0u64 || _stage_home < 96u64
+                || _stage_home >= 128u64 || _root_home != 96u64) {
+                return refuse();
+            }
+            _head = admitted.head;
+            const std::ByteReadResult log_start = std::read_be64(view(0, 512), 48);
+            const std::ByteReadResult log_blocks = std::read_be32(view(0, 512), 96);
+            _log_begin = log_start.value_or(0u64) * 8u64;
+            const u64 count = log_blocks.value_or(0u64) * 8u64;
+            if (!xfs_log_lsn_valid(_head, count) || (_head & 4294967295u64) + 6u64 >= count) {
+                return refuse();
+            }
+            _staging = staging;
+            _root_size = root.payload_bytes();
+            _profile_ready = true;
+            return true;
+        }
+        auto prepare(XfsCommitCleanFacts admitted, builtin::span<const u8> payload) -> bool {
+            if (!_cache.ok() || _cache.size() != 16384 || _prepared || _failed || !_profile_ready || admitted.head
+                != _head || admitted.latest != _latest || admitted.capacity != _capacity || _append_seen != 7u64
+                || payload.size() < 1 || payload.size() > 4096 || admitted.capacity == 0u64) {
+                return refuse();
+            }
+            i64 at = 2048;
+            while (at < 11264) {
+                _cache.set(at, 0u8);
+                at = at + 1;
+            }
+            save(2048, encode_xfs_core(view(1536, 512)));
+            save(2560, encode_xfs_core(view(512, 512)));
+            word(2048 + 56, u64(payload.size()), 8, true);
+            const std::ByteReadResult stage_changes = std::read_le64(view(2048, 176), 104);
+            const std::ByteReadResult root_changes = std::read_le64(view(2560, 176), 104);
+            if (stage_changes.value_or(18446744073709551615u64) == 18446744073709551615u64
+                || root_changes.value_or(18446744073709551615u64) == 18446744073709551615u64) {
+                return refuse();
+            }
+            word(2048 + 104, stage_changes.value_or(0u64) + 1u64, 8, true);
+            word(2560 + 104, root_changes.value_or(0u64) + 1u64, 8, true);
+            const i64 size = i64(_root_size);
+            const i64 padded = ((size + 3) / 4) * 4;
+            at = 0;
+            while (at < size) {
+                _cache.set(2560 + 176 + at, _cache.at(512 + 176 + at));
+                at = at + 1;
+            }
+            i64 index = 0;
+            while (index < 2) {
+                const XfsRootEntryReport entry = entry_at_xfs_v5_512_root(view(0, 512), view(512, 512), index);
+                const XfsRootEntry item = entry.entry();
+                u64 replacement = _staging;
+                if (item.inode_number() == _staging) {
+                    replacement = _destination;
+                }
+                word(2560 + i64(item.name_offset_bytes() + item.name_length_bytes() + 1u64), replacement, 4, false);
+                index = index + 1;
+            }
+            const XfsCoreRedoRequest stage_redo = XfsCoreRedoRequest(_staging, _head, admitted.capacity);
+            const XfsCoreRedoRequest root_redo = XfsCoreRedoRequest(96u64, _head + 2u64, admitted.capacity);
+            const XfsCoreRedoResult new_stage = convert_xfs_core_redo(view(0, 512), view(1536, 512), view(2048, 176),
+                stage_redo);
+            const XfsCoreRedoResult new_root = convert_xfs_root_redo(view(0, 512), view(512, 512), view(2560, 176
+                + padded), root_redo);
+            if (new_stage.status() != XfsCoreRedoStatus::converted || new_root.status()
+                != XfsCoreRedoStatus::converted) {
+                return refuse();
+            }
+            save(5120, new_stage.sector_or_zero());
+            save(5632, new_root.sector_or_zero());
+            const XfsCommitRecord stage_record = XfsCommitRecord(_head, _head, admitted.latest, 1096110897u64, 5u64);
+            const XfsCommitRecord root_record = XfsCommitRecord(_head + 2u64, _head, _head, 1096110641u64, 6u64);
+            save(3072, xfs_commit_body(view(2048, 176), view(0, 0), _staging, _stage_home, stage_record));
+            save(3584, xfs_commit_header(view(0, 512), copied(3072), stage_record));
+            save(4096, xfs_commit_body(view(2560, 176), view(2736, size), 96u64, _root_home, root_record));
+            save(4608, xfs_commit_header(view(0, 512), copied(4096), root_record));
+            const XfsCoreLogResult decoded_stage = decode_xfs_core_log(view(3584, 512), view(3072, 512), 0);
+            const XfsRootLogResult decoded_root = decode_xfs_root_log(view(4608, 512), view(4096, 512));
+            if (decoded_stage.status() != XfsCoreLogStatus::ready || decoded_root.status() != XfsCoreLogStatus::ready) {
+                return refuse();
+            }
+            const XfsCommitRecord completion = XfsCommitRecord(_head + 4u64, _head + 4u64, _head + 2u64, 1096110657u64,
+                1u64);
+            save(6144, xfs_commit_completion_body(_head >> 32));
+            save(6656, xfs_commit_header(view(0, 512), copied(6144), completion));
+            at = 0;
+            while (at < payload.size()) {
+                _cache.set(7168 + at, payload.at(at));
+                at = at + 1;
+            }
+            _prepared = true;
+            return true;
+        }
+        auto append_lba() const -> u64 {
+            if (!_profile_ready || _failed || _append_seen >= 7u64) {
+                return 0u64;
+            }
+            return _log_begin + (_head & 4294967295u64) + _append_seen;
+        }
+        auto accept_append(u64 lba, builtin::span<const u8> bytes) -> bool {
+            if (append_lba() == 0u64 || lba != append_lba() || bytes.size() != 512) {
+                return refuse();
+            }
+            const std::ByteReadResult blocks = std::read_be32(view(0, 512), 96);
+            const XfsLogSectorKind kind = xfs_log_header_kind(view(0, 512), bytes, lba - _log_begin,
+                blocks.value_or(0u64) * 8u64);
+            const std::ByteReadResult cycle = std::read_be32(bytes, 4);
+            if (kind != XfsLogSectorKind::stale_clear || cycle.value_or(4294967295u64) + 1u64 != (_head >> 32)) {
+                return refuse();
+            }
+            if (_append_seen == 6u64) {
+                i64 at = 0;
+                while (at < 512) {
+                    _cache.set(11264 + at, bytes.at(at));
+                    at = at + 1;
+                }
+            }
+            _append_seen = _append_seen + 1u64;
+            return true;
+        }
+        auto append_ready() const -> bool {
+            return _profile_ready && !_failed && _append_seen == 7u64;
+        }
+        auto ready() const -> bool {
+            return _prepared && !_failed && _append_seen == 7u64;
+        }
+        // Copied readback evidence, not proof that writes were issued. The
+        // owner starts this sequence only after all five Flushes succeed.
+        auto confirmation_lba() const -> u64 {
+            if (!ready() || _confirmation_seen >= 18u64) {
+                return 0u64;
+            }
+            if (_confirmation_seen < 16u64) {
+                const XfsRecoveryWrite write = write_at(_confirmation_seen);
+                return write.lba();
+            }
+            if (_confirmation_seen == 16u64) {
+                return _log_begin + (_head & 4294967295u64) + 6u64;
+            }
+            return 0u64;
+        }
+        auto needs_confirmation() const -> bool {
+            return ready() && _confirmation_seen < 18u64;
+        }
+        auto confirmation_sector() const -> storage::Sector512 {
+            if (_confirmation_seen < 16u64) {
+                const XfsRecoveryWrite write = write_at(_confirmation_seen);
+                return write.sector_or_zero();
+            }
+            if (_confirmation_seen == 16u64) {
+                return copied(11264);
+            }
+            return copied(0);
+        }
+        auto accept_confirmation(u64 lba, storage::SectorIoStatus io, builtin::span<const u8> bytes) -> bool {
+            if (!needs_confirmation() || lba != confirmation_lba() || io != storage::SectorIoStatus::success
+                || bytes.size() != 512) {
+                return refuse();
+            }
+            const storage::Sector512 expected = confirmation_sector();
+            i64 at = 0;
+            while (at < 512) {
+                const std::ByteReadResult byte = expected.read_byte(at);
+                if (byte.value_or(256u64) != u64(bytes.at(at))) {
+                    return refuse();
+                }
+                at = at + 1;
+            }
+            _confirmation_seen = _confirmation_seen + 1u64;
+            return true;
+        }
+        auto confirmed() const -> bool {
+            return ready() && _confirmation_seen == 18u64;
+        }
+        auto continuation() const -> XfsMountedContinuationFacts {
+            XfsMountedContinuationFacts facts = XfsMountedContinuationFacts{
+                .head = 0u64,
+                .latest = 0u64,
+                .capacity = 0u64
+            };
+            if (confirmed()) {
+                facts.head = _head;
+                facts.latest = _latest;
+                facts.capacity = _capacity;
+            }
+            return facts;
+        }
+        auto original_superblock() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(_cache);
+            return all.subspan(0, 512);
+        }
+        auto original_root() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(_cache);
+            return all.subspan(512, 512);
+        }
+        auto completion_header() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(_cache);
+            return all.subspan(6656, 512);
+        }
+        auto completion_body() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(_cache);
+            return all.subspan(6144, 512);
+        }
+        auto destination_inode() const -> u64 {
+            if (!_prepared || _failed) {
+                return 0u64;
+            }
+            return _destination;
+        }
+        // Submit body before header; each numbered fence follows a complete
+        // group. Homes and completion have their own three persistence fences.
+        auto flush_after(u64 ordinal) const -> bool {
+            return ready() && (ordinal == 9u64 || ordinal == 11u64 || ordinal == 13u64 || ordinal == 14u64 || ordinal
+                == 15u64);
+        }
+        auto write_at(u64 ordinal) const -> XfsRecoveryWrite {
+            if (!ready() || ordinal >= 16u64) {
+                const storage::Sector512 zero = storage::Sector512();
+                return XfsRecoveryWrite(0u64, zero);
+            }
+            if (ordinal < 8u64) {
+                return XfsRecoveryWrite(_stage_data + ordinal, copied(7168 + i64(ordinal) * 512));
+            }
+            const u64 head = _log_begin + (_head & 4294967295u64);
+            if (ordinal == 8u64) {
+                return XfsRecoveryWrite(head + 1u64, copied(3072));
+            }
+            if (ordinal == 9u64) {
+                return XfsRecoveryWrite(head, copied(3584));
+            }
+            if (ordinal == 10u64) {
+                return XfsRecoveryWrite(head + 3u64, copied(4096));
+            }
+            if (ordinal == 11u64) {
+                return XfsRecoveryWrite(head + 2u64, copied(4608));
+            }
+            if (ordinal == 12u64) {
+                return XfsRecoveryWrite(_stage_home, copied(5120));
+            }
+            if (ordinal == 13u64) {
+                return XfsRecoveryWrite(_root_home, copied(5632));
+            }
+            if (ordinal == 14u64) {
+                return XfsRecoveryWrite(head + 5u64, copied(6144));
+            }
+            return XfsRecoveryWrite(head + 4u64, copied(6656));
+        }
+    };
+    auto xfs_commit_clean_facts(const XfsCoreRecoveryPlan& clean) -> XfsCommitCleanFacts {
+        const XfsCommitCleanFacts facts = XfsCommitCleanFacts{
+            .head = clean.clean_head_lsn(),
+            .latest = clean.clean_latest_lsn(),
+            .capacity = clean.clean_capacity()
+        };
+        return facts;
+    }
+    auto copy_xfs_mounted_inputs(XfsMountedCommitPlan& commit, const XfsCoreRecoveryPlan& clean) -> bool {
+        if (clean.status() != XfsRecoveryStatus::already_clean) {
+            return false;
+        }
+        return commit.input(0u64, clean.clean_superblock()) && commit.input(1u64, clean.clean_root())
+            && commit.input(2u64, clean.clean_inode(99u64)) && commit.input(3u64, clean.clean_inode(100u64));
+    }
+}

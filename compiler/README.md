@@ -262,6 +262,37 @@ pass runs in Aurora after all source whole-function checks and before import
 pruning, without a C++ graph fallback. Aurora owns complete x86 text and object
 emission, including stack facts and ABI JSON, with no native opcode fallback.
 
+## Static executables
+
+`aurorac --link-object INPUT.o -o OUTPUT` links one complete Aurora-emitted
+object, including its imported modules and runtime, without invoking a host
+linker. `--emit-executable` in place of `--emit-object` compiles and links in
+one invocation; `--target linux|aurora` selects the same runtime as for object
+emission. Both paths use `static_link.au` and the existing atomic, no-source-alias
+artifact outputs. On Linux, HostFiles outputs remain mode 0600: the caller must
+`chmod +x OUTPUT` before running it. Aurora's ELF loader does not use Unix modes.
+
+This is deliberately not a general ELF linker. The admitted input is the
+emitter's bounded, eight-section ELF64 x86-64 relocatable profile: `.text`,
+`.rodata`, symbol/string tables, `.rela.text` and the non-executable stack
+marker, at most 64 MiB. All non-null symbols must be defined in text or readonly
+data, with distinct terminated names and the ELF local/global partition; one
+global function `_start` must start inside text. Calls use PLT32 relocations
+to text functions, literal addresses PC32 to readonly symbols, both with
+addend -4 at increasing, disjoint, zeroed four-byte text sites. Unsupported or
+malformed objects, undefined symbols, duplicate names and other relocation
+forms fail before an output is created. Empty literals are permitted.
+
+The result is a static ET_EXEC with a readonly header page at 0x400000,
+page-separated RX text and optional R literals, and a non-executable stack
+header. It contains no section/symbol tables, interpreter, dynamic relocations
+or writable static data. Stack and ABI sidecars, when requested, remain the
+compiler's original facts. The linker bounds layout and signed PC-relative
+arithmetic before writing; the kernel independently admits ELF segments and
+checks mappings when loading. Archives, multiple-object resolution, data/BSS,
+TLS, dynamic linking and arbitrary GNU objects remain unsupported. GNU tools
+still bootstrap the first compiler and link the kernel's native adapters.
+
 ## Emitter qualification
 
 The C++ x86 backend of the last historical stage, `672821f`, was retired after
@@ -393,11 +424,12 @@ declaration admission, module visibility, template resolution and resolved
 type/lifetime analysis run in Aurora. Production lowers the resolved Session
 directly to typed IR, without a resolved C++ AST round trip. The compiler
 builds itself from source through the [seed](#the-seed); that is not yet a
-self-hosting toolchain (assembler, linker and runtime remain GNU and Linux).
+self-hosting toolchain (general binary tools and the complete native runtime remain open).
 Its `--target aurora` build also compiles itself inside the Aurora kernel's
 process image to C1's object of the compiler, byte for byte (the
 [self-host row](../kernel/uefi/process.md#tests), release suite); that object
-is still linked by the host `ld`.
+can be linked by the Aurora static linker above; retaining its output for a later guest process
+requires the file-service/run path described in the process guide.
 
 CFG joins require exact source lifetime, provenance and operand-stack agreement
 before weakening the retained current value. An already unknown current stays

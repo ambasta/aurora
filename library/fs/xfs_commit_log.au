@@ -1,0 +1,194 @@
+export module fs.xfs_commit_log;
+import std.binary;
+import std.binary_buffer;
+import std.checksum;
+import storage.sector;
+
+namespace fs {
+    class XcSector {
+        storage::Sector512 _sector;
+    public:
+        XcSector(storage::Sector512 sector) : _sector(sector) {
+        }
+        auto word(i64 offset, u64 value, i64 width, bool little) -> bool {
+            if (offset < 0 || width < 1 || width > 8 || offset > 512 - width) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < width) {
+                i64 shift = (width - 1 - at) * 8;
+                if (little) {
+                    shift = at * 8;
+                }
+                _sector.write_byte(offset + at, u8((value >> shift) & 255u64));
+                at = at + 1;
+            }
+            return true;
+        }
+        auto write_byte(i64 offset, u8 value) -> bool {
+            return _sector.write_byte(offset, value) == std::ByteWriteStatus::success;
+        }
+        auto operation(i64 offset, u64 ticket, u64 length, u8 flags) -> bool {
+            word(offset, ticket, 4, false);
+            word(offset + 4, length, 4, false);
+            write_byte(offset + 8, 105u8);
+            write_byte(offset + 9, flags);
+            return true;
+        }
+        auto sector() const -> storage::Sector512 {
+            const storage::Sector512 value = _sector;
+            return value;
+        }
+    };
+    auto xc_crc(storage::Sector512 sector, i64 length, u64 seed) -> u64 {
+        u64 checksum = seed;
+        i64 at = 0;
+        while (at < length) {
+            i64 count = length - at;
+            if (count > 64) {
+                count = 64;
+            }
+            const storage::RecordReadResult read = sector.read_record(at);
+            const std::BinaryBuffer64 bytes = read.record_or_zero();
+            const std::ChecksumResult next = std::crc32c_extend(checksum, bytes.bytes(0, count), 0, count);
+            if (read.status() != std::ByteReadStatus::success || next.status() != std::ChecksumStatus::success) {
+                return 4294967296u64;
+            }
+            checksum = next.value_or(4294967296u64);
+            at = at + count;
+        }
+        return checksum;
+    }
+}
+
+export namespace fs {
+    // Copied log formatting facts, never a disk authority or a reservation.
+    // The mounted owner admits the same 16 KiB inode cluster observed in the
+    // Linux reference before constructing these records.
+    class XfsCommitRecord {
+        u64 _lsn;
+        u64 _tail;
+        u64 _previous;
+        u64 _ticket;
+        u64 _operations;
+    public:
+        XfsCommitRecord(u64 lsn, u64 tail, u64 previous, u64 ticket, u64 operations) : _lsn(lsn), _tail(tail),
+            _previous(previous), _ticket(ticket), _operations(operations) {
+        }
+        auto lsn() const -> u64 {
+            return _lsn;
+        }
+        auto tail() const -> u64 {
+            return _tail;
+        }
+        auto previous() const -> u64 {
+            return _previous;
+        }
+        auto ticket() const -> u64 {
+            return _ticket;
+        }
+        auto operations() const -> u64 {
+            return _operations;
+        }
+    };
+
+    // Native log CORE followed by the exact LOCAL fork, if present. The caller
+    // re-decodes this record and independently validates its candidate home.
+    auto xfs_commit_body(builtin::span<const u8> core, builtin::span<const u8> local, u64 inode, u64 inode_lba,
+        XfsCommitRecord facts) -> storage::Sector512 {
+        const storage::Sector512 empty = storage::Sector512();
+        XcSector body = XcSector(empty);
+        const u64 padded = ((u64(local.size()) + 3u64) / 4u64) * 4u64;
+        const bool root = local.size() != 0;
+        if (core.size() != 176 || local.size() < 0 || padded > 192u64 || inode == 0u64 || inode_lba < 96u64 || inode_lba
+            >= 128u64 || facts.ticket() > 4294967295u64 || facts.lsn() >> 32 == 0u64 || (!root && facts.operations()
+            != 5u64) || (root && facts.operations() != 6u64)) {
+            return body.sector();
+        }
+        body.operation(0, facts.ticket(), 0u64, 1u8);
+        body.operation(12, facts.ticket(), 16u64, 0u8);
+        body.word(24, 1414676814u64, 4, true);
+        body.word(28, 40u64, 4, true);
+        body.word(32, facts.ticket(), 4, true);
+        u64 regions = 2u64;
+        if (root) {
+            regions = 3u64;
+        }
+        body.word(36, regions, 4, true);
+        body.operation(40, facts.ticket(), 56u64, 0u8);
+        body.word(52, 4667u64, 2, true);
+        body.word(54, regions, 2, true);
+        u64 fields = 1u64;
+        if (root) {
+            fields = 3u64;
+        }
+        body.word(56, fields, 4, true);
+        body.word(62, u64(local.size()), 2, true);
+        body.word(68, inode, 8, true);
+        body.word(92, 96u64, 8, true);
+        body.word(100, 32u64, 4, true);
+        body.word(104, (inode_lba - 96u64) * 512u64, 4, true);
+        body.operation(108, facts.ticket(), 176u64, 0u8);
+        i64 at = 0;
+        while (at < 176) {
+            body.write_byte(120 + at, core.at(at));
+            at = at + 1;
+        }
+        i64 end = 296;
+        if (root) {
+            body.operation(296, facts.ticket(), padded, 0u8);
+            at = 0;
+            while (at < local.size()) {
+                body.write_byte(308 + at, local.at(at));
+                at = at + 1;
+            }
+            end = 308 + i64(padded);
+        }
+        body.operation(end, facts.ticket(), 0u64, 2u8);
+        body.word(0, facts.lsn() >> 32, 4, false);
+        return body.sector();
+    }
+
+    auto xfs_commit_header(builtin::span<const u8> superblock, storage::Sector512 body,
+        XfsCommitRecord facts) -> storage::Sector512 {
+        const storage::Sector512 empty = storage::Sector512();
+        XcSector header = XcSector(empty);
+        if (superblock.size() != 512 || facts.ticket() > 4294967295u64 || facts.lsn() >> 32 == 0u64 || facts.tail()
+            > facts.lsn() || facts.operations() == 0u64 || facts.operations() > 6u64) {
+            return header.sector();
+        }
+        header.word(0, 4276992702u64, 4, false);
+        header.word(4, facts.lsn() >> 32, 4, false);
+        header.word(8, 2u64, 4, false);
+        header.word(12, 512u64, 4, false);
+        header.word(16, facts.lsn(), 8, false);
+        header.word(24, facts.tail(), 8, false);
+        header.word(36, facts.previous() & 4294967295u64, 4, false);
+        header.word(40, facts.operations(), 4, false);
+        header.word(44, facts.ticket(), 4, false);
+        header.word(300, 1u64, 4, false);
+        i64 at = 0;
+        while (at < 16) {
+            header.write_byte(304 + at, superblock.at(32 + at));
+            at = at + 1;
+        }
+        header.word(320, 32768u64, 4, false);
+        const u64 checksum = xc_crc(body, 512, xc_crc(header.sector(), 328, 0u64));
+        if (checksum > 4294967295u64) {
+            const storage::Sector512 zero = storage::Sector512();
+            return zero;
+        }
+        header.word(32, checksum, 4, true);
+        return header.sector();
+    }
+
+    auto xfs_commit_completion_body(u64 cycle) -> storage::Sector512 {
+        const storage::Sector512 empty = storage::Sector512();
+        XcSector body = XcSector(empty);
+        body.word(0, cycle, 4, false);
+        body.write_byte(8, 170u8);
+        body.write_byte(9, 32u8);
+        body.word(12, 21870u64, 2, true);
+        return body.sector();
+    }
+}

@@ -30,19 +30,21 @@ auto repair(Buffer &bytes) -> void {
 // SELECT entries are the pinned minimal Q35 topology with the automatically
 // allocated IOMMU in the first free slot. Changing the chosen unit below tests
 // derivation from matching copied/live facts rather than a fixed 00:03.0 rule.
-auto table(unsigned iommu = 8) -> Buffer {
-    Buffer bytes(176);
+auto table(unsigned iommu = 8, unsigned endpoint = 0x20, bool graphics = false) -> Buffer {
+    Buffer bytes(graphics ? 184 : 176);
     for (unsigned i = 0; i < 4; ++i)
         bytes[i] = std::byte("IVRS"[i]);
     put(bytes, 8, 1, 1);
     put(bytes, 36, 0x2801, 4);
-    std::array<unsigned, 6> ids{0, iommu, 0x20, 0xf8, 0xfa, 0xfb};
+    std::vector<unsigned> ids{0, iommu, endpoint, 0xf8, 0xfa, 0xfb};
+    if (graphics)
+        ids.push_back(0x18);
     std::sort(ids.begin(), ids.end());
     for (unsigned record = 0; record < 2; ++record) {
-        const unsigned at = record == 0 ? 48 : 104, header = record == 0 ? 24 : 40;
+        const unsigned at = record == 0 ? 48 : graphics ? 108 : 104, header = record == 0 ? 24 : 40;
         put(bytes, at, record == 0 ? 0x10 : 0x11, 1);
         put(bytes, at + 1, record == 0 ? 0xd1 : 0x11, 1);
-        put(bytes, at + 2, header + 32, 2);
+        put(bytes, at + 2, header + ids.size() * 4 + 8, 2);
         put(bytes, at + 4, iommu, 2);
         put(bytes, at + 6, 0x40, 2);
         put(bytes, at + 8, 0xfed80000);
@@ -56,7 +58,7 @@ auto table(unsigned iommu = 8) -> Buffer {
         // Literal source bytes, independent of policy's 64-bit comparison.
         const std::array<unsigned, 8> special{0x48, 0, 0, 0, 0, 0xa0, 0, 1};
         for (unsigned i = 0; i < special.size(); ++i)
-            bytes[at + header + 24 + i] = std::byte(special[i]);
+            bytes[at + header + ids.size() * 4 + i] = std::byte(special[i]);
     }
     repair(bytes);
     return bytes;
@@ -737,7 +739,302 @@ auto handoff_controls() -> void {
         run(0, false, corrupt);
 }
 
+auto nvme_controls() -> void {
+    static_assert(!std::is_convertible_v<EventAdmission, NvmeAdmission>);
+    static_assert(!std::is_constructible_v<NvmeAdmission, EventResources>);
+    static_assert(!std::is_default_constructible_v<NvmeAdmission>);
+    const auto ivrs = NvmeIvrs::parse_qemu_default(table(8, 0x10), 40);
+    check(ivrs && ivrs->covers(0, 0, 2, 0) && !ivrs->covers(0, 0, 4, 0));
+    check(!EventIvrs::parse_qemu_default(table(8, 0x10), 40));
+    check(!NvmeIvrs::parse_qemu_default(table(), 40));
+    check(!NvmeIvrs::parse_qemu_default(table(0x10, 0x10), 40));
+    auto facts = inventory();
+    facts[2] = pci(0x10, 0x00101b36, 0x01080202, 2);
+    put(facts[2].header, 16, 0xc0000004, 4);
+    auto bars = std::array{bar(0x10, 0, 0xc0000000, 0x4000), bar(0xfa, 5, 0xc1000000, 0x1000)};
+    put(bars[0].descriptor, 6, 64);
+    const auto root = PciResources::parse_edk2_root(root_bytes(), 40);
+    const auto caps = capabilities(), map = memory();
+    const auto resources = [&](const auto &current, const auto &ranges) {
+        return NvmeResources::admit_qemu_default(
+            *ivrs, current, current, caps, caps, ranges, *root, 0, map, 40, 0x400000, 0xfee00000);
+    };
+    const auto admitted = resources(facts, bars);
+    check(admitted && admitted->endpoint_base() == 0xc0000000 && admitted->endpoint_config_address() == 0xe0010000);
+    // Firmware may place a 64-bit BAR wholly above 4 GiB: low DWORD4,
+    // high DWORD0xc0 describes 0xc000000000, not the null address.
+    auto high_facts = facts;
+    put(high_facts[2].header, 16, 4, 4);
+    put(high_facts[2].header, 20, 0xc0, 4);
+    auto high_bars = bars;
+    high_bars[0] = bar(0x10, 0, 0xc000000000ULL, 0x4000);
+    put(high_bars[0].descriptor, 6, 64);
+    auto high_root_bytes = root_bytes();
+    auto extra = root_bytes(0xc000000000ULL, 0x100000);
+    put(extra, 6, 64);
+    high_root_bytes.insert(high_root_bytes.begin() + 46, extra.begin(), extra.begin() + 46);
+    const auto high_root = PciResources::parse_edk2_root(high_root_bytes, 40);
+    check(high_root.has_value());
+    const auto high_admit = [&](const auto &current) {
+        return NvmeResources::admit_qemu_default(
+            *ivrs, current, current, caps, caps, high_bars, *high_root, 0, map, 40, 0x400000, 0xfee00000);
+    };
+    const auto high = high_admit(high_facts);
+    check(high && high->endpoint_base() == 0xc000000000ULL);
+    for (unsigned upper : {0U, 0x100U, 0xffffffffU}) {
+        auto changed = high_facts;
+        put(changed[2].header, 20, upper, 4);
+        check(!high_admit(changed));
+    }
+    NvmeColdObservation cold;
+    for (auto &sample : cold.samples)
+        sample = NvmeColdFact{0x004008200f010001ULL, 0, 0, 0x10400, 0, 0, 0};
+    check(cold.cold() && NvmeAdmission::admit(*admitted, ahci(), cold));
+    for (unsigned sample = 0; sample < 2; ++sample) {
+        for (unsigned field = 0; field < 7; ++field) {
+            auto changed = cold;
+            auto &fact = changed.samples[sample];
+            if (field == 0)
+                fact.capability ^= 1;
+            if (field == 1)
+                fact.submission = 0x2000;
+            if (field == 2)
+                fact.completion = 0x3000;
+            if (field == 3)
+                fact.version ^= 1;
+            if (field == 4)
+                fact.control = 1;
+            if (field == 5)
+                fact.status = 1;
+            if (field == 6)
+                fact.queue_attributes = 0x10001;
+            check(!changed.cold() && !NvmeAdmission::admit(*admitted, ahci(), changed));
+        }
+    }
+    // NVMe's distinct handoff starts MEM-only, never inherited BME. It must
+    // remain cold through every AHCI/PCI reduction and consume failed attempts.
+    auto inherited = facts;
+    for (auto &fact : inherited)
+        put(fact.header, 4, fact.requester() == 0x10 ? 2 : 7, 2);
+    auto retained_map = map;
+    const auto firmware_pages = memory(4, 0x800000, 2, 15);
+    retained_map.insert(retained_map.end(), firmware_pages.begin(), firmware_pages.end());
+    const auto handoff_resources = NvmeResources::admit_qemu_default(*ivrs,
+                                                                     inherited,
+                                                                     inherited,
+                                                                     caps,
+                                                                     caps,
+                                                                     bars,
+                                                                     *root,
+                                                                     0,
+                                                                     retained_map,
+                                                                     40,
+                                                                     0x400000,
+                                                                     0xfee00000,
+                                                                     NvmeResources::Purpose::firmware_handoff);
+    check(handoff_resources.has_value());
+    auto initial = ahci();
+    for (unsigned port = 0; port < 6; ++port) {
+        initial.ports[port] = {port == 0 ? 6U : 0x4014U, 0, 0, 0x50, 0x800000, 0x801000 + port * 256};
+    }
+    for (bool changed_after_prepare : {false, true}) {
+        auto attempt =
+            NvmeHandoff::prepare(*handoff_resources, inherited, initial, initial, cold, retained_map, 40, 0x400000);
+        check(attempt.has_value());
+        auto model = initial;
+        bool latch = false;
+        unsigned writes = 0;
+        const auto read = [&]() -> std::optional<EventAhciFacts> {
+            return model;
+        };
+        const auto write = [&](unsigned port, unsigned command) {
+            ++writes;
+            check(command == 0x4004);
+            model.ports[port].command = command & ~0x4000U;
+            return true;
+        };
+        const auto endpoint = [&]() -> std::optional<NvmeColdObservation> {
+            auto value = cold;
+            if (changed_after_prepare)
+                value.samples[0].control = 1;
+            return value;
+        };
+        const auto reduce = [&](const EventPciFact &fact,
+                                unsigned command) -> std::optional<std::array<std::byte, 64>> {
+            check(writes == 5);
+            check(command == (fact.requester() == 8 ? 7U : fact.requester() == 0x10 ? 2U : 3U));
+            auto header = fact.header;
+            put(header, 4, command, 2);
+            return header;
+        };
+        const auto grant = attempt->complete(latch, read, write, endpoint, reduce);
+        check(grant.has_value() == !changed_after_prepare && latch);
+        check(!attempt->complete(latch, read, write, endpoint, reduce));
+        if (changed_after_prepare)
+            check(writes == 0);
+    }
+    for (unsigned command : {0U, 3U, 6U, 7U, 0xffffU}) {
+        auto changed = facts;
+        put(changed[2].header, 4, command, 2);
+        check(!resources(changed, bars));
+    }
+    for (unsigned offset : {0U, 8U, 14U, 16U, 20U, 24U}) {
+        auto changed = facts;
+        changed[2].header[offset] ^= std::byte{1};
+        check(!resources(changed, bars));
+    }
+    for (unsigned size : {4096U, 8192U, 32768U, 0x100000U}) {
+        auto changed = bars;
+        changed[0] = bar(0x10, 0, 0xc0000000, size);
+        put(changed[0].descriptor, 6, 64);
+        check(!resources(facts, changed));
+    }
+    for (unsigned rid : {0x20U, 0x100U, 0xffffU}) {
+        auto changed = bars;
+        changed[0].requester = rid;
+        check(!resources(facts, changed));
+    }
+}
+
+auto nvme_graphics_controls() -> void {
+    static_assert(!std::is_convertible_v<NvmeGraphicsAdmission, NvmeAdmission>);
+    static_assert(!std::is_constructible_v<NvmeGraphicsAdmission, NvmeResources>);
+    const auto wire = table(8, 0x10, true);
+    const auto ivrs = NvmeGraphicsIvrs::parse_qemu_default(wire, 40);
+    check(ivrs && ivrs->covers(0, 0, 3, 0) && ivrs->requesters().size() == 7);
+    check(!NvmeIvrs::parse_qemu_default(wire, 40) && !EventIvrs::parse_qemu_default(wire, 40));
+    check(!NvmeGraphicsIvrs::parse_qemu_default(table(8, 0x10), 40));
+    for (std::size_t length = 0; length < wire.size(); ++length)
+        check(!NvmeGraphicsIvrs::parse_qemu_default(std::span{wire}.first(length), 40));
+    for (unsigned offset : {84U, 85U, 160U, 161U}) {
+        auto bad = wire;
+        bad[offset] ^= std::byte{1};
+        repair(bad);
+        check(!NvmeGraphicsIvrs::parse_qemu_default(bad, 40));
+    }
+    const auto old = inventory();
+    std::array<EventPciFact, 7> facts{old[0],
+                                      old[1],
+                                      pci(0x10, 0x00101b36, 0x01080202, 2),
+                                      pci(0x18, 0x11111234, 0x03000002, 3),
+                                      old[3],
+                                      old[4],
+                                      old[5]};
+    put(facts[2].header, 16, 0xc0000004, 4);
+    put(facts[3].header, 16, 0xc2000008, 4);
+    put(facts[3].header, 24, 0xc3000000, 4);
+    std::array bars{bar(0x10, 0, 0xc0000000, 0x4000),
+                    bar(0x18, 0, 0xc2000000, 0x1000000),
+                    bar(0x18, 2, 0xc3000000, 0x1000),
+                    bar(0xfa, 5, 0xc1000000, 0x1000)};
+    put(bars[0].descriptor, 6, 64);
+    put(bars[1].descriptor, 5, 6, 1); // EDK2 prefetchable memory BAR descriptor.
+    auto map = memory(1, 0x400000, Handoff::arena_bytes / 4096);
+    const auto mmio = memory(11, 0xc2000000, 0x1000000 / 4096, 1);
+    map.insert(map.end(), mmio.begin(), mmio.end());
+    const auto caps = capabilities();
+    const auto root = PciResources::parse_edk2_root(root_bytes(), 40);
+    const auto display = [&](std::uint64_t base, std::uint64_t bytes, std::uint64_t arena = 0x400000) {
+        const auto geometry = FramebufferGeometry::parse(base, bytes, 800, 600, 800, 1, 40);
+        check(geometry.has_value());
+        return FramebufferAdmission::authorize_described(*geometry, map, 40, 1, arena, 40, (1 << 5) | (1 << 16), 0);
+    };
+    const auto framebuffer = display(0xc2000000, 1921024);
+    check(framebuffer.has_value());
+    const auto resources = [&](const auto &current,
+                               const auto &ranges,
+                               const FramebufferAdmission *fb,
+                               NvmeGraphicsResources::Purpose purpose = NvmeGraphicsResources::Purpose::admission) {
+        return NvmeGraphicsResources::admit_qemu_default(
+            *ivrs, current, current, caps, caps, ranges, *root, 0, map, 40, 0x400000, 0xfee00000, purpose, fb);
+    };
+    const auto good = resources(facts, bars, &*framebuffer);
+    check(good.has_value());
+    check(!resources(facts, bars, nullptr));
+    const auto second_arena = memory(1, 0xa00000, Handoff::arena_bytes / 4096);
+    auto other_map = map;
+    other_map.insert(other_map.end(), second_arena.begin(), second_arena.end());
+    const auto wrong_owner = FramebufferAdmission::authorize_described(
+        framebuffer->geometry(), other_map, 40, 1, 0xa00000, 40, (1 << 5) | (1 << 16), 0);
+    check(wrong_owner && !resources(facts, bars, &*wrong_owner));
+    const auto foreign_geometry = FramebufferGeometry::parse(0xc4000000, 1921024, 800, 600, 800, 1, 40);
+    const auto foreign_mmio = memory(11, 0xc4000000, 0x1000000 / 4096, 1);
+    other_map.insert(other_map.end(), foreign_mmio.begin(), foreign_mmio.end());
+    const auto foreign = FramebufferAdmission::authorize_described(
+        *foreign_geometry, other_map, 40, 1, 0x400000, 40, (1 << 5) | (1 << 16), 0);
+    check(foreign && !resources(facts, bars, &*foreign));
+    const auto oversized = display(0xc2000000, 0x1000001);
+    check(oversized && !resources(facts, bars, &*oversized));
+    const auto outside = display(0xc2f00000, 1921024);
+    check(!outside); // Incomplete mapped extent cannot create admission.
+    for (unsigned offset : {0U, 8U, 14U, 16U, 20U, 24U, 28U, 32U, 48U}) {
+        auto bad = facts;
+        bad[3].header[offset] ^= std::byte{1};
+        check(!resources(bad, bars, &*framebuffer));
+    }
+    for (unsigned command : {0U, 1U, 2U, 7U, 0xffffU}) {
+        auto bad = facts;
+        put(bad[3].header, 4, command, 2);
+        check(!resources(bad, bars, &*framebuffer));
+    }
+    for (unsigned i = 0; i < bars.size(); ++i) {
+        auto bad = bars;
+        put(bad[i].descriptor, 38, Bytes{bad[i].descriptor}.get(38) * 2);
+        check(!resources(facts, bad, &*framebuffer));
+    }
+    auto alias = facts;
+    put(alias[3].header, 24, 0xc2000000, 4);
+    auto alias_bars = bars;
+    alias_bars[2] = bar(0x18, 2, 0xc2000000, 0x1000);
+    check(!resources(alias, alias_bars, &*framebuffer));
+    NvmeColdObservation cold;
+    for (auto &sample : cold.samples)
+        sample = NvmeColdFact{0x004008200f010001ULL, 0, 0, 0x10400, 0, 0, 0};
+    check(NvmeGraphicsAdmission::admit(*good, ahci(), cold).has_value());
+    auto inherited = facts;
+    for (auto &fact : inherited)
+        put(fact.header, 4, fact.requester() == 0x10 ? 2 : 7, 2);
+    const auto boot = resources(inherited, bars, &*framebuffer, NvmeGraphicsResources::Purpose::firmware_handoff);
+    check(boot.has_value());
+    const auto firmware_pages = memory(4, 0x800000, 2, 15);
+    map.insert(map.end(), firmware_pages.begin(), firmware_pages.end());
+    auto initial = ahci();
+    for (unsigned port = 0; port < 6; ++port)
+        initial.ports[port] = {port == 0 ? 6U : 0x4014U, 0, 0, 0x50, 0x800000, 0x801000 + port * 256};
+    for (bool refuse_vga : {false, true}) {
+        auto attempt = NvmeGraphicsHandoff::prepare(*boot, inherited, initial, initial, cold, map, 40, 0x400000);
+        check(attempt.has_value());
+        auto model = initial;
+        bool latch = false;
+        unsigned reduced = 0;
+        const auto grant = attempt->complete(
+            latch,
+            [&]() -> std::optional<EventAhciFacts> {
+                return model;
+            },
+            [&](unsigned port, unsigned command) {
+                model.ports[port].command = command & ~0x4000U;
+                return true;
+            },
+            [&]() -> std::optional<NvmeColdObservation> {
+                return cold;
+            },
+            [&](const EventPciFact &fact, unsigned command) -> std::optional<std::array<std::byte, 64>> {
+                check(command == (fact.requester() == 8 ? 7U : fact.requester() == 0x10 ? 2U : 3U));
+                ++reduced;
+                auto value = fact.header;
+                if (!(refuse_vga && fact.requester() == 0x18))
+                    put(value, 4, command, 2);
+                return value;
+            });
+        check(latch && grant.has_value() == !refuse_vga);
+        check(reduced == (refuse_vga ? 4U : 7U));
+    }
+}
+
 auto main() -> int {
+    nvme_graphics_controls();
+    nvme_controls();
     handoff_controls();
     precondition_observation_controls();
     observation_controls();

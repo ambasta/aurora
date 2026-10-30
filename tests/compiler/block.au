@@ -1,0 +1,60 @@
+module block_native_probe;
+import aurora.block;
+import storage.block_io;
+import std.binary_buffer;
+import storage.sector;
+import std.binary;
+
+auto zero_sector(storage::SectorReadResult result) -> bool {
+    const storage::Sector512 sector = result.sector_or_zero();
+    i64 index = 0;
+    while (index < 512) {
+        const std::ByteReadResult byte = sector.read_byte(index);
+        if (byte.value_or(1u64) != 0u64) {
+            return false;
+        }
+        index = index + 1;
+    }
+    return true;
+}
+auto copied_sector(storage::SectorReadResult result) -> bool {
+    const storage::Sector512 sector = result.sector_or_zero();
+    const std::ByteReadResult first = sector.read_byte(0);
+    const std::ByteReadResult last = sector.read_byte(511);
+    return first.value_or(0u64) == 90u64 && last.value_or(0u64) == 51u64;
+}
+auto block_entry(builtin::ReadOnlyBlock& blocks, u64 mode) -> u64 {
+    const u64 count = block::sector_count(blocks);
+    const u64 generation = block::volume_generation(blocks);
+    if (mode == 3u64) {
+        if (count != 0u64 || generation != 0u64) {
+            return 1u64;
+        }
+    } else {
+        if (count != 128u64 || generation != 91u64) {
+            return 2u64;
+        }
+    }
+    u64 lba = 7u64;
+    if (mode == 12u64) {
+        lba = 18446744073709551615u64;
+    }
+    const storage::SectorReadResult first = block::read_sector(blocks, lba);
+    if (first.status() != storage::SectorIoStatus::success) {
+        if (!zero_sector(first)) {
+            return 3u64;
+        }
+        if ((mode == 1u64 || mode == 12u64) && first.status() != storage::SectorIoStatus::out_of_range) {
+            return 4u64;
+        }
+        return 42u64;
+    }
+    if (!copied_sector(first)) {
+        return 5u64;
+    }
+    const storage::SectorReadResult second = block::read_sector(blocks, 128u64);
+    if (second.status() == storage::SectorIoStatus::success || !zero_sector(second) || !copied_sector(first)) {
+        return 6u64;
+    }
+    return 42u64;
+}

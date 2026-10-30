@@ -5,32 +5,41 @@ processes. It carries the boot volume, a physical frame allocator over all
 usable conventional memory, kernel mappings beyond the arena's fixed table pages,
 a serial export of volume files, and runs static ELF programs from the volume as
 CPL 3 processes with their own page tables, a watchdog, and exit, print,
-memory and file services through the INT 0x83 gate. Other images and
-`uefi/production` do not change; their image bytes are identical with and
-without this image.
+memory and copied service calls through the INT 0x83 gate. Production uses the
+same process lifetime, retained file owner and validated command loader; its
+old console/framebuffer architecture is restored at the command boundary.
 
 The decisions are Aurora (`examples/kernel-process.au` over
-`kernel/policies/kernel/{memory_map,frames,boot_volume,export_text,elf,process_space,process_memory,process_files,process_events,process_runs}.au`
+`kernel/policies/kernel/{memory_map,frames,boot_volume,export_text,elf,process_space,process_memory,process_events,process_runs}.au`
 and the existing `interrupt_budget`), reached through the private bridge
 `process-entry.S`. The build checks every argument record, result class and
 enum against the compiler's ABI facts (`PROCESS_POLICY_ABI` in
 `scripts/meson_aurora_assembly.py`). Trusted C++ keeps only what the kernel
 bridge cannot express yet: firmware file reads in the loader, page-table
 writes and their walk, CR3, the frame-record storage and free-list head, the
-range table, the memory records, the file service's tables, overlay
-records and data frames (`process-files.hpp`), byte copies, the LAPIC timer
-and serial output; assembly keeps the
+range table, the memory records, bounded copied messages, the LAPIC timer and
+serial output. `services/service/files.au` owns filesystem tables, records and
+bytes in its own process. The former native file-store adapter and its ABI are
+now test-only references beneath `tests/`, never kernel image inputs. Assembly keeps the
 trap entry (`kernel/exceptions.S`) and the CPL 3 transition (`process-user.S`).
 Each C++ decoder rejects a result outside its closed encoding before using it.
 
 ## Handoff
 
-Version 9 is version 2 (the RSDP, no record word) plus the loader fixture word at
-128, the boot volume's page address at 136, its byte length at 144 and the case
-word at 152 (header 160). `Handoff::valid` checks the words structurally:
-nonzero page address, 1..64 MiB, below the 52-bit limit, case at most 255. Only
-the final memory map grants the pages. Every row runs the ACPI discovery of
-version 2, whose MADT copy admits the watchdog's LAPIC timer.
+The process image and production use the fixed 184-byte v10 handoff. Fields are
+runtime metadata at 120, framebuffer at 128, volume at 136, volume length at 144,
+case at 152, BAR record at 160, fixture selector at 168 and composition at 176.
+The closed composition tag is 1 for RAM-backed production, 2 for process RAM,
+3 for the process image's separately enabled NVMe path, and 4 for explicitly
+selected production NVMe. All unused fields must be zero: process rows have no
+runtime/framebuffer, RAM rows have no BAR record, and production has no
+case/fixture. Future tags reject. A BAR record is only copied
+observation, not live device or DMA authority. The existing older profiles keep
+their exact layouts; the process image no longer emits v9.
+
+`Handoff::valid` bounds the volume's nonzero page address and 1..64 MiB length
+below the 52-bit limit, and the case at 255. Only the final memory map grants the
+pages. Every row runs ACPI discovery; its copied MADT admits the watchdog LAPIC.
 The kernel admits the copied map in Aurora (`map_admit`: version 1, stride
 40..256 in multiples of 8, at most 512 descriptors, aligned nonempty ranges
 below 2^52, no overlap). Every type is admitted, including the OEM and OS
@@ -100,7 +109,9 @@ leaf and an open window.
 
 The metadata is one 8-byte record per frame and, from the next page, one
 8-byte mapping word per frame (`KernelSpace::mappings`), zero unless a process maps the
-frame, then 96 pages for the running process's 16384 memory records.
+frame, then 96 pages per resident slot for its 16384 memory records. Case 0
+needs one slot; process rows and production admit exactly two slots (an extra
+384 KiB), without widening image, stack or user mapping bounds.
 
 ## Export
 
@@ -114,7 +125,7 @@ AURORA_EXPORT_END: path=<volume path> lines=<k>
 decodes the records and rejects stray, truncated, misframed or duplicate ones.
 A run's committed files leave the same way when it ends ([files](#files)),
 with each path byte outside the volume's name characters and `/` written as
-`%XX` (`kernel.process_files` `path_text`).
+`%XX` (`kernel.export_text` `path_text`).
 
 ## Processes
 
@@ -124,7 +135,8 @@ and export cases above. Each run: the program path's entry is admitted as an ELF
 program, its layout and regions are mapped into a fresh address space, the
 complete walk checks it, the process runs until it exits, faults, makes an
 invalid call or exhausts its watchdog budget, the walk runs again, every frame
-of the process is released and the frame table is audited (no frame allocated).
+of the process is released and the frame table is audited against all remaining
+resident owners. After the final service exits no allocated frame remains.
 The kernel reports each step:
 
 ```
@@ -144,6 +156,117 @@ A fault with a frame the kernel does not verify as the running process's own
 (any kernel-mode fault) prints `AURORA_PROCESS_KERNEL_FAULT: vector= error= rip=
 cs= cr2=` and stops the machine; only a verified process frame ends just that
 process.
+
+### Resident lifetimes
+
+The lifecycle row (case 7) loads two ordinary ELF processes together, then uses
+the existing Aurora `kernel.round_robin` policy to select a runnable slot.
+A timer tick first consumes that process's cumulative watchdog budget. If any
+budget remains, the kernel copies its authenticated 22-word RSP0 frame into
+that slot's private continuation and returns to the supervisor. Only then may
+another process enter: `process_enter` is never nested. Resume restores the
+same root and all integer registers, flags and user stack. The shared kernel
+continuation is empty between entries; slot retirement scrubs the saved user
+frame and startup arguments. There is still no SMP, extended-state switching,
+unbounded process table or general scheduler API.
+
+Each slot owns a distinct memory-record span. Every HostFiles client uses the
+separate source owner. Rows 1..6 retain their original independent-case semantics:
+a fresh source-service companion runs beside each client, exports its committed
+files after authenticated cleanup, then exits. Client ordinals/goldens stay
+unchanged; companion LOADED/END/RELEASED records report their own generation,
+root and frame accounting. The admitted list has at most 64 clients; companion
+owner runs 64 + ordinal cannot alias client runs 1..64. Case 7 is only two memory/print
+processes and has no filesystem binding. Cases 8..10 retain a service across clients.
+
+### Command loader boundary
+
+The production supervisor API `run_program` uses the same retained owner and
+HostFiles protocol to open a committed file, pin that version, copy a bounded
+loader snapshot and close the handle before startup. The snapshot is at most
+64 MiB plus 33 paging frames, reserved from unpromised free frames. Its unique
+mapping words and exact supervisor-only walk account for every future-client
+frame before a process exists. After copying it becomes RO/NX; the existing
+full-span ELF/layout/quota policies admit it unchanged. Mapping the process
+copies fresh pages, then unmaps, scrubs and releases the snapshot before the
+process's own frame-equality walk. Loader RPCs share a cumulative budget.
+
+The console yields with no live protected grant. After the command, all clients
+and snapshots are gone, the server is parked, timer/interrupts are quiet, and
+full audits precede restoring the exact original root/window entries. Reattach
+checks those exact entries and audits retained owners before any resumption.
+Child output is copied and delivered only under the supervisor root. Fault,
+watchdog, malformed/missing image and service loss return a typed result; the
+failed command is never replayed. A subsequent command may start a fresh service
+incarnation after explicit volatile-loss reporting. The combined production
+image, return-to-prompt and same-boot build/link/run still require actual guest
+qualification; the API's presence is not that result.
+
+### Retained file service
+
+Case 8 designates one `services/file-service.au` ELF as the file owner and runs
+successive ordinary HostFiles clients beside it. `service.files::Store` owns the
+copied boot volume, handle/output tables, committed records and bytes in its own
+ByteRegion. It reuses the existing Aurora path/status decisions; the kernel does
+not keep a second namespace or committed-byte copy in this path. The owner has
+an 8 MiB page-index allocation, about 22 KiB of tables, the volume copy and a
+growable payload arena capped at 256 MiB; its actual frame quota may refuse
+before that ceiling. Growth reserves at most 16 pages at once, falling back to
+one page on refusal; the at-most-60-KiB unused capacity is charged to the same
+service quota. Payload copies update file metadata once per page fragment before
+any further allocation can fail. These are ordinary checked owners, not physical
+pointers. Payload words are checked eight-byte class values; partial writes
+preserve the other bytes in a word, while complete words use the checked
+little-endian codec and reads remain bounded by file size. Ordinary writes of
+1..4096 bytes use a zero-initialized 512-byte value on the guarded user stack.
+The same total-count policy admits the whole message before any chunk is
+appended; no endpoint exchange or reply occurs between chunks. A failed chunk
+poisons the pending output, preserving the old committed destination. Empty,
+large raw, disk and non-write requests retain their existing copied path.
+
+The separate sealed Serve entry receives its generation in RDX. INT83 operation
+15 accepts its fixed 131136-byte request/reply window, bounded reply count,
+generation and previous transaction. Only the kernel-designated incarnation may
+receive; a filename, main signature or numeric value grants no role. The kernel
+copies before parking, authenticates the implicit reply target, then publishes
+canonical metadata and copied bytes before resuming the full saved frame. User
+pointers never survive a switch. Requests are bounded at 64 KiB; the admitted
+raw 64 KiB write uses two internal messages without changing the client ABI.
+
+A terminal client gets one authenticated cleanup: pending outputs and handles
+end, while linked files and generation/inode history remain. A delivered request
+is at-most-once: if its caller expires, the owner may finish it under its separate
+operation budget, but the caller cannot resume or be reused before completion
+and cleanup. A commit can therefore survive an unknown response; there is no
+replay or rollback claim. Server failure invalidates the endpoint and explicitly
+reports `AURORA_FILE_SERVICE_LOST` with `volatile_data=lost`. Production returns
+unavailable to the console, and a later command starts a new incarnation without
+replaying the failed request. The hostile endpoint fixture exercises the same
+teardown and fresh-incarnation path.
+
+Voluntary exchanges carry the remaining LAPIC counts instead of renewing a tick.
+The timer covers validation, copies and execution; server execution also consumes
+the waiting caller's budget. A pending expiration belongs to the outgoing slice,
+and its drain only acknowledges it. Synchronous kernel polling is independently
+bounded; after timer saturation it charges the full armed slice, not an invented
+exact wall-clock count beyond that expiry. Bootstrap and cleanup have independent
+bounded service budgets. Full frame/root audits remain at lifecycle boundaries, not on
+every file request.
+
+The same compiled HostFiles/lifecycle/raw drivers exercise retained replacement
+with old-open handles, cross-client reads, stale handles, pending-output cleanup,
+page reuse, 64 KiB bytes, rapid RPC watchdogs, ungranted receive and a Serve main
+loaded as an ordinary client. Case 9 exercises stale/forged generations, changed
+window, replayed transaction, oversized count, malformed reply, server fault and
+watchdog, followed by a fresh real service and committed-file reads. Final aggregate
+qualification remains required; these focused rows do not replace it.
+
+Quota admission reserves all of each resident's granted quota, not just frames
+already allocated. The next load sees `free - sum(quota - held)` over live
+residents, with checked subtraction. This prevents two clients from promising
+the same free frame to their first-touch mappings. A fault, invalid call or
+exhausted watchdog ends only that slot, closes its files, walks and releases its
+frames and audits all surviving owners. A healthy sibling then continues.
 
 ### Programs
 
@@ -180,15 +303,17 @@ gets a mapping word naming its one place (a page's address, or a table's level
 and first address, with a table's count of present entries in bits 4..13). The
 walk at load and at exit checks every entry of every table reachable from the
 root: shared entries equal to the kernel's, links exactly user-writable to a
-table of this owner with the expected mapping word (a file frame's word, 2,
-names no place, so no entry may reach one), leaves inside a region or a
+table of this owner with the expected mapping word, leaves inside a region or a
 memory mapping with its exact flags and a page of this owner with the expected
 mapping word, and each table's count; that the memory records are in address
 order inside their reservations below the bump address; that the walk saw every
-recorded table and region page and every committed page; and that no frame is
-allocated anywhere but the ones walked and the file service's (one process
-runs at a time, so the frame table's allocated count must equal them), within
-the process's charge.
+recorded table and region page and every committed page; and that every frame
+allocated to this owner is among the ones walked, within its charge. File bytes
+are ordinary user mappings of the service, with no special kernel file-frame class. The frame table maintains
+counts for at most two live owners and its full audit reconstructs them from
+every record. At admission and retirement the supervisor audits all resident
+roots and requires their total to equal every allocated frame, so an orphan or
+unknown owner cannot disappear from the check.
 It opens the frame window once per table and once per link, so its cost
 follows the space's tables and pages, not its address range. At exit the
 space is released by walking its tables.
@@ -266,7 +391,7 @@ program sees the same statuses, limits and identities as on Linux:
   `not_regular` for `open_directory` and `not_found` otherwise);
 - `open_beneath` refuses an absolute path or any `..` component (`escape`);
 - 32 handles (directories and files) and 4 outputs, with ids `generation * 64
-  + slot + 1` from the kernel's table, each claim advancing its slot's
+  + slot + 1` from the source owner's table, each claim advancing its slot's
   generation, so an id is never reused within a run; a stale, forged,
   mistyped or made-up id is `invalid_handle`, and a full table `exhausted`;
 - read returns up to 504 bytes, none at or after the end, `failed` beyond
@@ -275,27 +400,158 @@ program sees the same statuses, limits and identities as on Linux:
   in the `.aurora-output-` namespace, a missing or non-directory parent and a
   directory destination, and reports the existing destination's and the
   directory's identities; its bytes go to a pending overlay record of up to
-  64 MiB (past it the output fails, `too_large`), charged frame by frame to
-  the process's quota (a write that does not fit fails, `failed`, as a full
-  disk fails on Linux); commit links the record under its name for the rest
-  of the run, shadowing a volume file or replacing an overlay file (whose
+  64 MiB (past it the output fails, `too_large`), allocated from the source
+  service's own quota (a write that does not fit fails, `failed`, as a full
+  disk fails on Linux); commit links the record for the service lifetime, shadowing a volume file or replacing an overlay file (whose
   bytes stay readable through handles already open on it), discard and a
   failed commit drop it;
 - identities: the volume is device 1 (a file's inode its index + 1, a
   directory's 65536 + first entry * 256 + depth), the overlay device 2
   (inodes in commit order);
-- when the process ends, however it ends, its outputs end and handles close
-  (Linux's `finish`), every committed file is exported over serial
-  ([export](#export)) and the overlay is gone before the next run.
+- when a client ends, its pending outputs end and handles close (Linux's
+  `finish`), while committed files survive in the source service. Only the
+  independent golden cases deliberately end that service after export.
 
-The supervisor (`process-files.hpp`) keeps the table and the 64 overlay
-records, copies the path into the kernel, applies each decision after its
-decoder admitted its closed shape and keeps each record's bytes in data
-frames of the process's owner listed by up to 32 index frames; those frames
-carry mapping word 2 and are released, uncharged and audited with the
-process. The binding marshals paths through its session block and, like the
-Linux binding, coalesces output bytes in one 4096-byte buffer with each
-output's byte count beside it; the kernel enforces every rule itself.
+The supervisor validates and copies paths/results but keeps no namespace or
+committed bytes. The source owner applies `kernel.process_files` decisions to
+its private state. The binding coalesces output bytes in a 4096-byte buffer;
+raw 64 KiB writes are copied through two bounded messages. File allocations now
+consume the service's quota, not the departed client's quota.
+
+Supervisor-only export controls 7/8/9 require no active client: select a linked
+record, copy its path, then copy its data. The source pins revision/inode identity
+for the selection. Replies have closed 64-byte headers and at most 504 copied bytes;
+selection returns path length and file size. The kernel bounds 64 records, 4095-byte
+paths and 64 MiB files, preserves 57-byte base64 framing, and carries one 16-long-tick
+budget across service work and serial emission. Incomplete exports and deadline exhaustion fail the run; the existing framing
+oracle rejects partial artifacts.
+
+Production's legacy note and four named files are private state in the same
+Aurora service (`service.console`), not a second kernel namespace or visible
+HostFiles paths. Supervisor controls 10..14 copy commands, projections and frozen
+selections only. Mutations require the previously observed service generation;
+note replacement additionally checks its nonreused revision. The kernel keeps
+only the current projection/selection and protected-grant retirement ledger.
+Both append workers must retire before replacement publication. A malformed
+inner policy reply revokes only the observed service incarnation; conflicts and
+unknown outcomes never trigger automatic retry. Session exit clears the private
+state or invalidates that old incarnation if clearing fails.
+
+### Read-only NVMe/XFS
+
+Composition 3/cases 10 and 11 independently grant the designated service a sealed
+`ReadOnlyBlock`, with nonreused generation in R8 and copied sector count in R9.
+INT83 operation 16 accepts only that current incarnation/generation, a writable
+512-byte destination and an in-range LBA; R10 must be zero. The trusted broker
+checks current root, closed shared window and immutable namespace extent before
+every read, including cache hits. Failed reads return zero bytes/count and backend
+quarantine is absorbing; a restarted service cannot regrant a quarantined device.
+
+The source service lazily admits the strict fresh-format XFS mount on `/disk`,
+including the full clean 64 MiB log and supported root/inode set. Disk handles have
+disjoint slots 40..55 and device identity 3. Reads are on demand through copied
+sectors, not a preloaded fake tree. Unsupported, dirty or quarantined mounts stay
+unavailable without falling back into the boot namespace. `/disk` remains read-only;
+this grant exposes no XFS writes. Boot-only recovery is separate below; general
+replay and production writable disks remain open. The actual
+case 10 uses a fresh private 512 MiB image opened O_RDONLY by QEMU and verifies its
+whole hash unchanged, full 9001-byte file contents, EOF, write denial, revoked grants
+and successful fresh service incarnation.
+
+The authenticated initial source0 control 1 has operation at 0, boot-volume length
+at 8 and a closed XFS profile at 16; bytes 24..63 must be zero. The source validates
+this copied shape before allocation or disk reads. Case 11 selects profile 1,
+the bounded Linux 6.12.107 clean-log reader; case 10 and companion services select
+fresh profile 0. No client or on-disk field can change that selection.
+The existing process image and runner accept a private copy of a genuine used,
+wrapped or dirty reference image for case 11, with unchanged read-only authority
+and deadlines. Actual used/wrapped cases read both binary files across clients;
+the dirty case exposes no disk bytes or identities and preserves retained RAM.
+All private images remain unchanged; whole-suite and budget acceptance are
+separate from these component results.
+
+### Boot-only XFS recovery fixture
+
+Case 12 is a separate closed role in the existing process image, not a production
+storage selector. Only its first boot-selected program receives `WritableBlock`;
+ordinary `run`, a pathname, arguments or a sealed main signature cannot mint it.
+Operations 17/18 copy one checked 512-byte read/write sector, 19 flushes and 20
+observes remaining commands. Each authenticates the writer's owner, root and
+nonreused generation independently of its private user-side staging window.
+
+The Aurora recovery program preflights the supported complete log, allocation
+metadata and homes before writing. It flushes homes, then the completion body,
+then the clean header. The kernel permits at most 18 sector writes and three
+Flushes and reserves 32768 commands for the independent read-only consumer.
+Successful exit requires an acknowledged final Flush before the one-shot
+write-data DMA-leaf revocation. Actual root/frame release, continuation scrubbing
+and grant destruction precede read-only promotion; failures close both paths.
+Backing remains pinned and command identifiers never reset.
+
+The explicit `kernel_nvme_smoke.py --process-xfs-recover IMAGE` route attaches
+only a new private copy writable and retains its before image. It checks Linux
+home-sector goldens, the exact changed-sector set, stale writer-generation
+write/Flush denial, fresh read-only admission and complete frame reclamation.
+This is bounded emulator recovery, not arbitrary torn-sector recovery, mounted
+XFS writes or physical power-loss qualification.
+
+Cases 13–16 reuse the exact case-12 run list and source executable. In the
+process-fixture build only, they stop immediately after acknowledged Flush
+1/2/3 or sector write 1 and after the backend restores its window. The cut trace
+binds the actual writer generation and operation counts. No source exit,
+retirement, cleanup or read-only promotion is claimed in that VM. The explicit
+`--recovery-cut` runner compares every changed sector against a read-only
+`--recovery-reference` completed image and preserves the captured prefix. A
+fresh ordinary case-12 VM then receives a new private copy of that exact prefix.
+These are completed-command interruption tests, not torn-command or physical
+power-loss simulations; production builds contain no cut hook.
+
+### Production storage selection
+
+Production composition 1 remains RAM-backed. Exact `opt/aurora/storage=nvme`
+selects fresh profile 0; exact `nvme-linux-6.12-clean` selects the pinned clean
+profile 1. Exact `nvme-linux-6.12-recover` selects boot mode 2 and the same
+source `bin/xfs-recover` used by the private recovery composition. All three
+use composition 4 in the same image. Word 152 is a closed boot storage mode
+only under tag 4, remains zero for tag 1, and keeps its fixture-case meaning
+elsewhere. The runtime captures this selection once, checks it on reattachment
+and sends the same profile through every owner bootstrap after loss; there is no
+client setter or on-disk fallback. Older production v10 consumers reject profile 1.
+The short selector label is not qualification of every Linux 6.12 producer.
+Explicit composition 4 grants the same readonly backend to the
+retained owner and calls source control 15 before the first prompt. This one
+startup admission has cumulative 16-long-tick loader and server limits; every
+normal server operation returns to 64 short ticks, and client limits do not
+change. A canonical unavailable mount preserves boot and console state without
+falling back for `/disk`; malformed replies or service death use the shared
+volatile-loss path. Actual used/wrapped production guests exercise shipped
+cat/sort clients, committed copies and exact serial/framebuffer output; genuine
+dirty refusal preserves RAM. The exact binary comparisons remain in case 11.
+
+Recovery is explicitly selected, never the default or an automatic fallback from
+readonly refusal. Before the first prompt, the runtime marks its boot-global
+attempt before looking up the fixed executable in the immutable boot volume.
+It uses the shared writer mint/run/retire path with the existing 16 long ticks
+and 16,384-page quota. Only successful sealed retirement permits a fresh readonly
+file owner, always with source profile 1 and its independent complete mount check.
+Controlled recovery refusal abandons the backend without reinitializing it;
+RAM files and the console remain available. Ownership or cleanup audit failures
+remain fatal rather than exposing a possibly live writer.
+
+Repeated preparation and later file-owner restart cannot retry recovery, reset
+queue/CID/invalidation state or look up the recovery executable again. Ordinary
+`run`, caller arguments and retained mutable files never grant write authority.
+The boot selection is immutable across runtime attachment. The dirty production
+guest passes source recovery, independent readonly mount, shipped file commands,
+ordinary writer-execution denial and the graphical/console oracle, with only the
+four expected sectors changed. Completed-marker reentry passes with zero writes
+and one Flush; controlled late-record refusal passes with zero writes/Flushes,
+an unavailable disk and healthy RAM/console. Both leave the whole image unchanged.
+The private console-commit owner also passes one actual commit/exit loss and
+a fresh incarnation's full readonly remount, without another writer or backend
+initialization. This does not qualify ordinary HostFiles continuity after loss.
+The finite nonreused command-ID budget bounds repeated full mounts; exhaustion
+quarantines disk access instead of resetting its queues.
 
 ### Entries
 
@@ -364,14 +620,13 @@ and the regions, the load charge and quota, or the run-list verdict and runs.
 Trap frames and kernel calls are `events.cases`; memory decisions
 (reservation, growth, move, quota, release, record lookup, committed faults,
 the memory calls and misuse) are `memory.cases`; `files.cases` runs file-service
-scripts (the Aurora decisions and `process-files.hpp` over heap pages) over a
+scripts (the Aurora decisions and test-only `tests/kernel-process-files.hpp`
+reference adapter over heap pages) over a
 volume of the HostFiles cases' tree: path walks and confinement, ids and their
 generations, exhaustion, reads, creation, overlay shadowing and replacement
 under open handles, the 64 MiB limit, the quota, export and misuse. Verdicts
 are compared with the golden files beside them. The `guest-process` family
-boots the image's nine rows (`meson test --suite guest-process`, about 2 s
-each on TCG, 3 s for `process-run`, 7 s for `process-files` and
-`process-compile`, 11 s for `process-memory`):
+boots the image's process rows (`meson test --suite guest-process`):
 
 - `process-volume` allocates every free frame and writes and reads back a pattern
   and then zero through the window. It checks six misuse rejections, releases
@@ -399,6 +654,16 @@ each on TCG, 3 s for `process-run`, 7 s for `process-files` and
   address, and stale, forged and mistyped ids, each `invalid_handle`) and the
   probe with `print 'two words' exit success`, which shows the kernel continues
   after each, then once more with one long tick (flag 8);
+- `process-lifecycle` (case 7) uses one compiled Aurora driver for pairs of
+  finite heap consumers, a checked bounds fault and a watchdog spin. Both finite
+  consumers retain different byte patterns at the same virtual addresses; one
+  moves and shrinks its mapping while the other remains parked. The transcript
+  requires real parks/resumes with peer execution between them, distinct live
+  roots and owners, the expected process outcomes and full final reclamation.
+  The final pair gives the first resident every available frame of quota and
+  rejects the second load despite the first's largely unallocated reservation.
+  These mechanisms require final-source guest qualification, not registration
+  alone;
 - `process-hostile` (case 2) rejects ELF images with a writable and executable
   segment, an interpreter, an entry outside code and overlapping segments and a
   missing path, runs `hostile` to exit 0, then faults in the kernel during the
@@ -428,7 +693,14 @@ each on TCG, 3 s for `process-run`, 7 s for `process-files` and
   overlay in the working directory (the volume root; HostFiles creates no
   directory, on Linux either) and exits 0, and the exported object must equal
   the hosted build's `host-sort.o` (from the build root, three levels above
-  the image directory) byte for byte. It then compiles each rejected source with
+  the image directory) byte for byte. A second run uses `--emit-executable
+  --target aurora --runtime-root /runtime/aurora` to compile and statically
+  link the same source in the guest to `host-sort-aurora-native`, with no
+  host linker. Its exported bytes must equal the hosted compiler's native-linked
+  target executable; the `static-link` merge test admits that executable with
+  the kernel's own ELF and address-space policies through `kernel-process`.
+  This proves guest compilation and linking, not execution of the newly written
+  file: the per-run overlay still ends with the compiler. It then compiles each rejected source with
   the same flags: exit 1, no output and the diagnostics of
   `compile.golden`, which `kernel-process-compile` (merge suite) checks
   against the hosted compiler with `golden.py --reject`. Guest time is about
@@ -446,7 +718,8 @@ The `guest-self-host` family, also in the release suite, boots one row:
   must equal the hosted build's `aurorac-stage2.o`, the object C1 emits of the
   compiler, byte for byte. The compile takes about 3 minutes under TCG and
   charges about the native peak RSS (575 MiB); file reads and writes are well
-  under a second of it. Linking the object is still the host `ld`'s job.
+  under a second of it. The Aurora static linker can link the exported object;
+  this self-host row still measures object convergence, not a linked compiler run.
 
 `tests/kernel-process-smoke.py` reduces each run to one line compared with
 `tests/kernel-process/<row>.golden` (a fault keeps its vector and architectural
@@ -466,14 +739,32 @@ the fw_cfg file `opt/aurora/case` (`kernel_profiles.PROCESS_CASES`), read by the
 loader beside the fixture selector, so rows that differ only by run list share
 one selector and one volume.
 
+The independent memory/files rows run 28/35 fresh source-service lifetimes from
+one compiled image. Their original 60-second outer deadline expired during
+healthy progress, so only those outer bounds are 180 seconds; process budgets
+remain unchanged. The full 64-MiB boundary retains its 128-tick client budget.
+Profiling identified checked byte-owner stores and byte packing as substantial
+copy costs; checked payload words and bounded value staging reduce that work
+without increasing file, memory or watchdog limits. The raw large and ordinary
+4096-byte quota probes both exercise unaligned partial failure, poisoned output,
+previous-version preservation and page reuse.
+
+Meson runs `process-files` and `process-service` without other tests running
+concurrently: their full-capacity workloads qualify deadlines under exclusive
+test scheduling, not throughput under competing emulators. Both retain QEMU's
+original clock, the same process budgets
+and their existing 180/60-second outer bounds. Other guest families and builds
+remain parallel.
+
 Limits:
 
-- one CPU and one process at a time; no SMAP, SMEP or PCID (every kernel entry
+- one CPU executes one process at a time, with at most two resident processes;
+  no SMAP, SMEP or PCID (every kernel entry
   stays under the process root, but every process switch flushes the TLB);
 - eager commit of the image, stack and arguments: every region page,
   including the whole 8 MiB stack (about 2050 frames), is allocated, zeroed
   and walked at load; memory mappings commit on first touch;
-- the file service holds at most 64 overlay records per run (pending
+- the source file service holds at most 64 overlay records per service lifetime (pending
   outputs, committed files and replaced files still open): while 64 are
   held, create_output is `exhausted` where Linux has no such limit; the volume has
   no symlinks, FIFOs, devices or empty directories, and the overlay creates no
@@ -486,7 +777,7 @@ Limits:
 - the quota holds the frames free at load, but a frame whose generation would
   wrap (its 2^28th release in one boot) retires during the run; a process
   that then uses its whole quota can meet a failing frame allocation at a
-  touch, a kernel access or a file write, which stops the machine;
+  touch or a kernel access, which stops the machine;
 - map admission is quadratic over at most 512 descriptors, and boot-services
   memory is not reclaimed;
 - the plan stops the boot above about 250 GiB of usable memory (one metadata PD

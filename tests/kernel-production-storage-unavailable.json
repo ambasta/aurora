@@ -1,0 +1,24 @@
+{
+  "input": [
+    "run bin/cat /disk denied.txt hello\r",
+    "run bin/cat / ram-copy.txt input.txt\r",
+    "run bin/cat /disk second.txt pattern\r",
+    "run bin/sort / sorted.txt ram-copy.txt\r"
+  ],
+  "console": [
+    "AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines",
+    "aurora> run bin/cat /disk denied.txt hello",
+    "cannot open directory\n",
+    "run: exited status=1",
+    "aurora> run bin/cat / ram-copy.txt input.txt",
+    "input.txt 17\n",
+    "run: exited status=0",
+    "aurora> run bin/cat /disk second.txt pattern",
+    "cannot open directory\n",
+    "run: exited status=1",
+    "aurora> run bin/sort / sorted.txt ram-copy.txt",
+    "3 lines: 5 3 6\n",
+    "run: exited status=0",
+    "aurora> "
+  ]
+}

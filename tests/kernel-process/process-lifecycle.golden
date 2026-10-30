@@ -1,0 +1,8 @@
+1 bin/lifecycle lifecycle A	exit 0 | stdout: A ready / A retained
+2 bin/lifecycle lifecycle B	exit 0 | stdout: B ready / B retained
+3 bin/lifecycle lifecycle A	exit 0 | stdout: A ready / A retained
+4 bin/lifecycle lifecycle fault	invalid_opcode vector=6 error=0
+5 bin/lifecycle lifecycle A	exit 0 | stdout: A ready / A retained
+6 bin/lifecycle lifecycle spin	watchdog ticks=1
+7 bin/lifecycle lifecycle A	exit 0 | stdout: A ready / A retained
+8 bin/lifecycle lifecycle B	rejected quota

@@ -139,6 +139,44 @@ export namespace compiler_ir_verification {
                     VerificationErrorSecond::service_operation_requires_active_unsuspended_capability_provenance));
             }
             const i64 operation = transfer_value(s, id, 1);
+            if (operation == 44 || operation == 45) {
+                return transfer_set_kind(w, 7);
+            }
+            if (operation == 42) {
+                if (!transfer_pop_kind(w, 10, second_error(VerificationErrorSecond::service_scalar_argument_mismatch))
+                    || !transfer_pop_kind(w, 7,
+                    second_error(VerificationErrorSecond::service_scalar_argument_mismatch))) {
+                    return false;
+                }
+                return transfer_set_kind(w, 7);
+            }
+            if (operation == 36 || operation == 37 || operation == 38 || operation == 39 || operation == 40 || operation
+                == 41 || operation == 43) {
+                if (!transfer_current_kind(w, 7)) {
+                    return false;
+                }
+                if (operation == 37 || operation == 40) {
+                    return transfer_set_kind(w, 10);
+                }
+                return transfer_set_kind(w, 7);
+            }
+            if (operation == 33 || operation == 35) {
+                if (!transfer_current_kind(w, 7)) {
+                    return false;
+                }
+                if (operation == 33) {
+                    return transfer_set_kind(w, 10);
+                }
+                return transfer_set_kind(w, 7);
+            }
+            if (operation == 34) {
+                if (!transfer_pop_kind(w, 10, second_error(VerificationErrorSecond::service_scalar_argument_mismatch))
+                    || !transfer_pop_kind(w, 7,
+                    second_error(VerificationErrorSecond::service_scalar_argument_mismatch))) {
+                    return false;
+                }
+                return transfer_set_kind(w, 10);
+            }
             if (operation > 8 && operation < 32) {
                 return transfer_host(w, m, s, id, operation);
             }
@@ -193,8 +231,8 @@ export namespace compiler_ir_verification {
                 const ValueRow result_value = ValueRow(result_type, guard);
                 return w.set_current(result_value);
             }
-            if (operation == 0 || operation == 3 || operation == 5 || operation == 8) {
-                if ((operation == 5 || operation == 8) && !transfer_current_kind(w, 7)) {
+            if (operation == 0 || operation == 3 || operation == 5 || operation == 8 || operation == 32) {
+                if ((operation == 5 || operation == 8 || operation == 32) && !transfer_current_kind(w, 7)) {
                     return false;
                 }
                 const i64 base = transfer_value(s, id, 2);

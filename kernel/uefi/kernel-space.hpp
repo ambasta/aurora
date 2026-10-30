@@ -27,6 +27,7 @@ public:
     // 8-byte mapping word per frame (process-space.hpp), then process pages:
     // the running process's memory records when the image runs processes
     // (process_pages, process::memory_records of them), none otherwise.
+    static constexpr U64 process_slots = 2;
     static constexpr U64 process_pages = process::memory_records * sizeof(process::MemoryRecord) / frames::page;
     class Plan final {
     public:
@@ -34,7 +35,8 @@ public:
     };
     [[nodiscard]] static auto plan(U64 frames, U64 volume_pages, U64 process) -> std::optional<Plan> {
         Plan result;
-        if (frames == 0 || frames > (U64{1} << 32) || volume_pages > 512 * 512 || (process && process != process_pages))
+        if (frames == 0 || frames > (U64{1} << 32) || volume_pages > 512 * 512 ||
+            process > process_slots * process_pages || process % process_pages)
             return std::nullopt;
         result.records = (frames * 8 + frames::page - 1) / frames::page;
         result.process = process;
@@ -54,7 +56,8 @@ private:
     std::array<U64, 512> root_snapshot_{};
     Plan plan_{};
     U64 volume_physical_ = 0;
-    bool built_ = false;
+    bool built_ = false, detached_ = false;
+    U64 saved_extension_ = 0;
 
     [[nodiscard]] static auto table(U64 address) -> volatile U64 * {
         return reinterpret_cast<volatile U64 *>(address);
@@ -149,11 +152,13 @@ public:
             return {};
         return {reinterpret_cast<U64 *>(metadata_base + plan_.records * frames::page), frames};
     }
-    // The memory records of the one running process (process-space.hpp).
-    [[nodiscard]] auto process_records() const -> std::span<process::MemoryRecord> {
-        if (!built_ || plan_.process != process_pages)
+    // Each resident slot owns a disjoint memory-record area. Slot reuse follows
+    // the old owner's complete release; no two processes can name one area.
+    [[nodiscard]] auto process_records(U64 slot = 0) const -> std::span<process::MemoryRecord> {
+        if (!built_ || slot >= plan_.process / process_pages)
             return {};
-        return {reinterpret_cast<process::MemoryRecord *>(metadata_base + 2 * plan_.records * frames::page),
+        return {reinterpret_cast<process::MemoryRecord *>(metadata_base +
+                                                          (2 * plan_.records + slot * process_pages) * frames::page),
                 process::memory_records};
     }
     [[nodiscard]] auto volume(U64 bytes) const -> std::span<const std::byte> {
@@ -169,15 +174,49 @@ public:
         invalidate(window_base);
         return reinterpret_cast<std::uint64_t *>(window_base);
     }
+    [[nodiscard]] auto closed() const -> bool {
+        return built_ && !detached_ && window_ && window_[0] == 0;
+    }
     auto close() -> void {
         window_[0] = 0;
         invalidate(window_base);
+    }
+    // Return the boot root to its exact pre-extension shape while a retained
+    // process is parked. Ownership/contents stay in the frame inventory; no
+    // page becomes firmware or another allocator's free memory.
+    [[nodiscard]] auto detach() -> bool {
+        if (!built_ || detached_ || window_[0] || !table(root_)[extension_root])
+            return false;
+        saved_extension_ = table(root_)[extension_root] & ~hardware_bits;
+        table(root_)[extension_root] = root_snapshot_[extension_root];
+        for (U64 slot = first_view_slot; slot < 512; ++slot)
+            window_[slot] = 0;
+        asm volatile("mov %0, %%cr3" : : "r"(root_) : "memory");
+        detached_ = true;
+        return true;
+    }
+    [[nodiscard]] auto attach(const frames::Ranges &ranges) -> bool {
+        if (!built_ || !detached_ || !saved_extension_)
+            return false;
+        for (U64 slot = 0; slot < 512; ++slot)
+            if (window_[slot] || (table(root_)[slot] & ~hardware_bits) != (root_snapshot_[slot] & ~hardware_bits))
+                return false;
+        for (U64 index = 0; index < plan_.tables; ++index) {
+            const auto physical = ranges.address(index);
+            if (!physical)
+                return false;
+            window_[first_view_slot + index] = *physical | data_flags;
+        }
+        table(root_)[extension_root] = saved_extension_;
+        asm volatile("mov %0, %%cr3" : : "r"(root_) : "memory");
+        detached_ = false;
+        return true;
     }
     // Every extension entry exact, every table and metadata page a kernel frame
     // of its owner, volume pages outside the frame inventory, the window closed
     // and the remaining root entries those the boot verifier admitted.
     [[nodiscard]] auto verify(const frames::Table &frames, const frames::Ranges &ranges, U64 used) const -> bool {
-        if (!built_ || PageTables{root_, used}.window_slot() != window_ || window_[0])
+        if (!built_ || detached_ || PageTables{root_, used}.window_slot() != window_ || window_[0])
             return false;
         for (U64 index = 0; index < 512; ++index) {
             const auto expected =

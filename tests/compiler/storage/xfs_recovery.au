@@ -1,0 +1,259 @@
+module recovery_driver;
+import std.binary;
+import std.binary_buffer;
+import storage.block_io;
+import storage.sector;
+import fs.xfs_geometry;
+import fs.xfs_probe;
+import fs.xfs_root;
+import fs.xfs_file;
+import fs.xfs_log;
+import fs.xfs_core_log;
+import fs.xfs_core_redo;
+import fs.xfs_recovery_ag;
+
+import aurora.host;
+import aurora.memory;
+import fs.xfs_recovery;
+auto clean_snapshot(const fs::XfsCoreRecoveryPlan& plan, u64 selected) -> storage::Sector512 {
+    if (selected == 0u64) { return plan.clean_superblock(); }
+    if (selected == 1u64) { return plan.clean_root(); }
+    if (selected == 2u64) { return plan.clean_inode(99u64); }
+    if (selected == 3u64) { return plan.clean_inode(100u64); }
+    return plan.clean_inode(0u64);
+}
+auto status_code(fs::XfsRecoveryStatus value) -> u64 {
+    if (value == fs::XfsRecoveryStatus::superblock) {
+        return 0u64;
+    }
+    if (value == fs::XfsRecoveryStatus::topology) {
+        return 1u64;
+    }
+    if (value == fs::XfsRecoveryStatus::completion_header) {
+        return 2u64;
+    }
+    if (value == fs::XfsRecoveryStatus::completion_body) {
+        return 3u64;
+    }
+    if (value == fs::XfsRecoveryStatus::root) {
+        return 4u64;
+    }
+    if (value == fs::XfsRecoveryStatus::home) {
+        return 5u64;
+    }
+    if (value == fs::XfsRecoveryStatus::agf) {
+        return 6u64;
+    }
+    if (value == fs::XfsRecoveryStatus::agi) {
+        return 7u64;
+    }
+    if (value == fs::XfsRecoveryStatus::inobt) {
+        return 8u64;
+    }
+    if (value == fs::XfsRecoveryStatus::record_header) {
+        return 9u64;
+    }
+    if (value == fs::XfsRecoveryStatus::record_body) {
+        return 10u64;
+    }
+    if (value == fs::XfsRecoveryStatus::ready) {
+        return 11u64;
+    }
+    if (value == fs::XfsRecoveryStatus::invalid_request) {
+        return 12u64;
+    }
+    if (value == fs::XfsRecoveryStatus::protocol_error) {
+        return 13u64;
+    }
+    if (value == fs::XfsRecoveryStatus::io_error) {
+        return 14u64;
+    }
+    if (value == fs::XfsRecoveryStatus::unsupported) {
+        return 15u64;
+    }
+    if (value == fs::XfsRecoveryStatus::invalid_metadata) {
+        return 16u64;
+    }
+    if (value == fs::XfsRecoveryStatus::invalid_log) {
+        return 17u64;
+    }
+    if (value == fs::XfsRecoveryStatus::clean_marker) {
+        return 18u64;
+    }
+    if (value == fs::XfsRecoveryStatus::already_clean) {
+        return 19u64;
+    }
+    return 999u64;
+}
+auto selected_write(fs::XfsCoreRecoveryPlan& plan, u64 index) -> fs::XfsRecoveryWrite {
+    if (index < plan.write_count()) {
+        return plan.write_at(index);
+    }
+    return plan.completion_at(index - plan.write_count());
+}
+auto main(builtin::HostFiles& files, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    i64 at = 0;
+    while (at < arguments.size() && arguments.at(at) != 0u8) {
+        at = at + 1;
+    }
+    const i64 begin = at + 1;
+    at = begin;
+    while (at < arguments.size() && arguments.at(at) != 0u8) {
+        at = at + 1;
+    }
+    if (begin >= arguments.size() || begin == at) {
+        return builtin::HostExit::usage;
+    }
+    u8 mode = 48u8;
+    if (at + 1 < arguments.size()) {
+        mode = arguments.at(at + 1);
+    }
+    const builtin::HostFileResult file = files.open_file(arguments.subspan(begin, at - begin));
+    if (file.status != builtin::HostStatus::success || file.size % 512u64 != 0u64) {
+        return builtin::HostExit::failure;
+    }
+    i64 capacity = 49152;
+    if (mode == 49u8) {
+        capacity = 49151;
+    }
+    builtin::OwnedBytes cache = region.try_allocate(capacity);
+    fs::XfsLogTopology topology = fs::XfsLogTopology();
+    if (mode == 50u8) {
+        topology.begin(64u64);
+    }
+    const fs::XfsRecoveryConfig config = fs::XfsRecoveryConfig(file.size / 512u64,
+        fs::XfsRecoveryProfile::linux_6_12_x86_64_core);
+    fs::XfsCoreRecoveryPlan plan = fs::XfsCoreRecoveryPlan(region, move(cache), config, topology);
+    builtin::OwnedBytes sector = region.try_allocate(512);
+    if (!sector.ok()) {
+        return builtin::HostExit::failure;
+    }
+    while (plan.needs_read()) {
+        u64 lba = plan.requested_lba();
+        i64 copied = 0;
+        bool failed = false;
+        while (copied < 512 && !failed) {
+            const builtin::HostChunk chunk = files.read(file.id, lba * 512u64 + u64(copied));
+            if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64) {
+                failed = true;
+            } else {
+                const builtin::array<u8, 504> bytes = chunk.bytes;
+                i64 count = i64(chunk.count);
+                if (count > 512 - copied) {
+                    count = 512 - copied;
+                }
+                i64 pos = 0;
+                while (pos < count) {
+                    sector.set(copied + pos, bytes[pos]);
+                    pos = pos + 1;
+                }
+                copied = copied + count;
+            }
+        }
+        storage::SectorIoStatus io = storage::SectorIoStatus::success;
+        if (failed || mode == 51u8 || (mode == 54u8 && plan.status() == fs::XfsRecoveryStatus::record_body && lba
+            == 524334u64)) {
+            io = storage::SectorIoStatus::invalid_source;
+        }
+        if (mode == 57u8 && plan.status() == fs::XfsRecoveryStatus::clean_marker) {
+            io = storage::SectorIoStatus::invalid_source;
+        }
+        if (mode == 52u8) {
+            lba = lba + 1u64;
+        }
+        if (mode == 55u8 && plan.status() == fs::XfsRecoveryStatus::completion_header) {
+            sector.set(304, sector.at(304) ^ 1u8);
+        }
+        if (mode == 56u8 && plan.status() == fs::XfsRecoveryStatus::completion_body) {
+            sector.set(511, sector.at(511) ^ 1u8);
+        }
+        const builtin::span<const u8> bytes = borrow_bytes(sector);
+        i64 length = 512;
+        if (mode == 53u8) {
+            length = 511;
+        }
+        plan.accept(lba, io, bytes.subspan(0, length));
+    }
+    if (plan.requested_lba() != 0u64 || plan.needs_read()) {
+        return builtin::HostExit::failure;
+    }
+    std::BinaryBuffer64 header = std::BinaryBuffer64();
+    header.write_le64(0, status_code(plan.status()));
+    header.write_le64(8, plan.write_count());
+    header.write_le64(16, plan.accepted_sector_reads());
+    header.write_le64(24, plan.required_remaining_commands());
+    if (files.print(builtin::HostStream::stdout, header.bytes(0, 32)) != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    u64 index = 0u64;
+    while (index < plan.write_count() + 2u64) {
+        const fs::XfsRecoveryWrite write = selected_write(plan, index);
+        std::BinaryBuffer64 coordinate = std::BinaryBuffer64();
+        coordinate.write_le64(0, write.lba());
+        const storage::Sector512 output = write.sector_or_zero();
+        i64 copied = 0;
+        while (copied < 512) {
+            const std::ByteReadResult byte = output.read_byte(copied);
+            sector.set(copied, u8(byte.value_or(0u64)));
+            copied = copied + 1;
+        }
+        if ((plan.status() == fs::XfsRecoveryStatus::ready && !write.valid())
+            || files.print(builtin::HostStream::stdout, coordinate.bytes(0, 8)) != builtin::HostStatus::success
+            || files.print(builtin::HostStream::stdout, borrow_bytes(sector)) != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        index = index + 1u64;
+    }
+    const fs::XfsRecoveryWrite invalid = plan.write_at(plan.write_count());
+    if (invalid.valid() || invalid.lba() != 0u64) {
+        return builtin::HostExit::failure;
+    }
+    const storage::Sector512 zero = invalid.sector_or_zero();
+    at = 0;
+    while (at < 512) {
+        const std::ByteReadResult byte = zero.read_byte(at);
+        if (byte.value_or(1u64) != 0u64) {
+            return builtin::HostExit::failure;
+        }
+        at = at + 1;
+    }
+    const fs::XfsRecoveryWrite invalid_completion = plan.completion_at(2u64);
+    if (invalid_completion.valid() || invalid_completion.lba() != 0u64) {
+        return builtin::HostExit::failure;
+    }
+    const storage::Sector512 absent = invalid_completion.sector_or_zero();
+    at = 0;
+    while (at < 512) {
+        const std::ByteReadResult byte = absent.read_byte(at);
+        if (byte.value_or(1u64) != 0u64) {
+            return builtin::HostExit::failure;
+        }
+        at = at + 1;
+    }
+    if (mode == 65u8) {
+        std::BinaryBuffer64 facts = std::BinaryBuffer64();
+        facts.write_le64(0, plan.clean_head_lsn());
+        facts.write_le64(8, plan.clean_latest_lsn());
+        facts.write_le64(16, plan.clean_capacity());
+        if (files.print(builtin::HostStream::stdout, facts.bytes(0, 24)) != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        u64 selected = 0u64;
+        while (selected < 5u64) {
+            const storage::Sector512 snapshot = clean_snapshot(plan, selected);
+            i64 position = 0;
+            while (position < 512) {
+                const std::ByteReadResult byte = snapshot.read_byte(position);
+                sector.set(position, u8(byte.value_or(0u64)));
+                position = position + 1;
+            }
+            if (files.print(builtin::HostStream::stdout, borrow_bytes(sector)) != builtin::HostStatus::success) {
+                return builtin::HostExit::failure;
+            }
+            selected = selected + 1u64;
+        }
+    }
+    files.close(file.id);
+    return builtin::HostExit::success;
+}

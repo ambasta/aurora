@@ -812,6 +812,28 @@ export namespace compiler_lowering {
             if (target < 0) {
                 return fail(session, LoweringError::unknown_service_operation, reference);
             }
+            const i64 operation = record_signed(session, target, OperandRole::ServiceOperationId);
+            if (operation >= 39 && operation < 46) {
+                const i64 caller = body_function(session);
+                const i64 unit = compiler_resolver::mw(session, caller, 1);
+                if (!runtime_unit(session, unit, "block_write")) {
+                    return fail(session, LoweringError::block_runtime_operation_outside_runtime, reference);
+                }
+            }
+            if (operation >= 36 && operation < 39) {
+                const i64 caller = body_function(session);
+                const i64 unit = compiler_resolver::mw(session, caller, 1);
+                if (!runtime_unit(session, unit, "block")) {
+                    return fail(session, LoweringError::block_runtime_operation_outside_runtime, reference);
+                }
+            }
+            if (operation >= 32 && operation < 36) {
+                const i64 caller = body_function(session);
+                const i64 unit = compiler_resolver::mw(session, caller, 1);
+                if (!endpoint_runtime_unit(session, unit)) {
+                    return fail(session, LoweringError::endpoint_runtime_operation_outside_runtime, reference);
+                }
+            }
             if (record_signed(session, target, OperandRole::ServiceKindId) == 6) {
                 // System and kernel primitives belong to aurora.host, memory
                 // primitives (operations 21..28) to aurora.memory.
@@ -1492,11 +1514,8 @@ export namespace compiler_lowering {
                 emit_Push(session);
             } else {
                 const compiler_resolver::ResolvedTypeKind receiver = value_kind(session, frame.cleanup_cursor());
-                const i64 reference = source_ref(session, frame.syntax_node());
                 if (compiler_resolver::service_kind(receiver)) {
-                    if (session.source_equal(reference, "pixel") || session.source_equal(reference, "write8")
-                        || (receiver == compiler_resolver::ResolvedTypeKind::host_files && frame.argument_count()
-                        > 1)) {
+                    if (frame.argument_count() > 1) {
                         emit_Push(session);
                     }
                 } else {
@@ -1731,12 +1750,10 @@ export namespace compiler_lowering {
                 session.append_operand(additional);
                 session.append_operand(object_arguments);
                 i64 region_offset = 0;
-                if (frame.argument_count() >= 2) {
-                    const ArgumentLane region = frame.argument(1);
-                    if (value_kind(session, region.concrete_type_id())
-                        == compiler_resolver::ResolvedTypeKind::byte_region) {
-                        region_offset = local_offset(session, region.local_id());
-                    }
+                const i64 region_parameter = service_region_parameter(session, callee);
+                if (region_parameter >= 0) {
+                    const ArgumentLane region = frame.argument(region_parameter);
+                    region_offset = local_offset(session, region.local_id());
                 }
                 put(session, OperandRole::RegionOffset, region_offset);
                 emit(session, InstructionForm::ServiceCall, begin);

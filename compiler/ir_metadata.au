@@ -1481,7 +1481,7 @@ export namespace compiler_ir_metadata {
     }
     auto service_type(RawTypeRow type) -> bool {
         return type.kind() == 14 || type.kind() == 15 || type.kind() == 16 || type.kind() == 18 || type.kind() == 19
-            || type.kind() == 20 || type.kind() == 22;
+            || type.kind() == 20 || type.kind() == 22 || type.kind() == 23 || type.kind() == 24;
     }
     auto service_kind(RawTypeRow type) -> i64 {
         if (type.kind() == 14) {
@@ -1504,6 +1504,12 @@ export namespace compiler_ir_metadata {
         }
         if (type.kind() == 22) {
             return 6;
+        }
+        if (type.kind() == 24) {
+            return 8;
+        }
+        if (type.kind() == 23) {
+            return 7;
         }
         return -1;
     }
@@ -1573,14 +1579,36 @@ export namespace compiler_ir_metadata {
         if (type.kind() == 22) {
             return masks.service_host();
         }
+        if (type.kind() == 24) {
+            return masks.service_writer();
+        }
+        if (type.kind() == 23) {
+            return masks.service_block();
+        }
         return 0u64;
     }
-    // The two mixed capability prefixes: ConsoleSession& or HostFiles&, then
+    // The mixed prefixes ConsoleSession&, HostFiles& or ServeSession&, then
     // one ByteRegion.
+    auto service_region_index(const MetadataStore& store, CallableRow row) -> i64 {
+        const i64 count = row.value_parameter_count();
+        if (count < 2) {
+            return -1;
+        }
+        const RawTypeRow first = store.type_at(row.value_parameter_begin());
+        const RawTypeRow second = store.type_at(row.value_parameter_begin() + 1);
+        if ((plain_type(first, 14) || plain_type(first, 22) || plain_type(first, 20) || plain_type(first, 23)
+            || plain_type(first, 24)) && plain_type(second, 12)) {
+            return 1;
+        }
+        if (count >= 3 && ((plain_type(first, 20) && (plain_type(second, 23) || plain_type(second, 24)))
+            || ((plain_type(first, 23) || plain_type(first, 24)) && plain_type(second, 20)))
+            && plain_type(store.type_at(row.value_parameter_begin() + 2), 12)) {
+            return 2;
+        }
+        return -1;
+    }
     auto service_region_signature(const MetadataStore& store, CallableRow row) -> bool {
-        return row.value_parameter_count() >= 2 && (plain_type(store.type_at(row.value_parameter_begin()), 14)
-            || plain_type(store.type_at(row.value_parameter_begin()), 22))
-            && plain_type(store.type_at(row.value_parameter_begin() + 1), 12);
+        return service_region_index(store, row) >= 0;
     }
     auto verify_service_signature(MetadataStore& store, CallableRow row, bool resource) -> bool {
         const FlagMasks masks = FlagMasks();
@@ -1613,12 +1641,15 @@ export namespace compiler_ir_metadata {
         // pair or triple forwarding authority.
         if (at > 2 || (kinds != masks.service_console() && kinds != masks.service_display() && kinds
             != masks.service_iommu() && kinds != masks.service_call() && kinds != masks.service_port() && kinds
-            != masks.service_serve() && kinds != masks.service_host() && kinds != (masks.service_console()
+            != masks.service_serve() && kinds != masks.service_host() && kinds != masks.service_block() && kinds
+            != masks.service_writer() && kinds != (masks.service_serve() | masks.service_writer()) && kinds
+            != (masks.service_serve() | masks.service_block()) && kinds != (masks.service_console()
             | masks.service_display()) && kinds != (masks.service_console() | masks.service_iommu()))) {
             return fail(store, MetadataError::service_group);
         }
-        if (service_region_signature(store, row)) {
-            at = 2;
+        const i64 region = service_region_index(store, row);
+        if (region >= 0) {
+            at = region + 1;
         }
         while (at < row.value_parameter_count()) {
             const RawTypeRow type = store.type_at(row.value_parameter_begin() + at);

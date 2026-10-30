@@ -310,16 +310,19 @@ export namespace compiler_ir_instructions {
         return compiler_ir_metadata::same_type(metadata, a, b);
     }
     auto entry_has_region(const InstructionStore& store, i64 callable) -> bool {
-        const RawInstructionRow first = entry_instruction(store, callable, 0);
-        if (first.form() == 73 && entry_value(store, first, 0) == 0) {
-            return true;
-        }
         const BodyRow body = store.body_at(callable);
-        if (first.form() != 0 || body.count() < 2) {
-            return false;
+        i64 position = 0;
+        while (position < body.count() && position < 3) {
+            const RawInstructionRow row = entry_instruction(store, callable, position);
+            if (row.form() == 73 && entry_value(store, row, 0) == position) {
+                return true;
+            }
+            if (row.form() != 0 || entry_value(store, row, 0) != position) {
+                return false;
+            }
+            position = position + 1;
         }
-        const RawInstructionRow second = entry_instruction(store, callable, 1);
-        return second.form() == 73 && entry_value(store, second, 0) == 1;
+        return false;
     }
     auto verify_entry_prefix(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable) -> bool {
@@ -332,7 +335,7 @@ export namespace compiler_ir_instructions {
             const i64 expected = expected_parameter_form(metadata, type);
             const RawInstructionRow row = entry_instruction(store, callable, position);
             if (row.form() != expected || entry_value(store, row, 0) != position || (expected == 73 && position != 0
-                && !(position == 1 && compiler_ir_metadata::service_region_signature(metadata, declaration)))) {
+                && !(position == compiler_ir_metadata::service_region_index(metadata, declaration)))) {
                 return fail(store, prefix_error(expected));
             }
             const i64 offset = entry_value(store, row, 1);
@@ -1640,7 +1643,7 @@ export namespace compiler_ir_instructions {
             const compiler_ir_metadata::RawTypeRow type = call_type(metadata, target, at + 1);
             const i64 span = call_lane(store, instruction, 3, at);
             const i64 object = call_lane(store, instruction, 6, at);
-            if (mixed && at == 1) {
+            if (mixed && at == compiler_ir_metadata::service_region_index(metadata, declaration)) {
                 if (span != 0 || object != 0) {
                     return fail(store, InstructionError::service_scalar);
                 }
@@ -2192,6 +2195,41 @@ export namespace compiler_ir_instructions {
             && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + 6, 19),
             "_m2_6aurora6memory_");
     }
+    // Independent reserved-module admission; a similarly named source helper
+    // never receives the endpoint's private primitives.
+    auto endpoint_runtime_callable(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        return name.count() >= 27 && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin(),
+            5), "__au_") && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + 6, 21),
+            "_m2_6aurora8endpoint_");
+    }
+    auto block_runtime_callable(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        return name.count() >= 24 && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin(),
+            5), "__au_") && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + 6, 18),
+            "_m2_6aurora5block_");
+    }
+    auto writer_runtime_callable(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        return name.count() >= 31 && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin(),
+            5), "__au_") && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + 6, 25),
+            "_m2_6aurora11block_write_");
+    }
+    auto endpoint_process_entry(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        if (row.scope() != 0 || (row.value_parameter_count() != 3 && row.value_parameter_count() != 4) || name.count()
+            <= 11) {
+            return false;
+        }
+        const compiler_ir_metadata::RawTypeRow first = metadata.type_at(row.value_parameter_begin());
+        return (first.kind() == 20 || (first.kind() == 24 && row.value_parameter_count() == 3))
+            && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + name.count() - 11,
+            11), "_n0__d4main");
+    }
     auto verify_service_instruction(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 instruction, u64 result_enums) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
@@ -2206,7 +2244,7 @@ export namespace compiler_ir_instructions {
         }
         if (form == 2) { // ReleaseServiceLoan: the executed path decides which loan is live and called.
             const i64 kind = call_value(store, instruction, 1);
-            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 6) {
+            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 8) {
                 return fail(store, InstructionError::service_release);
             }
             return true;
@@ -2215,10 +2253,13 @@ export namespace compiler_ir_instructions {
             return true;
         } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || operation > 31) {
+        if (operation < 0 || operation > 45) {
             return fail(store, InstructionError::service_operation);
         }
-        i64 expected_kind = 0; // Console: Next, Put
+        i64 expected_kind = 0;
+        if (operation >= 39 && operation < 46) {
+            expected_kind = 8;
+        } // Console: Next, Put
         if (operation == 2) {
             expected_kind = 1;
         } // Display: Pixel
@@ -2231,10 +2272,13 @@ export namespace compiler_ir_instructions {
         if (operation == 6 || operation == 7) {
             expected_kind = 4;
         } // Port: Read8, Write8
-        if (operation == 8) {
+        if (operation == 8 || (operation >= 32 && operation < 36)) {
             expected_kind = 5;
         } // Serve: Exchange
-        if (operation > 8) {
+        if (operation >= 36 && operation < 39) {
+            expected_kind = 7;
+        }
+        if (operation > 8 && operation < 32) {
             expected_kind = 6;
         } // HostFiles: the Linux binding's session and system primitives
         const i64 kind = call_value(store, instruction, 3);
@@ -2252,16 +2296,33 @@ export namespace compiler_ir_instructions {
         // system primitives (13..20) exist only for the Linux target and the
         // kernel primitives (29..31) only for the Aurora one; the memory
         // primitives serve both.
-        if (((operation > 8 && operation < 21) || operation > 28) && !host_runtime_callable(metadata, callable)) {
+        if (((operation > 8 && operation < 21) || (operation > 28 && operation < 32))
+            && !host_runtime_callable(metadata, callable)) {
+            return fail(store, InstructionError::service_operation);
+        }
+        if (operation >= 39 && operation < 46 && !writer_runtime_callable(metadata, callable)) {
+            return fail(store, InstructionError::service_operation);
+        }
+        if (operation >= 36 && operation < 39 && !block_runtime_callable(metadata, callable)) {
+            return fail(store, InstructionError::service_operation);
+        }
+        if (operation >= 36 && operation < 46 && !store.kernel_target()) {
+            return fail(store, InstructionError::block_platform);
+        }
+        if (operation >= 32 && operation < 36 && !endpoint_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);
         }
         if (operation > 20 && operation < 29 && !memory_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);
         }
-        if ((operation > 12 && operation < 21 && store.kernel_target()) || (operation > 28 && !store.kernel_target())) {
+        if (operation >= 32 && operation < 36 && !store.kernel_target()) {
+            return fail(store, InstructionError::endpoint_platform);
+        }
+        if ((operation > 12 && operation < 21 && store.kernel_target()) || (operation > 28 && operation < 32
+            && !store.kernel_target())) {
             return fail(store, InstructionError::service_platform);
         }
-        if (operation > 8 && operation != 14 && operation != 30) {
+        if (operation > 8 && operation != 14 && operation != 30 && operation != 32) {
             if (result_offset != 0) {
                 return fail(store, InstructionError::service_operation);
             }
@@ -2303,8 +2364,8 @@ export namespace compiler_ir_instructions {
         const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
         if ((operation == 0 && !compiler_ir_metadata::named(metadata, type.name(), "__au_console_sample")) || (operation
             == 3 && !compiler_ir_metadata::named(metadata, type.name(), "__au_iommu_event_sample")) || (operation == 5
-            && !compiler_ir_metadata::named(metadata, type.name(), "__au_call_result")) || (operation == 8
-            && !compiler_ir_metadata::named(metadata, type.name(), "__au_serve_request")) || ((operation == 14
+            && !compiler_ir_metadata::named(metadata, type.name(), "__au_call_result")) || ((operation == 8 || operation
+            == 32) && !compiler_ir_metadata::named(metadata, type.name(), "__au_serve_request")) || ((operation == 14
             || operation == 30) && !compiler_ir_metadata::named(metadata, type.name(), "__au_host_chunk"))) {
             return fail(store, InstructionError::service_sample_result);
         }
@@ -2315,6 +2376,9 @@ export namespace compiler_ir_instructions {
         const u64 result_enums = service_result_enums(metadata);
         i64 callable = 0;
         while (callable < store.body_count()) {
+            if (!store.kernel_target() && endpoint_process_entry(metadata, callable)) {
+                return fail(store, InstructionError::endpoint_platform);
+            }
             // A body's stable loan identities precede its site contracts. The
             // bounded scratch sort borrows no native state and clears its lanes.
             if (!store.verify_service_loan_roots(callable)) {

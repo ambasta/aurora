@@ -1,0 +1,4 @@
+1 bin/file-service-mounted file-service	exit 1
+2 bin/lifecycle lifecycle mounted	service_lost
+3 bin/file-service file-service	exit 0
+4 bin/lifecycle lifecycle mounted-absent	exit 0 | stdout: xfs mounted owner lost disk unavailable ram intact

@@ -1,0 +1,6 @@
+1 bin/isolation-6 svc-block-forge	call operation=16
+2 bin/probe probe file tree/no-such-file	service_lost
+3 bin/file-service file-service	exit 0
+4 bin/lifecycle lifecycle disk	exit 0 | stdout: xfs pattern 9001 readonly
+5 bin/isolation-6 block-forge	call operation=16
+6 bin/lifecycle lifecycle disk	exit 0 | stdout: xfs pattern 9001 readonly

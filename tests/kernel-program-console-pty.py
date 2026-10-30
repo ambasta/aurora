@@ -12,6 +12,7 @@ import select
 import shutil
 import signal
 import subprocess
+import struct
 import sys
 import tempfile
 import time
@@ -20,10 +21,12 @@ import tty
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from kernel_layout import LAYOUT
+from kernel_elf import Elf, PF_R, SHF_ALLOC
 from kernel_profiles import FIXTURE_MODES, serial_fixture_byte
 from kernel_uefi_oracle import loader_selection
 
 import qemu_transport as transport
+import kernel_volume
 
 
 class Blocked(Exception):
@@ -494,7 +497,7 @@ def validate_file_call(text, mode, expected, service_results, images, timer):
         need(len(park) == len(resume) == 1 and park[0][1:] == resume[0], "Original caller continuation")
         ticket, epoch, used, left = map(int, park[0])
         need(ticket > 0, "Nonzero transaction ticket")
-        need(epoch > previous_epoch and 0 < used < 128 and used + left == 128, "Fresh original budget before park")
+        need(epoch > previous_epoch and 0 <= used < 128 and used + left == 128, "Fresh original budget before park")
         previous_epoch = epoch + 1
         launches = re.findall(
             r"AURORA_UEFI_USER_RUN: epoch=(\d+) role=(client|service) phase=(request|service) "
@@ -788,7 +791,16 @@ def validate_append(part, mode, expected, success, ending_epoch, images):
 
 
 def validate(
-    text, mode, expected_outputs, commands, images, timer, expected_reads=None, expected_saves=None, expected_files=None
+    text,
+    mode,
+    expected_outputs,
+    commands,
+    images,
+    timer,
+    expected_reads=None,
+    expected_saves=None,
+    expected_files=None,
+    expected_store_losses=(),
 ):
     loader_selection(text.replace("\r", ""), mode)
     selected = mode in FIXTURE_MODES and FIXTURE_MODES[mode][0] == "program-fixture"
@@ -847,6 +859,7 @@ def validate(
     need(set(expected_reads) <= set(range(commands)), "Unexpected note command index")
     need(set(expected_saves) <= set(range(commands)), "Unexpected saved-output command index")
     need(set(expected_files) <= set(range(commands)), "Unexpected named-file command index")
+    need(set(expected_store_losses) <= set(expected_saves) | set(expected_files), "Unexpected source commit loss")
     saved_count = 0
     missing_count = 0
     file_saved_count = 0
@@ -854,6 +867,11 @@ def validate(
     append_operations = []
     failed_append = False
     for command_index, (length, kind, part, success, ending_epoch, result) in enumerate(command_parts):
+        store_loss = command_index in expected_store_losses
+        need(
+            not store_loss or (kind in ("upper-note", "upper-file") and success == "1"),
+            "Source commit loss must follow successful protected retirement",
+        )
         need((kind == "note") == (command_index in expected_reads), "Unexpected note/upper command")
         need((kind == "upper-note") == (command_index in expected_saves), "Unexpected saved-output command")
         need(
@@ -864,9 +882,9 @@ def validate(
             marker = "File saved." if kind == "upper-file" else "Note saved."
             if kind == "upper-note":
                 need(int(length) == len(expected_saves[command_index]) <= 53, "Bounded exact saved-output length")
-                saved_count += int(success == "1")
+                saved_count += int(success == "1" and not store_loss)
             else:
-                file_saved_count += int(success == "1")
+                file_saved_count += int(success == "1" and not store_loss)
             need(marker not in part, "Value was saved before retirement")
             match = command_matches[command_index]
             response_end = command_matches[command_index + 1].start() if command_index + 1 < commands else len(text)
@@ -874,16 +892,28 @@ def validate(
             if prompt >= 0:
                 response_end = min(response_end, prompt)
             response = text[match.start(6) : response_end]
-            need(response.count(marker) == int(success == "1"), "Duplicate or unexpected save acknowledgment")
             need(
-                result
-                == (
-                    marker
-                    if success == "1"
-                    else "Program stopped: checked fault or budget exhausted; output discarded."
-                ),
-                "Saved-output terminal response mismatch",
+                response.count(marker) == int(success == "1" and not store_loss),
+                "Duplicate or unexpected save acknowledgment",
             )
+            if store_loss:
+                cause = "exit status=0" if kind == "upper-note" else "consumer_rejected"
+                need(
+                    response.count("File service unavailable; result unknown.\r\n") == 1
+                    and response.count("AURORA_FILE_SERVICE_LOST:") == 1
+                    and response.count(" cause=" + cause + " volatile_data=lost\r\n") == 1,
+                    "Post-commit loss must follow observed exit/rejection, not a fault or retry",
+                )
+            else:
+                need(
+                    result
+                    == (
+                        marker
+                        if success == "1"
+                        else "Program stopped: checked fault or budget exhausted; output discarded."
+                    ),
+                    "Saved-output terminal response mismatch",
+                )
         rounds = int(length)
         sources = {"request": 0, "service": 1, "completion": 2}
         if kind == "note":
@@ -918,7 +948,8 @@ def validate(
             sources = {"request": 12, "service": 15 if appending else 11, "completion": 14 if saving else 13}
             file_missing_count += int(expected is None and success == "1")
             need(
-                result
+                store_loss
+                or result
                 == (
                     (
                         planned["reply"]
@@ -1177,12 +1208,94 @@ def validate_failstop(part, mode, status, images, *, append=False, full_text="")
         )
 
 
+def snapshot_service_program(path, mode):
+    """Select existing probe data, never executable instructions or pinned bytes."""
+    elf = Elf(path)
+    symbols = [symbol for symbol in elf.symbols if symbol.name == "aurora_service_probe_mode"]
+    need(len(symbols) == 1, "Unique defined snapshot service selector")
+    symbol = symbols[0]
+    need(
+        symbol.kind == 1 and symbol.bind == 1 and symbol.size == 8 and 0 < symbol.section < len(elf.sections),
+        "Bounded global selector object",
+    )
+    section = elf.sections[symbol.section]
+    need(
+        section.kind == 1
+        and section.flags == SHF_ALLOC
+        and section.address <= symbol.address <= section.address + section.size - 8,
+        "Snapshot selector must be immutable allocated data",
+    )
+    segments = [
+        segment
+        for segment in elf.segments
+        if segment.kind == 1 and segment.address <= symbol.address <= segment.address + segment.file_size - 8
+    ]
+    need(len(segments) == 1 and segments[0].flags == PF_R, "Snapshot selector read-only NX load segment")
+    offset = section.offset + symbol.address - section.address
+    need(
+        offset == segments[0].offset + symbol.address - segments[0].address
+        and 0 <= offset <= len(elf.data) - 8
+        and elf.data[offset : offset + 8] == bytes(8),
+        "Snapshot selector file bounds/default",
+    )
+    data = bytearray(elf.data)
+    struct.pack_into("<Q", data, offset, mode)
+    return bytes(data)
+
+
+def production_case_volume(source, programs, directory, service_case=None):
+    """Untrusted file payloads in a private ESP; the production kernel is unchanged."""
+    target = directory / "esp"
+    shutil.copytree(source, target)
+    path = target / "aurora/system"
+    data = path.read_bytes()
+    _, _, _, count, stride, names, _, payload, _, _, _ = struct.unpack_from("<8sIIIIQQQQII", data)
+    entries = []
+    for index in range(count):
+        name, length, _, offset, size = struct.unpack_from("<QIIQQ", data, 64 + index * stride)
+        entries.append((data[names + name : names + name + length], data[payload + offset : payload + offset + size]))
+    if service_case:
+        if service_case == "console-commit":
+            replacement = (programs / "console-commit-hostile-aurora").read_bytes()
+        else:
+            replacement = snapshot_service_program(
+                programs / "process-isolation-6", 12 if service_case == "snapshot-read" else 13
+            )
+        need(sum(name == b"bin/file-service" for name, _ in entries) == 1, "Unique designated service file")
+        entries = [(name, replacement if name == b"bin/file-service" else data) for name, data in entries]
+        path.write_bytes(kernel_volume.volume(entries))
+        return target
+    for name, binary in (
+        ("hostile", "process-hostile-aurora"),
+        ("lifecycle", "process-lifecycle-aurora"),
+        ("probe", "host-files-probe-aurora"),
+        ("privileged", "process-isolation-3"),
+    ):
+        entries.append((name.encode(), (programs / binary).read_bytes()))
+    for name, edits in (
+        ("wx", "p1.flags=7"),
+        ("interp", "p3.type=3"),
+        ("oversize", "p2.memsz=0xffffffffffffffff"),
+        ("quota", "p2.memsz=0x8000000"),
+    ):
+        entries.append((name.encode(), kernel_volume.elf(edits)))
+    entries.append((b"tree/seed", b""))
+    path.write_bytes(kernel_volume.volume(entries))
+    return target
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", default="program-console")
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--read-only-recovery", action="store_true")
     parser.add_argument("--append-recovery", action="store_true")
+    parser.add_argument("--program-cases", type=Path, help="existing hostile program build products; private ESP only")
+    parser.add_argument(
+        "--service-case",
+        choices=("snapshot-read", "snapshot-close", "console-commit"),
+        help="private designated-service payload using --program-cases build products",
+    )
     args = parser.parse_args()
     args.append_recovery |= args.mode in APPEND_RECOVERY_MODES or (
         args.mode.startswith("program-append-") and args.mode in APPEND_FAILSTOP_REASONS
@@ -1201,6 +1314,8 @@ def main():
     )
     need(args.mode.startswith("program-"), "Expected a protected program-console profile")
     build = args.build_dir.resolve()
+    need(not args.program_cases or args.mode == "program-console", "Program data cases require production")
+    need(not args.service_case or args.program_cases, "Service data cases require existing program artifacts")
     user_images = json.loads((build / "user-images.json").read_text())
     if (build / "user-sets.json").exists():
         # A packed bank: the images this mode's row runs, by role.
@@ -1229,11 +1344,16 @@ def main():
         cwd=ROOT,
     )
     firmware, code, variables, *firmware_args = selected.decode().split("\0")[:-1]
+    esp = (
+        production_case_volume(build / "esp", args.program_cases, output, args.service_case)
+        if args.program_cases
+        else build / "esp"
+    )
     command = transport.profile_command(
         "uefi",
         args.mode,
         qemu,
-        build / "esp",
+        esp,
         os.environ.get("QEMU_DATA", ""),
         firmware=firmware,
         code=code,
@@ -1243,11 +1363,12 @@ def main():
     tty.setraw(slave)
     transcript = bytearray()
     process = None
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + (300 if args.program_cases else 180)
     expected_outputs = []
     expected_reads = {}
     expected_saves = {}
     expected_files = {}
+    expected_store_losses = set()
     commands = 0
     metrics = {
         "status": "incomplete",
@@ -1257,6 +1378,8 @@ def main():
         "clock": "tcg-original-clock",
         "purpose": "guest",
     }
+    if args.service_case:
+        metrics["service_case"] = args.service_case
     try:
         with (output / "qemu.stderr").open("wb") as errors:
             process = transport.start(command, cwd=ROOT, stdin=slave, stdout=slave, stderr=errors)
@@ -1427,11 +1550,130 @@ def main():
                     )
                 need("kind=append-file" in part, "Append must run real protected participants")
 
+            def run_command(line, status, printed=b""):
+                begin = len(transcript)
+                send(line.encode("ascii") + b"\n")
+                receive(b"aurora> ", begin)
+                part = bytes(transcript[begin:]).replace(b"\r\n", b"\n")
+                need(part.count(("run: " + status + "\n").encode()) == 1, "Run result: " + line)
+                need(not printed or printed in part, "Run stdout/stderr: " + line)
+                need(
+                    b"AURORA_PROCESS_KERNEL_FAULT" not in part and b"AURORA_PROCESS_FAIL" not in part,
+                    "Run escaped its process boundary",
+                )
+                return part
+
+            def finish_session():
+                begin = len(transcript)
+                send(b"exit\n")
+                receive(b"AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0\r\n", begin)
+                need(transport.wait_exit(process, 5) == 33, "QEMU did not exit cleanly")
+                while select.select([master], [], [], 0)[0]:
+                    try:
+                        tail = os.read(master, 65536)
+                    except OSError as error:
+                        if error.errno != errno.EIO:
+                            raise
+                        break
+                    if not tail:
+                        break
+                    transcript.extend(tail)
+                metrics.update(
+                    validate(
+                        bytes(transcript).decode("ascii"),
+                        args.mode,
+                        expected_outputs,
+                        commands,
+                        admitted["user_images"],
+                        admitted["timer"],
+                        expected_reads,
+                        expected_saves,
+                        expected_files,
+                        expected_store_losses,
+                    ),
+                    status="passed",
+                    exit_status=process.returncode,
+                )
+
             if serial_fixture_byte(args.mode):
                 receive(b"AURORA_FIXTURE_READY", 0)
                 send(bytes([FIXTURE_MODES[args.mode][1]]))
             receive(b"aurora> ", 0)
             tty.setraw(master)
+            if args.service_case:
+                if args.service_case.startswith("snapshot-"):
+                    operation = 19 if args.service_case == "snapshot-read" else 20
+                    for generation in (1, 2):
+                        begin = len(transcript)
+                        run_command("run bin/sort", "file service unavailable")
+                        part = bytes(transcript[begin:]).decode("ascii")
+                        need(
+                            re.findall(r"AURORA_FILE_SERVICE_READY: generation=(\d+)\r?\n", part) == [str(generation)],
+                            "Snapshot rollback must start a fresh source owner",
+                        )
+                        need(
+                            re.findall(
+                                r"AURORA_FILE_SERVICE_LOST: generation=(\d+) transaction=[1-9]\d* "
+                                + "cause=invalid_reply operation="
+                                + str(operation)
+                                + r" volatile_data=lost\r?\n",
+                                part,
+                            )
+                            == [str(generation)],
+                            "Snapshot failure must lose exactly its own volatile service generation",
+                        )
+                        ready_at = part.index("AURORA_FILE_SERVICE_READY:")
+                        need(
+                            part[:ready_at].count("AURORA_PROCESS_LOADED:") == 1
+                            and "AURORA_PROCESS_LOADED:" not in part[ready_at:]
+                            and "invalid executable" not in part,
+                            "Snapshot failure must load only its owner, never a client or malformed-ELF fallback",
+                        )
+                        command_upper(b"healthy after snapshot loss\n", "HEALTHY AFTER SNAPSHOT LOSS")
+                else:
+                    note_write(b"lower")
+                    begin = len(transcript)
+                    send(b"upper note\n")
+                    receive(b"aurora> ", begin)
+                    expected_saves[commands] = "LOWER"
+                    expected_store_losses.add(commands)
+                    commands += 1
+                    note_read(None)
+                    file_write("a", "lower")
+                    begin = len(transcript)
+                    send(b"upper a\n")
+                    receive(b"aurora> ", begin)
+                    expected_files[commands] = {"command": "upper a", "value": "LOWER"}
+                    expected_store_losses.add(commands)
+                    commands += 1
+                    file_command("cat", "a", None)
+                    command_upper(b"healthy after commit loss\n", "HEALTHY AFTER COMMIT LOSS")
+                text = bytes(transcript).decode("ascii")
+                ready = re.findall(r"AURORA_FILE_SERVICE_READY: generation=(\d+)\r?\n", text)
+                lost = re.findall(
+                    r"AURORA_FILE_SERVICE_LOST: generation=(\d+) transaction=[1-9]\d* "
+                    r"cause=(invalid_reply operation=19|invalid_reply operation=20|exit status=0|consumer_rejected) "
+                    r"volatile_data=lost\r?\n",
+                    text,
+                )
+                expected_losses = (
+                    [("1", "exit status=0"), ("2", "consumer_rejected")]
+                    if args.service_case == "console-commit"
+                    else [(str(generation), "invalid_reply operation=" + str(operation)) for generation in (1, 2)]
+                )
+                need(
+                    ready == (["1", "2", "3"] if args.service_case == "console-commit" else ["1", "2"])
+                    and lost == expected_losses
+                    and text.count("AURORA_FILE_SERVICE_LOST:") == 2,
+                    "Service restart/loss must follow exact causes without replay or stale generations",
+                )
+                need(
+                    "AURORA_PROCESS_FAIL" not in text and "AURORA_PROCESS_KERNEL_FAULT" not in text,
+                    "Service loss escaped snapshot/owner rollback audits",
+                )
+                finish_session()
+                print("PASS: private service payload loss, fresh generations, no replay and healthy console exit")
+                return
             if args.mode == "program-append-response":
                 file_write("a", "prefix")
                 begin = len(transcript)
@@ -1827,35 +2069,67 @@ def main():
             receive(b"aurora> ", begin)
             need(b"Line rejected:" in transcript[begin:], "FIFO overload was not rejected")
             command_upper(b"healthy after rejection\n", "HEALTHY AFTER REJECTION")
-            begin = len(transcript)
-            send(b"exit\n")
-            receive(b"AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0\r\n", begin)
-            need(transport.wait_exit(process, 5) == 33, "QEMU did not exit cleanly")
-            while select.select([master], [], [], 0)[0]:
-                try:
-                    tail = os.read(master, 65536)
-                except OSError as error:
-                    if error.errno != errno.EIO:
-                        raise
-                    break
-                if not tail:
-                    break
-                transcript.extend(tail)
-            metrics.update(
-                validate(
-                    bytes(transcript).decode("ascii"),
-                    args.mode,
-                    expected_outputs,
-                    commands,
-                    admitted["user_images"],
-                    admitted["timer"],
-                    expected_reads,
-                    expected_saves,
-                    expected_files,
-                ),
-                status="passed",
-                exit_status=process.returncode,
-            )
+            if args.mode == "program-console":
+                # Real commands against the shipped volume and the one retained
+                # service in this boot. No export, host linker or reboot occurs
+                # between compiling the object, linking it and launching it.
+                for line in ("run", "run   ", "run bin/sort 'x'", "run a b c d e f g h i j k l m n o p q"):
+                    begin = len(transcript)
+                    send(line.encode() + b"\n")
+                    receive(b"aurora> ", begin)
+                    part = bytes(transcript[begin:])
+                    need(
+                        b"Usage: run PATH" in part and b"AURORA_PROCESS_LOADED:" not in part,
+                        "Malformed run launched a child",
+                    )
+                run_command("run absent", "program not found")
+                run_command("run sort.au", "invalid executable or arguments")
+                run_command("run bin/sort", "exited status=2", b"usage: host-sort DIRECTORY OUTPUT FILE...\n")
+                run_command("run bin/cat / copied.txt input.txt", "exited status=0", b"input.txt 17\n")
+                run_command("run bin/aurorac --emit-object --target aurora sort.au -o sort.o", "exited status=0")
+                run_command("run bin/aurorac --link-object sort.o -o sorted", "exited status=0")
+                run_command("run sorted / sorted.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")
+                run_command("run bin/sort / again.txt sorted.txt", "exited status=0", b"3 lines: 5 3 6\n")
+                # Naming the service executable cannot mint its sealed Serve
+                # authority or replace the original namespace owner.
+                run_command("run bin/file-service", "fault vector=6")
+                run_command("run sorted / after.txt sorted.txt", "exited status=0", b"3 lines: 5 3 6\n")
+                run_command("run bin/cat / copied.txt missing", "exited status=1", b"cannot open missing\n")
+                run_command("run sorted / check.txt copied.txt", "exited status=0", b"3 lines: 5 3 6\n")
+                run_command("run bin/cat / sorted input.txt", "exited status=0", b"input.txt 17\n")
+                run_command("run sorted", "invalid executable or arguments")
+                run_command("run bin/sort / final.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")
+                need(
+                    bytes(transcript).count(b"AURORA_FILE_SERVICE_READY:") == 1,
+                    "Run commands did not retain one service incarnation",
+                )
+                command_upper(b"healthy after processes\n", "HEALTHY AFTER PROCESSES")
+                metrics["same_boot_compile_link_run"] = True
+                if args.program_cases:
+                    for line, status in (
+                        ("run wx", "invalid executable or arguments"),
+                        ("run interp", "invalid executable or arguments"),
+                        ("run oversize", "invalid executable or arguments"),
+                        ("run quota", "resource quota exceeded"),
+                        ("run privileged", "fault vector=13"),
+                        ("run lifecycle fault", "fault vector=6"),
+                        ("run hostile spin", "watchdog"),
+                    ):
+                        run_command(line, status)
+                        command_upper(b"healthy after child\n", "HEALTHY AFTER CHILD")
+                        run_command("run bin/sort / final.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")
+                    # Reuse after close and a foreign guessed id are ordinary
+                    # client data, not a kernel test hook.
+                    run_command(
+                        "run probe file input.txt close @1 read @1 0", "exited status=0", b"3 read invalid_handle 0 "
+                    )
+                    run_command("run probe read 65 0", "exited status=0", b"1 read invalid_handle 0 ")
+                    run_command("run lifecycle rpc", "watchdog")
+                    run_command("run probe file tree/rpc-pending", "exited status=0", b"1 file not_found 0 ")
+                    run_command("run bin/sort / final.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")
+                    command_upper(b"healthy after hostile programs\n", "HEALTHY AFTER HOSTILE PROGRAMS")
+                    metrics["hostile_program_data"] = True
+            finish_session()
     finally:
         cleanup_errors, _, unsettled = transport.finish(process, fds=(master, slave if slave != -1 else None))
         (output / "transcript.log").write_bytes(transcript)

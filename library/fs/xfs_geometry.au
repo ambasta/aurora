@@ -800,6 +800,28 @@ namespace fs {
 }
 
 export namespace fs {
+    // Shared closed namespace widths/features. This is a profile predicate,
+    // not integrity/geometry or mount admission; callers also inspect geometry.
+    auto xfs_bounded_namespace_profile(builtin::span<const u8> bytes) -> bool {
+        if (bytes.size() != 512) {
+            return false;
+        }
+        if (xfs_geometry_read32(bytes, 208) != 0u64 || xfs_geometry_read32(bytes, 212) != 1u64
+            || xfs_geometry_read32(bytes, 216) != 1u64 || xfs_geometry_read32(bytes, 220) != 0u64
+            || xfs_geometry_read32(bytes, 4) != 4096u64 || xfs_geometry_read16(bytes, 104) != 512u64 || bytes.at(192)
+            != 0u8 || xfs_geometry_read32(bytes, 96) < 1u64 || xfs_geometry_read32(bytes, 96) > 16384u64) {
+            return false;
+        }
+        i64 at = 32;
+        while (at < 48) {
+            if (bytes.at(at) != 0u8) {
+                return true;
+            }
+            at = at + 1;
+        }
+        return false;
+    }
+
     auto inspect_xfs_v5_512_geometry(builtin::span<const u8> bytes) -> XfsGeometryReport {
         const XfsProbeResult probe = probe_xfs_v5_512(bytes);
         if (probe.status() != XfsProbeStatus::header_integrity_valid) {
@@ -834,5 +856,36 @@ export namespace fs {
         const XfsGeometryReport result = XfsGeometryReport(XfsGeometryStatus::header_geometry_consistent,
             XfsGeometryIssue::none, probe, raw, masks, facts);
         return result;
+    }
+    // Checked address only, never inode/allocation validation or authority.
+    auto xfs_v5_512_inode_lba(builtin::span<const u8> sb, u64 number) -> u64 {
+        const XfsGeometryReport geometry = inspect_xfs_v5_512_geometry(sb);
+        if (geometry.status() != XfsGeometryStatus::header_geometry_consistent) {
+            return 0u64;
+        }
+        if (xfs_geometry_read32(sb, 4) != 4096u64 || xfs_geometry_read16(sb, 104) != 512u64) {
+            return 0u64;
+        }
+        if (number == 0u64 || number > 4294967295u64) {
+            return 0u64;
+        }
+        const i64 shift = i64(sb.at(124));
+        const u64 encoded = number >> 3;
+        const u64 ag = encoded >> shift;
+        const u64 block = encoded & ((1u64 << shift) - 1u64);
+        const u64 agblocks = xfs_geometry_read32(sb, 84);
+        if (ag >= xfs_geometry_read32(sb, 88) || block >= agblocks || block == 0u64) {
+            return 0u64;
+        }
+        const u64 linear = ag * agblocks + block;
+        if (linear >= xfs_geometry_read64(sb, 8)) {
+            return 0u64;
+        }
+        const u64 log = xfs_geometry_read64(sb, 48);
+        const u64 log_linear = (log >> shift) * agblocks + (log & ((1u64 << shift) - 1u64));
+        if (linear >= log_linear && linear - log_linear < xfs_geometry_read32(sb, 96)) {
+            return 0u64;
+        }
+        return linear * 8u64 + number % 8u64;
     }
 }

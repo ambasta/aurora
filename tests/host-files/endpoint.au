@@ -1,0 +1,24 @@
+module endpoint_probe;
+import aurora.endpoint;
+import aurora.memory;
+
+auto receive(builtin::ServeSession& session, builtin::ByteRegion region,
+    builtin::span<const u8> reply) -> endpoint::Message {
+    builtin::OwnedBytes local = region.try_allocate(1);
+    local.set(0, 7u8);
+    const endpoint::Message message = endpoint::exchange(session, reply);
+    if (message.status() == builtin::ServeStatus::request && message.count() != 0u64) {
+        local.set(0, endpoint::byte(session, 0u64));
+    }
+    return message;
+}
+auto main(builtin::ServeSession& session, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const builtin::span<const u8> empty = arguments.subspan(0, 0);
+    const endpoint::Message message = receive(session, region, empty);
+    if (message.status() == builtin::ServeStatus::cancelled && message.source() == 0u64 && message.transaction() == 0u64
+        && message.count() == 0u64) {
+        return builtin::HostExit::success;
+    }
+    return builtin::HostExit::failure;
+}

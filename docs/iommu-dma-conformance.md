@@ -46,6 +46,36 @@ of `kernel/uefi/runtime-fixtures.inc`; anything else fails closed before any
 device is touched. Ordinary hosted Event tests stay in the native graph and
 never launch QEMU.
 
+### One-shot guest translation revocation
+
+The Event image initializes all 256 DTEs with V=TV=1, Mode0 and no read/write
+permission, avoiding V=0 bypass; only EDU 0x20 receives the owned Mode1 root.
+The PCI handoff still disables other endpoint bus mastering. Hosted independent
+decoding and the complete captured table check every entry; second-requester
+DMA and Mode0 fault telemetry are not tested by this guest.
+
+The denial row first primes both allowed read/write routes, then revokes the
+secret's read and target's write permissions. It submits one
+`INVALIDATE_DEVTAB_ENTRY` → domain-wide `INVALIDATE_IOMMU_PAGES` → store+fence
+`COMPLETION_WAIT` batch, using the reviewed
+[transport fixture](../tests/iommu/fixtures/transport-import-v1.py)'s wire commands.
+A guarded completion word is poisoned before tail publication. Only the fresh
+nonce and exact 48-byte head permit further DMA. Malformed/backwards heads,
+changed tail/guards, unexpected stores/events, stopped fetching, MMIO failure
+and bounded-poll timeout stop without retry, reset or release.
+
+Acceptance requires nine actual EDU operations (four primes, five subsequent),
+including a fresh secret that denied reads cannot expose and a denied write
+that preserves its target. Terminal v2 (720 bytes) records the observed primes
+and command completion; the oracle checks all retained command, table, event and
+data bytes. Hosted encoder/observer cases share the existing IOMMU driver.
+Final-source image and guest qualification remain required. All pages stay
+pinned boot-long: completion grants no reclamation or physical-drain claim.
+
+The separate [NVMe profile](../storage/README.md#protected-file-backed-nvme) now
+uses the extended model and its own typed requester admission and queue lifecycle.
+XFS clean-log admission, replay and writable recovery remain separate gates.
+
 ### Local developer execution
 
 `make smoke-iommu-event` (`scripts/kernel_iommu_event_smoke.py`) builds the image,

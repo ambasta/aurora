@@ -18,14 +18,20 @@ make test-release                    # opt-in: releases, compiler and seed chang
 
 Guest smokes run QEMU through `scripts/kernel-uefi-smoke.sh MODE`,
 `scripts/kernel-smoke.sh` (BIOS) and `scripts/kernel-run.sh`; the fixture modes are
-the rows of `kernel/uefi/runtime-fixtures.inc`. The UEFI guest families are Meson
+the rows of `kernel/uefi/runtime-fixtures.inc`. Registered UEFI guest families are Meson
 tests outside `full`: `meson test --suite guest` runs all of them and
 `--suite guest-<family>` one family (`uefi`, `acpi`, `pci`, `runtime`, `ipc`,
-`budget`, `dispatch`, `user-phases`, `tables`, `pins`, `process`, `self-host`;
-listed in `scripts/kernel_profiles.py`). `self-host`, the compiler compiling
+`budget`, `dispatch`, `user-phases`, `tables`, `pins`, `process`, `self-host`,
+`production`; registered in `tests/native/meson.build` using
+`scripts/kernel_profiles.py`). `self-host`, the compiler compiling
 itself inside the process image for a few minutes, is also in the release
 suite. `scripts/kernel-run.sh bar|ivrs` boots the BAR and
 IVRS device families.
+
+`make smoke-all` adds legacy BIOS, BAR/IVRS, ordinary console and boot-capacity
+gates to the registered guests. Other supported opt-in families use their
+documented launchers separately; this command is not the complete qualification
+inventory.
 
 ## Kernel image checks
 

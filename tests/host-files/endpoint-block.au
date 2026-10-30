@@ -1,0 +1,26 @@
+module block_entry_probe;
+import aurora.block;
+import aurora.memory;
+import storage.block_io;
+import storage.sector;
+import std.binary_buffer;
+import std.binary;
+
+auto read_pair(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builtin::ByteRegion region,
+    u64 lba) -> storage::SectorReadResult {
+    builtin::OwnedBytes local = region.try_allocate(1);
+    if (local.ok()) {
+        local.set(0, 7u8);
+    }
+    const storage::SectorReadResult result = block::read_sector(blocks, lba);
+    return result;
+}
+auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const storage::SectorReadResult result = read_pair(session, blocks, region, 0u64);
+    if (block::sector_count(blocks) == 0u64 && block::volume_generation(blocks) == 0u64 && result.status()
+        == storage::SectorIoStatus::invalid_source) {
+        return builtin::HostExit::success;
+    }
+    return builtin::HostExit::failure;
+}

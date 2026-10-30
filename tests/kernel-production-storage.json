@@ -1,0 +1,36 @@
+{
+  "input": [
+    "run bin/cat /disk hello.txt hello\r",
+    "run bin/sort / sorted.txt hello.txt\r",
+    "run bin/cat /disk copied.txt hello pattern\r",
+    "run bin/cat / copied2.txt copied.txt\r",
+    "run bin/cat /disk /disk/denied hello\r",
+    "run bin/cat /disk missing.txt absent\r",
+    "run bin/cat /disk again.txt hello\r"
+  ],
+  "console": [
+    "AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines",
+    "aurora> run bin/cat /disk hello.txt hello",
+    "hello 64\n",
+    "run: exited status=0",
+    "aurora> run bin/sort / sorted.txt hello.txt",
+    "1 lines: 63\n",
+    "run: exited status=0",
+    "aurora> run bin/cat /disk copied.txt hello pattern",
+    "hello 64\npattern 9001\n",
+    "run: exited status=0",
+    "aurora> run bin/cat / copied2.txt copied.txt",
+    "copied.txt 9065\n",
+    "run: exited status=0",
+    "aurora> run bin/cat /disk /disk/denied hello",
+    "cannot create output\n",
+    "run: exited status=1",
+    "aurora> run bin/cat /disk missing.txt absent",
+    "cannot open absent\n",
+    "run: exited status=1",
+    "aurora> run bin/cat /disk again.txt hello",
+    "hello 64\n",
+    "run: exited status=0",
+    "aurora> "
+  ]
+}

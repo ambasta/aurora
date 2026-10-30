@@ -21,7 +21,7 @@ export namespace console {
         };
         u64 steps = 0u64;
         u64 checksum = seed;
-        // Keep a positive hardware debit even after translated code is warm.
+        // Keep live work across the call; warm code may finish before the first timer tick.
         while (steps < 1000000u64) {
             checksum = seed - checksum;
             steps = steps + 1u64;

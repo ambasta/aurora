@@ -4,7 +4,7 @@ new
 # Cannot consume any completion before begin, or choose an unknown profile.
 1 1 0 0 0 0
 2 0 0 0 0 0
-0 2 0 0 0 0
+0 3 0 0 0 0
 0 0 1 0 0 0
 0 0 0 1 0 0
 0 1 0 0 0 0
@@ -67,7 +67,7 @@ new
 1 1 0 3 1 0
 2 1 1 6 1 0
 1 1 0 3 1 0
-2 4 0 0 1 0
+2 5 0 0 1 0
 2 2 2 0 1 0
 2 2 0 17 0 1
 0 0 0 0 0 1
@@ -125,3 +125,45 @@ new
 2 3 1 18 1 2
 1 1 0 0 1 2
 2 0 0 0 1 2
+
+# Production selects a run only after input has completed, preserving CR carry.
+new
+0 2 0 1 0 0
+1 1 0 3 0 0
+2 4 1 19 1 0
+2 4 0 0 1 0
+1 1 0 3 1 0
+2 0 0 4 0 0
+3 0 0 5 0 0
+4 2 0 9 0 0
+1 1 0 3 0 0
+2 1 0 6 0 0
+1 1 0 3 0 0
+2 4 0 19 0 0
+1 0 0 18 0 2
+new
+0 0 0 1 0 0
+1 1 0 3 0 0
+2 4 0 13 0 0
+1 1 0 3 0 0
+2 2 0 17 0 1
+new
+0 1 0 2 0 0
+1 1 0 3 0 0
+2 4 1 13 1 0
+1 1 0 3 1 0
+2 2 0 17 0 1
+
+# External Store failure is a copied response only in production; no retry.
+new
+0 2 0 1 0 0
+1 1 0 3 0 0
+2 0 0 4 0 0
+3 5 0 15 0 0
+1 1 0 3 0 0
+2 2 0 17 0 1
+new
+0 0 0 1 0 0
+1 1 0 3 0 0
+2 0 0 4 0 0
+3 5 0 0 0 0

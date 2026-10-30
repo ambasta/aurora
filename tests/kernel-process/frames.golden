@@ -121,3 +121,27 @@ policy: map=valid grant=none ranges=1 frames=16 tables=3 metadata=2
   transition 3 0x5 16 0 0 -> record
   transition 3 0x1000000004 16 0 0 -> record
   transition 3 0xf00000002 16 0 0 -> record
+resident-owners: map=valid grant=none ranges=1 frames=16 tables=3 metadata=2
+  range 0xa00000 pages=16 index=0
+  bound reserved=5 free=11
+  allocate 16 -> frame 5 generation 0 at 0xa05000
+  allocate 17 -> frame 6 generation 0 at 0xa06000
+  allocate 18 -> none
+  owner 16 frames=1
+  owner 17 frames=1
+  owner 18 frames=0
+  release 5 0 17 -> wrong_owner
+  release 5 1 16 -> stale
+  owner 16 frames=1
+  audit consistent=1 free=9 allocated=2 kernel=5 retired=0 poisoned=0
+  corrupt-owner 5 19
+  audit consistent=0 free=0 allocated=1 kernel=5 retired=0 poisoned=0
+  corrupt-owner 5 16
+  audit consistent=1 free=9 allocated=2 kernel=5 retired=0 poisoned=0
+  release 5 0 16 -> none
+  allocate 18 -> frame 5 generation 1 at 0xa05000
+  owner 16 frames=0
+  owner 18 frames=1
+  release 6 0 17 -> none
+  release 5 1 18 -> none
+  audit consistent=1 free=11 allocated=0 kernel=5 retired=0 poisoned=0

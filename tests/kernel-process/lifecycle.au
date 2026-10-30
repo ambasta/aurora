@@ -1,0 +1,487 @@
+module process_lifecycle;
+import aurora.host;
+import aurora.memory;
+
+// One compiled process-lifecycle driver. Both residents allocate at the same
+// virtual addresses, retain heap and stack values across timer parks, and use
+// distinct byte patterns. B moves/shrinks its mapping while A keeps its own.
+// `fault` traps after touching its heap; `spin` is ended by its own watchdog.
+auto mode(builtin::span<const u8> arguments) -> u8 {
+    i64 at = 0;
+    while (at < arguments.size() && arguments.at(at) != 0u8) {
+        at = at + 1;
+    }
+    at = at + 1;
+    if (at >= arguments.size()) {
+        return 0u8;
+    }
+    if (arguments.size() - at == 11 && arguments.at(at + 10) == 0u8) {
+        const array<u8, 10> clean = "disk-clean";
+        i64 index = 0;
+        while (index < 10 && arguments.at(at + index) == clean[index]) {
+            index = index + 1;
+        }
+        if (index == 10) {
+            return 'D';
+        }
+    }
+    if (arguments.size() - at == 14 && arguments.at(at + 13) == 0u8) {
+        const array<u8, 13> small = "mounted-small";
+        i64 index = 0;
+        while (index < 13 && arguments.at(at + index) == small[index]) {
+            index = index + 1;
+        }
+        if (index == 13) {
+            return 'M';
+        }
+    }
+    if (arguments.size() - at == 15 && arguments.at(at + 14) == 0u8) {
+        const array<u8, 14> recovered = "recovered-pair";
+        i64 index = 0;
+        while (index < 14 && arguments.at(at + index) == recovered[index]) {
+            index = index + 1;
+        }
+        if (index == 14) {
+            return 'R';
+        }
+    }
+    if (arguments.size() - at == 15 && arguments.at(at + 14) == 0u8) {
+        const array<u8, 14> absent = "mounted-absent";
+        i64 index = 0;
+        while (index < 14 && arguments.at(at + index) == absent[index]) {
+            index = index + 1;
+        }
+        if (index == 14) {
+            return 'N';
+        }
+    }
+    return arguments.at(at);
+}
+
+auto pattern(i64 index, u8 salt) -> u8 {
+    return u8((u64(index) + u64(salt)) % 251u64);
+}
+
+// Mounted replacement uses real copied HostFiles calls. Readers retain their
+// admitted inode while a fresh open observes the newly published name.
+auto mounted_bytes(builtin::HostFiles& files, u64 id, u64 length, bool original) -> bool {
+    u64 offset = 0u64;
+    while (offset < length) {
+        const builtin::HostChunk chunk = files.read(id, offset);
+        if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64 || chunk.count > length - offset) {
+            return false;
+        }
+        const array<u8, 504> contents = chunk.bytes;
+        u64 index = 0u64;
+        while (index < chunk.count) {
+            u8 expected = u8(((offset + index) * 37u64 + 91u64) % 251u64);
+            if (original) {
+                expected = u8(((offset + index) * 37u64 + 11u64) % 256u64);
+            }
+            if (contents[i64(index)] != expected) {
+                return false;
+            }
+            index = index + 1u64;
+        }
+        offset = offset + chunk.count;
+    }
+    const builtin::HostChunk end = files.read(id, length);
+    return end.status == builtin::HostStatus::success && end.count == 0u64;
+}
+auto mounted_unchanged(builtin::HostFiles& files, u64 inode, u64 length, bool original) -> bool {
+    const builtin::HostFileResult input = files.open_file("/disk/hello");
+    if (input.status != builtin::HostStatus::success || input.device != 3u64 || input.inode != inode || input.size
+        != length || !mounted_bytes(files, input.id, length, original)) {
+        return false;
+    }
+    return files.close(input.id) == builtin::HostStatus::success;
+}
+auto mounted_ram(builtin::HostFiles& files, builtin::ByteRegion region) -> bool {
+    builtin::OwnedBytes bytes = region.try_allocate(113);
+    if (!bytes.ok()) {
+        return false;
+    }
+    i64 at = 0;
+    while (at < bytes.size()) {
+        if (!bytes.set(at, u8((u64(at) * 37u64 + 91u64) % 251u64))) {
+            return false;
+        }
+        at = at + 1;
+    }
+    const builtin::HostOutputResult ram = files.create_output("mounted-ram");
+    if (ram.status != builtin::HostStatus::success) {
+        return false;
+    }
+    {
+        const builtin::span<const u8> view = borrow_bytes(bytes);
+        if (files.write(ram.id, view.subspan(0, 113)) != builtin::HostStatus::success) {
+            return false;
+        }
+    }
+    if (files.commit(ram.id) != builtin::HostStatus::success) {
+        return false;
+    }
+    const builtin::HostFileResult ram_file = files.open_file("mounted-ram");
+    if (ram_file.status != builtin::HostStatus::success || ram_file.size != 113u64 || !mounted_bytes(files, ram_file.id,
+        113u64, false) || files.close(ram_file.id) != builtin::HostStatus::success) {
+        return false;
+    }
+    return true;
+}
+// After an explicitly injected owner loss, this boot may restart RAM only.
+auto mounted_absent(builtin::HostFiles& files, builtin::ByteRegion region) -> builtin::HostExit {
+    const builtin::HostFileResult hello = files.open_file("/disk/hello");
+    const builtin::HostFileResult stage = files.open_file("/disk/.aurora-stage");
+    const builtin::HostOutputResult output = files.create_output("/disk/hello");
+    if (hello.status != builtin::HostStatus::failed || stage.status != builtin::HostStatus::failed || output.status
+        != builtin::HostStatus::denied || !mounted_ram(files, region)) {
+        return builtin::HostExit::failure;
+    }
+    files.print(builtin::HostStream::stdout, "xfs mounted owner lost disk unavailable ram intact\n");
+    return builtin::HostExit::success;
+}
+auto mounted(builtin::HostFiles& files, builtin::ByteRegion region, bool second_boot) -> builtin::HostExit {
+    u64 old_length = 64u64;
+    i64 length = 777;
+    if (second_boot) {
+        old_length = 777u64;
+        length = 113;
+    }
+    const builtin::HostFileResult old = files.open_file("/disk/hello");
+    if (old.status != builtin::HostStatus::success || old.device != 3u64 || old.size != old_length
+        || !mounted_bytes(files, old.id, old_length, !second_boot)) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostFileResult private_file = files.open_file("/disk/.aurora-stage");
+    const builtin::HostDirectoryResult directory = files.open_directory("/disk");
+    if (private_file.status != builtin::HostStatus::denied || directory.status != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostFileResult private_beneath = files.open_beneath(directory.id, ".aurora-stage");
+    if (private_beneath.status != builtin::HostStatus::denied || files.close(directory.id)
+        != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostOutputResult missing = files.create_output("/disk/mounted-missing");
+    if (missing.status != builtin::HostStatus::not_found) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostOutputResult empty = files.create_output("/disk/hello");
+    if (empty.status != builtin::HostStatus::success || files.commit(empty.id) != builtin::HostStatus::denied
+        || files.discard(empty.id) != builtin::HostStatus::invalid_handle || !mounted_unchanged(files, old.inode,
+        old_length, !second_boot)) {
+        return builtin::HostExit::failure;
+    }
+    builtin::OwnedBytes bytes = region.try_allocate(4097);
+    if (!bytes.ok()) {
+        return builtin::HostExit::failure;
+    }
+    i64 at = 0;
+    while (at < bytes.size()) {
+        if (!bytes.set(at, u8((u64(at) * 37u64 + 91u64) % 251u64))) {
+            return builtin::HostExit::failure;
+        }
+        at = at + 1;
+    }
+    const builtin::HostOutputResult oversized = files.create_output("/disk/hello");
+    if (oversized.status != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    {
+        const builtin::span<const u8> view = borrow_bytes(bytes);
+        if (files.write(oversized.id, view) != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+    }
+    // The binding buffers the final byte; commit flushes it, observes the
+    // backend refusal and discards the poisoned output without publication.
+    if (files.commit(oversized.id) != builtin::HostStatus::failed || !mounted_unchanged(files, old.inode, old_length,
+        !second_boot)) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostOutputResult discarded = files.create_output("/disk/hello");
+    if (discarded.status != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    {
+        const builtin::span<const u8> view = borrow_bytes(bytes);
+        if (files.write(discarded.id, view.subspan(0, length)) != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+    }
+    if (files.discard(discarded.id) != builtin::HostStatus::success || !mounted_unchanged(files, old.inode, old_length,
+        !second_boot)) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostOutputResult output = files.create_output("/disk/hello");
+    if (output.status != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    {
+        const builtin::span<const u8> view = borrow_bytes(bytes);
+        if (files.write(output.id, view.subspan(0, length)) != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+    }
+    if (files.commit(output.id) != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostFileResult replacement = files.open_file("/disk/hello");
+    if (replacement.status != builtin::HostStatus::success || replacement.size != u64(length) || replacement.device
+        != old.device || replacement.inode == old.inode || !mounted_bytes(files, replacement.id, u64(length), false)
+        || !mounted_bytes(files, old.id, old_length, !second_boot)) {
+        return builtin::HostExit::failure;
+    }
+    if (files.close(replacement.id) != builtin::HostStatus::success || files.close(old.id)
+        != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostOutputResult again = files.create_output("/disk/hello");
+    if (again.status != builtin::HostStatus::denied) {
+        return builtin::HostExit::failure;
+    }
+    if (!mounted_ram(files, region)) {
+        return builtin::HostExit::failure;
+    }
+    if (second_boot) {
+        files.print(builtin::HostStream::stdout, "xfs mounted 113 committed old 777 retained ram intact\n");
+    } else {
+        files.print(builtin::HostStream::stdout, "xfs mounted 777 committed old 64 retained ram intact\n");
+    }
+    return builtin::HostExit::success;
+}
+
+// The readonly service after bounded recovery must expose exactly one of the
+// two published versions, never the reserved staging name or a new writer.
+auto recovered_pair(builtin::HostFiles& files, builtin::ByteRegion region) -> builtin::HostExit {
+    const builtin::HostFileResult hello = files.open_file("/disk/hello");
+    const bool original = hello.size == 64u64;
+    if (hello.status != builtin::HostStatus::success || hello.device != 3u64 || (original && hello.inode != 99u64)
+        || (!original && (hello.size != 777u64 || hello.inode != 100u64)) || !mounted_bytes(files, hello.id, hello.size,
+        original)) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostFileResult stage = files.open_file("/disk/.aurora-stage");
+    const builtin::HostDirectoryResult directory = files.open_directory("/disk");
+    if (stage.status != builtin::HostStatus::denied || directory.status != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostFileResult hidden = files.open_beneath(directory.id, ".aurora-stage");
+    const builtin::HostFileResult beneath = files.open_beneath(directory.id, "hello");
+    if (hidden.status != builtin::HostStatus::denied || beneath.status != builtin::HostStatus::success || beneath.device
+        != hello.device || beneath.inode != hello.inode || beneath.size != hello.size || !mounted_bytes(files,
+        beneath.id, hello.size, original)) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostOutputResult denied = files.create_output("/disk/hello");
+    const builtin::HostOutputResult private_output = files.create_output("/disk/.aurora-stage");
+    if (denied.status != builtin::HostStatus::denied || private_output.status != builtin::HostStatus::denied
+        || files.close(beneath.id) != builtin::HostStatus::success || files.close(directory.id)
+        != builtin::HostStatus::success || files.close(hello.id) != builtin::HostStatus::success || !mounted_ram(files,
+        region) || !mounted_unchanged(files, hello.inode, hello.size, original)) {
+        return builtin::HostExit::failure;
+    }
+    if (original) {
+        files.print(builtin::HostStream::stdout, "xfs recovered pair 64 readonly stage hidden ram intact\n");
+    } else {
+        files.print(builtin::HostStream::stdout, "xfs recovered pair 777 readonly stage hidden ram intact\n");
+    }
+    return builtin::HostExit::success;
+}
+
+auto main(builtin::HostFiles& files, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const u8 selected = mode(arguments);
+    if (selected == 'R') {
+        return recovered_pair(files, region);
+    }
+    if (selected == 'N') {
+        return mounted_absent(files, region);
+    }
+    if (selected == 'm' || selected == 'M') {
+        return mounted(files, region, selected == 'M');
+    }
+    builtin::OwnedBytes bytes = region.try_allocate(65536);
+    if (!bytes.ok()) {
+        return builtin::HostExit::failure;
+    }
+    i64 at = 0;
+    while (at < bytes.size()) {
+        if (!bytes.set(at, pattern(at, selected))) {
+            return builtin::HostExit::failure;
+        }
+        at = at + 1;
+    }
+    if (selected == 'd' || selected == 'D') {
+        const builtin::HostFileResult input = files.open_file("/disk/pattern");
+        if (input.status != builtin::HostStatus::success || input.size != 9001u64 || input.device != 3u64) {
+            return builtin::HostExit::failure;
+        }
+        u64 offset = 0u64;
+        while (offset < 9001u64) {
+            const builtin::HostChunk chunk = files.read(input.id, offset);
+            const u64 expected = 9001u64 - offset;
+            if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64 || chunk.count > expected) {
+                return builtin::HostExit::failure;
+            }
+            const array<u8, 504> contents = chunk.bytes;
+            u64 index = 0u64;
+            while (index < chunk.count) {
+                if (contents[i64(index)] != u8(((offset + index) * 37u64 + 11u64) % 256u64)) {
+                    return builtin::HostExit::failure;
+                }
+                index = index + 1u64;
+            }
+            offset = offset + chunk.count;
+        }
+        const builtin::HostChunk end = files.read(input.id, 9001u64);
+        if (end.status != builtin::HostStatus::success || end.count != 0u64 || files.close(input.id)
+            != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        const builtin::HostOutputResult denied = files.create_output("/disk/pattern");
+        if (denied.status != builtin::HostStatus::denied) {
+            return builtin::HostExit::failure;
+        }
+        if (selected == 'D') {
+            const builtin::HostFileResult hello = files.open_file("/disk/hello");
+            if (hello.status != builtin::HostStatus::success || hello.size != 64u64 || hello.device != 3u64) {
+                return builtin::HostExit::failure;
+            }
+            const builtin::HostChunk chunk = files.read(hello.id, 0u64);
+            if (chunk.status != builtin::HostStatus::success || chunk.count != 64u64) {
+                return builtin::HostExit::failure;
+            }
+            const array<u8, 504> contents = chunk.bytes;
+            u64 salt = 0u64;
+            if (contents[0] == 122u8) {
+                salt = 69999u64;
+            }
+            u64 index = 0u64;
+            while (index < 64u64) {
+                if (contents[i64(index)] != u8((index * 37u64 + salt + 11u64) % 256u64)) {
+                    return builtin::HostExit::failure;
+                }
+                index = index + 1u64;
+            }
+            const builtin::HostChunk hello_end = files.read(hello.id, 64u64);
+            if (hello_end.status != builtin::HostStatus::success || hello_end.count != 0u64 || files.close(hello.id)
+                != builtin::HostStatus::success) {
+                return builtin::HostExit::failure;
+            }
+            if (salt == 0u64) {
+                files.print(builtin::HostStream::stdout, "xfs clean used pattern 9001 readonly\n");
+            } else {
+                files.print(builtin::HostStream::stdout, "xfs clean wrapped pattern 9001 readonly\n");
+            }
+            return builtin::HostExit::success;
+        }
+        files.print(builtin::HostStream::stdout, "xfs pattern 9001 readonly\n");
+        return builtin::HostExit::success;
+    }
+    if (selected == 'r') {
+        const builtin::HostOutputResult pending = files.create_output("tree/rpc-pending");
+        if (pending.status != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        {
+            const builtin::span<const u8> view = borrow_bytes(bytes);
+            if (files.write(pending.id, view.subspan(0, 64)) != builtin::HostStatus::success) {
+                return builtin::HostExit::failure;
+            }
+        }
+        while (true) {
+            const builtin::HostFileResult absent = files.open_file("tree/no-such-file");
+            if (absent.status != builtin::HostStatus::not_found) {
+                return builtin::HostExit::failure;
+            }
+        }
+    }
+    if (selected == 'b') {
+        const builtin::HostOutputResult output = files.create_output("tree/bulk");
+        if (output.status != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        {
+            const builtin::span<const u8> view = borrow_bytes(bytes);
+            if (files.write(output.id, view) != builtin::HostStatus::success) {
+                return builtin::HostExit::failure;
+            }
+        }
+        if (files.commit(output.id) != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+        const builtin::HostFileResult input = files.open_file("tree/bulk");
+        if (input.status != builtin::HostStatus::success || input.size != 65536u64) {
+            return builtin::HostExit::failure;
+        }
+        u64 offset = 0u64;
+        while (offset < 65536u64) {
+            const builtin::HostChunk chunk = files.read(input.id, offset);
+            if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64) {
+                return builtin::HostExit::failure;
+            }
+            const array<u8, 504> contents = chunk.bytes;
+            u64 index = 0u64;
+            while (index < chunk.count) {
+                if (contents[i64(index)] != pattern(i64(offset + index), selected)) {
+                    return builtin::HostExit::failure;
+                }
+                index = index + 1u64;
+            }
+            offset = offset + chunk.count;
+        }
+        files.print(builtin::HostStream::stdout, "bulk retained\n");
+        return builtin::HostExit::success;
+    }
+    if (selected == 'B') {
+        // This exceeds the original reservation, moves to a new address, then
+        // shrinks there. A still owns the original addresses in its own root.
+        if (!bytes.try_resize(131073) || !bytes.try_resize(65536)) {
+            return builtin::HostExit::failure;
+        }
+    }
+    if (selected == 'A') {
+        files.print(builtin::HostStream::stdout, "A ready\n");
+    }
+    if (selected == 'B') {
+        files.print(builtin::HostStream::stdout, "B ready\n");
+    }
+    u64 turn = 0u64;
+    u64 checksum = 0u64;
+    while (turn < 5000000u64) {
+        const i64 index = i64(turn % 65536u64);
+        const u8 value = bytes.at(index);
+        if (value != pattern(index, selected)) {
+            return builtin::HostExit::failure;
+        }
+        checksum = (checksum + u64(value)) % 65521u64;
+        turn = turn + 1u64;
+        if (selected == 'f' && turn == 1000u64) {
+            // Checked access, not unchecked assembly: the process owns the
+            // fault, and its sibling must remain runnable with its heap intact.
+            if (bytes.at(bytes.size()) == 0u8) {
+                return builtin::HostExit::failure;
+            }
+        }
+        if (selected == 's' && turn == 1000u64) {
+            turn = 0u64;
+        }
+    }
+    // Reviewed with Python's sum over the 65536-byte pattern: 76 complete
+    // repetitions and the remaining 19264 bytes, modulo 65521.
+    if ((selected == 'A' && checksum != 40819u64) || (selected == 'B' && checksum != 42656u64) || bytes.at(65535)
+        != pattern(65535, selected)) {
+        return builtin::HostExit::failure;
+    }
+    if (selected == 'A') {
+        files.print(builtin::HostStream::stdout, "A retained\n");
+    }
+    if (selected == 'B') {
+        files.print(builtin::HostStream::stdout, "B retained\n");
+    }
+    if (selected != 'A' && selected != 'B') {
+        return builtin::HostExit::usage;
+    }
+    return builtin::HostExit::success;
+}

@@ -1,0 +1,153 @@
+; Private scalar endpoint operations are independently admitted by the IR.
+; CASE: accepted retained endpoint primitives
+; RUN: emit aurora
+; RUN: stack-facts aurora
+; CHECK-JSON-NOT: functions.__au_v_m2_6aurora8endpoint_n1_8endpoint_d8exchange.calls.__au_kernel_service_call <missing>
+; CHECK-JSON-NOT: functions.__au_v_m2_6aurora8endpoint_n1_8endpoint_d4byte.calls.__au_kernel_service_call <missing>
+; CHECK-JSON-NOT: functions.__au_v_m2_6aurora8endpoint_n1_8endpoint_d5store.calls.__au_kernel_service_call <missing>
+; CHECK-JSON-NOT: functions.__au_v_m2_6aurora8endpoint_n1_8endpoint_d8identity.calls.__au_kernel_service_call <missing>
+layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) u64]
+fields __au_serve_request [((enum __au_serve_status display=builtin::ServeStatus) 0 1 false) (u64 1 1 false)]
+enum __au_serve_status 2
+function __au_v_m2_6aurora8endpoint_n1_8endpoint_d8exchange
+  result u64
+  params [serve]
+  frame 48
+  slot 24 u64
+  slot 32 (enum __au_serve_status display=builtin::ServeStatus)
+  object 32 __au_serve_request false
+  service 16
+    BindServiceParameter 0 16 Serve
+    BeginObject 32
+    Constant 0 u64
+    ServiceOperation 16 32 32 Serve
+    EndObject 32
+    Constant 0 u64
+    Return
+end
+function __au_v_m2_6aurora8endpoint_n1_8endpoint_d4byte
+  result u8
+  params [serve]
+  frame 16
+  service 16
+    BindServiceParameter 0 16 Serve
+    Constant 0 u64
+    ServiceOperation 16 33 0 Serve
+    Return
+end
+function __au_v_m2_6aurora8endpoint_n1_8endpoint_d5store
+  result u8
+  params [serve]
+  frame 16
+  service 16
+    BindServiceParameter 0 16 Serve
+    Constant 0 u64
+    Push
+    Constant 7 u8
+    Push
+    ServiceOperation 16 34 0 Serve
+    Return
+end
+function __au_v_m2_6aurora8endpoint_n1_8endpoint_d8identity
+  result u64
+  params [serve]
+  frame 16
+  service 16
+    BindServiceParameter 0 16 Serve
+    Constant 0 u64
+    ServiceOperation 16 35 0 Serve
+    Return
+end
+
+; CASE: endpoint rejects wrong module
+; BASE: accepted retained endpoint primitives
+; RUN: verify aurora
+; EXPECT-ERROR: unknown sealed service operation
+@@ -4 +4 @@
+-function __au_v_m2_6aurora8endpoint_n1_8endpoint_d8exchange
++function __au_v_m2_6aurora8endpoinx_n1_8endpoint_d8exchange
+
+; CASE: endpoint rejects wrong kind
+; BASE: accepted retained endpoint primitives
+; RUN: verify aurora
+; EXPECT-ERROR: service operation kind does not match active capability
+@@ -15 +15 @@
+-    ServiceOperation 16 32 32 Serve
++    ServiceOperation 16 32 32 6
+
+; CASE: endpoint rejects wrong root
+; BASE: accepted retained endpoint primitives
+; RUN: verify aurora
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
+@@ -15 +15 @@
+-    ServiceOperation 16 32 32 Serve
++    ServiceOperation 8 32 32 Serve
+
+; CASE: endpoint rejects missing result
+; BASE: accepted retained endpoint primitives
+; RUN: verify aurora
+; EXPECT-ERROR: service observation requires exact pristine active copied sample object
+@@ -15 +15 @@
+-    ServiceOperation 16 32 32 Serve
++    ServiceOperation 16 32 0 Serve
+
+; CASE: endpoint rejects wrong byte argument
+; BASE: accepted retained endpoint primitives
+; RUN: verify aurora
+; EXPECT-ERROR: service scalar argument mismatch
+@@ -38 +38 @@
+-    Constant 7 u8
++    Constant 7 u64
+
+; CASE: endpoint rejects nonzero scalar result
+; BASE: accepted retained endpoint primitives
+; RUN: verify aurora
+; EXPECT-ERROR: unknown sealed service operation
+@@ -27 +27 @@
+-    ServiceOperation 16 33 0 Serve
++    ServiceOperation 16 33 8 Serve
+
+; CASE: endpoint rejects Linux target
+; BASE: accepted retained endpoint primitives
+; RUN: verify
+; EXPECT-ERROR: retained process endpoint requires the Aurora target
+
+; CASE: Serve region forwarding retains authenticated region
+; RUN: verify
+; RUN: abi-facts
+; ABI: function region_caller region_caller
+; ABI: function region_helper region_helper
+; CHECK-DAG: "type_name":"builtin::ServeSession"
+; CHECK-DAG: "type_name":"builtin::ByteRegion"
+function region_caller
+  result u64
+  params [serve region]
+  frame 32
+  service 16
+  region 24
+    BindServiceParameter 0 16 Serve
+    BindRegionParameter 1 24
+    AcquireServiceLoan 1 16 Serve
+    ServiceCall region_helper 1 0 [0 0] Serve [] [] 24
+    ReleaseServiceLoan 1 Serve
+    Return
+end
+function region_helper
+  result u64
+  params [serve region]
+  frame 32
+  service 16
+  region 24
+    BindServiceParameter 0 16 Serve
+    BindRegionParameter 1 24
+    Constant 42 u64
+    Return
+end
+
+; CASE: Serve region forwarding rejects missing region
+; BASE: Serve region forwarding retains authenticated region
+; RUN: verify
+; EXPECT-ERROR: region requires exact typed spill
+@@ -10 +10 @@
+-    ServiceCall region_helper 1 0 [0 0] Serve [] [] 24
++    ServiceCall region_helper 1 0 [0 0] Serve

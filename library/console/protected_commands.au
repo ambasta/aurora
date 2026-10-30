@@ -1,0 +1,79 @@
+export module console.protected_commands;
+import console.protected_files;
+import console.session_note;
+import console.session_files;
+import console.file_namespace;
+import std.binary_buffer;
+import std.binary;
+
+// Shared copied command transformations. Retention/authority belongs to the
+// caller; neither this module nor its result contains a device or service grant.
+export namespace console {
+    class ProtectedNoteCommand {
+        SessionNote note;
+        u64 event;
+    public:
+        ProtectedNoteCommand(SessionNote next, u64 action) : note(next), event(action) {
+        }
+        auto next_note() const -> SessionNote {
+            const SessionNote result = note;
+            return result;
+        }
+        auto action() const -> u64 {
+            return event;
+        }
+    };
+    // Legacy supervisor boundary only; the source service consumes the metadata
+    // decision from ProtectedFiles.command without copying out its namespace.
+    class ProtectedFileCommand {
+        ProtectedFiles files;
+        FileReply reply;
+        u64 event;
+        FileSelection selected;
+    public:
+        ProtectedFileCommand(ProtectedFiles next, FileReply result, u64 action, FileSelection selection) : files(next),
+            reply(result), event(action), selected(selection) {
+        }
+        auto next_files() const -> ProtectedFiles {
+            const ProtectedFiles result = files;
+            return result;
+        }
+        auto response() const -> FileReply {
+            const FileReply result = reply;
+            return result;
+        }
+        auto action() const -> u64 {
+            return event;
+        }
+        auto selection() const -> FileSelection {
+            const FileSelection result = selected;
+            return result;
+        }
+    };
+    auto protected_note_command(console::SessionNote current, std::BinaryBuffer64 command,
+        i64 count) -> ProtectedNoteCommand {
+        console::SessionNote next = current;
+        const console::NoteEvent event = next.submit(command, count);
+        u64 action = 0u64;
+        // Select the existing protected uppercase program without changing storage.
+        if (count == 10 && command.at(0) == 'u' && command.at(1) == 'p' && command.at(2) == 'p' && command.at(3) == 'e'
+            && command.at(4) == 'r' && command.at(5) == ' ' && command.at(6) == 'n' && command.at(7) == 'o'
+            && command.at(8) == 't' && command.at(9) == 'e') {
+            action = 4u64;
+            if (current.size() < 0) {
+                action = 3u64;
+            }
+        }
+        if (event == console::NoteEvent::written) {
+            action = 1u64;
+        }
+        if (event == console::NoteEvent::read) {
+            action = 2u64;
+        }
+        if (event == console::NoteEvent::missing) {
+            action = 3u64;
+        }
+        const ProtectedNoteCommand update = ProtectedNoteCommand(next, action);
+        return update;
+    }
+}

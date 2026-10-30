@@ -107,6 +107,15 @@ auto program_input() -> void {
     };
     const Case cases[] = {
         {"write a x\n", "write a x", Action::command, 0, "write a x\r\n"},
+        {"run bin/cat file\r", "run bin/cat file", Action::run, 1, "run bin/cat file\r\n"},
+        {"run\n", "run", Action::run, 0, "run\r\n"},
+        {"runner\n", "runner", Action::command, 0, "runner\r\n"},
+        {"run " + std::string(61, 'a') + "\nq\n",
+         "q",
+         Action::command,
+         0,
+         "run " + std::string(60, 'a') + rejected + "q\r\n"},
+        {"upper\nrun bin/cat\n", "run bin/cat", Action::upper_payload, 0, "upper\r\ntext> run bin/cat\r\n"},
         {"upperx\n", "upperx", Action::command, 0, "upperx\r\n"},
         {"\nq\n", "q", Action::command, 0, "\r\naurora> q\r\n"},
         {"upper\nhelp\n", "help", Action::upper_payload, 0, "upper\r\ntext> help\r\n"},
@@ -160,7 +169,8 @@ auto program_input() -> void {
         "peek <name>        First byte / EOF / missing (file-call profile only)\r\n"
         "wc <name>          LF lines / words / bytes (file-call profile only)\r\n"
         "crc <name>         CRC32C over the file (file-call profile only)\r\n"
-        "ls / rm <name>     List / remove RAM files\r\nhelp    Show commands\r\n"
+        "ls / rm <name>     List / remove RAM files\r\nrun <path> [args]  Run a volume or committed program "
+        "(production only)\r\nhelp    Show commands\r\n"
         "status  Show console state\r\nexit    Close this QEMU session\r\naurora> "
         "status\r\nstatus: protected Aurora programs; bounded copied data; timer budgets; capacity=64\r\naurora> "
         "q\r\n";
@@ -233,11 +243,11 @@ auto submission_records() -> void {
         return submission.valid();
     };
     Submission::Record record{};
-    for (std::uint64_t action = 0; action < 4; ++action) {
+    for (std::uint64_t action = 0; action < 5; ++action) {
         record.action = action;
         for (std::uint64_t carry = 0; carry < 2; ++carry) {
             record.after_cr = carry;
-            need(accepts(record) == (action != 0), "empty command/payload/terminal distinction");
+            need(accepts(record) == (action != 0 && action != 4), "empty command/payload/terminal distinction");
         }
     }
     record = {};
@@ -252,7 +262,7 @@ auto submission_records() -> void {
         bad.count = count;
         need(!accepts(bad), "copied submission signed count bounds");
     }
-    for (const auto action : {std::uint64_t{2}, std::uint64_t{3}, std::uint64_t{4}, maximum}) {
+    for (const auto action : {std::uint64_t{2}, std::uint64_t{3}, std::uint64_t{5}, maximum}) {
         auto bad = record;
         bad.action = action;
         need(!accepts(bad), "terminal payload and unknown actions reject");
@@ -442,6 +452,43 @@ auto program_response() -> void {
     expect_input(read_input(input.after_cr()), "q", Action::command, 0);
     need(sample_index == samples.size() && transcript == "upper\r\ntext> hi\r\noutput> HI\r\naurora> q\r\n",
          "reader/response copied transcript and CRLF carry");
+}
+
+auto run_arguments() -> void {
+    struct Case {
+        std::string line, path, arguments;
+        bool accepted;
+    };
+    const Case cases[] = {
+        {"run bin/cat", "bin/cat", std::string{"bin/cat\0", 8}, true},
+        {"run  bin/cat   a b  ", "bin/cat", std::string{"bin/cat\0a\0b\0", 12}, true},
+        {"run", "", "", false},
+        {"run    ", "", "", false},
+        {"run bin/cat 'a b'", "", "", false},
+        {"run bin/cat a\\b", "", "", false},
+        {"run bin/cat \"a\"", "", "", false},
+        {"run " + std::string(60, 'a'), std::string(60, 'a'), std::string(60, 'a') + '\0', true},
+        {"run a b c d e f g h i j k l m n o p",
+         "a",
+         std::string{"a\0b\0c\0d\0e\0f\0g\0h\0i\0j\0k\0l\0m\0n\0o\0p\0", 32},
+         true},
+        {"run a b c d e f g h i j k l m n o p q", "", "", false},
+    };
+    aurora::program::RunArguments args;
+    for (const auto &test : cases) {
+        script(test.line + "\n");
+        const auto input = read_input();
+        need(args.parse(input) == test.accepted, "run command grammar and bounds");
+        if (test.accepted) {
+            need(args.path().size() == test.path.size() &&
+                     std::memcmp(args.path().data(), test.path.data(), test.path.size()) == 0 &&
+                     args.arguments().size() == test.arguments.size() &&
+                     std::memcmp(args.arguments().data(), test.arguments.data(), test.arguments.size()) == 0,
+                 "run copied path and NUL-separated arguments");
+        }
+    }
+    script("upper\nrun bin/cat\n");
+    need(!args.parse(read_input()), "upper payload cannot dispatch a process");
 }
 
 using ProgramSession = aurora::program::Session;
@@ -939,6 +986,7 @@ auto main(int argc, char **argv) -> int {
     session_failures();
     session_recovery();
     program_input();
+    run_arguments();
     submission_records();
     program_response();
     Stream bounded{1};

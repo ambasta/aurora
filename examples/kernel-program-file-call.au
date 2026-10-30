@@ -10,6 +10,7 @@ import std.binary;
 import console.file_namespace;
 import console.session_files;
 import console.protected_files;
+import console.protected_commands;
 import console.program_input;
 import console.program_output;
 import console.program_session;
@@ -158,24 +159,15 @@ auto aurora_kernel_terminal_event(u64 vector, u64 matched_sites, u64 stack_top) 
 
 // Named-file state and selection are copied only at the quiescent supervisor
 // boundary. Protected programs receive the read projection, never this store.
-class FileUpdate {
-    console::ProtectedFiles files;
-    console::FileReply reply;
-    u64 action;
-    console::FileSelection selection;
-public:
-    FileUpdate(console::ProtectedFiles next, console::FileReply result, u64 operation,
-        console::FileSelection selected) : files(next), reply(result), action(operation), selection(selected) {
-    }
-};
-auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, i64 count, u64 profile) -> FileUpdate {
+auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, i64 count,
+    u64 profile) -> console::ProtectedFileCommand {
     static_assert(size_of(console::FileSelection) == 160);
-    static_assert(size_of(FileUpdate) == 520);
+    static_assert(size_of(console::ProtectedFileCommand) == 520);
     const console::FileSelection selection = current.select(command, count);
     if (profile != 1u64) {
         console::FileReply rejected = console::FileReply();
         rejected.select(console::FileEvent::invalid);
-        return FileUpdate(current, rejected, 1u64, selection);
+        return console::ProtectedFileCommand(current, rejected, 1u64, selection);
     }
     // Append remains a local quiescent mutation in this read-service profile.
     if (selection.version() != 0u64 && !selection.appending()) {
@@ -194,7 +186,7 @@ auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, 
         if (selection.writable()) {
             action = 3u64;
         }
-        return FileUpdate(current, reply, action, selection);
+        return console::ProtectedFileCommand(current, reply, action, selection);
     }
     console::ProtectedFiles next = current;
     console::FileReply reply = next.submit(command, count);
@@ -206,7 +198,7 @@ auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, 
         reply.select(console::FileEvent::invalid);
         action = 1u64;
     }
-    return FileUpdate(next, reply, action, selection);
+    return console::ProtectedFileCommand(next, reply, action, selection);
 }
 
 // Only copied bounded lifecycle state crosses this private bootstrap seam.

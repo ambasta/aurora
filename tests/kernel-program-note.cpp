@@ -1290,6 +1290,112 @@ auto retained_read_lifetime_cases() -> void {
     n.files.abort();
     n.f.retire(true);
 }
+template <class T>
+concept RetainsSavedValue = requires(const T &value) { value.saved(); };
+static_assert(!RetainsSavedValue<program::ExternalFiles> && !RetainsSavedValue<program::ExternalNote>);
+static_assert(program::ExternalFiles::namespace_bytes == 0 && sizeof(program::ExternalFiles) < sizeof(Files));
+static_assert(sizeof(program::ExternalNote) < sizeof(Note));
+auto external_console_records() -> void {
+    for (const bool malformed_reply : {false, true}) {
+        // The policy owner's value stays outside the transient production ledger.
+        Files::Value remote{};
+        files_test_initial(remote.data());
+        const auto written = file_update(remote, "write a lower");
+        std::copy_n(written.begin(), remote.size(), remote.begin());
+        const auto chosen = file_update(remote, "upper a");
+        program::ExternalFiles::Update selection{};
+        std::copy_n(chosen.begin() + remote.size(), selection.size(), selection.begin());
+        program::ExternalFiles files;
+        auto malformed = selection;
+        put_word(malformed, 64, 50);
+        require(!files.update(malformed), "external projection rejects oversized named value");
+        require(files.update(selection) == 3 && files.selected() && files.writable(), "external source selection");
+        Fixture f;
+        const auto client = f.registry.create(), service = f.registry.create();
+        require(client && service, "external command participants");
+        f.client = *client;
+        f.service = *service;
+        require(f.mailbox.bind(f.client, f.service), "external command mailbox");
+        f.reading = f.transforming = true;
+        require(f.stream.begin_read(true) && f.note.bind(files.projection(), *f.mailbox.endpoint(f.service)),
+                "external frozen projection only");
+        require(files.bind(f.registry, f.mailbox, f.client, f.service, f.stream), "external grant binding");
+        while (f.stream.next_input())
+            f.round();
+        program::ExternalFiles::ReplaceInput candidate{};
+        require(!files.replacement(f.stream, candidate), "external no publication before authenticated completion");
+        const auto endpoint = *f.mailbox.endpoint(f.client);
+        require(!files.complete(f.registry, f.mailbox, f.service, endpoint, f.stream) &&
+                    files.complete(f.registry, f.mailbox, f.client, endpoint, f.stream),
+                "external exact completing owner");
+        require(!files.retire(f.registry, f.mailbox), "external live workers cannot authorize commit");
+        f.retire();
+        require(files.retire(f.registry, f.mailbox) && files.replacement(f.stream, candidate),
+                "external one-shot candidate after both retirements");
+        require(!files.replacement(f.stream, candidate), "external extraction cannot replay");
+        Files::ReplaceInput request{};
+        std::copy(remote.begin(), remote.end(), request.begin());
+        std::copy(candidate.begin(), candidate.end(), request.begin() + remote.size());
+        const auto committed = file_replace(request);
+        program::ExternalFiles::Mutation reply{};
+        std::copy_n(committed.begin() + remote.size(), reply.size(), reply.begin());
+        if (malformed_reply) {
+            put_word(reply, 72, 2);
+            require(!files.publish(reply) && !files.selected() && !files.settled() &&
+                        files.projection() == Note::Value{},
+                    "malformed external commit reply refuses and scrubs without replay");
+        } else {
+            require(files.publish(reply) && !files.publish(reply), "external source commit settles once");
+            const auto operation = files.operation();
+            files.abort();
+            require(files.settled() && files.operation() == operation && files.response_complete(false),
+                    "lost presentation never rolls back known external commit");
+            require(!files.selected() && files.projection() == Note::Value{}, "external response scrubs projection");
+        }
+        std::copy_n(committed.begin(), remote.size(), remote.begin());
+        const auto read = file_update(remote, "cat a");
+        require(std::to_integer<char>(read[272]) == 'L',
+                "external owner retains committed result without ledger backing");
+        // No malformed selection can revive the completed command.
+        auto invalid_selection = selection;
+        put_word(invalid_selection, 80, 8);
+        require(!files.update(invalid_selection) && !files.selected(), "external unknown action rejected");
+    }
+    program::ExternalNote note;
+    Note::Value projected{};
+    std::fill_n(projected.begin(), 53, std::byte{'x'});
+    put_word(projected, 64, 53);
+    require(note.select_projection(projected) && note.projection() == projected, "external note keeps53-byte bound");
+    auto oversized = projected;
+    put_word(oversized, 64, 54);
+    require(!note.select_projection(oversized) && note.bind(projected, ipc::Endpoint{1, 7}) &&
+                !note.select_projection(projected),
+            "external note projection cannot replace a bound read");
+    note.release();
+    require(!note.bound() && note.projection() == Note::Value{}, "external note projection scrubbed after command");
+    Note::Update update{};
+    std::copy(projected.begin(), projected.end(), update.begin());
+    put_word(update, 72, 4);
+    require(note.select(update) == 4 && note.projection() == projected, "external note action selects projection");
+    note.release();
+    for (const auto offset : {std::size_t{0}, std::size_t{53}}) {
+        auto invalid = update;
+        invalid[offset] = std::byte{1};
+        require(!note.select(invalid) && note.projection() == Note::Value{}, "external note rejects payload or tail");
+    }
+    auto missing = update;
+    std::fill_n(missing.begin(), 64, std::byte{0});
+    put_word(missing, 64, UINT64_MAX);
+    require(!note.select(missing), "external upper cannot select missing as present");
+    put_word(missing, 72, 3);
+    require(note.select(missing) == 3, "external missing preserves protected read path");
+    note.release();
+    put_word(update, 72, 1);
+    require(note.select(update) == 1 && note.projection() == Note::Value{}, "ordinary source commit retains no note");
+    put_word(update, 72, 5);
+    require(!note.select(update), "external note rejects unknown source action");
+}
+
 auto named_file_cases() -> void {
     NamedFixture n;
     Files::Value initial{};
@@ -2038,6 +2144,7 @@ auto main(int argc, char **argv) -> int {
     retained_read_lifetime_cases();
     file_service_transition_cases();
     named_file_cases();
+    external_console_records();
     protected_append_cases();
     live_append_receipt_cases();
     generated_append_caller_cases();

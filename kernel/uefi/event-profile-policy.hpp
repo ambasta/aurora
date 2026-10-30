@@ -1,7 +1,47 @@
 #pragma once
 #include "bar-policy.hpp"
+#include "dma-capture-layout.hpp"
+#include "framebuffer-policy.hpp"
 
 namespace aurora::uefi {
+// The closed bootstrap profiles share wire parsing, not authority. Distinct
+// template instantiations cannot convert an EDU admission into NVMe authority.
+enum class BootDmaEndpoint {
+    edu,
+    nvme,
+    nvme_graphics
+};
+template <BootDmaEndpoint endpoint> class BootDmaIvrs;
+template <BootDmaEndpoint endpoint> class BootDmaResources;
+template <BootDmaEndpoint endpoint> class BootDmaAdmission;
+template <BootDmaEndpoint endpoint> class BootDmaHandoff;
+template <BootDmaEndpoint endpoint> class BootDmaProfile final {
+public:
+    static constexpr bool graphics = endpoint == BootDmaEndpoint::nvme_graphics;
+    static constexpr bool nvme = endpoint != BootDmaEndpoint::edu;
+    using Capture = DmaCaptureLayout<graphics>;
+    static constexpr unsigned functions = Capture::functions;
+    static constexpr unsigned requester = endpoint == BootDmaEndpoint::edu ? 0x20 : 0x10;
+    static constexpr std::uint64_t aperture = endpoint == BootDmaEndpoint::edu ? 0x100000 : 0x4000;
+    static constexpr auto requesters() {
+        if constexpr (graphics)
+            return std::array<unsigned, 7>{0, 8, requester, 0x18, 0xf8, 0xfa, 0xfb};
+        else
+            return std::array<unsigned, 6>{0, 8, requester, 0xf8, 0xfa, 0xfb};
+    }
+};
+using EventIvrs = BootDmaIvrs<BootDmaEndpoint::edu>;
+using NvmeIvrs = BootDmaIvrs<BootDmaEndpoint::nvme>;
+using NvmeGraphicsIvrs = BootDmaIvrs<BootDmaEndpoint::nvme_graphics>;
+using EventResources = BootDmaResources<BootDmaEndpoint::edu>;
+using NvmeResources = BootDmaResources<BootDmaEndpoint::nvme>;
+using NvmeGraphicsResources = BootDmaResources<BootDmaEndpoint::nvme_graphics>;
+using EventAdmission = BootDmaAdmission<BootDmaEndpoint::edu>;
+using NvmeAdmission = BootDmaAdmission<BootDmaEndpoint::nvme>;
+using NvmeGraphicsAdmission = BootDmaAdmission<BootDmaEndpoint::nvme_graphics>;
+using EventHandoff = BootDmaHandoff<BootDmaEndpoint::edu>;
+using NvmeHandoff = BootDmaHandoff<BootDmaEndpoint::nvme>;
+using NvmeGraphicsHandoff = BootDmaHandoff<BootDmaEndpoint::nvme_graphics>;
 // Copied facts only. The readers own their completeness, acquisition order and
 // freshness. None of these aggregates grants MMIO, BME or DMA authority.
 class EventPciFact final {
@@ -26,7 +66,7 @@ public:
 };
 
 class EventIvrsUnit final {
-    friend class EventIvrs;
+    template <BootDmaEndpoint> friend class BootDmaIvrs;
     std::uint16_t requester_{};
 
 public:
@@ -53,15 +93,15 @@ public:
 // Deliberately separate from historical SELECT-only Ivrs. This parser describes
 // precisely the retained event-permissions-command-stop-v1 QEMU producer, with
 // default AMD-Vi options under TCG. It makes no interrupt-delivery claim.
-class EventIvrs final {
+template <BootDmaEndpoint endpoint> class BootDmaIvrs final {
     EventIvrsUnit unit_{};
-    std::array<std::uint16_t, 6> requesters_{};
+    std::array<std::uint16_t, BootDmaProfile<endpoint>::functions> requesters_{};
     unsigned physical_bits_{};
-    EventIvrs() = default;
+    BootDmaIvrs() = default;
 
 public:
-    static constexpr std::size_t maximum_requesters = 6;
-    static constexpr std::size_t maximum_table = 176;
+    static constexpr std::size_t maximum_requesters = BootDmaProfile<endpoint>::functions;
+    static constexpr std::size_t maximum_table = 128 + maximum_requesters * 8;
     static constexpr unsigned ioapic_requester = 0xa0;
     [[nodiscard]] auto unit() const -> const EventIvrsUnit & {
         return unit_;
@@ -81,11 +121,11 @@ public:
         return false;
     }
     [[nodiscard]] static auto parse_qemu_default(std::span<const std::byte> bytes, unsigned physical_bits)
-        -> std::optional<EventIvrs> {
+        -> std::optional<BootDmaIvrs> {
         if (physical_bits < 32 || physical_bits > 52 || bytes.size() != maximum_table || !Acpi::table(bytes, "IVRS") ||
             Bytes{bytes}.get(8, 1) != 1 || Bytes{bytes}.get(36, 4) != 0x2801 || Bytes{bytes}.get(40) != 0)
             return std::nullopt;
-        EventIvrs result;
+        BootDmaIvrs result;
         result.physical_bits_ = physical_bits;
         std::size_t at = 48;
         for (unsigned record_index = 0; record_index < 2; ++record_index) {
@@ -99,7 +139,8 @@ public:
                 (record_index == 1 && (record.get(24) != 0x29d3 || record.get(32) != 0)))
                 return std::nullopt;
             const auto unit = record.get(4, 2);
-            if (unit > 255 || (unit & 7) || unit == 0 || unit == 0x20 || unit == ioapic_requester || unit >= 0xf8)
+            if (unit > 255 || (unit & 7) || unit == 0 || unit == BootDmaProfile<endpoint>::requester ||
+                unit == ioapic_requester || unit >= 0xf8)
                 return std::nullopt;
             if (record_index == 0)
                 result.unit_.requester_ = static_cast<std::uint16_t>(unit);
@@ -125,8 +166,11 @@ public:
         }
         if (!result.covers(0, 0, result.unit_.device_id() >> 3, 0))
             return std::nullopt;
-        for (unsigned requester : {0U, 0x20U, 0xf8U, 0xfaU, 0xfbU})
+        for (unsigned requester : {0U, BootDmaProfile<endpoint>::requester, 0xf8U, 0xfaU, 0xfbU})
             if (!result.covers(0, 0, requester >> 3, requester & 7))
+                return std::nullopt;
+        if constexpr (BootDmaProfile<endpoint>::graphics)
+            if (!result.covers(0, 0, 3, 0) || result.unit().device_id() != 8)
                 return std::nullopt;
         return result;
     }
@@ -135,6 +179,9 @@ public:
 // One bootstrap translation unit owns the parser body. Hosted policy tests keep
 // the inline implementation; the image avoids different discarded COMDAT copies.
 [[nodiscard]] auto read_event_ivrs(std::span<const std::byte> bytes, unsigned bits) -> std::optional<EventIvrs>;
+[[nodiscard]] auto read_nvme_ivrs(std::span<const std::byte> bytes, unsigned bits) -> std::optional<NvmeIvrs>;
+[[nodiscard]] auto read_nvme_graphics_ivrs(std::span<const std::byte> bytes, unsigned bits)
+    -> std::optional<NvmeGraphicsIvrs>;
 
 class EventAhciPortFact final {
 public:
@@ -208,6 +255,36 @@ public:
     }
 };
 
+class NvmeColdFact final {
+public:
+    std::uint64_t capability{}, submission{}, completion{};
+    std::uint32_t version{}, control{}, status{}, queue_attributes{};
+    [[nodiscard]] auto operator==(const NvmeColdFact &) const -> bool = default;
+};
+class NvmeColdObservation final {
+public:
+    std::array<NvmeColdFact, 2> samples{};
+    template <class Reader> [[nodiscard]] static auto sample(Reader &&read) -> NvmeColdObservation {
+        NvmeColdObservation result;
+        for (auto &fact : result.samples) {
+            fact.capability = read(0, 8);
+            fact.version = static_cast<std::uint32_t>(read(8, 4));
+            fact.control = static_cast<std::uint32_t>(read(0x14, 4));
+            fact.status = static_cast<std::uint32_t>(read(0x1c, 4));
+            fact.queue_attributes = static_cast<std::uint32_t>(read(0x24, 4));
+            fact.submission = read(0x28, 8);
+            fact.completion = read(0x30, 8);
+        }
+        return result;
+    }
+    [[nodiscard]] auto cold() const -> bool {
+        // QEMU 10.0.13, mqes=1, no CMB/PMR; NVMe 1.4, 4 KiB pages,
+        // contiguous queues, NVM command set. CAP's timeout is not our clock.
+        constexpr std::uint64_t cap = (4ULL << 52) | (0x41ULL << 37) | (15ULL << 24) | (1ULL << 16) | 1;
+        return samples[0] == samples[1] && samples[0] == NvmeColdFact{cap, 0, 0, 0x10400, 0, 0, 0};
+    }
+};
+
 class EventBackingObservation final {
 public:
     std::uint64_t page{}, type{}, begin{}, pages{}, attributes{};
@@ -239,7 +316,9 @@ public:
 // Resource admission precedes AHCI register reads. A successful object is only
 // bounded platform/resource evidence; EventAdmission additionally needs idle
 // boot-controller facts before the fixture may be considered for activation.
-class EventResources final {
+template <BootDmaEndpoint endpoint> class BootDmaResources final {
+    using Profile = BootDmaProfile<endpoint>;
+
 public:
     enum class Purpose {
         admission,
@@ -248,12 +327,12 @@ public:
     };
 
 private:
-    friend class EventAdmission;
-    friend class EventHandoff;
-    std::uint64_t edu_base_{}, ahci_base_{};
-    unsigned physical_bits_{}, iommu_requester_{}, edu_command_{};
+    friend class BootDmaAdmission<endpoint>;
+    friend class BootDmaHandoff<endpoint>;
+    std::uint64_t endpoint_base_{}, ahci_base_{}, vga_base_{}, vga_registers_{};
+    unsigned physical_bits_{}, iommu_requester_{}, endpoint_command_{};
     Purpose purpose_{};
-    EventResources() = default;
+    BootDmaResources() = default;
     [[nodiscard]] static auto overlaps(std::uint64_t a, std::uint64_t n, std::uint64_t b, std::uint64_t m) -> bool {
         return !n || !m || n > ~std::uint64_t{0} - a || m > ~std::uint64_t{0} - b || (a < b + m && b < a + n);
     }
@@ -280,10 +359,22 @@ private:
             return false;
         if (requester == 0)
             return h.get(0, 4) == 0x29c08086 && h.get(8, 4) == 0x06000000;
-        if (requester == 0x20)
-            return h.get(0, 4) == 0x11e81234 && h.get(8, 4) == 0x00ff0010 && h.get(14, 1) == 0 &&
-                   (h.get(4, 2) == 2 || (observation_only && h.get(4, 2) == 7)) && (h.get(16, 4) & 15) == 0 &&
-                   h.get(16, 4) != 0;
+        if (requester == Profile::requester) {
+            if constexpr (Profile::nvme)
+                return h.get(0, 4) == 0x00101b36 && h.get(8, 4) == 0x01080202 && h.get(14, 1) == 0 &&
+                       h.get(4, 2) == 2 && (h.get(16, 4) & 15) == 4 &&
+                       ((h.get(16, 4) & ~15ULL) | (h.get(20, 4) << 32)) != 0 && h.get(24) == 0 && h.get(32) == 0;
+            else
+                return h.get(0, 4) == 0x11e81234 && h.get(8, 4) == 0x00ff0010 && h.get(14, 1) == 0 &&
+                       (h.get(4, 2) == 2 || (observation_only && h.get(4, 2) == 7)) && (h.get(16, 4) & 15) == 0 &&
+                       h.get(16, 4) != 0;
+        }
+        if constexpr (Profile::graphics)
+            if (requester == 0x18)
+                return h.get(0, 4) == 0x11111234 && h.get(8, 4) == 0x03000002 && h.get(14, 1) == 0 &&
+                       (h.get(4, 2) == 3 || (observation_only && h.get(4, 2) == 7)) && (h.get(16, 4) & 15) == 8 &&
+                       (h.get(16, 4) & ~15ULL) && h.get(20, 4) == 0 && (h.get(24, 4) & 15) == 0 && h.get(24, 4) &&
+                       h.get(28, 4) == 0 && h.get(32) == 0;
         if (requester == 0xf8)
             return h.get(0, 4) == 0x29188086 && h.get(8, 4) == 0x06010002;
         if (requester == 0xfa)
@@ -293,9 +384,25 @@ private:
 
 public:
     // Observation may describe inherited BME but cannot mint EventAdmission.
-    static constexpr std::size_t maximum_functions = 6, maximum_bars = 8;
-    [[nodiscard]] auto edu_base() const -> std::uint64_t {
-        return edu_base_;
+    static constexpr bool graphics = Profile::graphics;
+    static constexpr std::size_t maximum_functions = Profile::functions, maximum_bars = 8;
+    [[nodiscard]] auto endpoint_base() const -> std::uint64_t {
+        return endpoint_base_;
+    }
+    [[nodiscard]] auto edu_base() const -> std::uint64_t
+        requires(endpoint == BootDmaEndpoint::edu)
+    {
+        return endpoint_base();
+    }
+    [[nodiscard]] auto edu_config_address() const -> std::uint64_t
+        requires(endpoint == BootDmaEndpoint::edu)
+    {
+        return endpoint_config_address();
+    }
+    [[nodiscard]] auto edu_initial_command() const -> unsigned
+        requires(endpoint == BootDmaEndpoint::edu)
+    {
+        return endpoint_initial_command();
     }
     [[nodiscard]] auto ahci_base() const -> std::uint64_t {
         return ahci_base_;
@@ -303,11 +410,11 @@ public:
     [[nodiscard]] auto iommu_base() const -> std::uint64_t {
         return 0xfed80000;
     }
-    [[nodiscard]] auto edu_config_address() const -> std::uint64_t {
-        return Q35Ecam::base + 0x20000;
+    [[nodiscard]] auto endpoint_config_address() const -> std::uint64_t {
+        return Q35Ecam::base + (Profile::requester << 12);
     }
-    [[nodiscard]] auto edu_initial_command() const -> unsigned {
-        return edu_command_;
+    [[nodiscard]] auto endpoint_initial_command() const -> unsigned {
+        return endpoint_command_;
     }
     [[nodiscard]] auto physical_bits() const -> unsigned {
         return physical_bits_;
@@ -316,7 +423,7 @@ public:
         return iommu_requester_;
     }
 
-    [[nodiscard]] static auto admit_qemu_default(const EventIvrs &ivrs,
+    [[nodiscard]] static auto admit_qemu_default(const BootDmaIvrs<endpoint> &ivrs,
                                                  std::span<const EventPciFact> copied,
                                                  std::span<const EventPciFact> current,
                                                  std::span<const std::byte> copied_caps,
@@ -328,18 +435,21 @@ public:
                                                  std::size_t stride,
                                                  std::uint64_t arena,
                                                  std::uint64_t apic,
-                                                 Purpose purpose = Purpose::admission)
-        -> std::optional<EventResources> {
+                                                 Purpose purpose = Purpose::admission,
+                                                 const FramebufferAdmission *framebuffer = nullptr)
+        -> std::optional<BootDmaResources> {
         if (copied.size() != maximum_functions || current.size() != maximum_functions || bars.empty() ||
             bars.size() > maximum_bars || root_segment != 0 || root.physical_bits() != ivrs.physical_bits() ||
             root.source() != PciResourceSource::Edk2Stable202502Root || !MemoryMap{map, stride, 1}.valid() ||
             !iommu_capabilities(copied_caps) || !iommu_capabilities(current_caps))
             return std::nullopt;
+        if ((framebuffer != nullptr) != Profile::graphics || (framebuffer && framebuffer->owned_arena() != arena))
+            return std::nullopt;
         const auto limit = std::uint64_t{1} << ivrs.physical_bits();
         if (!arena || arena % 4096 || arena >= limit || Handoff::arena_bytes > limit - arena || !apic || apic % 4096 ||
             apic >= limit || 4096 > limit - apic)
             return std::nullopt;
-        EventResources result;
+        BootDmaResources result;
         result.purpose_ = purpose;
         result.physical_bits_ = ivrs.physical_bits();
         result.iommu_requester_ = ivrs.unit().device_id();
@@ -368,17 +478,21 @@ public:
             if (!snapshot)
                 return std::nullopt;
             const Bytes header{now.header};
-            if (now.requester() == 0x20)
-                result.edu_command_ = static_cast<unsigned>(header.get(4, 2));
+            if (now.requester() == Profile::requester)
+                result.endpoint_command_ = static_cast<unsigned>(header.get(4, 2));
             for (unsigned slot = 0; slot < 6; ++slot) {
                 const auto low = header.get(16 + slot * 4, 4);
                 if (!low || (low & 1))
                     continue;
-                // This exact topology has only two memory BARs, both 32-bit and
-                // non-prefetchable. No size probing or 64-bit upper-half guesses.
-                const bool edu = now.requester() == 0x20 && slot == 0;
+                // Exactly the endpoint BAR0 and AHCI BAR5. Only the NVMe
+                // profile admits a 64-bit BAR, with its upper half parsed once.
+                const bool edu = now.requester() == Profile::requester && slot == 0;
                 const bool ahci = now.requester() == 0xfa && slot == 5;
-                if ((!edu && !ahci) || (low & 15))
+                const bool framebuffer_bar = Profile::graphics && now.requester() == 0x18 && slot == 0;
+                const bool vga_registers = Profile::graphics && now.requester() == 0x18 && slot == 2;
+                if ((!edu && !ahci && !framebuffer_bar && !vga_registers) || (low & 15) != (edu && Profile::nvme ? 4U
+                                                                                            : framebuffer_bar    ? 8U
+                                                                                                                 : 0U))
                     return std::nullopt;
                 unsigned bar_matches = 0;
                 for (std::size_t index = 0; index < bars.size(); ++index) {
@@ -389,22 +503,36 @@ public:
                         return std::nullopt;
                     const auto range =
                         PciBarReservation::parse_edk2(*snapshot, *snapshot, slot, bar.descriptor, ivrs.physical_bits());
-                    if (!range || range->length() != (edu ? 0x100000U : 0x1000U))
+                    if (!range || range->length() != (edu ? Profile::aperture : framebuffer_bar ? 0x1000000U : 0x1000U))
                         return std::nullopt;
                     ranges[index] = range;
                     seen[index] = true;
                     ++consumed;
                     if (edu)
-                        result.edu_base_ = range->begin();
-                    else
+                        result.endpoint_base_ = range->begin();
+                    else if (ahci)
                         result.ahci_base_ = range->begin();
+                    else if (framebuffer_bar)
+                        result.vga_base_ = range->begin();
+                    else
+                        result.vga_registers_ = range->begin();
                 }
                 if (bar_matches != 1)
                     return std::nullopt;
+                if (edu && Profile::nvme)
+                    ++slot;
             }
         }
-        if (consumed != bars.size() || consumed != 2 || !result.edu_base_ || !result.ahci_base_)
+        if (consumed != bars.size() || consumed != (Profile::graphics ? 4U : 2U) || !result.endpoint_base_ ||
+            !result.ahci_base_)
             return std::nullopt;
+        if constexpr (Profile::graphics) {
+            const auto &geometry = framebuffer->geometry();
+            if (!result.vga_base_ || !result.vga_registers_ || geometry.base() < result.vga_base_ ||
+                geometry.base() - result.vga_base_ >= 0x1000000 ||
+                geometry.resource_bytes() > 0x1000000 - (geometry.base() - result.vga_base_))
+                return std::nullopt;
+        }
         unsigned buses = 0;
         for (const auto &resource : root.resources())
             if (resource.type() == 2 && resource.contains(0, 1))
@@ -430,9 +558,16 @@ public:
                 return std::nullopt;
         }
         // Validate full apertures, including the pages the fixture never maps.
-        for (unsigned index = 0; index < 3; ++index) {
-            const auto begin = index == 0 ? result.edu_base_ : index == 1 ? result.ahci_base_ : 0xfed80000ULL;
-            const auto length = index == 0 ? 0x100000ULL : index == 1 ? 0x1000ULL : 0x4000ULL;
+        for (unsigned index = 0; index < (Profile::graphics ? 5U : 3U); ++index) {
+            const auto begin = index == 0   ? result.endpoint_base_
+                               : index == 1 ? result.ahci_base_
+                               : index == 2 ? 0xfed80000ULL
+                               : index == 3 ? result.vga_base_
+                                            : result.vga_registers_;
+            const auto length = index == 0   ? Profile::aperture
+                                : index == 2 ? 0x4000ULL
+                                : index == 3 ? 0x1000000ULL
+                                             : 0x1000ULL;
             if (begin >= limit || length > limit - begin || overlaps(begin, length, arena, Handoff::arena_bytes) ||
                 overlaps(begin, length, apic, 4096) || overlaps(begin, length, Q35Ecam::base, Q35Ecam::bytes) ||
                 overlaps(begin, length, 0xfec00000, 4096) || overlaps(begin, length, 0xfee00000, 4096))
@@ -452,29 +587,57 @@ public:
     }
 };
 
-class EventAdmission final {
-    EventResources resources_;
-    explicit EventAdmission(const EventResources &resources) : resources_(resources) {
+template <BootDmaEndpoint endpoint> class BootDmaAdmission final {
+    BootDmaResources<endpoint> resources_;
+    explicit BootDmaAdmission(const BootDmaResources<endpoint> &resources) : resources_(resources) {
     }
 
 public:
-    [[nodiscard]] static auto admit(const EventResources &resources, const EventAhciFacts &ahci)
-        -> std::optional<EventAdmission> {
-        if (resources.purpose_ != EventResources::Purpose::admission || !ahci.quiescent(resources.ahci_base()))
+    [[nodiscard]] static auto admit(const BootDmaResources<endpoint> &resources, const EventAhciFacts &ahci)
+        -> std::optional<BootDmaAdmission>
+        requires(endpoint == BootDmaEndpoint::edu)
+    {
+        if (resources.purpose_ != BootDmaResources<endpoint>::Purpose::admission ||
+            !ahci.quiescent(resources.ahci_base()))
             return std::nullopt;
-        return EventAdmission{resources};
+        return BootDmaAdmission{resources};
     }
-    [[nodiscard]] auto edu_base() const -> std::uint64_t {
-        return resources_.edu_base();
+    [[nodiscard]] static auto admit(const BootDmaResources<endpoint> &resources,
+                                    const EventAhciFacts &ahci,
+                                    const NvmeColdObservation &cold) -> std::optional<BootDmaAdmission>
+        requires(endpoint != BootDmaEndpoint::edu)
+    {
+        if (resources.purpose_ != BootDmaResources<endpoint>::Purpose::admission ||
+            !ahci.quiescent(resources.ahci_base()) || !cold.cold())
+            return std::nullopt;
+        return BootDmaAdmission{resources};
+    }
+    [[nodiscard]] auto endpoint_base() const -> std::uint64_t {
+        return resources_.endpoint_base();
+    }
+    [[nodiscard]] auto edu_base() const -> std::uint64_t
+        requires(endpoint == BootDmaEndpoint::edu)
+    {
+        return endpoint_base();
+    }
+    [[nodiscard]] auto edu_config_address() const -> std::uint64_t
+        requires(endpoint == BootDmaEndpoint::edu)
+    {
+        return endpoint_config_address();
+    }
+    [[nodiscard]] auto edu_initial_command() const -> unsigned
+        requires(endpoint == BootDmaEndpoint::edu)
+    {
+        return endpoint_initial_command();
     }
     [[nodiscard]] auto iommu_base() const -> std::uint64_t {
         return resources_.iommu_base();
     }
-    [[nodiscard]] auto edu_config_address() const -> std::uint64_t {
-        return resources_.edu_config_address();
+    [[nodiscard]] auto endpoint_config_address() const -> std::uint64_t {
+        return resources_.endpoint_config_address();
     }
-    [[nodiscard]] auto edu_initial_command() const -> unsigned {
-        return resources_.edu_initial_command();
+    [[nodiscard]] auto endpoint_initial_command() const -> unsigned {
+        return resources_.endpoint_initial_command();
     }
     [[nodiscard]] auto physical_bits() const -> unsigned {
         return resources_.physical_bits();

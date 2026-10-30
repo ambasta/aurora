@@ -778,3 +778,318 @@ Let B=blocksize, S=512, A=agblocks, N=agcount, D=dblocks, M=2^64-1.
 - A count is not an encoded address: dblocks and agblocks remain raw counts.
   The ordinary byte/block scaling formula must not be applied to encoded
   filesystem block addresses or inode numbers.
+
+## Fresh-format read-only mount state
+
+`fs.xfs_mount` adds `XfsReadonlyMount`, a linear owner with a private
+1536-byte `OwnedBytes` cache (superblock, root and last returned sector). Construct
+it with a region, a moved allocation of exactly that size, the observed volume
+length in 512-byte sectors, and an explicit `XfsReadonlyProfile`. Production
+callers select `fresh_format`; unknown profiles are refused. No constructor accepts an admission result or
+clean-log boolean. `needs_read()` and `requested_lba()` request one sector;
+`accept(lba, io_status, bytes)` accepts only that LBA, a successful read and
+exactly 512 bytes. Failed or out-of-order reads permanently prevent admission.
+
+The backend must hold the same **stable, exclusive read-only volume** for the
+object's lifetime, including all subsequent file reads. Copied sector contents
+cannot establish hardware provenance, exclude another writer, or grant device
+access. The mount never writes, flushes, repairs or replays. `ready` describes
+this narrow profile only; it is not full roadmap X1 completion.
+
+The profile first runs the existing geometry/CRC validator, then requires:
+
+- 4096-byte blocks, 512-byte sectors/inodes, one-block directories; existing
+  geometry exclusions still apply (no realtime, external log, striping or quotas).
+- Exactly FINOBT in read-only-compatible features, exactly FTYPE in incompatible
+  features, and zero compatible/log-incompatible features. This does not promote
+  the geometry parser's broader masks into a mount allowlist.
+- Non-null filesystem UUID, zero superblock/inode LSNs, and an internal log at
+  most 64 MiB. FINOBT allocation trees are not traversed or claimed verified.
+- The exact little-endian fresh-format log produced by the recorded xfsprogs
+  fixture: a two-sector version-2 record at log offset zero, cycle 1, record/tail
+  LSN `(1,0)`, 512 data bytes, one UNMOUNT operation, matching filesystem UUID,
+  Linux-LE format, 32 KiB record capacity and the userspace packed transaction ID.
+  Reserved/padding bytes and **every byte of the rest of the declared log** must
+  be zero. The fresh record's CRC field is zero: this is an exact-content check,
+  **not a record-CRC verification**. A zeroed entire log is rejected.
+- The existing validated shortform root, at most 16 entries, each a nonempty
+  regular file supported by the bounded inline-extent reader. All entries and
+  every advertised inode are checked before `ready`. Empty files, subdirectories,
+  symlinks, attributes, btree forks and other inode formats are refused. No
+  permission/ACL policy or allocation-tree cross-check is claimed.
+
+The unmount marker, packed cycle and record layout follow Linux **v6.13**
+[`xfs_log_format.h`](https://github.com/torvalds/linux/blob/v6.13/fs/xfs/libxfs/xfs_log_format.h)
+and the clean-unmount/head relationship in
+[`xfs_log_recover.c`](https://github.com/torvalds/linux/blob/v6.13/fs/xfs/xfs_log_recover.c).
+The exact fresh bytes are preserved in `fixtures/xfs-file/fresh-*.hex`; their
+creation is described in that fixture's existing README. The full zero-tail
+scan establishes the head immediately after the unmount record for this subset.
+Reused/wrapped logs—even clean Linux logs—dirty logs, torn writes and any state
+requiring replay fail closed. There is no generic head/tail recovery algorithm.
+
+### Pinned-Linux clean-log profile
+
+`linux_6_12_x86_64_clean` is a separate explicit profile of
+this same state machine. `xfs-fresh-cat IMAGE ROOT_FILENAME
+--linux-6.12-x86_64-clean` selects it explicitly; disk contents cannot select it.
+It targets Linux **6.12.107 x86_64**, 512-byte log sectors and 32-KiB records,
+with the same filesystem feature and namespace restrictions as above.
+
+The complete bounded log scan accepts only one current-cycle prefix followed
+by the preceding cycle, or a complete single cycle. It derives a logical
+cycle/block head, distinguishes exact zero-length stale-clear headers from real
+records, and never trims a newer incomplete record back to an older clean one.
+The latest nonempty record must end exactly at that head and contain one exact
+Linux UNMOUNT operation. Its CRC32C covers the 328-byte producer header (CRC
+field cleared) and the still cycle-stamped payload, including opaque padding.
+A record crossing the physical end carries the payload/head cycle. UUID,
+physical record LSNs, record geometry and tail bounds are checked; superblock
+and advertised inode LSNs must not exceed the proven logical head. Earlier
+transaction payloads are not replayed or claimed CRC-verified.
+
+These rules follow the pinned producer's
+[`xfs_log.c`](https://github.com/gregkh/linux/blob/v6.12.107/fs/xfs/xfs_log.c),
+[`xfs_log_recover.c`](https://github.com/gregkh/linux/blob/v6.12.107/fs/xfs/xfs_log_recover.c)
+and [`xfs_log_priv.h`](https://github.com/gregkh/linux/blob/v6.12.107/fs/xfs/xfs_log_priv.h).
+A genuine isolated Linux overwrite/fsync/unmount of the existing prototype file
+passes this complete hosted gate: the 64-byte changed file and the untouched
+9001-byte file match their producer inputs, and the whole image remains unchanged
+by Aurora reads and `xfs_repair -n`. Exact observed sectors and construction are
+in the existing XFS fixture directory. An earlier image that created a new inode
+remains refused at ATTRBIT, and also has an unsupported attribute fork. A separate
+genuine write/fsync/sync followed by guest poweroff without unmount is DIRTY in
+`xfs_logprint` and produces `log_not_clean` with zero Aurora output; no replay is
+attempted and the image remains unchanged. Two further 70,000-write/fsync
+sessions continued one private image's history, with a clean unmount between
+them. The first remained cycle 1; the second genuinely wrapped to cycle 2 with
+head/tail 40591, including a record crossing the physical log boundary. Both
+whole images pass the hosted reader, exact file comparisons and `xfs_repair -n`
+without changing their hashes. Synthetic wrap tests do not replace this history.
+The same source owner also passes separate protected-NVMe used/wrapped reads and
+genuine dirty-log refusal on those whole images. Both binary files are checked
+across clients; dirty opens expose no bytes or identities while the independent
+RAM namespace remains usable. Every read-only private image remains unchanged.
+Whole-suite and budget acceptance are separate from these component results.
+Additional stale-clear cycle transitions, other producer
+ABIs/record sizes, dirty/replay-required logs and unsupported namespaces remain
+closed. This is not general clean-XFS or replay support.
+
+The file service accepts a closed profile word only in its authenticated initial
+source0 bootstrap: 0 is fresh-format, 1 is this pinned Linux profile. All other
+values and nonzero reserved words are refused before allocation or block reads.
+The existing process fixture's separate case 11 selects 1; case 10 and the existing
+production `nvme` selector remain 0. A refused disk stays unavailable under `/disk`,
+never falls back to RAM, and does not discard the independent RAM namespace.
+
+The same production image has an explicit boot opt-in for the clean profile:
+
+```text
+-fw_cfg name=opt/aurora/storage,string=nvme-linux-6.12-clean
+```
+
+An absent selector remains RAM-only; exact `nvme` remains fresh-format. Unknown
+strings, trailing NULs and malformed selectors fail closed, not back to RAM or a
+different filesystem profile. Tag 4 retains the existing read-only authority and
+handoff layout; word 152 is a closed profile 0/1 only under that tag. Production RAM
+still requires zero there, and fixture case meanings are unchanged. Older
+production v10 consumers reject profile 1 rather than interpreting it as fresh.
+The admitted profile is captured once per boot, checked on runtime reattachment,
+and retained across file-owner loss/restart. Clients cannot change it.
+Clean-profile restart retention is source-reviewed; the actual owner-loss guest
+checks currently use the default profile.
+
+The short `6.12` selector names this format contract, not all Linux 6.12 releases
+or an on-disk producer identity. Genuine producer evidence is pinned to
+**Linux 6.12.107 x86_64**. Actual production used/wrapped boots exercise the
+shipped cat/sort tools, cross-client committed copies and write denial with exact
+serial/framebuffer checks; a genuine dirty boot refuses `/disk` while RAM remains
+usable. All attached private images remain unchanged. Exact binary-byte
+comparisons belong to the separate process-device case, not merely the production
+file-size/line-length transcript. Default RAM and fresh-format guests also pass.
+
+#### Reproducing the reference-media gates
+
+These are opt-in tests of supplied reference media, not shipped 512-MiB images
+or dependencies of the default suite. Start each independent history with a new
+regular file:
+
+```sh
+python3 scripts/xfs_image.py IMAGE --mkfs /path/to/mkfs.xfs
+```
+
+The producer requires xfsprogs 6.13.0 and creates the bounded prototype above.
+Attach only this disposable image to an isolated Linux 6.12.107 x86_64 VM, with
+no NIC or host mount. Mount in the guest with `logbufs=2,logbsize=32k`. Open the
+existing `hello` without creating/replacing its inode; for iteration `j`, write
+64 bytes at offset zero, byte `i = (i * 37 + j + 11) % 256`, and `fsync` after
+each write. Preserve `pattern` (9001 bytes, byte `i = (i * 37 + 11) % 256`) and
+the supported root/inode features.
+
+- `used`: one iteration (`j=0`), then `sync` and clean unmount.
+- `wrapped`: sessions of 70,000 iterations (`j=0..69999`), cleanly unmounting
+  between sessions and continuing the same image without reformatting until
+  offline log inspection demonstrates wrap. A write count alone is not proof.
+  The qualified history needed two sessions; its final UNMOUNT did not itself
+  straddle the boundary (that case has separate synthetic coverage).
+- `dirty`: one iteration, `sync`, then BusyBox `poweroff -f` in the minimal
+  guest initramfs without unmounting (normal distribution shutdown may unmount).
+
+Retain the guest write/fsync/unmount events and before/after image hashes. Use
+`xfs_logprint` offline to distinguish CLEAN from DIRTY and inspect cycle/head
+topology; clean histories must also pass `xfs_repair -n`. The dirty image is not
+repaired before the refusal test. Synthetic sector rewrites are not genuine
+Linux history. Hashes must remain unchanged by subsequent read-only checks.
+
+With the existing images already built under `BUILD`, the supported NVMe model
+under `NVME_PREFIX`, the production NVMe/graphics model
+(`aurora-amdvi-command-stop-nvme-graphics-v1`) under `GRAPHICS_PREFIX`, and
+`AURORA_BOOT_FIXTURE_PREFIX` pointing to clean firmware:
+
+```sh
+python3 scripts/kernel_nvme_smoke.py --tool-prefix NVME_PREFIX \
+  --run-only BUILD/kernel-images/uefi/process-fixture \
+  --process-xfs-clean IMAGE --xfs-history used
+python3 scripts/kernel_production_smoke.py \
+  --build-dir BUILD/kernel-images/uefi/production \
+  --renderer BUILD/tests/graphical-terminal-host --nvme-prefix GRAPHICS_PREFIX \
+  --xfs-image IMAGE --xfs-history used
+```
+
+Repeat with the corresponding image and `wrapped` or `dirty`. The history label
+selects the expected oracle, not filesystem admission or producer provenance.
+Both runners accept only a regular 512-MiB source, copy its held read-only file
+descriptor into a new private image, attach only that copy read-only and verify
+its whole-image hash after the guest is reaped. They never attach a caller's
+path directly or accept a block device.
+
+### Mounted reads
+
+After admission, `read_file(name, sector_index)` selects a root name and requests
+its inode again. The existing complete inode/extent checks run before requesting
+file data. Holes/unwritten sectors return zero without reading backing data;
+partial EOF sectors mask the tail. `sector_or_zero()` and `valid_bytes()` expose
+nothing until `file_sector_ready`. End, absent names and invalid requests are
+recoverable; metadata, protocol and I/O failures are terminal.
+
+`open_file(name)` performs the same complete inode validation without reading
+payload sectors; `file_size()` and `file_inode()` are available only after that
+validation. `service.xfs` uses these facts for its separately owned 16-handle
+table (device 3, handle slots 40–55). Its 504-byte reply buffer publishes no
+partial result: a later sector failure or volume-generation change quarantines
+the disk and suppresses all previously assembled bytes. Closing a handle or
+ending a client preserves slot generations, so old IDs cannot alias a reopen.
+The mount and table remain sibling owners; neither stores a device capability.
+The `/disk` root is reserved even when the mount is absent or fails. This does
+not disable the independent boot/overlay Store. Disk create/write operations
+are denied; only supported root files are exposed.
+
+`examples/xfs-fresh-cat.au IMAGE ROOT_FILENAME` is a running, source-owned hosted
+consumer of this state machine through read-only `HostFiles` reads. Its operator
+must keep the image stable; HostFiles does not itself grant exclusive volume
+ownership. Tests compile this consumer once and use sparse **synthetic** images
+assembled from the retained sectors, plus protocol/ownership cases in the
+existing `block_io` driver. These sparse test inputs are not complete XFS images.
+An actual populated mkfs image was separately read without mounting it on Linux.
+The protected process fixture also connects this exact mount state to the sealed
+`ReadOnlyBlock` grant and retained file owner: two clients read the 9001-byte
+binary file over the protected QEMU NVMe transport, reject writes, and leave the
+whole disposable image unchanged. This qualifies only the named fresh profile,
+not general clean Linux XFS or read-write storage.
+
+Authenticated supervisor control 15 requests startup admission with no active
+file client and an empty request. It uses the same sector pump as lazy opens;
+success is returned only after the complete log/root/inode gate. Missing,
+unsupported, dirty or quarantined storage returns unavailable, never a fresh
+mount grant or a reset. The production storage composition must complete this
+operation within its explicit startup budget before advertising disk readiness;
+ordinary runtime budgets and the RAM-only composition are unchanged.
+
+`scripts/xfs_image.py IMAGE --mkfs /path/to/mkfs.xfs` creates a new disposable
+512 MiB regular image using xfsprogs 6.13.0 and a prototype, without a host mount.
+It holds the exclusively created inode open while mkfs uses its inherited fd;
+an existing file or device path is never formatted. `/hello` contains 64 bytes;
+`/pattern` contains 9001 binary fixture bytes, crossing 504/512/4096-byte read
+boundaries. The hosted service driver is also run against this actual image;
+its fast component rows use explicitly synthetic shortened-log sparse inputs.
+
+Next dependencies remain broader supported clean-log/inode/namespace forms
+and permission policy (X1). X2 must
+then implement every advertised replay
+item and cancellation/intent/orphan semantics against a disposable overlay with
+interruption/replay idempotence checks. X3 requires transaction reservations,
+allocation validation, ordered durable commit/flush, crash injection and
+interoperability checks before exposing any read-write mount. Neither X2 nor X3
+can be replaced by raw NVMe writes or the fresh-format read-only gate.
+
+
+### Bounded inode recovery preflight
+
+`fs.xfs_recovery` owns a 48 KiB copied-byte plan for one strict Linux 6.12.107
+x86-64 profile. One complete log scan precedes at most 16 complete,
+non-interleaved CORE-only transactions in a non-wrapped live interval of at most 1 MiB.
+The root contains at most 16 supported regular files. Every root inode and home
+inode is checked; every AG summary and orphan bucket is admitted, with exact
+superblock summary equality and single-leaf INOBT allocation proof. Unknown
+records, unsupported metadata changes, torn homes, missing commits and protocol
+failures yield no planned writes, including failures after earlier conversions.
+The unchanged read-only profile does not accept a dirty log.
+
+A separate closed live-log mode admits exactly one root CORE+LOCAL transaction
+that permutes the inode numbers of existing shortform directory entries. Names,
+entry layout/type, parent, size, inode set and allocation remain unchanged; mixed
+root/file transactions and duplicate or foreign references refuse. The original
+and proposed root pass the same directory parser. The entire padded LOCAL region
+is copied as Linux does, then the inode CRC is regenerated. This uses the existing
+root cache and publishes one home sector, without increasing write authority.
+The [Linux exchange fixture](../fixtures/xfs-root-exchange/README.md) supplies the
+independent recovered-root golden. Actual disposable NVMe guests exercise forward
+production recovery with shipped commands and the graphical console, plus reverse
+recovery, clean/refused entry, root-home and orphan-body reentry. Four completed-
+command cuts (first home write and each of three Flushes) recover on a fresh boot
+from the captured disk. Each successful image matches the independently Linux-
+accepted completion; only the root and two completion sectors change. The forward
+production output also mounts cleanly in Linux without replay and passes repair.
+These are emulator completed-command boundaries, not torn-write or physical
+power-loss qualification.
+This is recovery support, not a writable mount or an ordinary file commit API.
+
+The pure converter restores only supported timestamp/change-count fields,
+sets the committed record LSN and regenerates the complete inode CRC. It ignores
+the logged dinode LSN, reapplies equal record LSNs and skips newer valid homes.
+A ready plan exposes copied home sectors and deterministic clean-UNMOUNT body
+then header sectors. Publication requires home writes and Flush, body and Flush,
+then header and Flush, writer retirement, and independent read-only admission.
+The caller must retain an exclusive stable volume and reserve the finite NVMe
+command budget before its first write. Copied plan values carry no authority.
+
+The [fixture recipe](../fixtures/xfs-core-redo/README.md#decompress-and-run)
+provides small archived full-image inputs and independent completion goldens for
+the opt-in device checks.
+
+`services/xfs-recover.au` is the separate source consumer of the singleton
+`WritableBlock` role. Its object and executable use Aurora's emitter/linker.
+Private-copy modeling changes only the two expected inode homes and two
+completion sectors; the unchanged Aurora reader accepts the result, and pinned
+Linux mounts it clean without replay. Private NVMe process guests also pass
+dirty recovery, completed-marker reentry and controlled refusal. Completed-command
+cuts after the first home write and each of the three Flush boundaries pass
+fresh-process reentry; the second Flush cut produces the actual orphan body,
+and reentry changes only its header. These are emulator command-boundary checks,
+not physical power-loss or general XFS recovery qualification. Explicit production
+recovery also passes dirty, completed-marker and late-record-refusal rows through
+the independent readonly source owner, shipped file commands and graphical
+console; ordinary execution cannot obtain the writer. A private console-owner
+fixture also performs two real full mounts around one actual commit/exit loss,
+with a fresh owner generation, missing volatile note, healthy console and
+unchanged image. The writer and backend are initialized only once. This is a
+readonly-remount/no-remint check, not full HostFiles continuity across loss.
+Further full scans can exhaust finite command IDs; the backend quarantines
+rather than resetting the queue or reminting authority.
+Recovery recognizes only the exact
+full-sector orphan completion body immediately after its admitted old header.
+A recovery-only topology overlay then repeats all original log, allocation and
+home checks; the unchanged read-only mount still refuses that intermediate disk.
+Other torn or unsupported states refuse without output. A valid completed marker
+also undergoes full metadata admission, returns no data writes, and requires one
+successful Flush before writer retirement and independent read-only admission.

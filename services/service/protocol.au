@@ -1,0 +1,291 @@
+export module service.protocol;
+import aurora.endpoint;
+import service.files;
+import service.console;
+import console.session_note;
+import console.protected_files;
+import console.protected_commands;
+import console.session_files;
+import console.file_namespace;
+import service.xfs;
+import kernel.process_files;
+import std.binary;
+import std.binary_buffer;
+import storage.sector;
+
+export namespace service {
+    // Copied protocol words. The endpoint's source and transaction are kernel
+    // observations, not fields supplied by a client in this payload.
+    auto request_word(builtin::ServeSession& session, u64 offset) -> u64 {
+        u64 value = 0u64;
+        u64 byte = 0u64;
+        while (byte < 8u64) {
+            value = value | (u64(endpoint::byte(session, offset + byte)) << i64(byte * 8u64));
+            byte = byte + 1u64;
+        }
+        return value;
+    }
+    // Ordinary runtime writes arrive in at most 4096-byte messages. Stage each
+    // bounded portion in a value, not a dynamically checked owner byte by byte.
+    // Views never outlive a single Store call or cross an endpoint exchange.
+    class WriteStaging {
+        builtin::array<u8, 512> elements;
+    public:
+        WriteStaging() : elements{} {
+        }
+        auto set(i64 offset, u8 value) -> bool {
+            elements[offset] = value;
+            return true;
+        }
+        auto bytes(i64 count) const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(elements);
+            return all.subspan(0, count);
+        }
+    };
+    class Response {
+        builtin::OwnedBytes bytes;
+    public:
+        Response(builtin::ByteRegion region) : bytes(region.try_allocate(568)) {
+        }
+        auto ok() const -> bool {
+            return bytes.ok();
+        }
+        auto set_byte(i64 at, u8 value) -> bool {
+            return bytes.set(at, value);
+        }
+        auto word(i64 offset, u64 value) -> bool {
+            i64 byte = 0;
+            while (byte < 8) {
+                if (!bytes.set(offset + byte, u8((value >> (byte * 8)) & 255u64))) {
+                    return false;
+                }
+                byte = byte + 1;
+            }
+            return true;
+        }
+        auto header(service::Reply reply) -> bool {
+            return word(0, service::status_word(reply.status)) && word(8, reply.count) && word(16, reply.id) && word(24,
+                reply.size) && word(32, reply.device) && word(40, reply.inode) && word(48, reply.directory_device)
+                && word(56, reply.directory_inode);
+        }
+        auto console_header(u64 status, u64 count, u64 revision) -> bool {
+            return word(0, status) && word(8, count) && word(16, revision) && word(24, 0u64) && word(32, 0u64)
+                && word(40, 0u64) && word(48, 0u64) && word(56, 0u64);
+        }
+        auto view(i64 count) const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(bytes);
+            return all.subspan(0, count);
+        }
+    };
+    auto file_operation(service::Store& store, builtin::span<const u8> payload, u64 operation, u64 id,
+        u64 offset) -> service::Reply {
+        if (operation == 16u64) {
+            const service::Reply reply = store.open(0u64, id, payload);
+            return reply;
+        }
+        if (operation == 17u64) {
+            const service::Reply reply = store.open(1u64, id, payload);
+            return reply;
+        }
+        if (operation == 18u64) {
+            const service::Reply reply = store.open(2u64, id, payload);
+            return reply;
+        }
+        if (operation == 19u64) {
+            const service::Reply reply = store.read_file(id, offset);
+            return reply;
+        }
+        if (operation == 20u64) {
+            const service::Reply reply = store.close(id);
+            return reply;
+        }
+        if (operation == 21u64) {
+            const service::Reply reply = store.create(payload);
+            return reply;
+        }
+        if (operation == 22u64) {
+            const service::Reply reply = store.write_file(id, payload);
+            return reply;
+        }
+        if (operation == 23u64) {
+            const service::Reply reply = store.commit(id);
+            return reply;
+        }
+        if (operation == 24u64) {
+            const service::Reply reply = store.discard(id);
+            return reply;
+        }
+        return service::reply(kernel::FileStatus::failed);
+    }
+
+    class RequestHeader {
+    public:
+        u64 operation;
+        u64 id;
+        u64 offset;
+        u64 count;
+    };
+    class ControlState {
+    public:
+        u64 volume_length;
+        u64 copied;
+        bool admitted;
+        bool mount_control;
+        bool disk_ready;
+    };
+    class ControlReply {
+    public:
+        bool accepted;
+        bool exit;
+        bool admitted;
+        u64 copied;
+        u64 count;
+    };
+    class FileRequest {
+        builtin::OwnedBytes _bytes;
+        RequestHeader _header;
+        ControlState _state;
+        ControlReply _result;
+    public:
+        FileRequest(builtin::ByteRegion region, RequestHeader header, ControlState state,
+            ControlReply result) : _bytes(region.try_allocate(65472)), _header(header), _state(state), _result(result) {
+        }
+        auto ok() const -> bool {
+            return _bytes.ok();
+        }
+        auto set(i64 at, u8 value) -> bool {
+            return _bytes.set(at, value);
+        }
+        auto at(i64 offset) const -> u8 {
+            return _bytes.at(offset);
+        }
+        auto bytes() const -> builtin::span<const u8> {
+            return borrow_bytes(_bytes);
+        }
+        auto control(RequestHeader header, ControlState state) -> bool {
+            _header = header;
+            _state = state;
+            return true;
+        }
+        auto header() const -> RequestHeader {
+            const RequestHeader result = _header;
+            return result;
+        }
+        auto state() const -> ControlState {
+            const ControlState result = _state;
+            return result;
+        }
+        auto result(ControlReply value) -> bool {
+            _result = value;
+            return true;
+        }
+        auto control_reply() const -> ControlReply {
+            const ControlReply result = _result;
+            return result;
+        }
+    };
+    auto control_operation(Store& store, ConsoleStore& console_state, Response& response,
+        FileRequest& request) -> bool {
+        const RequestHeader header = request.header();
+        const ControlState state = request.state();
+        const u64 operation = header.operation;
+        const u64 id = header.id;
+        const u64 offset = header.offset;
+        const u64 count = header.count;
+        const u64 volume_length = state.volume_length;
+        const bool mount_control = state.mount_control;
+        u64 copied = state.copied;
+        bool admitted = state.admitted;
+        u64 reply_count = 64u64;
+        u64 at = 0u64;
+        bool exiting = false;
+        const Reply success = reply(kernel::FileStatus::success);
+        bool accepted = false;
+        bool export_reply = false;
+        if (operation == 2u64 && !admitted && offset == copied && count <= volume_length - copied) {
+            at = 0u64;
+            accepted = true;
+            while (at < count) {
+                accepted = store.volume_byte(i64(copied + at), request.at(i64(at))) && accepted;
+                at = at + 1u64;
+            }
+            copied = copied + count;
+        }
+        if (operation == 3u64 && !admitted && count == 0u64 && copied == volume_length) {
+            admitted = store.admit_volume();
+            accepted = admitted;
+        }
+        if (operation == 4u64 && admitted && count == 0u64) {
+            accepted = store.begin(id);
+        }
+        if (operation == 5u64 && admitted && count == 0u64) {
+            accepted = store.finish(id);
+        }
+        if (operation == 6u64 && admitted && count == 0u64 && store.active() == 0u64) {
+            accepted = true;
+            exiting = true;
+        }
+        if (operation == 7u64 && admitted && count == 0u64 && offset == 0u64 && id < 64u64 && store.active() == 0u64) {
+            const service::Reply selected = store.export_select(id);
+            accepted = response.header(selected);
+            if (selected.status == kernel::FileStatus::success) {
+                accepted = response.word(64, store.export_path_size()) && response.word(72, store.export_file_size())
+                    && accepted;
+                reply_count = 80u64;
+            }
+            export_reply = true;
+        }
+        if ((operation == 8u64 || operation == 9u64) && admitted && count == 0u64 && id == 0u64 && store.active()
+            == 0u64) {
+            const service::Reply selected = store.export_read(offset, operation == 8u64);
+            accepted = response.header(selected);
+            reply_count = 64u64 + selected.count;
+            at = 0u64;
+            while (at < selected.count) {
+                accepted = response.set_byte(i64(64u64 + at), store.export_byte(at)) && accepted;
+                at = at + 1u64;
+            }
+            export_reply = true;
+        }
+        if (operation >= 10u64 && operation <= 14u64 && admitted && offset == 0u64 && store.active() == 0u64) {
+            if (count > 512u64) {
+                return false;
+            }
+            WriteStaging copied_payload = WriteStaging();
+            i64 byte = 0;
+            while (byte < i64(count)) {
+                copied_payload.set(byte, request.at(byte));
+                byte = byte + 1;
+            }
+            console_state.execute(operation, id, copied_payload.bytes(i64(count)));
+            accepted = response.console_header(console_state.status(), console_state.count(), console_state.revision());
+            reply_count = 64u64 + console_state.count();
+            at = 0u64;
+            while (at < console_state.count()) {
+                accepted = response.set_byte(i64(64u64 + at), console_state.byte(at)) && accepted;
+                at = at + 1u64;
+            }
+            export_reply = true;
+        }
+        if (mount_control) {
+            kernel::FileStatus status = kernel::FileStatus::not_found;
+            if (state.disk_ready) {
+                status = kernel::FileStatus::success;
+            }
+            const service::Reply readiness = service::reply(status);
+            accepted = response.header(readiness);
+            export_reply = true;
+        }
+        if (accepted && !export_reply) {
+            accepted = response.header(success);
+        }
+        const ControlReply result = ControlReply{
+            .accepted = accepted,
+            .exit = exiting,
+            .admitted = admitted,
+            .copied = copied,
+            .count = reply_count
+        };
+        return request.result(result);
+    }
+}

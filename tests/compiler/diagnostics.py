@@ -203,6 +203,11 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
         ["--check", "--diagnostics=json", "--runtime-root", "", source],
         ["--check", "--diagnostics=json", "--runtime-root", root, "--runtime-root", root, source],
         ["--check", "--diagnostics=json", source, source],
+        ["--check", "--diagnostics=json", "--emit-executable", source],
+        ["--emit-executable", "--emit-executable", "--diagnostics=json", source, "-o", root / "never.s"],
+        ["--emit-object", "--emit-executable", "--diagnostics=json", source, "-o", root / "never.s"],
+        ["--emit-executable", "--emit-object", "--diagnostics=json", source, "-o", root / "never.s"],
+        ["--link-object", source, "--diagnostics=json"],
     ):
         diagnostic = run(options, 2, "AU5001")
         require(diagnostic["range"] is None, "CLI error source range")
@@ -274,12 +279,13 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     for previous in (None, b"previous artifact"):
         if previous is not None:
             rejected.write_bytes(previous)
-        result = run(["--emit-frontend-wrapper", oversized, "-o", rejected], 1, json_mode=False)
-        require("bounded artifact read limit exceeded" in result.stderr, "missing artifact-size diagnostic")
-        require(
-            (rejected.read_bytes() if rejected.exists() else None) == previous,
-            "rejected artifact input changed output",
-        )
+        for mode in ("--emit-frontend-wrapper", "--link-object"):
+            result = run([mode, oversized, "-o", rejected], 1, json_mode=False)
+            require("bounded artifact read limit exceeded" in result.stderr, "missing artifact-size diagnostic")
+            require(
+                (rejected.read_bytes() if rejected.exists() else None) == previous,
+                "rejected artifact input changed output",
+            )
     oversized.unlink()
 
     facts_path = root / "good.stack.json"
