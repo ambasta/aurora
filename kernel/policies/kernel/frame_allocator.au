@@ -256,28 +256,35 @@ export namespace kernel {
                     return result;
                 }
                 if (kind == free_state) {
+                    // record_valid accepts every free encoding. Its remaining
+                    // link constraint is this checked extent; do not repeat
+                    // nonfree classification and source calls for each free word.
                     result.free = result.free + 1u64;
-                }
-                if (kind == allocated_state) {
-                    result.allocated = result.allocated + 1u64;
-                    const u64 slot = owner_slot(holder);
-                    if (slot == 2u64) {
+                    if (holder > size) {
                         return result;
                     }
-                    if (slot == 0u64) {
-                        counted0 = counted0 + 1u64;
-                    } else {
-                        counted1 = counted1 + 1u64;
+                } else {
+                    if (kind == allocated_state) {
+                        result.allocated = result.allocated + 1u64;
+                        const u64 slot = owner_slot(holder);
+                        if (slot == 2u64) {
+                            return result;
+                        }
+                        if (slot == 0u64) {
+                            counted0 = counted0 + 1u64;
+                        } else {
+                            counted1 = counted1 + 1u64;
+                        }
                     }
-                }
-                if (kind == kernel_state) {
-                    result.kernel = result.kernel + 1u64;
-                }
-                if (kind == retired_state) {
-                    result.retired = result.retired + 1u64;
-                }
-                if (!record_valid(value) || (kind == free_state && holder > size)) {
-                    return result;
+                    if (kind == kernel_state) {
+                        result.kernel = result.kernel + 1u64;
+                    }
+                    if (kind == retired_state) {
+                        result.retired = result.retired + 1u64;
+                    }
+                    if (!record_valid(value)) {
+                        return result;
+                    }
                 }
                 index = index + 1u64;
             }

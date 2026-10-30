@@ -39,8 +39,7 @@ class Binding final {
         if (!root_)
             return false;
         std::array<std::byte, sizeof(Descriptor)> bytes{};
-        for (std::size_t i = 0; i < bytes.size(); ++i)
-            bytes[i] = root_[i];
+        __builtin_memcpy(bytes.data(), root_, bytes.size());
         const auto value = std::bit_cast<Descriptor>(bytes);
         return value.binding == this && value.epoch == epoch_;
     }
