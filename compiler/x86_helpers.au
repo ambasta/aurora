@@ -401,7 +401,7 @@ export namespace compiler_x86 {
     }
     auto argument_bytes(const compiler_ir_metadata::MetadataStore& metadata, i64 type) -> i64 {
         const i64 kind = type_kind(metadata, type);
-        if (service_type_kind(kind)) {
+        if (service_type_kind(kind) || kind == 26) {
             return 16;
         }
         if (kind == 13 || kind == 17) {
@@ -754,7 +754,7 @@ export namespace compiler_x86 {
             bool owner = false;
             while (field < fields && !owner) {
                 const i64 kind = type_kind(metadata, class_field_type(metadata, class_id, field));
-                owner = kind == 13 || kind == 17;
+                owner = kind == 13 || kind == 17 || kind == 26;
                 if (!owner) {
                     field = field + 1;
                 }
@@ -777,7 +777,7 @@ export namespace compiler_x86 {
                     leaf = leaf + 1;
                 } else {
                     clear_bytes(workspace, o, cursor, owner_offset, destination);
-                    cursor = owner_offset + 32;
+                    cursor = owner_offset + argument_bytes(metadata, class_field_type(metadata, class_id, field));
                     field = field + 1;
                 }
             }
@@ -794,6 +794,11 @@ export namespace compiler_x86 {
             const i64 kind = type_kind(metadata, class_field_type(metadata, class_id, field));
             if (kind == 13 || kind == 17) {
                 clear_bytes_owner(workspace, o, base - class_field_offset(metadata, class_id, field));
+            } else {
+                if (kind == 26) {
+                    const i64 first = workspace.pack_address(0, base - class_field_offset(metadata, class_id, field));
+                    clear_bytes(workspace, o, 0, 16, first);
+                }
             }
             field = field + 1;
         }

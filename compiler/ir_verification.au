@@ -20,7 +20,7 @@ export namespace compiler_ir_verification {
         while (at < fields.count()) {
             const compiler_ir_metadata::FieldRow field = m.field_at(fields.begin() + at);
             const compiler_ir_metadata::RawTypeRow type = m.type_at(field.type());
-            if (compiler_ir_metadata::owner_kind(type)) {
+            if (compiler_ir_metadata::field_owner_kind(m, type)) {
                 count = compiler_ir_metadata::count_sum(count, 1);
             }
             at = at + 1;
@@ -109,6 +109,13 @@ export namespace compiler_ir_verification {
         while (at < fields.count()) {
             const compiler_ir_metadata::FieldRow field = m.field_at(fields.begin() + at);
             const compiler_ir_metadata::RawTypeRow type = m.type_at(field.type());
+            if (compiler_ir_metadata::retained_resource_kind(m, type) >= 0) {
+                const TokenRow empty = no_token();
+                const FactRow field_fact = semantic_fact(FactKind::resident_field, root, at, 0, disposition, empty);
+                if (!w.fact_set(field_fact)) {
+                    return false;
+                }
+            }
             if (compiler_ir_metadata::owner_kind(type)) {
                 TokenKind token_kind = TokenKind::none;
                 i64 token_root = 0;
@@ -162,7 +169,8 @@ export namespace compiler_ir_verification {
             return w.fail(first_error(
                 VerificationErrorFirst::incompatible_borrowed_owner_descriptor_at_control_flow_join));
         }
-        if (!w.same_facts(position, FactKind::owned_object) || !w.same_facts(position, FactKind::owned_field)) {
+        if (!w.same_facts(position, FactKind::owned_object) || !w.same_facts(position, FactKind::owned_field)
+            || !w.same_facts(position, FactKind::resident_input) || !w.same_facts(position, FactKind::resident_field)) {
             return w.fail(first_error(
                 VerificationErrorFirst::incompatible_owning_object_lifetimes_or_field_ownership_at_control_flow_join));
         }

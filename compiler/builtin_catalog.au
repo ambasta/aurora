@@ -176,9 +176,18 @@ export namespace compiler_catalog {
     // 2 (Port), 3 (Serve) and 4 (HostFiles) only when admitted syntax names one
     // of their types.
     auto type_count() -> i64 {
-        return 54;
+        return 57;
     }
     auto type_kind(i64 type) -> compiler_resolver::ResolvedTypeKind {
+        if (type == 54) {
+            return compiler_resolver::ResolvedTypeKind::service_resource;
+        }
+        if (type == 55) {
+            return compiler_resolver::ResolvedTypeKind::class_value;
+        }
+        if (type == 56) {
+            return compiler_resolver::ResolvedTypeKind::enum_value;
+        }
         if (type == 47) {
             return compiler_resolver::ResolvedTypeKind::bootstrap_effects;
         }
@@ -257,6 +266,9 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::invalid;
     }
     auto type_family(i64 type) -> i64 {
+        if (type >= 54 && type < 57) {
+            return 9;
+        }
         if (type >= 47 && type < 54) {
             return 8;
         }
@@ -290,6 +302,12 @@ export namespace compiler_catalog {
     }
     // Field or case count of a nominal type.
     auto member_count(i64 type) -> i64 {
+        if (type == 55) {
+            return 2;
+        }
+        if (type == 56) {
+            return 4;
+        }
         if (type == 49) {
             return 4;
         }
@@ -351,6 +369,12 @@ export namespace compiler_catalog {
     }
     // Catalog type of a class field.
     auto field_type(i64 type, i64 field) -> i64 {
+        if (type == 55) {
+            if (field == 0) {
+                return 38;
+            }
+            return 1;
+        }
         if (type == 49) {
             if (field == 0 || field == 3) {
                 return 3;
@@ -407,6 +431,18 @@ export namespace compiler_catalog {
     // Words: full spelling, then for nominal types the native spelling and the
     // field or case names in declaration order. See use_word for begin/end.
     auto type_word(compiler_resolver::Session& session, i64 type, i64 part, i64 begin, i64 end) -> i64 {
+        if (type == 54) {
+            return use_word(session, "builtin::ResidentSlot", part, begin, end);
+        }
+        if (type == 55) {
+            return use_word(session, "builtin::ResidentRunResult;__au_resident_run_result;status;value", part, begin,
+                end);
+        }
+        if (type == 56) {
+            return use_word(session,
+                "builtin::ResidentStatus;__au_resident_status;success;unavailable;conflict;malformed", part, begin,
+                end);
+        }
         if (type >= 47 && type < 54) {
             return bootstrap_type_word(session, type, part, begin, end);
         }
@@ -572,9 +608,12 @@ export namespace compiler_catalog {
 
     // Resource identities are catalog ordinals, not per-family resolver kinds.
     auto resource_count() -> i64 {
-        return 2;
+        return 3;
     }
     auto resource_kind(i64 type) -> i64 {
+        if (type == 54) {
+            return 2;
+        }
         if (type == 45) {
             return 0;
         }
@@ -584,6 +623,9 @@ export namespace compiler_catalog {
         return -1;
     }
     auto resource_type(i64 kind) -> i64 {
+        if (kind == 2) {
+            return 54;
+        }
         if (kind == 0) {
             return 45;
         }
@@ -592,8 +634,14 @@ export namespace compiler_catalog {
         }
         return -1;
     }
+    auto resource_retained(i64 kind) -> bool {
+        return kind == 2;
+    }
+    auto resource_field_eligible(i64 kind) -> bool {
+        return resource_retained(kind);
+    }
     auto resource_issuer(i64 kind) -> i64 {
-        if (kind >= 0 && kind < resource_count()) {
+        if (kind >= 0 && kind < 2) {
             return 9 + kind;
         }
         return -1;
@@ -617,12 +665,19 @@ export namespace compiler_catalog {
         return kind >= 0 && kind < resource_count();
     }
     auto resource_method_count(i64 kind) -> i64 {
+        if (kind == 2) {
+            return 7;
+        }
         if (kind >= 0 && kind < resource_count()) {
             return 6 + kind;
         }
         return 0;
     }
     auto resource_method_word(compiler_resolver::Session& session, i64 kind, i64 method, i64 begin, i64 end) -> i64 {
+        if (kind == 2) {
+            return use_word(session, "prepare;run;console;reject;begin_shutdown;advance_shutdown;finish", method, begin,
+                end);
+        }
         if (kind == 0) {
             return use_word(session, "preparation;advance;output;request;cancel;finish", method, begin, end);
         }
@@ -635,6 +690,21 @@ export namespace compiler_catalog {
     auto resource_method_result(i64 kind, i64 method) -> i64 {
         if (method < 0 || method >= resource_method_count(kind)) {
             return -1;
+        }
+        if (kind == 2) {
+            if (method == 0) {
+                return 3;
+            }
+            if (method == 1) {
+                return 55;
+            }
+            if (method == 2 || method == 3) {
+                return 56;
+            }
+            if (method == 6) {
+                return 42;
+            }
+            return 51;
         }
         if (kind == 1) {
             if (method == 0) {
@@ -684,7 +754,7 @@ export namespace compiler_catalog {
         if (method < 0 || method >= resource_method_count(kind)) {
             return -1;
         }
-        if (method == 0) {
+        if (method == 0 && !resource_retained(kind)) {
             return 0;
         }
         if (method == resource_method_count(kind) - 1) {
@@ -705,6 +775,9 @@ export namespace compiler_catalog {
         return i64(name.at(index));
     }
     auto type_source_byte(i64 type, i64 index) -> i64 {
+        if (type == 54) {
+            return catalog_byte("builtin::ResidentSlot", index);
+        }
         if (type == 45) {
             return catalog_byte("builtin::ExecutionLease", index);
         }
@@ -714,6 +787,15 @@ export namespace compiler_catalog {
         return -1;
     }
     auto type_native_byte(i64 type, i64 index) -> i64 {
+        if (type == 54) {
+            return catalog_byte("__au_resident_slot", index);
+        }
+        if (type == 55) {
+            return catalog_byte("__au_resident_run_result", index);
+        }
+        if (type == 56) {
+            return catalog_byte("__au_resident_status", index);
+        }
         if (type == 39) {
             return catalog_byte("__au_execution_prep", index);
         }
@@ -756,6 +838,30 @@ export namespace compiler_catalog {
         return -1;
     }
     auto resource_runtime_byte(i64 kind, i64 method, i64 index) -> i64 {
+        if (kind == 2) {
+            if (method == 0) {
+                return catalog_byte("__au_runtime_resident_prepare", index);
+            }
+            if (method == 1) {
+                return catalog_byte("__au_runtime_resident_run", index);
+            }
+            if (method == 2) {
+                return catalog_byte("__au_runtime_resident_console", index);
+            }
+            if (method == 3) {
+                return catalog_byte("__au_runtime_resident_reject", index);
+            }
+            if (method == 4) {
+                return catalog_byte("__au_runtime_resident_begin_shutdown", index);
+            }
+            if (method == 5) {
+                return catalog_byte("__au_runtime_resident_advance_shutdown", index);
+            }
+            if (method == 6) {
+                return catalog_byte("__au_runtime_resident_finish", index);
+            }
+            return -1;
+        }
         if (kind == 0) {
             if (method == -1) {
                 return catalog_byte("__au_runtime_execution_prepare", index);

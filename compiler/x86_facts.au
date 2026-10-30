@@ -842,7 +842,7 @@ export namespace compiler_x86 {
                         workspace.text("\"value_span\"");
                     }
                 } else {
-                    if (kind == 13 || kind == 17) {
+                    if (kind == 13 || kind == 17 || kind == 26) {
                         workspace.text("\"owner\"");
                     } else {
                         if (service_type_kind(kind)) {
@@ -886,7 +886,7 @@ export namespace compiler_x86 {
                 }
             }
         }
-        if (kind == 5 || kind == 9 || kind == 21) {
+        if (kind == 5 || kind == 9 || kind == 21 || kind == 26) {
             workspace.text(",\"type_name\":");
             fact_json_name(workspace, metadata, 5, type);
         }
@@ -919,7 +919,7 @@ export namespace compiler_x86 {
             if (array_value) {
                 count = class_field_length(metadata, class_id, at);
             }
-            if (kind == 13 || kind == 17) {
+            if (kind == 13 || kind == 17 || kind == 26) {
                 width = argument_bytes(metadata, type);
             }
             if (kind == 5) {
@@ -1049,6 +1049,14 @@ export namespace compiler_x86 {
             fact_emit_bool(workspace, (shape.attributes() & masks.receiver_mutable()) != 0u64);
         } else {
             workspace.text("null");
+        }
+        if (receiver) {
+            if (compiler_ir_metadata::consuming_receiver(row)) {
+                workspace.text(",\"receiver_consuming\":true");
+            }
+            if (compiler_ir_metadata::retained_constructor(metadata, row)) {
+                workspace.text(",\"complete_constructor\":true");
+            }
         }
         workspace.text(",\"borrowed_root_count\":");
         workspace.number(roots);

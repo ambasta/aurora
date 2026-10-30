@@ -132,6 +132,24 @@ export namespace compiler_lowering {
         put(session, OperandRole::Offset, a0);
         return emit(session, InstructionForm::EndObject, begin);
     }
+    auto emit_BindRetainedResourceParameter(compiler_resolver::Session& session, i64 parameter, i64 offset,
+        i64 kind) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Index, parameter);
+        put(session, OperandRole::Offset, offset);
+        put(session, OperandRole::ResourceKindId, kind);
+        return emit(session, InstructionForm::BindRetainedResourceParameter, begin);
+    }
+    auto emit_RetainedFieldOperation(compiler_resolver::Session& session, i64 root, i64 field, i64 method, i64 result,
+        i64 kind) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ObjectOffset, root);
+        put(session, OperandRole::FieldIndex, field);
+        put(session, OperandRole::ResourceMethodId, method);
+        put(session, OperandRole::ResultOffset, result);
+        put(session, OperandRole::ResourceKindId, kind);
+        return emit(session, InstructionForm::RetainedFieldOperation, begin);
+    }
     auto emit_IssueServiceResource(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2, i64 a3) -> i64 {
         const i64 begin = session.operand_count();
         put(session, OperandRole::Offset, a0);
@@ -757,6 +775,9 @@ export namespace compiler_lowering {
         if (id >= 0) {
             const LocalRow local = session.local(id);
             const SnapshotRow state = local.state();
+            if (!state.live() && retained_class(session, local.concrete_type_id())) {
+                return fail(session, LoweringError::borrowed_object_ownership_transfer, source);
+            }
             if (state.object_exclusive()) {
                 return fail(session, LoweringError::owning_object_exclusively_borrowed, source);
             }

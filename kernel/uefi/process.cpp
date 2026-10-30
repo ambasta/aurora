@@ -36,6 +36,21 @@ auto source_execute(const aurora::execution::Argument *, aurora::execution::Resu
     -> void asm("__au_runtime_process_execute_command") __attribute__((visibility("hidden")));
 #endif
 
+#ifdef AURORA_PRODUCTION
+auto source_resident_construct(void *, aurora::resident::Descriptor *) -> void asm("__au_runtime_resident_construct")
+    __attribute__((visibility("hidden")));
+auto source_resident_prepare(void *) -> U64 asm("__au_runtime_process_resident_prepare")
+    __attribute__((visibility("hidden")));
+auto source_resident_run(void *, aurora::execution::Result *) -> void asm("__au_runtime_process_resident_run")
+    __attribute__((visibility("hidden")));
+auto source_resident_console(void *) -> U64 asm("__au_runtime_process_resident_console")
+    __attribute__((visibility("hidden")));
+auto source_resident_reject(void *) -> U64 asm("__au_runtime_process_resident_reject")
+    __attribute__((visibility("hidden")));
+auto source_resident_finish(void *) -> U64 asm("__au_runtime_process_resident_finish")
+    __attribute__((visibility("hidden")));
+#endif
+
 auto source_bootstrap_service(const aurora::bootstrap::Argument *) -> U64 asm("__au_runtime_process_bootstrap_service")
     __attribute__((visibility("hidden")));
 
@@ -292,6 +307,34 @@ constinit aurora::uefi::ProcessOutput output_sink = nullptr;
 constinit void *output_context = nullptr;
 #ifdef AURORA_PRODUCTION
 constinit bool runtime_initialized = false, runtime_detached = false;
+#endif
+#ifdef AURORA_PRODUCTION
+class ResidentArguments final {
+public:
+    std::span<const std::byte> volume{}, path{}, arguments{}, request{};
+    std::span<std::byte> response{};
+    aurora::uefi::ConsoleOperation console = aurora::uefi::ConsoleOperation::clear;
+    U64 expected = 0, revision = 0, map_count = 0;
+};
+class ResidentInput final {
+public:
+    const ResidentArguments arguments;
+    aurora::uefi::ConsoleResult console_result{};
+    U64 shutdown_generation = 0, shutdown_transaction = 0;
+    bool shutdown_pending = false, shutdown_terminal = false, shutdown_failed = false;
+    explicit ResidentInput(ResidentArguments value) : arguments(value) {
+    }
+};
+class ResidentPlatform final {
+public:
+    static auto quiet() -> bool;
+    [[noreturn]] static auto fail() -> void;
+    static auto construct(void *destination, aurora::resident::Descriptor *input) -> void {
+        source_resident_construct(destination, input);
+    }
+};
+using ResidentRoot = aurora::resident::Root<ResidentInput, ResidentPlatform>;
+constinit ResidentRoot resident_owner;
 #endif
 constinit aurora::uefi::BootStorageSelection runtime_storage;
 constinit U64 next_run = 0;
@@ -2307,6 +2350,17 @@ public:
 };
 class ServiceBootstrapPlatform final {
 public:
+#ifdef AURORA_PRODUCTION
+    static auto capture_parent() -> aurora::resident::Parent {
+        return resident_owner.capture_parent();
+    }
+    static auto parent_valid(aurora::resident::Parent parent) -> bool {
+        return resident_owner.parent_valid(parent);
+    }
+    static auto release_parent(aurora::resident::Parent parent) -> void {
+        resident_owner.release_parent(parent);
+    }
+#endif
     static auto quiet() -> bool {
         return Timer::irq_off() && root() == kernel_root && !running.space && !Timer::read(0x390) &&
                Timer::quiet(0x100, false) && Timer::quiet(0x200, false);
@@ -2531,6 +2585,17 @@ public:
 };
 class ExecutionPlatform final {
 public:
+#ifdef AURORA_PRODUCTION
+    static auto capture_parent() -> aurora::resident::Parent {
+        return resident_owner.capture_parent();
+    }
+    static auto parent_valid(aurora::resident::Parent parent) -> bool {
+        return resident_owner.parent_valid(parent);
+    }
+    static auto release_parent(aurora::resident::Parent parent) -> void {
+        resident_owner.release_parent(parent);
+    }
+#endif
     static auto quiet() -> bool {
         return Timer::irq_off() && root() == kernel_root && !running.space && !Timer::read(0x390) &&
                Timer::quiet(0x100, false) && Timer::quiet(0x200, false);
@@ -2539,6 +2604,22 @@ public:
         ::fail("execution grant");
     }
 };
+
+auto begin_service_shutdown() -> void {
+    if (!residents[0].space || residents[1].space || snapshot || !service_root.begin_shutdown(endpoint.generation))
+        fail("file service shutdown intent");
+}
+auto finish_service_shutdown() -> void {
+    const U64 generation = endpoint.generation;
+    if (!generation || residents[0].space || residents[1].space || !outcome.exited || outcome.status ||
+        outcome.terminal_service != generation || running.service != generation ||
+        outcome.terminal_run != running.run || !service_root.normal_exit(generation))
+        fail("file service normal terminal observation");
+    endpoint.generation = 0;
+    endpoint.waiting = endpoint.replied = endpoint.delivery = endpoint.completion = false;
+    endpoint.caller.reset();
+    acknowledge_service_cleanup(generation);
+}
 
 #ifndef AURORA_PRODUCTION
 // Every legacy golden describes an independent namespace. Its companion is
@@ -2731,21 +2812,6 @@ auto run_file_client() -> bool {
     endpoint.caller.reset();
     endpoint.completion = endpoint.replied = false;
     return true;
-}
-auto begin_service_shutdown() -> void {
-    if (!residents[0].space || residents[1].space || snapshot || !service_root.begin_shutdown(endpoint.generation))
-        fail("file service shutdown intent");
-}
-auto finish_service_shutdown() -> void {
-    const U64 generation = endpoint.generation;
-    if (!generation || residents[0].space || residents[1].space || !outcome.exited || outcome.status ||
-        outcome.terminal_service != generation || running.service != generation ||
-        outcome.terminal_run != running.run || !service_root.normal_exit(generation))
-        fail("file service normal terminal observation");
-    endpoint.generation = 0;
-    endpoint.waiting = endpoint.replied = endpoint.delivery = endpoint.completion = false;
-    endpoint.caller.reset();
-    acknowledge_service_cleanup(generation);
 }
 auto close_service_operation() -> void {
     if (residents[1].space || snapshot || endpoint.caller || endpoint.delivery || endpoint.completion ||
@@ -3488,6 +3554,10 @@ auto enter_runtime(U64 arena, const Bytes &handoff) -> bool {
     }
     install_architecture(arena);
     prepare_recovery(space.volume(handoff.get(Handoff::volume_bytes_word)));
+    if (!resident_owner.created())
+        resident_owner.initialize();
+    if (!resident_owner.active())
+        fail("retired resident owner");
     if (!service_root.open_operation())
         fail("file service operation admission");
     return true;
@@ -3503,18 +3573,28 @@ auto leave_runtime(const Bytes &handoff) -> void {
 }
 } // namespace
 
-auto aurora::uefi::run_program(U64 arena,
-                               const Bytes &handoff,
-                               std::span<const std::byte> path,
-                               std::span<const std::byte> arguments,
-                               ProcessOutput output,
-                               void *context) -> RunResult {
-    if (!output || path.empty() || path.size() > process::file_path_limit || arguments.empty() ||
-        arguments.size() > 65536 || !enter_runtime(arena, handoff))
-        return {};
-    output_sink = output;
-    output_context = context;
-    ExecutionTransport::bind(space.volume(handoff.get(Handoff::volume_bytes_word)), path, arguments);
+namespace {
+auto ResidentPlatform::quiet() -> bool {
+    return Timer::irq_off() && root() == kernel_root && !running.space && !Timer::read(0x390) &&
+           Timer::quiet(0x100, false) && Timer::quiet(0x200, false);
+}
+[[noreturn]] auto ResidentPlatform::fail() -> void {
+    ::fail("resident owner authority");
+}
+auto resident_boundary(const ResidentInput &input) -> void {
+    if (!ResidentPlatform::quiet() || residents[1].space || snapshot || endpoint.caller || endpoint.replied ||
+        endpoint.delivery || endpoint.completion || !audit_residents() ||
+        !space.verify(table, ranges, input.arguments.map_count))
+        fail("resident owner effect boundary");
+}
+auto resident_prepare(ResidentInput &input) -> bool {
+    if (!ensure_file_service(input.arguments.volume) && service_root.phase() != aurora::service::Phase::absent)
+        abandon_service();
+    return service_root.disk_ready(endpoint.generation);
+}
+auto resident_run(ResidentInput &input) -> aurora::execution::Result {
+    const auto &arguments = input.arguments;
+    ExecutionTransport::bind(arguments.volume, arguments.path, arguments.arguments);
     const auto grant = ExecutionSession::open();
     aurora::execution::Result observed;
     source_execute(&grant, &observed);
@@ -3522,58 +3602,24 @@ auto aurora::uefi::run_program(U64 arena,
     ExecutionTransport::unbind();
     if (static_cast<U64>(observed.status) > static_cast<U64>(aurora::execution::Status::cancelled))
         fail("execution result");
-    const RunResult result{static_cast<RunStatus>(observed.status), observed.value};
-    output_sink = nullptr;
-    output_context = nullptr;
-    leave_runtime(handoff);
-    return result;
+    return observed;
 }
-
-auto aurora::uefi::prepare_programs(U64 arena, const Bytes &handoff) -> bool {
-    bool ready = false;
-    if (handoff.get(Handoff::composition_word) == 4 && enter_runtime(arena, handoff)) {
-        if (!ensure_file_service(space.volume(handoff.get(Handoff::volume_bytes_word))) &&
-            service_root.phase() != aurora::service::Phase::absent)
-            abandon_service();
-        ready = service_root.disk_ready(endpoint.generation);
-        leave_runtime(handoff);
-    }
-    Serial::text(ready ? std::string_view{"AURORA_PROCESS_DISK: ready"}
-                       : std::string_view{"AURORA_PROCESS_DISK: unavailable"});
-    Serial::text(runtime_storage.mounted() ? std::string_view{" mounted\r\n"} : std::string_view{" readonly\r\n"});
-    return ready;
-}
-
-auto aurora::uefi::console_request(U64 arena,
-                                   const Bytes &handoff,
-                                   ConsoleOperation operation,
-                                   U64 expected_generation,
-                                   U64 expected_note_revision,
-                                   std::span<const std::byte> request,
-                                   std::span<std::byte> response) -> ConsoleResult {
-    const auto code = static_cast<U64>(operation);
-    const U64 input_size = code == 10 ? 72 : code == 11 ? 80 : code == 12 ? 72 : code == 13 ? 232 : 0;
-    const U64 output_size = code == 10 ? 80 : code == 11 ? 248 : code == 13 ? 80 : 0;
-    if (code < 10 || code > 14 || request.size() != input_size || response.size() != output_size ||
-        (code >= 12 && !expected_generation) || (code == 12 ? !expected_note_revision : expected_note_revision != 0))
-        return {ConsoleStatus::malformed, 0, 0};
-    for (auto &byte : response)
-        byte = std::byte{0};
-    if (!enter_runtime(arena, handoff))
-        return {};
-    ConsoleResult result;
-    if (!ensure_file_service(
-            space.volume(handoff.get(Handoff::volume_bytes_word)), expected_generation, expected_generation == 0)) {
-        if (expected_generation) {
-            // The source refused this pinned incarnation; the endpoint ordinal
-            // is only the current physical binding reported to the consumer.
+auto resident_console(ResidentInput &input) -> aurora::uefi::ConsoleStatus {
+    using namespace aurora::uefi;
+    const auto &arguments = input.arguments;
+    const U64 code = static_cast<U64>(arguments.console), expected_generation = arguments.expected;
+    const U64 expected_note_revision = arguments.revision;
+    const auto request = arguments.request;
+    const auto response = arguments.response;
+    const U64 output_size = response.size();
+    auto &result = input.console_result;
+    if (!ensure_file_service(arguments.volume, expected_generation, expected_generation == 0)) {
+        if (expected_generation)
             result = {
                 endpoint.generation ? ConsoleStatus::conflict : ConsoleStatus::unavailable, endpoint.generation, 0};
-        } else if (service_root.phase() != aurora::service::Phase::absent) {
+        else if (service_root.phase() != aurora::service::Phase::absent)
             abandon_service();
-        }
-        leave_runtime(handoff);
-        return result;
+        return result.status;
     }
     reset_loader(128);
     loading_image = true;
@@ -3611,8 +3657,162 @@ auto aurora::uefi::console_request(U64 arena,
             response[at] = endpoint.bytes[64 + at];
         endpoint.replied = false;
     }
+    return result.status;
+}
+auto resident_reject(ResidentInput &input) -> aurora::uefi::ConsoleStatus {
+    using aurora::uefi::ConsoleStatus;
+    auto &result = input.console_result;
+    if (ensure_file_service(input.arguments.volume, input.arguments.expected, false)) {
+        abandon_service(ServiceFailure::consumer_rejected);
+        result.status = ConsoleStatus::success;
+    } else if (endpoint.generation) {
+        result.status = ConsoleStatus::conflict;
+    }
+    return result.status;
+}
+auto resident_shutdown_failed(ResidentInput &input) -> aurora::bootstrap::Progress {
+    // Freeze the observed service cause before forced retirement overwrites it.
+    abandon_service();
+    input.shutdown_pending = false;
+    input.shutdown_terminal = true;
+    input.shutdown_failed = true;
+    return aurora::bootstrap::Progress::failed;
+}
+auto resident_begin_shutdown(ResidentInput &input) -> aurora::bootstrap::Progress {
+    using aurora::bootstrap::Progress;
+    if (residents[1].space || snapshot || endpoint.caller || endpoint.replied || endpoint.delivery ||
+        endpoint.completion || input.shutdown_pending || input.shutdown_terminal)
+        fail("resident shutdown admission");
+    if (service_root.phase() == aurora::service::Phase::absent) {
+        if (residents[0].space || endpoint.generation || endpoint.waiting)
+            fail("empty resident shutdown");
+        input.shutdown_terminal = true;
+        return Progress::complete;
+    }
+    if (service_root.phase() != aurora::service::Phase::ready)
+        fail("resident shutdown phase");
+    input.shutdown_generation = endpoint.generation;
+    begin_service_shutdown();
+    reset_loader(128);
+    loading_image = true;
+    endpoint.caller_cancelled = false;
+    message_header(6, 0, 0, 0);
+    if (!begin_exchange(0)) {
+        loading_image = false;
+        return resident_shutdown_failed(input);
+    }
+    input.shutdown_transaction = endpoint.transaction;
+    input.shutdown_pending = true;
+    return Progress::pending;
+}
+auto resident_advance_shutdown(ResidentInput &input) -> aurora::bootstrap::Progress {
+    using aurora::bootstrap::Progress;
+    if (!input.shutdown_pending || input.shutdown_terminal || !input.shutdown_generation ||
+        input.shutdown_generation != endpoint.generation || input.shutdown_transaction != endpoint.transaction ||
+        endpoint.source || service_root.phase() != aurora::service::Phase::stopping)
+        fail("resident shutdown transaction");
+    // One canonical transport step, without minting another transaction or
+    // renewing either budget. The source finalizer owns the pending loop.
+    const auto progress = advance_exchange();
+    if (progress == ExchangeProgress::pending)
+        return Progress::pending;
+    loading_image = false;
+    const bool clean = !residents[0].space && !residents[1].space && !endpoint.caller_cancelled && outcome.exited &&
+                       !outcome.status && !outcome.watchdog && !outcome.invalid_call && !outcome.unavailable &&
+                       !outcome.parked && outcome.terminal_service == input.shutdown_generation;
+    if (!clean)
+        return resident_shutdown_failed(input);
+    finish_service_shutdown();
+    input.shutdown_pending = false;
+    input.shutdown_terminal = true;
+    return Progress::complete;
+}
+auto resident_arguments(const Bytes &handoff) -> ResidentArguments {
+    ResidentArguments arguments;
+    arguments.volume = space.volume(handoff.get(Handoff::volume_bytes_word));
+    arguments.map_count = handoff.get(96);
+    return arguments;
+}
+} // namespace
+
+auto aurora::uefi::run_program(U64 arena,
+                               const Bytes &handoff,
+                               std::span<const std::byte> path,
+                               std::span<const std::byte> arguments,
+                               ProcessOutput output,
+                               void *context) -> RunResult {
+    if (!output || path.empty() || path.size() > process::file_path_limit || arguments.empty() ||
+        arguments.size() > 65536 || !enter_runtime(arena, handoff))
+        return {};
+    output_sink = output;
+    output_context = context;
+    auto supplied = resident_arguments(handoff);
+    supplied.path = path;
+    supplied.arguments = arguments;
+    ResidentInput input{supplied};
+    ResidentRoot::Operation operation{aurora::resident::OperationKind::run, input};
+    resident_owner.open(operation);
+    aurora::execution::Result observed;
+    source_resident_run(resident_owner.storage(), &observed);
+    resident_owner.close(operation);
+    const RunResult result{static_cast<RunStatus>(observed.status), observed.value};
+    output_sink = nullptr;
+    output_context = nullptr;
     leave_runtime(handoff);
     return result;
+}
+
+auto aurora::uefi::prepare_programs(U64 arena, const Bytes &handoff) -> bool {
+    bool ready = false;
+    if (handoff.get(Handoff::composition_word) == 4 && enter_runtime(arena, handoff)) {
+        ResidentInput input{resident_arguments(handoff)};
+        ResidentRoot::Operation operation{aurora::resident::OperationKind::prepare, input};
+        resident_owner.open(operation);
+        const U64 result = source_resident_prepare(resident_owner.storage());
+        if (result > 1)
+            fail("resident preparation result");
+        ready = result != 0;
+        resident_owner.close(operation);
+        leave_runtime(handoff);
+    }
+    Serial::text(ready ? std::string_view{"AURORA_PROCESS_DISK: ready"}
+                       : std::string_view{"AURORA_PROCESS_DISK: unavailable"});
+    Serial::text(runtime_storage.mounted() ? std::string_view{" mounted\r\n"} : std::string_view{" readonly\r\n"});
+    return ready;
+}
+
+auto aurora::uefi::console_request(U64 arena,
+                                   const Bytes &handoff,
+                                   ConsoleOperation command,
+                                   U64 expected_generation,
+                                   U64 expected_note_revision,
+                                   std::span<const std::byte> request,
+                                   std::span<std::byte> response) -> ConsoleResult {
+    const U64 code = static_cast<U64>(command);
+    const U64 input_size = code == 10 ? 72 : code == 11 ? 80 : code == 12 ? 72 : code == 13 ? 232 : 0;
+    const U64 output_size = code == 10 ? 80 : code == 11 ? 248 : code == 13 ? 80 : 0;
+    if (code < 10 || code > 14 || request.size() != input_size || response.size() != output_size ||
+        (code >= 12 && !expected_generation) || (code == 12 ? !expected_note_revision : expected_note_revision != 0))
+        return {ConsoleStatus::malformed, 0, 0};
+    for (auto &byte : response)
+        byte = std::byte{0};
+    if (!enter_runtime(arena, handoff))
+        return {};
+    auto supplied = resident_arguments(handoff);
+    supplied.console = command;
+    supplied.expected = expected_generation;
+    supplied.revision = expected_note_revision;
+    supplied.request = request;
+    supplied.response = response;
+    ResidentInput input{supplied};
+    ResidentRoot::Operation operation{aurora::resident::OperationKind::console, input};
+    resident_owner.open(operation);
+    const U64 status = source_resident_console(resident_owner.storage());
+    if (status != static_cast<U64>(input.console_result.status))
+        fail("resident console result");
+    resident_owner.close(operation);
+    leave_runtime(handoff);
+    return input.console_result;
 }
 
 auto aurora::uefi::reject_program_service(U64 arena, const Bytes &handoff, U64 expected_generation) -> ConsoleStatus {
@@ -3620,14 +3820,105 @@ auto aurora::uefi::reject_program_service(U64 arena, const Bytes &handoff, U64 e
         return ConsoleStatus::malformed;
     if (!enter_runtime(arena, handoff))
         return ConsoleStatus::unavailable;
-    ConsoleStatus result = ConsoleStatus::unavailable;
-    if (ensure_file_service(space.volume(handoff.get(Handoff::volume_bytes_word)), expected_generation, false)) {
-        abandon_service(ServiceFailure::consumer_rejected);
-        result = ConsoleStatus::success;
-    } else if (endpoint.generation) {
-        result = ConsoleStatus::conflict;
-    }
+    auto supplied = resident_arguments(handoff);
+    supplied.expected = expected_generation;
+    ResidentInput input{supplied};
+    ResidentRoot::Operation operation{aurora::resident::OperationKind::reject, input};
+    resident_owner.open(operation);
+    const U64 status = source_resident_reject(resident_owner.storage());
+    if (status != static_cast<U64>(input.console_result.status))
+        fail("resident rejection result");
+    resident_owner.close(operation);
     leave_runtime(handoff);
+    return input.console_result.status;
+}
+
+auto aurora::uefi::finish_programs(U64 arena, const Bytes &handoff) -> bool {
+    if (!runtime_initialized)
+        return true; // No root was ever constructed; no owner is being dropped.
+    if (!enter_runtime(arena, handoff))
+        fail("resident finalization entry");
+    ResidentInput input{resident_arguments(handoff)};
+    ResidentRoot::Operation operation{aurora::resident::OperationKind::shutdown, input};
+    resident_owner.open(operation);
+    const U64 result = source_resident_finish(resident_owner.storage());
+    if (result > 1 || !input.shutdown_terminal || (result != 0) != input.shutdown_failed)
+        fail("resident finalization result");
+    resident_owner.finish(operation);
+    leave_runtime(handoff);
+    Serial::text("AURORA_RESIDENT_OWNER_FINISHED: clean=");
+    Serial::number(result == 0 ? 1 : 0);
+    Serial::text(" reclaimed=1\r\n");
+    return result == 0;
+}
+
+// Private transport declarations use the catalogue ABI, including the actual
+// field address. There is no source-visible address or copied authority result.
+auto resident_prepare_effect(const void *, U64, const void *) -> U64 asm("__au_runtime_resident_prepare")
+    __attribute__((visibility("hidden")));
+auto resident_prepare_effect(const void *binding, U64 epoch, const void *field) -> U64 {
+    auto &operation = resident_owner.enter(binding, epoch, field, aurora::resident::OperationKind::prepare);
+    const bool result = resident_prepare(operation.input());
+    resident_boundary(operation.input());
+    resident_owner.leave(operation);
+    return result ? 1 : 0;
+}
+auto resident_run_effect(const void *, U64, const void *, aurora::execution::Result *)
+    -> void asm("__au_runtime_resident_run") __attribute__((visibility("hidden")));
+auto resident_run_effect(const void *binding, U64 epoch, const void *field, aurora::execution::Result *result) -> void {
+    auto &operation = resident_owner.enter(binding, epoch, field, aurora::resident::OperationKind::run);
+    *result = resident_run(operation.input());
+    resident_boundary(operation.input());
+    resident_owner.leave(operation);
+}
+auto resident_console_effect(const void *, U64, const void *) -> U64 asm("__au_runtime_resident_console")
+    __attribute__((visibility("hidden")));
+auto resident_console_effect(const void *binding, U64 epoch, const void *field) -> U64 {
+    auto &operation = resident_owner.enter(binding, epoch, field, aurora::resident::OperationKind::console);
+    const auto result = resident_console(operation.input());
+    resident_boundary(operation.input());
+    resident_owner.leave(operation);
+    return static_cast<U64>(result);
+}
+auto resident_reject_effect(const void *, U64, const void *) -> U64 asm("__au_runtime_resident_reject")
+    __attribute__((visibility("hidden")));
+auto resident_reject_effect(const void *binding, U64 epoch, const void *field) -> U64 {
+    auto &operation = resident_owner.enter(binding, epoch, field, aurora::resident::OperationKind::reject);
+    const auto result = resident_reject(operation.input());
+    resident_boundary(operation.input());
+    resident_owner.leave(operation);
+    return static_cast<U64>(result);
+}
+auto resident_begin_shutdown_effect(const void *, U64, const void *) -> U64 asm("__au_runtime_resident_begin_shutdown")
+    __attribute__((visibility("hidden")));
+auto resident_begin_shutdown_effect(const void *binding, U64 epoch, const void *field) -> U64 {
+    auto &operation = resident_owner.enter(binding, epoch, field, aurora::resident::OperationKind::shutdown);
+    const auto result = resident_begin_shutdown(operation.input());
+    resident_owner.leave(operation);
+    return static_cast<U64>(result);
+}
+auto resident_advance_shutdown_effect(const void *, U64, const void *) -> U64
+    asm("__au_runtime_resident_advance_shutdown") __attribute__((visibility("hidden")));
+auto resident_advance_shutdown_effect(const void *binding, U64 epoch, const void *field) -> U64 {
+    auto &operation = resident_owner.enter(binding, epoch, field, aurora::resident::OperationKind::shutdown, true);
+    const auto result = resident_advance_shutdown(operation.input());
+    resident_owner.leave(operation);
+    return static_cast<U64>(result);
+}
+auto resident_finish_effect(const void *, U64, const void *) -> U64 asm("__au_runtime_resident_finish")
+    __attribute__((visibility("hidden")));
+auto resident_finish_effect(const void *binding, U64 epoch, const void *field) -> U64 {
+    auto &operation = resident_owner.enter(binding, epoch, field, aurora::resident::OperationKind::shutdown, true);
+    const auto &input = operation.input();
+    if (!input.shutdown_terminal || input.shutdown_pending || residents[0].space || endpoint.generation ||
+        endpoint.waiting || service_root.phase() != aurora::service::Phase::absent)
+        fail("resident final cleanup receipt");
+    for (auto &byte : endpoint.bytes)
+        *static_cast<volatile std::byte *>(&byte) = std::byte{0};
+    resident_boundary(input);
+    const U64 result = input.shutdown_failed ? 1 : 0;
+    resident_owner.consume(operation);
+    resident_owner.leave(operation);
     return result;
 }
 

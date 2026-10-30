@@ -24,6 +24,37 @@ provenance and control-flow rules. This adds neither asynchronous loans nor
 unrestricted child-process ownership. See the concrete capability and native
 boundary in [command orchestration](SERVICES.md#command-orchestration).
 
+## Retained owners and consuming receiver entries
+
+A catalogue field policy separately admits `builtin::ResidentSlot` as one private
+resource field in a concrete owning class. Its origin is a trusted native owned
+input, not a ByteRegion allocation or a lexical service issuer. An empty physical
+slot still has a live finalization obligation. Temporary service leases remain
+field-ineligible. Copied scalar/class fields may accompany the slot; multiple
+retained resources, byte-owner mixing and nested owning classes are not admitted.
+
+A complete-constructor entry receives fresh stable destination storage and one
+exact owned ResidentSlot input. Its empty-body initializer moves that input into
+the field exactly once. Native activation follows successful complete construction
+and emitted layout/entry admission. A root-scope borrowed-owner ABI includes the
+public complete constructor and consuming entries for that exact nominal class
+as its lifetime-entry closure. This retains neither arbitrary methods nor unused
+imported owning classes. No ordinary factory return or source mint is
+provided, and an activated root cannot relocate.
+
+`auto finish() && -> Result` declares a destructive consuming receiver, not merely
+C++ rvalue qualification. This first increment supports its private native entry:
+ownership transfers in place at the stable receiver address, with no outstanding
+loans. Only that receiver mode may finalize the field. Every normal return,
+including a failed result, must discharge the obligation; `EndObject` cannot
+silently finalize it. Traps remain fail-stop. Results are scalar or copied data.
+Ordinary methods and root helpers borrow synchronously and cannot consume fields.
+
+Ordinary source `move(owner).finish()` invocation is deliberately not yet admitted:
+there is no general source mint/construction caller for these retained roots.
+The constructor and consuming body are executable source through their admitted
+native entries, not an implicit destructor or an async ownership facility.
+
 ## Runtime-sized byte ownership
 
 ### Source contract

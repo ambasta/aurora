@@ -249,6 +249,20 @@ RULES = [
         ],
         "reachable": ["__au_runtime_process_bootstrap_service"],
     },
+    # The retained slot owner is the parent authority for each fixed runtime
+    # operation. Only its source object can use these exact field effects.
+    {
+        "profiles": ["uefi/production"],
+        "imports:resident-owner": [
+            "__au_runtime_resident_prepare",
+            "__au_runtime_resident_run",
+            "__au_runtime_resident_console",
+            "__au_runtime_resident_reject",
+            "__au_runtime_resident_begin_shutdown",
+            "__au_runtime_resident_advance_shutdown",
+            "__au_runtime_resident_finish",
+        ],
+    },
     # Production runs use the same source admission/memory decisions, but no
     # fixture run-list/export policy and only this copied supervisor output sink.
     {
@@ -278,6 +292,12 @@ RULES = [
             "uefi_process_program_return",
         ],
         "reachable": [
+            "__au_runtime_resident_construct",
+            "__au_runtime_process_resident_prepare",
+            "__au_runtime_process_resident_run",
+            "__au_runtime_process_resident_console",
+            "__au_runtime_process_resident_reject",
+            "__au_runtime_process_resident_finish",
             "__au_runtime_process_execute_command",
             "__au_runtime_process_map_admit",
             "__au_runtime_process_volume_grant",

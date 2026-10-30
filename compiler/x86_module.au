@@ -403,7 +403,7 @@ export namespace compiler_x86 {
             receiver_save = declared + 8;
         }
         const bool resource_parameters = parameter_count(m, callable) != 0 && type_kind(m, parameter_type(m, callable,
-            0)) == 12;
+            0)) == 12 || (parameter_count(m, callable) != 0 && type_kind(m, parameter_type(m, callable, 0)) == 26);
         bool packed = aggregate;
         if (receiver) {
             packed = class_parameters(m, callable) || resource_parameters;

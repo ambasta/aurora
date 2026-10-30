@@ -50,6 +50,9 @@ export namespace compiler_ir_metadata {
         value.typed(r == MetadataError::nested_carrier, "class array carrier cannot be nested element type");
         value.typed(r == MetadataError::field_shape, "invalid logical class field shape");
         value.typed(r == MetadataError::owner_leaves, "owned storage field requires zero scalar leaves");
+        value.typed(r == MetadataError::retained_signature,
+            "retained constructor requires one exact owned resource input");
+        value.typed(r == MetadataError::consuming_receiver, "invalid consuming receiver signature");
         value.typed(r == MetadataError::owner_field_type, "invalid canonical owned value field type");
         value.typed(r == MetadataError::nested_owner, "nested owning class field is unsupported");
         value.typed(r == MetadataError::nested_type, "invalid nominal nested class field");
@@ -309,6 +312,8 @@ export namespace compiler_ir_instructions {
             "scalar resource call result cannot name owning storage");
         value.typed(r == InstructionError::call_copy_slot, "copy requires exact object slot");
         value.typed(r == InstructionError::call_copy_nominal, "copy nominal class mismatch");
+        value.typed(r == InstructionError::retained_entry_call,
+            "retained constructor and consuming receiver require private entry");
         value.typed(r == InstructionError::method_target, "unknown method call target");
         value.typed(r == InstructionError::method_receiver, "method call requires receiver target");
         value.typed(r == InstructionError::borrowed_target, "borrowed call requires borrowed formal target");
@@ -1488,6 +1493,39 @@ export namespace compiler_pipeline {
         }
         return false;
     }
+    // A root ABI that borrows a retained owner also exports that owner's
+    // complete construction and terminal entries. They cannot be reached by
+    // ordinary source calls. Other imported methods/classes remain prunable.
+    auto retained_lifetime_entry(const compiler_ir_metadata::MetadataStore& metadata,
+        compiler_ir_metadata::CallableRow declaration) -> bool {
+        if (!compiler_ir_metadata::retained_constructor(metadata, declaration)
+            && !compiler_ir_metadata::consuming_receiver(declaration)) {
+            return false;
+        }
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
+        if (!compiler_ir_metadata::receiver_flag(receiver, masks.receiver_public())) {
+            return false;
+        }
+        const i64 nominal = compiler_ir_metadata::find_class(metadata, receiver.name());
+        i64 at = 0;
+        while (at < metadata.callable_count()) {
+            const compiler_ir_metadata::CallableRow root = metadata.callable_at(at);
+            if (root.scope() == 0) {
+                i64 ordinal = 0;
+                while (ordinal < root.borrowed_root_count()) {
+                    const i64 type = root.borrowed_root_type(ordinal);
+                    if (compiler_x86::type_kind(metadata, type) == 5 && compiler_x86::type_class(metadata, type)
+                        == nominal) {
+                        return true;
+                    }
+                    ordinal = ordinal + 1;
+                }
+            }
+            at = at + 1;
+        }
+        return false;
+    }
     // Graph ordinals are callable IDs: every body is a graph function, and
     // its edges are its calls in normalized code order.
     auto graph_input(compiler_ir_graph::Input& input, const compiler_ir_metadata::MetadataStore& metadata,
@@ -1519,9 +1557,9 @@ export namespace compiler_pipeline {
             const bool receiver = declaration.borrowed_root_count() != 0
                 || compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver());
             // The hosted entry calls host::start and host::finish, so they are roots.
-            const bool root = declaration.scope() == 0 || (!endpoint && (compiler_x86::hosted_hook(metadata, callable,
-                0) || compiler_x86::hosted_hook(metadata, callable, 1))) || (memory
-                && compiler_x86::memory_runtime(metadata, callable));
+            const bool root = declaration.scope() == 0 || retained_lifetime_entry(metadata, declaration) || (!endpoint
+                && (compiler_x86::hosted_hook(metadata, callable, 0) || compiler_x86::hosted_hook(metadata, callable,
+                1))) || (memory && compiler_x86::memory_runtime(metadata, callable));
             const compiler_ir_graph::FunctionRow function = compiler_ir_graph::FunctionRow(first, edge - first,
                 receiver, service_entry(metadata, declaration), root);
             if (!compiler_ir_graph::set_function(input, callable, function)) {

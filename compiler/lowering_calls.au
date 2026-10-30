@@ -733,7 +733,7 @@ export namespace compiler_lowering {
             }
             if (field >= 0) {
                 if (value_kind(session, type) != compiler_resolver::ResolvedTypeKind::class_value
-                    && !is_owner_storage(session, type)) {
+                    && !is_owner_storage(session, type) && !retained_resource(session, type)) {
                     const i64 staged_source_55 = source_ref(session, target);
                     return fail(session, LoweringError::nested_method_receiver_requires_owned_field, staged_source_55);
                 }
@@ -758,6 +758,9 @@ export namespace compiler_lowering {
         }
         if (kind == compiler_resolver::ResolvedTypeKind::class_value) {
             const i64 callee = select_method(session, type, reference, false);
+            if (method_consuming(session, callee)) {
+                return fail(session, LoweringError::borrowed_object_ownership_transfer, reference);
+            }
             const i64 staged_type_57 = signature_result(session, callee);
             require_visible_type(session, staged_type_57, reference);
             i64 at = 0;
@@ -807,8 +810,10 @@ export namespace compiler_lowering {
         i64 count = 0;
         i64 target = -1;
         if (kind == compiler_resolver::ResolvedTypeKind::service_resource) {
-            if (implicit || !mutable_receiver || frame.receiver_field_index() != -1 || frame.capability_root_local()
-                < 0) {
+            const bool retained = retained_resource(session, type);
+            if (!mutable_receiver || (retained && (body_constructor(session) || frame.receiver_field_index() < 0
+                || frame.capability_root_local() >= 0)) || (!retained && (implicit || frame.receiver_field_index() != -1
+                || frame.capability_root_local() < 0))) {
                 return fail(session, LoweringError::typed_owner_operation_requires_named_owner, reference);
             }
             const compiler_resolver::MetaRow spelling = session.meta(reference);
@@ -826,6 +831,10 @@ export namespace compiler_lowering {
             if (method == compiler_catalog::resource_method_count(resource)) {
                 return fail(session, LoweringError::unknown_typed_owner_operation, reference);
             }
+            if (retained && compiler_catalog::resource_method_effect(resource, method) == 2
+                && !body_receiver_consuming(session)) {
+                return fail(session, LoweringError::borrowed_object_ownership_transfer, reference);
+            }
             const i64 result = compiler_resolver::catalog_type(session,
                 compiler_catalog::resource_method_result(resource, method));
             const bool copied = value_kind(session, result) == compiler_resolver::ResolvedTypeKind::class_value;
@@ -837,7 +846,11 @@ export namespace compiler_lowering {
             }
             count = compiler_catalog::resource_method_parameters(resource, method);
             require_arity(session, node, count + 1);
-            frame.set_call(method, frame.capability_root_local(), -1, count);
+            i64 field = -1;
+            if (retained) {
+                field = frame.receiver_field_index();
+            }
+            frame.set_call(method, frame.capability_root_local(), field, count);
             return session.set_continuation(frame_id, frame);
         }
         if (compiler_resolver::service_kind(kind)) {
@@ -1910,11 +1923,19 @@ export namespace compiler_lowering {
                 destination = expression_destination(session, frame, result, -1);
                 result_offset = local_offset(session, destination);
             }
-            emit_ServiceResourceOperation(session, offset, method, result_offset, resource);
-            if (compiler_catalog::resource_method_effect(resource, method) == 2) {
-                const LocalRow owner = session.local(frame.capability_root_local());
-                set_live(session, frame.capability_root_local(), false, false);
-                set_exclusive(session, owner.owner_id(), false);
+            if (compiler_catalog::resource_retained(resource)) {
+                emit_RetainedFieldOperation(session, offset, field, method, result_offset, resource);
+                if (compiler_catalog::resource_method_effect(resource, method) == 2) {
+                    const i64 receiver = object_loan_local(session, frame.capability_root_local());
+                    set_live(session, receiver, false, false);
+                }
+            } else {
+                emit_ServiceResourceOperation(session, offset, method, result_offset, resource);
+                if (compiler_catalog::resource_method_effect(resource, method) == 2) {
+                    const LocalRow owner = session.local(frame.capability_root_local());
+                    set_live(session, frame.capability_root_local(), false, false);
+                    set_exclusive(session, owner.owner_id(), false);
+                }
             }
             return finish_expression(session, result, destination);
         }

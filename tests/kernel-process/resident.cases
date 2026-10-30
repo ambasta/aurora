@@ -1,0 +1,28 @@
+# One compiled owner; copied observations and native authority denials are data.
+empty finish:0:1
+shutdown-pending finish:0:0:0:1
+shutdown-failed finish:1:0:2
+shutdown-failed-immediate finish:1:2
+reuse prepare:1 run:0:42 console:0 reject:2 prepare:0 finish:0:1
+run-fault run:1:13 finish:0:1
+run-cancelled run:8:0 finish:0:1
+console-conflict console:2 finish:0:1
+console-unavailable console:1 finish:0:1
+reject-malformed reject:3 finish:0:1
+constructor-input deny:constructor-input
+constructor-field deny:constructor-field
+wrong-binding deny:wrong-binding
+wrong-epoch deny:wrong-epoch
+copied-field deny:copied-field
+wrong-kind deny:wrong-kind
+not-quiet deny:not-quiet
+owner-reentry deny:owner-reentry
+effect-reentry deny:effect-reentry
+pinned-return deny:pinned-return
+parent-epoch deny:parent-epoch
+parent-double-release deny:parent-double-release
+operation-replay deny:replay
+expired-parent deny:expired-parent
+after-finish deny:after-finish
+double-finish deny:double-finish
+reinitialize deny:reinitialize

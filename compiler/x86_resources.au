@@ -614,15 +614,18 @@ export namespace compiler_x86 {
             emit_load(w, object, address_token64, Register::r10, false);
             const i64 receiver = receiver_class(m, callable);
             const i64 destination = class_field_offset(m, receiver, field);
+            const i64 field_type = class_field_type(m, receiver, field);
+            const i64 extent = argument_bytes(m, field_type);
             i64 byte = 0;
-            while (byte < 32) {
+            while (byte < extent) {
                 const i64 address_token65 = w.pack_address(0, source - byte);
                 emit_load(w, object, address_token65, Register::rcx, false);
                 const i64 address_token66 = w.pack_address(2, destination + byte);
                 emit_store(w, object, Register::rcx, address_token66, false);
                 byte = byte + 8;
             }
-            clear_bytes_owner(w, object, source);
+            const i64 source_address = w.pack_address(0, source);
+            clear_bytes(w, object, 0, extent, source_address);
             return true;
         }
         if (form == 78) {

@@ -50,6 +50,11 @@ export namespace compiler_lowering {
         put(session, OperandRole::MutableValue, permission);
         put(session, OperandRole::Constructor, constructor_flag);
         put(session, OperandRole::PublicAccess, public_flag);
+        i64 consuming_flag = 0;
+        if (method_consuming(session, function)) {
+            consuming_flag = 1;
+        }
+        put(session, OperandRole::ReceiverConsumption, consuming_flag);
         return emit_record(session, RecordKind::Receiver, begin);
     }
     auto bind_receiver_loan_state(compiler_resolver::Session& session, i64 function) -> bool {
@@ -113,24 +118,29 @@ export namespace compiler_lowering {
                     const i64 staged_a2_177 = service_type_id(session, type);
                     emit_BindServiceParameter(session, parameter_index, offset, staged_a2_177);
                 } else {
-                    if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
-                        emit_BindRegionParameter(session, parameter_index, offset);
+                    if (retained_resource(session, type)) {
+                        const i64 resource = service_resource_kind(session, type);
+                        emit_BindRetainedResourceParameter(session, parameter_index, offset, resource);
                     } else {
-                        if (is_owner_storage(session, type)) {
-                            emit_BindBytesParameter(session, parameter_index, offset);
+                        if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
+                            emit_BindRegionParameter(session, parameter_index, offset);
                         } else {
-                            if (is_span(session, type)) {
-                                emit_BindSpanParameter(session, parameter_index, offset);
+                            if (is_owner_storage(session, type)) {
+                                emit_BindBytesParameter(session, parameter_index, offset);
                             } else {
-                                if (owning_type(session, type)) {
-                                    const i64 staged_a2_178 = compiler_resolver::mw(session, type, 1);
-                                    emit_BindOwnedObjectParameter(session, parameter_index, offset, staged_a2_178);
+                                if (is_span(session, type)) {
+                                    emit_BindSpanParameter(session, parameter_index, offset);
                                 } else {
-                                    if (kind == compiler_resolver::ResolvedTypeKind::class_value) {
-                                        const i64 staged_a2_179 = compiler_resolver::mw(session, type, 1);
-                                        emit_BindObjectParameter(session, parameter_index, offset, staged_a2_179);
+                                    if (owning_type(session, type)) {
+                                        const i64 staged_a2_178 = compiler_resolver::mw(session, type, 1);
+                                        emit_BindOwnedObjectParameter(session, parameter_index, offset, staged_a2_178);
                                     } else {
-                                        emit_BindParameter(session, parameter_index, offset, type);
+                                        if (kind == compiler_resolver::ResolvedTypeKind::class_value) {
+                                            const i64 staged_a2_179 = compiler_resolver::mw(session, type, 1);
+                                            emit_BindObjectParameter(session, parameter_index, offset, staged_a2_179);
+                                        } else {
+                                            emit_BindParameter(session, parameter_index, offset, type);
+                                        }
                                     }
                                 }
                             }
@@ -176,9 +186,9 @@ export namespace compiler_lowering {
         const i64 nominal = compiler_resolver::mw(session, root.syntax_node(), 7);
         const i64 type = field_type(session, nominal, root.cursor());
         const i64 expression = session.index(118, root.syntax_node(), root.cursor(), 0, 0);
-        if (is_owner_storage(session, type)) {
+        if (owning_field(session, type)) {
             const LocalRow value = session.local(local);
-            if (value.owner_id() != 0) {
+            if (!retained_resource(session, type) && value.owner_id() != 0) {
                 const i64 staged_source_181 = source_ref(session, expression);
                 return fail(session, LoweringError::constructor_byte_field_region_mismatch, staged_source_181);
             }
@@ -213,11 +223,15 @@ export namespace compiler_lowering {
         const i64 node = session.index(118, root.syntax_node(), field, 0, 0);
         const compiler_resolver::SyntaxRow syntax = session.syntax(node);
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
-        if (is_owner_storage(session, type)) {
+        if (owning_field(session, type)) {
             if (syntax.expression_kind() == compiler_parser::NodeKind::call && expression_spelling(session, node,
                 "move")) {
                 const i64 original = moved_source(session, node, type);
                 return finish_constructor_field(session, original);
+            }
+            if (retained_resource(session, type)) {
+                const i64 source = source_ref(session, node);
+                return fail(session, LoweringError::owning_transfer_requires_move, source);
             }
             root.set_phase(ContinuationPhase::child);
             session.set_continuation(0, root);

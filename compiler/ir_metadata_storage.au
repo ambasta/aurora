@@ -181,7 +181,9 @@ export namespace compiler_ir_metadata {
         execution_layout,
         execution_fields,
         service_resource_slot,
-        bootstrap_layout
+        bootstrap_layout,
+        retained_signature,
+        consuming_receiver
     };
     class ByteRange {
         i64 firstByte;
@@ -354,8 +356,11 @@ export namespace compiler_ir_metadata {
         auto callable_allowed() const -> u64 {
             return callableReceiver | callableSpanSummary;
         }
+        auto receiver_consuming() const -> u64 {
+            return 8u64;
+        }
         auto receiver_allowed() const -> u64 {
-            return receiverMutable | receiverConstructor | receiverPublic;
+            return receiverMutable | receiverConstructor | receiverPublic | 8u64;
         }
     };
     auto flag_masks() -> FlagMasks {

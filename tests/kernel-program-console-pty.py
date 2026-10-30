@@ -1263,7 +1263,8 @@ def production_case_volume(source, programs, directory, service_case=None):
             replacement = (programs / "process-isolation-6").read_bytes()
         else:
             replacement = snapshot_service_program(
-                programs / "process-isolation-6", 12 if service_case == "snapshot-read" else 13
+                programs / "process-isolation-6",
+                {"snapshot-read": 12, "snapshot-close": 13, "shutdown-fault": 14}[service_case],
             )
         need(sum(name == b"bin/file-service" for name, _ in entries) == 1, "Unique designated service file")
         entries = [(name, replacement if name == b"bin/file-service" else data) for name, data in entries]
@@ -1298,7 +1299,7 @@ def main():
     parser.add_argument("--program-cases", type=Path, help="existing hostile program build products; private ESP only")
     parser.add_argument(
         "--service-case",
-        choices=("snapshot-read", "snapshot-close", "console-commit", "bootstrap-serve"),
+        choices=("snapshot-read", "snapshot-close", "console-commit", "bootstrap-serve", "shutdown-fault"),
         help="private designated-service payload using --program-cases build products",
     )
     args = parser.parse_args()
@@ -1583,6 +1584,17 @@ def main():
                     if not tail:
                         break
                     transcript.extend(tail)
+                if args.program_cases:
+                    text = bytes(transcript).decode("ascii")
+                    finished = "AURORA_RESIDENT_OWNER_FINISHED: clean=1 reclaimed=1\r\n"
+                    need(text.count(finished) == 1, "Production exit must consume its retained resident owner once")
+                    after_finish = text.split(finished, 1)[1]
+                    need(
+                        "AURORA_PROGRAM_CONSOLE_QUIET:" in after_finish
+                        and "AURORA_FILE_SERVICE_READY:" not in after_finish
+                        and "AURORA_PROCESS_LOADED:" not in after_finish,
+                        "Resident finalization must precede quiet exit without restarting a service or client",
+                    )
                 metrics.update(
                     validate(
                         bytes(transcript).decode("ascii"),
@@ -1606,6 +1618,64 @@ def main():
             receive(b"aurora> ", 0)
             tty.setraw(master)
             if args.service_case:
+                if args.service_case == "shutdown-fault":
+                    run_command("run bin/sort", "program not found")
+                    command_upper(b"healthy before shutdown\n", "HEALTHY BEFORE SHUTDOWN")
+                    before = bytes(transcript).decode("ascii")
+                    ready = re.findall(r"AURORA_FILE_SERVICE_READY: generation=(\d+)\r\n", before)
+                    need(
+                        len(ready) == 1
+                        and before.count("AURORA_PROCESS_LOADED:") == 1
+                        and "AURORA_FILE_SERVICE_LOST:" not in before,
+                        "Shutdown fault must begin with one ready owner and no client ELF load or earlier loss",
+                    )
+                    begin = len(transcript)
+                    send(b"exit\n")
+                    failed = b"AURORA_UEFI_RUNTIME_FAIL: resident owner shutdown result\r\n"
+                    receive(failed, begin)
+                    need(transport.wait_exit(process, 5) == 35, "Failed resident shutdown must exit fail-closed")
+                    while select.select([master], [], [], 0)[0]:
+                        try:
+                            tail = os.read(master, 65536)
+                        except OSError as error:
+                            if error.errno != errno.EIO:
+                                raise
+                            break
+                        if not tail:
+                            break
+                        transcript.extend(tail)
+                    part = bytes(transcript[begin:]).decode("ascii")
+                    loss = re.search(
+                        r"AURORA_FILE_SERVICE_LOST: generation=(\d+) transaction=([1-9]\d*) "
+                        r"cause=fault vector=6 volatile_data=lost\r\n",
+                        part,
+                    )
+                    finished = "AURORA_RESIDENT_OWNER_FINISHED: clean=0 reclaimed=1\r\n"
+                    need(
+                        loss
+                        and loss[1] == ready[0]
+                        and part.count("AURORA_FILE_SERVICE_LOST:") == 1
+                        and part.count(finished) == 1
+                        and loss.end() <= part.index(finished) < part.index(failed.decode()),
+                        "Shutdown fault must lose the same owner, reclaim it, then report the terminal failure",
+                    )
+                    need(
+                        all(
+                            marker not in part
+                            for marker in (
+                                "AURORA_PROCESS_LOADED:",
+                                "AURORA_FILE_SERVICE_READY:",
+                                "AURORA_PROGRAM_CONSOLE_QUIET:",
+                                "AURORA_PROCESS_FAIL",
+                                "AURORA_PROCESS_KERNEL_FAULT",
+                            )
+                        )
+                        and part.count("AURORA_UEFI_RUNTIME_FAIL:") == 1,
+                        "Failed shutdown must not restart, expose an unrelated failure or claim quiet success",
+                    )
+                    metrics.update(status="passed", exit_status=35, shutdown_fault_reclaimed=True)
+                    print("PASS: actual shutdown fault reclaims and consumes the owner exactly once")
+                    return
                 if args.service_case == "bootstrap-serve":
                     for generation in (1, 2):
                         part = run_command("run bin/sort", "file service unavailable").decode("ascii")

@@ -513,6 +513,28 @@ export namespace compiler_ir_verification {
             }
             const compiler_ir_metadata::FieldRow shape = m.field_at(shape_index);
             const compiler_ir_metadata::RawTypeRow shape_type = m.type_at(shape.type());
+            const i64 retained_kind = compiler_ir_metadata::retained_resource_kind(m, shape_type);
+            if (retained_kind >= 0) {
+                if (shape.array_flag() != 0 || !compiler_ir_metadata::retained_constructor(m,
+                    m.callable_at(w.callable())) || compiler_ir_instructions::service_resource_kind_at(m, w.callable(),
+                    source) != retained_kind) {
+                    return w.fail(first_error(
+                        VerificationErrorFirst::resource_field_initialization_owner_nominal_type_mismatch));
+                }
+                FactRow target = w.fact_find(FactKind::resident_field, 0, ordinal);
+                FactRow input = w.fact_find(FactKind::resident_input, source, -1);
+                if (!require(w, present(target) && target.disposition() == ByteDisposition::pristine && present(input)
+                    && input.disposition() == ByteDisposition::live && input.site() > 0,
+                    first_error(VerificationErrorFirst::constructor_resource_field_initialized_more_than_once))) {
+                    return false;
+                }
+                target.set_site(input.site());
+                target.set_disposition(ByteDisposition::live);
+                input.set_disposition(ByteDisposition::consumed);
+                FactRow root = w.fact_find(FactKind::owned_object, 0, -1);
+                root.set_disposition(ByteDisposition::live);
+                return w.fact_set(target) && w.fact_set(input) && w.fact_set(root) && w.clear_current();
+            }
             if (!compiler_ir_metadata::owner_kind(shape_type) || shape.array_flag() != 0) {
                 return w.fail(first_error(
                     VerificationErrorFirst::resource_field_initialization_requires_direct_owner_field));
@@ -565,6 +587,9 @@ export namespace compiler_ir_verification {
                 return false;
             }
             const i64 nominal = slot_class(m, slot);
+            if (compiler_ir_metadata::retained_class(m, nominal)) {
+                return w.fail(first_error(VerificationErrorFirst::owning_class_cannot_be_implicitly_copied));
+            }
             if (!owned_object(w, m, s, base, nominal, AccessMode::write) || !copy_target(w, m, result, nominal)) {
                 return false;
             }
@@ -964,6 +989,12 @@ export namespace compiler_ir_verification {
         const compiler_ir_metadata::IndexRange types = target.types();
         const compiler_ir_metadata::RawTypeRow result = m.type_at(types.begin());
         const i64 result_base = transfer_value(s, id, 3);
+        if (transfer_receiver(m, target_id) && root <= 0) {
+            const ControlRow control = w.control();
+            if (compiler_ir_metadata::retained_class(m, control.receiver_class()) && !live_owned_root(w, m, root)) {
+                return false;
+            }
+        }
         if (transfer_receiver(m, target_id)) {
             const bool mutable_value = transfer_mutable_receiver(m, target_id);
             if (mutable_value && !owner_writable(w, s, root, -2, write_access)) {

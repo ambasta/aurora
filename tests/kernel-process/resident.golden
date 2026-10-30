@@ -1,0 +1,27 @@
+empty finish=0 steps=1 active=0
+shutdown-pending finish=0 steps=3 active=0
+shutdown-failed finish=1 steps=2 active=0
+shutdown-failed-immediate finish=1 steps=1 active=0
+reuse prepare=1 run=0:42 console=0 reject=2 prepare=0 finish=0 steps=1 active=0
+run-fault run=1:13 finish=0 steps=1 active=0
+run-cancelled run=8:0 finish=0 steps=1 active=0
+console-conflict console=2 finish=0 steps=1 active=0
+console-unavailable console=1 finish=0 steps=1 active=0
+reject-malformed reject=3 finish=0 steps=1 active=0
+constructor-input denied
+constructor-field denied
+wrong-binding denied
+wrong-epoch denied
+copied-field denied
+wrong-kind denied
+not-quiet denied
+owner-reentry denied
+effect-reentry denied
+pinned-return denied
+parent-epoch denied
+parent-double-release denied
+operation-replay denied
+expired-parent denied
+after-finish denied
+double-finish denied
+reinitialize denied

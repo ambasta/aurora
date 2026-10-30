@@ -298,6 +298,14 @@ export namespace compiler_lowering {
         }
         return symbol;
     }
+    auto method_consuming(compiler_resolver::Session& session, i64 symbol) -> bool {
+        const i64 declaration = compiler_resolver::mw(session, symbol, 5);
+        return compiler_resolver::sw(session, declaration, 9) == 2;
+    }
+    auto body_receiver_consuming(compiler_resolver::Session& session) -> bool {
+        const i64 function = body_function(session);
+        return method_consuming(session, function);
+    }
     auto method_const(compiler_resolver::Session& session, i64 symbol) -> bool {
         const i64 staged_row_6 = compiler_resolver::mw(session, symbol, 5);
         return compiler_resolver::sw(session, staged_row_6, 9) == 1;

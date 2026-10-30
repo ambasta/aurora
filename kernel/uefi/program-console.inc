@@ -1285,6 +1285,7 @@ __attribute__((noinline)) auto run_program_console() -> void {
         }
         console_last_generation = 0;
     }
+    require(finish_programs(arena, *handoff), "resident owner shutdown result");
 #endif
     command_note.clear();
     command_files.clear();

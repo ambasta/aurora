@@ -98,8 +98,18 @@ def normalize_function_abi(facts, function):
         raise ValueError("conflicting compiler ABI root representations")
     if not (old_fields if version == 1 else new_fields) <= function.keys():
         raise ValueError("incomplete compiler ABI root facts")
-    if function.keys() != common_fields | (old_fields if version == 1 else new_fields):
+    terminal_fields = {"receiver_consuming", "complete_constructor"} & function.keys()
+    if function.keys() != common_fields | (old_fields if version == 1 else new_fields) | terminal_fields:
         raise ValueError("unknown compiler ABI function facts")
+    if terminal_fields and (
+        version not in (2, 3)
+        or len(terminal_fields) != 1
+        or any(function[key] is not True for key in terminal_fields)
+        or function.get("receiver") is None
+        or function.get("receiver_mutable") is not True
+        or function.get("borrowed_root_count") != 0
+    ):
+        raise ValueError("invalid compiler ABI owning receiver mode")
     receiver, mutable = function.get("receiver"), function.get("receiver_mutable")
     records = facts.get("records", {})
     if (
