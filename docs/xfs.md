@@ -331,6 +331,36 @@ including fabricated failed reports. Public constructors can still fabricate
 success data; a report is never a validation certificate or an I/O capability.
 All results copy independently. Observed class sizes are40,16,72 bytes.
 
+### Parameterized shortform directories
+
+The same parser also exports:
+
+```text
+lookup_xfs_v5_512_directory(superblock, inode, expected_inode, expected_parent, name)
+    -> XfsRootReport
+entry_at_xfs_v5_512_directory(superblock, inode, expected_inode, expected_parent, index)
+    -> XfsRootEntryReport
+```
+
+Both expected identities are `u64`; `index` is `i64`. Byte inputs are readonly
+spans. The embedded inode number must equal `expected_inode`, and the shortform
+parent must equal `expected_parent`; both must have admitted inode addresses.
+All existing geometry, CRC, UUID, feature, 512-byte inode, four-byte directory
+inode-number, 16-entry, name/type and entry-address checks remain in force.
+The parser is not restricted to a particular directory depth.
+
+The root lookup and indexed-entry APIs delegate to this implementation with the
+superblock root inode as both expected identities, preserving their status and
+result contracts. The existing report types are shared: `facts().root_inode()`
+means the validated directory inode for a parameterized call, and
+`parent_inode()` reports its validated parent. Failure results retain the same
+zero-value rules; indexed names remain coordinates within the inspected inode.
+
+These are pure metadata parsers, not service path traversal or authority grants.
+The caller must establish which inode sector was read, actual ancestry, cycle
+policy, allocation and snapshot provenance. Supplying matching identities or
+constructing a report does not establish any of those properties.
+
 ### Profile, bytes and order
 
 Run unchanged superblock geometry admission first. Further require512-byte inode

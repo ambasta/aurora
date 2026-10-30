@@ -158,13 +158,25 @@ export namespace fs {
         log_not_fresh,
         file_metadata_ready,
         reading_log_unmount,
-        log_not_clean
+        log_not_clean,
+        reading_directory,
+        directory_ready,
+        not_regular
     };
 
     // The backend must own an exclusive, stable read-only volume throughout this
     // object's lifetime. Copied bytes cannot establish device provenance.
     class XfsReadonlyMount {
         builtin::OwnedBytes _cache;
+        builtin::OwnedBytes _path;
+        builtin::OwnedBytes _directory_cache;
+        u64 _directory;
+        u64 _parent;
+        u64 _walk_inode;
+        i64 _path_size;
+        i64 _path_at;
+        bool _directory_only;
+        u64 _namespace_type;
         XfsReadonlyProfile _profile;
         u64 _capacity;
         u64 _expected;
@@ -195,6 +207,204 @@ export namespace fs {
             const builtin::span<const u8> all = borrow_bytes(_cache);
             return all.subspan(1024, 512);
         }
+        auto directory_bytes() const -> builtin::span<const u8> {
+            return borrow_bytes(_directory_cache);
+        }
+        auto idle() const -> bool {
+            return _status == XfsMountStatus::ready || _status == XfsMountStatus::file_metadata_ready || _status
+                == XfsMountStatus::file_sector_ready || _status == XfsMountStatus::directory_ready || _status
+                == XfsMountStatus::not_found || _status == XfsMountStatus::not_regular || _status == XfsMountStatus::end
+                || _status == XfsMountStatus::invalid_request;
+        }
+        auto request_file(u64 inode) -> bool {
+            _inode = inode;
+            _file_size = 0u64;
+            _expected = xfs_v5_512_inode_lba(superblock(), inode);
+            if (_expected == 0u64) {
+                _status = XfsMountStatus::invalid_metadata;
+                return false;
+            }
+            _status = XfsMountStatus::reading_file_inode;
+            return true;
+        }
+        auto lookup_component(i64 begin, i64 length) const -> XfsRootReport {
+            const builtin::span<const u8> path = borrow_bytes(_path);
+            return lookup_xfs_v5_512_directory(superblock(), directory_bytes(), _directory, _parent, path.subspan(begin,
+                length));
+        }
+        // The starting tuple comes from this mount's root or an already rooted
+        // directory handle owned by the caller. It is not minted by copied
+        // request fields. Every use revalidates inode, parent, LSN and contents.
+        auto walk_directory() -> bool {
+            i64 index = 0;
+            bool end = false;
+            bool member = false;
+            while (!end) {
+                const XfsRootEntryReport entry = entry_at_xfs_v5_512_directory(superblock(), directory_bytes(),
+                    _directory, _parent, index);
+                if (entry.status() == XfsRootEntryStatus::end) {
+                    end = true;
+                } else {
+                    if (entry.status() != XfsRootEntryStatus::found) {
+                        _status = XfsMountStatus::invalid_metadata;
+                        return false;
+                    }
+                    const XfsRootEntry item = entry.entry();
+                    if (item.file_type() != 1u64 && item.file_type() != 2u64) {
+                        _status = XfsMountStatus::unsupported_profile;
+                        return false;
+                    }
+                    // Exact parent checks on immutable, root-admitted edges
+                    // rule out longer ancestor cycles. These reject the two
+                    // repeated edges whose expected parent could otherwise fit.
+                    if (item.file_type() == 2u64 && (item.inode_number() == _directory || item.inode_number()
+                        == xm64(superblock(), 56))) {
+                        _status = XfsMountStatus::invalid_metadata;
+                        return false;
+                    }
+                    if (item.file_type() == 1u64 && item.inode_number() == _walk_inode) {
+                        member = true;
+                    }
+                    index = index + 1;
+                }
+            }
+            if (_walk_inode != 0u64) {
+                if (!member) {
+                    _status = XfsMountStatus::not_found;
+                    return false;
+                }
+                return request_file(_walk_inode);
+            }
+            if (_path_at == _path_size) {
+                if (!_directory_only) {
+                    _status = XfsMountStatus::not_regular;
+                    return false;
+                }
+                _inode = _directory;
+                _status = XfsMountStatus::directory_ready;
+                _expected = 0u64;
+                return true;
+            }
+            const i64 begin = _path_at;
+            while (_path_at < _path_size && _path.at(_path_at) != 47u8) {
+                _path_at = _path_at + 1;
+            }
+            const XfsRootReport found = lookup_component(begin, _path_at - begin);
+            if (found.status() != XfsRootStatus::found) {
+                _status = XfsMountStatus::invalid_metadata;
+                if (found.status() == XfsRootStatus::not_found) {
+                    _status = XfsMountStatus::not_found;
+                }
+                if (found.status() == XfsRootStatus::invalid_query) {
+                    _status = XfsMountStatus::invalid_request;
+                }
+                return false;
+            }
+            const XfsRootMatch item = found.match();
+            const bool last = _path_at == _path_size;
+            if (!last) {
+                _path_at = _path_at + 1;
+            }
+            if (item.file_type() == 1u64) {
+                if (!last || _directory_only) {
+                    _status = XfsMountStatus::not_regular;
+                    return false;
+                }
+                return request_file(item.inode_number());
+            }
+            if (last && !_directory_only) {
+                _status = XfsMountStatus::not_regular;
+                return false;
+            }
+            _parent = _directory;
+            _directory = item.inode_number();
+            _expected = xfs_v5_512_inode_lba(superblock(), _directory);
+            if (_expected == 0u64) {
+                _status = XfsMountStatus::invalid_metadata;
+                return false;
+            }
+            _status = XfsMountStatus::reading_directory;
+            return true;
+        }
+        auto start_walk(u64 directory, u64 parent, builtin::span<const u8> path) -> bool {
+            if (!idle()) {
+                return false;
+            }
+            if (path.size() > 4095) {
+                _status = XfsMountStatus::invalid_request;
+                return false;
+            }
+            i64 at = 0;
+            while (at < path.size()) {
+                _path.set(at, path.at(at));
+                at = at + 1;
+            }
+            return start_path(directory, parent, path.size());
+        }
+        auto start_path(u64 directory, u64 parent, i64 length) -> bool {
+            if (!idle()) {
+                return false;
+            }
+            if (!_path.ok() || !_directory_cache.ok() || directory == 0u64 || parent == 0u64 || length < 0 || length
+                > 4095 || (_directory_only && _walk_inode != 0u64)) {
+                _status = XfsMountStatus::invalid_request;
+                return false;
+            }
+            // The service normalizes separators and dot components first.
+            // The sector layer accepts only a canonical relative component list.
+            i64 at = 0;
+            while (at < length) {
+                const i64 begin = at;
+                while (at < length && _path.at(at) != 47u8) {
+                    if (_path.at(at) == 0u8) {
+                        _status = XfsMountStatus::invalid_request;
+                        return false;
+                    }
+                    at = at + 1;
+                }
+                const i64 count = at - begin;
+                if (count == 0 || count > 255 || (count == 1 && _path.at(begin) == 46u8) || (count == 2
+                    && _path.at(begin) == 46u8 && _path.at(begin + 1) == 46u8)) {
+                    _status = XfsMountStatus::invalid_request;
+                    return false;
+                }
+                if (at < length) {
+                    _path.set(at, 47u8);
+                    at = at + 1;
+                    if (at == length) {
+                        _status = XfsMountStatus::invalid_request;
+                        return false;
+                    }
+                }
+            }
+            _path_size = length;
+            _path_at = 0;
+            _directory = directory;
+            _parent = parent;
+            if (directory == xm64(superblock(), 56)) {
+                if (parent != directory) {
+                    _status = XfsMountStatus::invalid_request;
+                    return false;
+                }
+                i64 byte = 0;
+                while (byte < 512) {
+                    _directory_cache.set(byte, _cache.at(512 + byte));
+                    byte = byte + 1;
+                }
+                return walk_directory();
+            }
+            if (directory == parent) {
+                _status = XfsMountStatus::invalid_metadata;
+                return false;
+            }
+            _expected = xfs_v5_512_inode_lba(superblock(), directory);
+            if (_expected == 0u64) {
+                _status = XfsMountStatus::invalid_metadata;
+                return false;
+            }
+            _status = XfsMountStatus::reading_directory;
+            return true;
+        }
         auto metadata_lsn(u64 value) const -> bool {
             if (_profile == XfsReadonlyProfile::fresh_format) {
                 return value == 0u64;
@@ -207,6 +417,8 @@ export namespace fs {
                 return _status;
             }
             _inode = xm64(superblock(), 56);
+            _directory = _inode;
+            _parent = _inode;
             _expected = xfs_v5_512_inode_lba(superblock(), _inode);
             if (_expected == 0u64) {
                 _status = XfsMountStatus::invalid_metadata;
@@ -268,11 +480,16 @@ export namespace fs {
                 return _status;
             }
             const XfsRootEntry item = report.entry();
-            if (item.file_type() != 1u64) {
+            if (item.file_type() != 1u64 && item.file_type() != 2u64) {
                 _status = XfsMountStatus::unsupported_profile;
                 return _status;
             }
+            _namespace_type = item.file_type();
             _inode = item.inode_number();
+            if (_namespace_type == 2u64 && _inode == xm64(superblock(), 56)) {
+                _status = XfsMountStatus::invalid_metadata;
+                return _status;
+            }
             _expected = xfs_v5_512_inode_lba(superblock(), _inode);
             if (_expected == 0u64) {
                 _status = XfsMountStatus::invalid_metadata;
@@ -283,15 +500,18 @@ export namespace fs {
         }
     public:
         XfsReadonlyMount(builtin::ByteRegion region, builtin::OwnedBytes cache, u64 volume_sectors,
-            XfsReadonlyProfile profile, XfsLogTopology topology) : _cache(move(cache)), _profile(profile),
-            _capacity(volume_sectors), _expected(0u64), _log_begin(0u64), _log_count(0u64), _log_seen(0u64),
-            _topology(topology), _topology_initial(topology.pristine()), _newest_lsn(0u64), _head_lsn(0u64),
-            _inode(0u64), _valid(0u64), _file_size(0u64), _metadata_only(false), _entry(0), _file_sector(0),
-            _status(XfsMountStatus::reading_superblock) {
+            XfsReadonlyProfile profile, XfsLogTopology topology) : _cache(move(cache)),
+            _path(region.try_allocate(4095)), _directory_cache(region.try_allocate(512)), _directory(0u64),
+            _parent(0u64), _walk_inode(0u64), _path_size(0), _path_at(0), _directory_only(false), _namespace_type(0u64),
+            _profile(profile), _capacity(volume_sectors), _expected(0u64), _log_begin(0u64), _log_count(0u64),
+            _log_seen(0u64), _topology(topology), _topology_initial(topology.pristine()), _newest_lsn(0u64),
+            _head_lsn(0u64), _inode(0u64), _valid(0u64), _file_size(0u64), _metadata_only(false), _entry(0),
+            _file_sector(0), _status(XfsMountStatus::reading_superblock) {
         }
         auto status() const -> XfsMountStatus {
-            if (!_cache.ok() || _cache.size() != 1536 || !_topology_initial || (_profile
-                != XfsReadonlyProfile::fresh_format && _profile != XfsReadonlyProfile::linux_6_12_x86_64_clean)) {
+            if (!_cache.ok() || _cache.size() != 1536 || !_path.ok() || !_directory_cache.ok() || !_topology_initial
+                || (_profile != XfsReadonlyProfile::fresh_format && _profile
+                != XfsReadonlyProfile::linux_6_12_x86_64_clean)) {
                 return XfsMountStatus::invalid_request;
             }
             return _status;
@@ -303,7 +523,7 @@ export namespace fs {
             return _status == XfsMountStatus::reading_superblock || _status == XfsMountStatus::reading_log || _status
                 == XfsMountStatus::reading_root || _status == XfsMountStatus::reading_namespace || _status
                 == XfsMountStatus::reading_file_inode || _status == XfsMountStatus::reading_file_data || _status
-                == XfsMountStatus::reading_log_unmount;
+                == XfsMountStatus::reading_log_unmount || _status == XfsMountStatus::reading_directory;
         }
         auto requested_lba() const -> u64 {
             if (needs_read()) {
@@ -326,10 +546,20 @@ export namespace fs {
             return 0u64;
         }
         auto root_inode() const -> u64 {
-            if (_status == XfsMountStatus::ready || _status == XfsMountStatus::file_metadata_ready || _status
-                == XfsMountStatus::file_sector_ready || _status == XfsMountStatus::not_found || _status
-                == XfsMountStatus::end || _status == XfsMountStatus::invalid_request) {
+            if (idle()) {
                 return xm64(superblock(), 56);
+            }
+            return 0u64;
+        }
+        auto directory_inode() const -> u64 {
+            if (idle() || _status == XfsMountStatus::reading_file_data) {
+                return _directory;
+            }
+            return 0u64;
+        }
+        auto directory_parent() const -> u64 {
+            if (idle() || _status == XfsMountStatus::reading_file_data) {
+                return _parent;
             }
             return 0u64;
         }
@@ -446,7 +676,7 @@ export namespace fs {
                 return request_root();
             }
             if (_status == XfsMountStatus::reading_root || _status == XfsMountStatus::reading_namespace || _status
-                == XfsMountStatus::reading_file_inode) {
+                == XfsMountStatus::reading_file_inode || _status == XfsMountStatus::reading_directory) {
                 if (!metadata_lsn(xm64(bytes, 112))) {
                     _status = XfsMountStatus::invalid_metadata;
                     if (_profile == XfsReadonlyProfile::fresh_format) {
@@ -461,6 +691,26 @@ export namespace fs {
                     _cache.set(512 + at, bytes.at(at));
                     at = at + 1;
                 }
+                next_entry();
+                return _status;
+            }
+            if (_status == XfsMountStatus::reading_directory) {
+                i64 at = 0;
+                while (at < 512) {
+                    _directory_cache.set(at, bytes.at(at));
+                    at = at + 1;
+                }
+                walk_directory();
+                return _status;
+            }
+            if (_status == XfsMountStatus::reading_namespace && _namespace_type == 2u64) {
+                const XfsRootEntryReport report = entry_at_xfs_v5_512_directory(superblock(), bytes, _inode,
+                    xm64(superblock(), 56), 0);
+                if (report.status() != XfsRootEntryStatus::found && report.status() != XfsRootEntryStatus::end) {
+                    _status = XfsMountStatus::invalid_metadata;
+                    return _status;
+                }
+                _entry = _entry + 1;
                 next_entry();
                 return _status;
             }
@@ -525,41 +775,84 @@ export namespace fs {
             return _status;
         }
         auto read_file(builtin::span<const u8> name, i64 sector) -> bool {
-            if (_status != XfsMountStatus::file_metadata_ready && _status != XfsMountStatus::ready && _status
-                != XfsMountStatus::file_sector_ready && _status != XfsMountStatus::not_found && _status
-                != XfsMountStatus::end && _status != XfsMountStatus::invalid_request) {
-                return false;
-            }
-            if (!_cache.ok() || _cache.size() != 1536) {
+            if (!idle()) {
                 return false;
             }
             if (sector < 0) {
                 _status = XfsMountStatus::invalid_request;
                 return false;
             }
-            const XfsRootReport report = lookup_xfs_v5_512_root(superblock(), root(), name);
-            if (report.status() == XfsRootStatus::not_found) {
-                _status = XfsMountStatus::not_found;
+            _metadata_only = false;
+            _directory_only = false;
+            _walk_inode = 0u64;
+            _file_sector = sector;
+            const u64 root_number = xm64(superblock(), 56);
+            return start_walk(root_number, root_number, name);
+        }
+        // Scalar transfer keeps the two sibling owners' borrowed storage
+        // separate. No pending read may be altered by a new path transfer.
+        auto set_path_byte(i64 at, u8 value) -> bool {
+            if (!idle() || at < 0 || at >= 4095) {
                 return false;
             }
-            if (report.status() == XfsRootStatus::invalid_query) {
+            return _path.set(at, value);
+        }
+        // The sibling owner must supply every byte in [0, length) before this
+        // call. Bytes beyond length never participate in validation or lookup.
+        auto open_prepared_in(u64 directory, u64 parent, i64 length, bool directory_only) -> bool {
+            if (!idle()) {
+                return false;
+            }
+            _metadata_only = true;
+            _directory_only = directory_only;
+            _walk_inode = 0u64;
+            _file_sector = 0;
+            return start_path(directory, parent, length);
+        }
+        // These tuples are retained by the service only after a successful
+        // rooted traversal. They are structural inputs, not client authority.
+        auto open_file_in(u64 directory, u64 parent, builtin::span<const u8> path) -> bool {
+            if (!idle()) {
+                return false;
+            }
+            _metadata_only = true;
+            _directory_only = false;
+            _walk_inode = 0u64;
+            _file_sector = 0;
+            return start_walk(directory, parent, path);
+        }
+        auto open_directory_in(u64 directory, u64 parent, builtin::span<const u8> path) -> bool {
+            if (!idle()) {
+                return false;
+            }
+            _metadata_only = true;
+            _directory_only = true;
+            _walk_inode = 0u64;
+            _file_sector = 0;
+            return start_walk(directory, parent, path);
+        }
+        auto read_inode_in(u64 directory, u64 parent, u64 inode, i64 sector) -> bool {
+            if (!idle()) {
+                return false;
+            }
+            if (inode == 0u64 || sector < 0) {
                 _status = XfsMountStatus::invalid_request;
                 return false;
             }
-            if (report.status() != XfsRootStatus::found) {
-                _status = XfsMountStatus::invalid_metadata;
-                return false;
+            if (directory == xm64(superblock(), 56) && parent == directory) {
+                return read_inode(inode, sector);
             }
-            const XfsRootMatch item = report.match();
-            return read_inode(item.inode_number(), sector);
+            _metadata_only = false;
+            _directory_only = false;
+            _walk_inode = inode;
+            _file_sector = sector;
+            return start_walk(directory, parent, "");
         }
         // Callers retain the inode admitted when opening a handle. Namespace
         // publication must not redirect an existing handle by looking up its
         // old name again. The inode must still belong to this checked root.
         auto read_inode(u64 inode, i64 sector) -> bool {
-            if (_status != XfsMountStatus::file_metadata_ready && _status != XfsMountStatus::ready && _status
-                != XfsMountStatus::file_sector_ready && _status != XfsMountStatus::not_found && _status
-                != XfsMountStatus::end && _status != XfsMountStatus::invalid_request) {
+            if (!idle()) {
                 return false;
             }
             if (!_cache.ok() || _cache.size() != 1536 || inode == 0u64 || sector < 0) {
@@ -586,6 +879,8 @@ export namespace fs {
                 _status = XfsMountStatus::not_found;
                 return false;
             }
+            _directory = xm64(superblock(), 56);
+            _parent = _directory;
             _inode = inode;
             _file_sector = sector;
             _metadata_only = false;
@@ -609,9 +904,7 @@ export namespace fs {
                 || _cache.size() != 1536) {
                 return false;
             }
-            if (_status != XfsMountStatus::ready && _status != XfsMountStatus::file_metadata_ready && _status
-                != XfsMountStatus::file_sector_ready && _status != XfsMountStatus::not_found && _status
-                != XfsMountStatus::end) {
+            if (!idle()) {
                 return false;
             }
             i64 at = 0;
@@ -651,9 +944,7 @@ export namespace fs {
         // The bounded mounted continuation above instead validates the sole
         // writer's acknowledged delta against this mount's original proof.
         auto restart() -> bool {
-            if (_status != XfsMountStatus::ready && _status != XfsMountStatus::file_metadata_ready && _status
-                != XfsMountStatus::file_sector_ready && _status != XfsMountStatus::not_found && _status
-                != XfsMountStatus::end) {
+            if (!idle()) {
                 return false;
             }
             if (!_cache.ok() || _cache.size() != 1536 || !_topology_initial) {

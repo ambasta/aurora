@@ -38,20 +38,6 @@ export namespace service {
         return true;
     }
 
-    class XfsName {
-        builtin::array<u8, 255> _bytes;
-    public:
-        XfsName() : _bytes{} {
-        }
-        auto set(i64 at, u8 value) -> bool {
-            _bytes[at] = value;
-            return true;
-        }
-        auto bytes(i64 count) const -> builtin::span<const u8> {
-            const builtin::span<const u8> all = borrow_bytes(_bytes);
-            return all.subspan(0, count);
-        }
-    };
     class XfsPath {
     public:
         u64 kind;
@@ -59,7 +45,7 @@ export namespace service {
         i64 length;
     };
 
-    // 0 outside /disk, 1 mounted root, 2 root file, 3 refused mounted path.
+    // 0 outside /disk, 1 mounted root, 2 mounted descendant, 3 refused mounted path.
     // Lexical normalization is for routing only. Any '..' touching this mount
     // is refused, never resolved into the mutable boot/overlay namespace.
     auto xfs_path(builtin::span<const u8> path) -> XfsPath {
@@ -68,7 +54,6 @@ export namespace service {
         i64 first = -1;
         i64 first_length = 0;
         i64 leaf = 0;
-        i64 leaf_length = 0;
         bool parent = false;
         bool touched = false;
         bool invalid = path.size() > 4095;
@@ -89,9 +74,6 @@ export namespace service {
             }
             bool skip = length == 0;
             if (length == 1 && path.at(begin) == 46u8) {
-                if (depth >= 2) {
-                    invalid = true;
-                }
                 skip = true;
             }
             if (length == 2 && path.at(begin) == 46u8 && path.at(begin + 1) == 46u8) {
@@ -116,7 +98,6 @@ export namespace service {
                 }
                 if (depth == 1) {
                     leaf = begin;
-                    leaf_length = length;
                 }
                 depth = depth + 1;
             }
@@ -133,7 +114,7 @@ export namespace service {
                 if (depth == 1) {
                     kind = 1u64;
                 }
-                if (depth == 2 && path.at(path.size() - 1) != 47u8) {
+                if (depth >= 2) {
                     kind = 2u64;
                 }
             }
@@ -145,7 +126,7 @@ export namespace service {
         const XfsPath result = XfsPath{
             .kind = kind,
             .start = leaf,
-            .length = leaf_length
+            .length = path.size() - leaf
         };
         return result;
     }
@@ -190,6 +171,11 @@ export namespace service {
     class XfsFiles {
         builtin::OwnedBytes table;
         builtin::OwnedBytes payload;
+        builtin::OwnedBytes path_bytes;
+        i64 path_length;
+        u64 directory;
+        u64 parent;
+        bool directory_open;
         u64 generation;
         u64 client;
         u64 root_inode;
@@ -263,13 +249,14 @@ export namespace service {
         }
     public:
         XfsFiles(builtin::ByteRegion region, u64 volume_generation, u64 sectors) : table(region.try_allocate(5120)),
-            payload(region.try_allocate(504)), generation(volume_generation), client(0u64), root_inode(0u64),
+            payload(region.try_allocate(504)), path_bytes(region.try_allocate(4095)), path_length(0), directory(0u64),
+            parent(0u64), directory_open(false), generation(volume_generation), client(0u64), root_inode(0u64),
             slot(0u64), pending(0u64), offset(0u64), desired(0u64), copied(0u64), usable(volume_generation != 0u64
             && sectors != 0u64), mounted(false), result_status(kernel::FileStatus::failed), result_count(0u64),
             result_id(0u64), result_size(0u64), result_inode(0u64) {
         }
         auto ok() const -> bool {
-            return usable && table.ok() && payload.ok();
+            return usable && table.ok() && payload.ok() && path_bytes.ok();
         }
         auto ready() const -> bool {
             return ok() && mounted;
@@ -359,13 +346,28 @@ export namespace service {
             return false;
         }
         auto name_length() const -> i64 {
-            return i64(word(slot, 4u64));
+            return path_length;
         }
         auto name_byte(i64 at) const -> u8 {
-            if (at < 0 || at >= name_length() || at >= 255) {
+            if (at < 0 || at >= path_length) {
                 return 0u8;
             }
-            return table.at(i64(slot * 320u64 + 40u64) + at);
+            return path_bytes.at(at);
+        }
+        auto directory_inode() const -> u64 {
+            if (reading()) {
+                return word(slot, 4u64);
+            }
+            return directory;
+        }
+        auto directory_parent() const -> u64 {
+            if (reading()) {
+                return word(slot, 5u64);
+            }
+            return parent;
+        }
+        auto opening_directory() const -> bool {
+            return opening() && directory_open;
         }
         auto inode() const -> u64 {
             if (!reading()) {
@@ -391,6 +393,14 @@ export namespace service {
                 return fail(kernel::FileStatus::denied);
             }
             const builtin::span<const u8> name = path.subspan(parsed.start, parsed.length);
+            // Writer admission remains exactly the root-level destination.
+            i64 component_at = 0;
+            while (component_at < name.size()) {
+                if (name.at(component_at) == 47u8) {
+                    return fail(kernel::FileStatus::denied);
+                }
+                component_at = component_at + 1;
+            }
             if (xfs_private_name(name)) {
                 return fail(kernel::FileStatus::denied);
             }
@@ -476,27 +486,19 @@ export namespace service {
                 return fail(kernel::FileStatus::failed);
             }
             i64 first = 0;
-            i64 length = 0;
-            bool root = false;
+            directory = root_inode;
+            parent = root_inode;
+            directory_open = operation == 16u64;
             if (operation == 17u64) {
-                if (find(id, 1u64) < 0) {
+                const i64 found = find(id, 1u64);
+                if (found < 0) {
                     return fail(kernel::FileStatus::invalid_handle);
                 }
-                if (path.size() == 0 || path.size() > 255) {
-                    return fail(kernel::FileStatus::invalid_path);
-                }
-                i64 at = 0;
-                while (at < path.size()) {
-                    if (path.at(at) == 0u8 || path.at(at) == 47u8) {
-                        return fail(kernel::FileStatus::escape);
-                    }
-                    at = at + 1;
-                }
-                if ((path.size() == 1 && path.at(0) == 46u8) || (path.size() == 2 && path.at(0) == 46u8 && path.at(1)
-                    == 46u8)) {
+                directory = word(u64(found), 2u64);
+                parent = word(u64(found), 5u64);
+                if (path.size() > 0 && path.at(0) == 47u8) {
                     return fail(kernel::FileStatus::escape);
                 }
-                length = path.size();
             } else {
                 const XfsPath parsed = xfs_path(path);
                 if (parsed.kind == 0u64) {
@@ -505,19 +507,61 @@ export namespace service {
                 if (parsed.kind == 3u64) {
                     return fail(kernel::FileStatus::escape);
                 }
-                root = parsed.kind == 1u64;
                 first = parsed.start;
-                length = parsed.length;
+                if (parsed.kind == 1u64) {
+                    first = path.size();
+                }
             }
-            if ((operation == 16u64 && !root) || (operation != 16u64 && root)) {
-                return fail(kernel::FileStatus::not_regular);
+            if (path.size() == 0 || path.size() > 4095) {
+                return fail(kernel::FileStatus::invalid_path);
             }
-            // This fixed reserved leaf remains private across readonly recovery
-            // boots as well as mounted-writer boots. Old admitted handles are
-            // inode-bound and do not pass through this new-open path.
-            const builtin::span<const u8> leaf = path.subspan(first, length);
-            if (!root && xfs_private_name(leaf)) {
-                return fail(kernel::FileStatus::denied);
+            path_length = 0;
+            i64 at = first;
+            bool trailing = at == path.size();
+            while (at < path.size()) {
+                while (at < path.size() && path.at(at) == 47u8) {
+                    at = at + 1;
+                    trailing = true;
+                }
+                const i64 begin = at;
+                while (at < path.size() && path.at(at) != 47u8) {
+                    if (path.at(at) == 0u8) {
+                        return fail(kernel::FileStatus::invalid_path);
+                    }
+                    at = at + 1;
+                }
+                const i64 length = at - begin;
+                if (length > 255) {
+                    return fail(kernel::FileStatus::invalid_path);
+                }
+                const bool dot = length == 1 && path.at(begin) == 46u8;
+                if (length == 2 && path.at(begin) == 46u8 && path.at(begin + 1) == 46u8) {
+                    return fail(kernel::FileStatus::escape);
+                }
+                if (length > 0 && !dot) {
+                    if (xfs_private_name(path.subspan(begin, length))) {
+                        return fail(kernel::FileStatus::denied);
+                    }
+                    if (path_length > 0) {
+                        path_bytes.set(path_length, 47u8);
+                        path_length = path_length + 1;
+                    }
+                    i64 byte = 0;
+                    while (byte < length) {
+                        path_bytes.set(path_length, path.at(begin + byte));
+                        path_length = path_length + 1;
+                        byte = byte + 1;
+                    }
+                    trailing = false;
+                } else {
+                    trailing = true;
+                }
+            }
+            if (!directory_open && trailing) {
+                if (path_length == 0) {
+                    return fail(kernel::FileStatus::not_regular);
+                }
+                return fail(kernel::FileStatus::escape);
             }
             slot = 0u64;
             while (slot < 16u64 && (word(slot, 0u64) != 0u64 || word(slot, 1u64) + 1u64 >= 288230376151711744u64)) {
@@ -526,23 +570,26 @@ export namespace service {
             if (slot == 16u64) {
                 return fail(kernel::FileStatus::exhausted);
             }
-            if (root) {
+            if (directory_open && path_length == 0 && directory == root_inode && parent == root_inode) {
+                set_word(slot, 4u64, root_inode);
+                set_word(slot, 5u64, root_inode);
                 return claim(1u64, 0u64, root_inode);
-            }
-            set_word(slot, 4u64, u64(length));
-            i64 at = 0;
-            while (at < length) {
-                table.set(i64(slot * 320u64 + 40u64) + at, path.at(first + at));
-                at = at + 1;
             }
             pending = 1u64;
             return true;
         }
-        auto opened(u64 size, u64 inode) -> bool {
-            if (!opening() || size == 0u64 || inode == 0u64) {
+        auto opened(u64 size, u64 inode, u64 containing, u64 expected_parent) -> bool {
+            if (!opening() || inode == 0u64 || containing == 0u64 || expected_parent == 0u64) {
                 return poison();
             }
-            return claim(2u64, size, inode);
+            // Only completed rooted walks populate these private handle tuples.
+            set_word(slot, 4u64, containing);
+            set_word(slot, 5u64, expected_parent);
+            u64 kind = 2u64;
+            if (directory_open) {
+                kind = 1u64;
+            }
+            return claim(kind, size, inode);
         }
         auto append_sector(storage::Sector512 sector, u64 valid_bytes) -> bool {
             if (!reading() || copied >= desired || valid_bytes > 512u64) {
@@ -591,8 +638,15 @@ export namespace service {
             return true;
         }
         if (files.opening()) {
+            if (mount.status() == fs::XfsMountStatus::directory_ready) {
+                return files.opened(0u64, mount.directory_inode(), mount.directory_inode(), mount.directory_parent());
+            }
+            if (mount.status() == fs::XfsMountStatus::not_regular) {
+                return files.fail(kernel::FileStatus::not_regular);
+            }
             if (mount.status() == fs::XfsMountStatus::file_metadata_ready) {
-                return files.opened(mount.file_size(), mount.file_inode());
+                return files.opened(mount.file_size(), mount.file_inode(), mount.directory_inode(),
+                    mount.directory_parent());
             }
             if (mount.status() == fs::XfsMountStatus::not_found) {
                 return files.fail(kernel::FileStatus::not_found);
@@ -615,24 +669,25 @@ export namespace service {
     }
     auto start_xfs(XfsFiles& files, fs::XfsReadonlyMount& mount) -> bool {
         if (files.opening() || files.reading()) {
-            XfsName bytes = XfsName();
-            const i64 length = files.name_length();
-            if (length < 1 || length > 255) {
-                return files.poison();
-            }
-            i64 at = 0;
-            while (at < length) {
-                bytes.set(at, files.name_byte(at));
-                at = at + 1;
-            }
-            const builtin::span<const u8> name = bytes.bytes(length);
             bool started = false;
             if (files.opening()) {
-                started = mount.open_file(name);
+                i64 at = 0;
+                while (at < files.name_length()) {
+                    if (!mount.set_path_byte(at, files.name_byte(at))) {
+                        return files.poison();
+                    }
+                    at = at + 1;
+                }
+                started = mount.open_prepared_in(files.directory_inode(), files.directory_parent(), files.name_length(),
+                    files.opening_directory());
             } else {
-                started = mount.read_inode(files.inode(), files.sector_index());
+                started = mount.read_inode_in(files.directory_inode(), files.directory_parent(), files.inode(),
+                    files.sector_index());
             }
             if (!started) {
+                if (mount.status() == fs::XfsMountStatus::not_regular) {
+                    return files.fail(kernel::FileStatus::not_regular);
+                }
                 if (mount.status() == fs::XfsMountStatus::not_found) {
                     return files.fail(kernel::FileStatus::not_found);
                 }
