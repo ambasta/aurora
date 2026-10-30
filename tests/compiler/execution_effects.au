@@ -37,7 +37,14 @@ auto execution_entry(builtin::ExecutionEffects& effects) -> u64 {
         return 2u64;
     }
     ledger.observe();
-    if (effects.output() != builtin::ExecEffect::success || effects.request() != builtin::ExecRequest::ready) {
+    if (effects.output() != builtin::ExecEffect::success) {
+        return 3u64;
+    }
+    builtin::ExecRequest requested = effects.request();
+    while (requested == builtin::ExecRequest::pending) {
+        requested = effects.request();
+    }
+    if (requested != builtin::ExecRequest::ready) {
         return 3u64;
     }
     ledger.observe();

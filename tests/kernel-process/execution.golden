@@ -28,3 +28,9 @@ not_quiet denied
 invalid_finish denied
 reenter denied
 release_inside denied
+request_pending_twice exited:17 prepare,advance,request,request,request,advance,finish:complete
+request_pending_cancelled watchdog:0 prepare,advance,request,request,finish:cancelled
+request_pending_lost unavailable:0 prepare,advance,request,request,finish:service_lost
+request_pending_output exited:18 prepare,advance,request,request,advance,output,advance,finish:complete
+two_requests_pending exited:19 prepare,advance,request,advance,request,request,advance,finish:complete
+pending_cancel_close_failure unavailable:0 prepare,advance,request,request,finish:cancelled

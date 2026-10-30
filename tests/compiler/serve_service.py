@@ -204,6 +204,11 @@ __au_runtime_group_entry:
             == [{"offset": 0, "bytes": 16, "kind": "service", "type_name": "builtin::ExecutionEffects"}],
             "ExecutionEffects nominal entry ABI",
         )
+        need(
+            execution_facts["enums"]["__au_exec_request"]["cases"]
+            == {"ready": 0, "cancelled": 1, "service_lost": 2, "pending": 3},
+            "ExecRequest preserves terminal cases and appends pending",
+        )
         emitted = assembly.read_text()
         symbol = next(
             name
@@ -244,10 +249,11 @@ __au_runtime_group_entry:
             ]
         )
         need(result.returncode == 0, result.stderr.decode())
-        for mode in range(17):
+        for mode in range(18):
             result = run([binary, mode])
             need(
-                result.returncode == (0 if mode == 0 else -signal.SIGILL), f"execution mode {mode}: {result.returncode}"
+                result.returncode == (0 if mode in (0, 17) else -signal.SIGILL),
+                f"execution mode {mode}: {result.returncode}",
             )
 
         # One actual endpoint consumer and one native trap adapter, with hostile

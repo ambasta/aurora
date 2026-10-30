@@ -846,7 +846,7 @@ constexpr const char *statuses[] = {
 constexpr const char *preparations[] = {"loaded", "refused", "service_lost"};
 constexpr const char *steps[] = {"retired", "output", "request", "parked"};
 constexpr const char *effects[] = {"success", "failed"};
-constexpr const char *requests[] = {"ready", "cancelled", "service_lost"};
+constexpr const char *requests[] = {"ready", "cancelled", "service_lost", "pending"};
 constexpr const char *finishes[] = {"complete", "output_failed", "cancelled", "service_lost"};
 std::vector<std::vector<std::string>> script;
 std::size_t cursor{};
