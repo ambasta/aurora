@@ -189,7 +189,11 @@ for name, definition, error in [
     ("constructor unknown field", COUNTER.replace("value(initial)", "missing(initial)"), "unknown constructor"),
     ("constructor self field forbidden", COUNTER.replace("value(initial)", "value(value)"), "receiver fields"),
     ("constructor self method forbidden", COUNTER.replace("value(initial)", "value(get())"), "receiver methods"),
-    ("constructor nonempty body", COUNTER.replace("value(initial) {}", "value(initial) { value=0; }"), "expected '}'"),
+    (
+        "constructor nonempty body",
+        COUNTER.replace("value(initial) {}", "value(initial) { value=0; }"),
+        "AU3001: resource initialization or finalization violates its ownership contract",
+    ),
     (
         "const method write",
         COUNTER.replace(
