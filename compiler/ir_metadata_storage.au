@@ -40,7 +40,8 @@ export namespace compiler_ir_metadata {
         ValueSpan,
         HostFiles,
         ReadOnlyBlock,
-        WritableBlock
+        WritableBlock,
+        ExecutionEffects
     };
     // Each reason's message is in pipeline.au (compiler_ir_metadata::metadata_text).
     enum class MetadataError {
@@ -174,7 +175,9 @@ export namespace compiler_ir_metadata {
         span_element_storage,
         span_value_spill,
         host_layout,
-        host_fields
+        host_fields,
+        execution_layout,
+        execution_fields
     };
     class ByteRange {
         i64 firstByte;
@@ -316,6 +319,9 @@ export namespace compiler_ir_metadata {
         }
         auto service_host() const -> u64 {
             return 64u64;
+        }
+        auto service_execution() const -> u64 {
+            return 512u64;
         }
         auto service_writer() const -> u64 {
             return 256u64;

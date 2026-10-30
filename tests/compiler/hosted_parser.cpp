@@ -2654,7 +2654,9 @@ void rawInstructionAdmission() {
            release(3, 4),
            release(4, 5),
            release(5, 6),
-           release(6, 7)}}}, // Closed kinds need no matching entry or live loan here.
+           release(6, 7),
+           release(7, 8),
+           release(8, 9)}}}, // Closed kinds need no matching entry or live loan here.
         {{{acquire(1), release(1), acquire(1)}}},
         {{{acquire(7), acquire(7), acquire(7)}}},
         {{{acquire(1), acquire(1, 32, 1)}}, Reason::service_loan_identity},
@@ -2672,8 +2674,8 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(id)}}, Reason::service_loan_identity});
         services.push_back({{{release(id)}}, Reason::service_release});
     }
-    // Kinds 0..8 and operations 0..45 are the closed tables.
-    for (const auto kind : {std::int64_t{-1}, std::int64_t{9}, INT64_MAX}) {
+    // Kinds 0..9 and operations 0..50 are the closed tables.
+    for (const auto kind : {std::int64_t{-1}, std::int64_t{10}, INT64_MAX}) {
         services.push_back({{{acquire(1, 16, kind)}}, Reason::service_loan_root});
         services.push_back({{{release(1, kind)}}, Reason::service_release});
         services.push_back({{{operation(1, kind)}}, Reason::service_operation_kind});
@@ -2686,9 +2688,9 @@ void rawInstructionAdmission() {
     services.push_back({{{operation(1, 5)}}, Reason::service_operation_kind});
     services.push_back({{{operation(8, 0)}}, Reason::service_operation_kind});
     services.push_back({{{operation(9, 0)}}, Reason::service_operation_kind});
-    for (const auto op : {32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45})
+    for (const auto op : {32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50})
         services.push_back({{{operation(op, 0)}}, Reason::service_operation_kind});
-    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{46}, INT64_MAX})
+    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{51}, INT64_MAX})
         services.push_back({{{operation(op, 0)}}, Reason::service_operation});
     for (const auto &[op, kind, offset, reason] :
          std::vector<std::tuple<std::int64_t, std::int64_t, std::int64_t, Reason>>{

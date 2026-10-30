@@ -139,6 +139,9 @@ export namespace compiler_parser {
             if (service == 6) {
                 return 64;
             }
+            if (service == 9) {
+                return 512;
+            }
             if (service == 8) {
                 return 256;
             }
@@ -530,10 +533,15 @@ namespace compiler_parser {
         const builtin::span<const u8> words6 = borrow_bytes(names6);
         const array<u8, 28> names7 = "ReadOnlyBlock;WritableBlock;";
         const builtin::span<const u8> words7 = borrow_bytes(names7);
-        return word_list_matches(source, token, words7) || word_list_matches(source, token, words0)
-            || word_list_matches(source, token, words1) || word_list_matches(source, token, words2)
-            || word_list_matches(source, token, words3) || word_list_matches(source, token, words4)
-            || word_list_matches(source, token, words5) || word_list_matches(source, token, words6);
+        const array<u8,
+            112> names8 =
+            "ExecutionEffects;ExecutionPrep;ExecutionStep;ExecPrepared;ExecStatus;ExecStep;ExecEffect;ExecRequest;ExecFinish;";
+        const builtin::span<const u8> words8 = borrow_bytes(names8);
+        return word_list_matches(source, token, words8) || word_list_matches(source, token, words7)
+            || word_list_matches(source, token, words0) || word_list_matches(source, token, words1)
+            || word_list_matches(source, token, words2) || word_list_matches(source, token, words3)
+            || word_list_matches(source, token, words4) || word_list_matches(source, token, words5)
+            || word_list_matches(source, token, words6);
     }
     enum class TypeWord {
         invalid,
@@ -926,7 +934,11 @@ namespace compiler_parser {
                                                 62> host_samples =
                                                 "HostChunk;HostFileResult;HostDirectoryResult;HostOutputResult;";
                                             const builtin::span<const u8> host_words = borrow_bytes(host_samples);
-                                            if (word_list_matches(source, token, samples_words)
+                                            const array<u8, 28> execution_samples = "ExecutionPrep;ExecutionStep;";
+                                            const builtin::span<const u8> execution_words = borrow_bytes(
+                                                execution_samples);
+                                            if (word_list_matches(source, token, execution_words)
+                                                || word_list_matches(source, token, samples_words)
                                                 || word_list_matches(source, token, host_words)) {
                                                 kind = TypeKind::builtin_class;
                                             }
@@ -3132,6 +3144,11 @@ namespace compiler_parser {
         if (word_matches(source, token, host_word, 0, 9)) {
             return AdmissionType(AdmissionKind::service, configuration.service_mask(6), token);
         }
+        const array<u8, 16> execution_name = "ExecutionEffects";
+        const builtin::span<const u8> execution_word = borrow_bytes(execution_name);
+        if (word_matches(source, token, execution_word, 0, 16)) {
+            return AdmissionType(AdmissionKind::service, configuration.service_mask(9), token);
+        }
         const array<u8, 13> writer_name = "WritableBlock";
         const builtin::span<const u8> writer_word = borrow_bytes(writer_name);
         if (word_matches(source, token, writer_word, 0, 13)) {
@@ -3141,6 +3158,11 @@ namespace compiler_parser {
         const builtin::span<const u8> block_word = borrow_bytes(block_name);
         if (word_matches(source, token, block_word, 0, 13)) {
             return AdmissionType(AdmissionKind::service, configuration.service_mask(7), token);
+        }
+        const array<u8, 67> execution_enums = "ExecPrepared;ExecStatus;ExecStep;ExecEffect;ExecRequest;ExecFinish;";
+        const builtin::span<const u8> execution_enum_words = borrow_bytes(execution_enums);
+        if (word_list_matches(source, token, execution_enum_words)) {
+            return AdmissionType(AdmissionKind::copied, 0, token);
         }
         const array<u8, 31> host_enums = "HostExit;HostStatus;HostStream;";
         const builtin::span<const u8> host_enum_words = borrow_bytes(host_enums);
@@ -3389,7 +3411,7 @@ namespace compiler_parser {
     // The appended singleton Serve and HostFiles bits are new; mixed/high bits
     // stay closed. HostFiles (mask 64) is admitted through bit 0.
     auto admission_service_groups(i64 groups) -> bool {
-        return groups >= 0 && (u64(groups) & 4295034879u64) == u64(groups);
+        return groups >= 0 && (u64(groups) & 4295036927u64) == u64(groups);
     }
     auto admission_module(AstArena& arena, builtin::span<const u8> source, i64 root,
         AdmissionConfig configuration) -> AdmissionResult {
@@ -3402,10 +3424,10 @@ namespace compiler_parser {
         }
         u64 masks = 0u64;
         i64 service = 0;
-        while (service < 9) {
+        while (service < 10) {
             const i64 mask = configuration.service_mask(service);
             if ((mask != 1 && mask != 2 && mask != 4 && mask != 8 && mask != 16 && mask != 32 && mask != 64 && mask
-                != 128 && mask != 256) || (masks & u64(mask)) != 0u64) {
+                != 128 && mask != 256 && mask != 512) || (masks & u64(mask)) != 0u64) {
                 return admission_result(AdmissionStatus::invalid);
             }
             masks = masks | u64(mask);

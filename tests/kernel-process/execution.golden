@@ -1,0 +1,30 @@
+exit exited:0 prepare,advance,finish:complete
+exit_value exited:42 prepare,advance,finish:complete
+fault fault:14 prepare,advance,finish:complete
+watchdog watchdog:0 prepare,advance,finish:complete
+park_resume exited:7 prepare,advance,advance,finish:complete
+output_resume exited:8 prepare,advance,output,advance,finish:complete
+output_failure output_failed:0 prepare,advance,output,finish:output_failed
+request_resume exited:9 prepare,advance,request,advance,finish:complete
+request_cancelled watchdog:0 prepare,advance,request,finish:cancelled
+service_lost unavailable:0 prepare,advance,request,finish:service_lost
+multiple_effects exited:13 prepare,advance,output,advance,request,advance,advance,finish:complete
+missing missing:0 prepare,finish:complete
+malformed malformed:0 prepare,finish:complete
+quota quota:0 prepare,finish:complete
+prepare_service_lost unavailable:0 prepare
+identity_exhausted unavailable:0 prepare
+exit_close_failure unavailable:0 prepare,advance,finish:complete
+fault_close_failure unavailable:0 prepare,advance,finish:complete
+output_close_failure unavailable:0 prepare,advance,output,finish:output_failed
+cancel_close_failure unavailable:0 prepare,advance,request,finish:cancelled
+missing_close_failure unavailable:0 prepare,finish:complete
+stale denied
+forged denied
+zero_generation denied
+duplicate_open denied
+released denied
+not_quiet denied
+invalid_finish denied
+reenter denied
+release_inside denied

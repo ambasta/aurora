@@ -194,6 +194,13 @@ RULES = [
     {
         "profiles": ["uefi/production"],
         "callbacks": ["deliver_output(=production_output("],
+        "imports:execution": [
+            "__au_runtime_execution_prepare",
+            "__au_runtime_execution_advance",
+            "__au_runtime_execution_output",
+            "__au_runtime_execution_request",
+            "__au_runtime_execution_finish",
+        ],
         "forbidden": [
             "__au_runtime_process_file_*",
             "__au_runtime_note_update",
@@ -209,6 +216,7 @@ RULES = [
             "uefi_process_program_return",
         ],
         "reachable": [
+            "__au_runtime_process_execute_command",
             "__au_runtime_process_map_admit",
             "__au_runtime_process_volume_grant",
             "__au_runtime_process_frame_range",

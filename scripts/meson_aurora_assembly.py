@@ -124,7 +124,7 @@ def validate_native_abi(facts, source):
             return dict(bytes=56, kind="span")
         if source in ("builtin::CallSession", "builtin::ConsoleSession"):
             return dict(bytes=16, kind="service")
-        if source == "builtin::ServeSession":
+        if source in ("builtin::ServeSession", "builtin::ExecutionEffects"):
             return dict(bytes=16, kind="service", type_name=source)
         group = (
             "enums"
@@ -146,6 +146,12 @@ def validate_native_abi(facts, source):
                 "kernel::MemoryVerdict",
                 "kernel::BudgetVerdict",
                 "kernel::FileStatus",
+                "__au_exec_status",
+                "__au_exec_prepared",
+                "__au_exec_step",
+                "__au_exec_effect",
+                "__au_exec_request",
+                "__au_exec_finish",
             )
             else "records"
         )
@@ -357,6 +363,30 @@ def validate_native_abi(facts, source):
                 ["console::ProtectedFiles", "console::FileSelection", "std::BinaryBuffer64", "i64"],
                 "FileMutation",
             )
+
+    if "# EXECUTION_POLICY_ABI:" in source:
+        enum("__au_exec_status", "exited fault watchdog missing malformed quota unavailable output_failed")
+        enum("__au_exec_prepared", "loaded refused service_lost")
+        enum("__au_exec_step", "retired output request parked")
+        enum("__au_exec_effect", "success failed")
+        enum("__au_exec_request", "ready cancelled service_lost")
+        enum("__au_exec_finish", "complete output_failed cancelled service_lost")
+        record(
+            "__au_execution_prep",
+            24,
+            [
+                ("state", "__au_exec_prepared", 0),
+                ("status", "__au_exec_status", 0),
+                ("finish_required", "bool", 0),
+            ],
+        )
+        record(
+            "__au_execution_step",
+            24,
+            [("state", "__au_exec_step", 0), ("status", "__au_exec_status", 0), ("value", "u64", 0)],
+        )
+        record("kernel::ExecutionResult", 16, [("outcome", "__au_exec_status", 0), ("result_value", "u64", 0)])
+        entry("process_execute_command", ["builtin::ExecutionEffects"], "kernel::ExecutionResult")
 
     if "# PROCESS_POLICY_ABI:" in source:
         for name, names in (

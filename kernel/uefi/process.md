@@ -14,15 +14,43 @@ The decisions are Aurora (`examples/kernel-process.au` over
 and the existing `interrupt_budget`), reached through the private bridge
 `process-entry.S`. The build checks every argument record, result class and
 enum against the compiler's ABI facts (`PROCESS_POLICY_ABI` in
-`scripts/meson_aurora_assembly.py`). Trusted C++ keeps only what the kernel
-bridge cannot express yet: firmware file reads in the loader, page-table
-writes and their walk, CR3, the frame-record storage and free-list head, the
-range table, the memory records, bounded copied messages, the LAPIC timer and
-serial output. `services/service/files.au` owns filesystem tables, records and
+`scripts/meson_aurora_assembly.py`). Trusted C++ still owns resident lifecycle and cumulative budget state,
+endpoint/transaction records and persistent-service startup/loss policy, as well
+as firmware file reads, page-table writes/walks, CR3, frame-record storage and
+free-list head, range and memory records, bounded messages, LAPIC and output. `services/service/files.au` owns filesystem tables, records and
 bytes in its own process. The former native file-store adapter and its ABI are
 now test-only references beneath `tests/`, never kernel image inputs. Assembly keeps the
 trap entry (`kernel/exceptions.S`) and the CPL 3 transition (`process-user.S`).
 Each C++ decoder rejects a result outside its closed encoding before using it.
+
+
+### Production command orchestration
+
+A production `run` invokes `kernel.execution_session` once with an exclusive
+`builtin::ExecutionEffects` loan. Its local scalar session retains command
+sequencing, terminal status/value and the obligation to finish across synchronous
+`prepare`, `advance`, `output`, `request` and `finish` effects. The ordinary class
+is not an affine child handle; authority belongs to the compiler-sealed loan.
+No reference, child handle, address or authority-bearing result escapes it.
+
+Native preparation still starts the file owner and loads the committed image.
+The preparation report distinguishes a loaded client from a failed load, and
+reports whether cleanup remains due. A terminal advance report means native
+retirement already happened; its result is copied before subsequent cleanup can
+replace the shared trap observation. Output failure and caller expiry request
+specific retirement, checked against the actual native effect state. Service
+loss follows the existing abandonment path. A failed final close overrides the
+command result to unavailable. No failed request is replayed.
+
+This removes the native production command loop, not the resident scheduler,
+accounting or persistent owner policy. Native effect receipts authenticate the
+live grant/generation, prevent reentry and duplicate physical effects, and keep
+pending I/O distinct from command decisions. The grant is revoked before return
+to the console. The retained source frame stays on the supervisor stack while
+CPL3 traps use the separate guarded RSP0 stack; the existing whole-image stack
+check and 15,360-byte bound apply without an increased allowance. The private
+entry/report layouts are checked against emitted compiler facts in the same
+bridge admission as the existing process policies.
 
 ## Handoff
 

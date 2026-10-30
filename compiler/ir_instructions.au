@@ -2171,6 +2171,15 @@ export namespace compiler_ir_instructions {
             if (compiler_ir_metadata::named(metadata, row.name(), "__au_port_write_result")) {
                 result = result | 8u64;
             }
+            if (compiler_ir_metadata::named(metadata, row.name(), "__au_exec_effect")) {
+                result = result | 16u64;
+            }
+            if (compiler_ir_metadata::named(metadata, row.name(), "__au_exec_request")) {
+                result = result | 32u64;
+            }
+            if (compiler_ir_metadata::named(metadata, row.name(), "__au_exec_finish")) {
+                result = result | 64u64;
+            }
             at = at + 1;
         }
         return result;
@@ -2244,7 +2253,7 @@ export namespace compiler_ir_instructions {
         }
         if (form == 2) { // ReleaseServiceLoan: the executed path decides which loan is live and called.
             const i64 kind = call_value(store, instruction, 1);
-            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 8) {
+            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 9) {
                 return fail(store, InstructionError::service_release);
             }
             return true;
@@ -2253,10 +2262,13 @@ export namespace compiler_ir_instructions {
             return true;
         } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || operation > 45) {
+        if (operation < 0 || operation > 50) {
             return fail(store, InstructionError::service_operation);
         }
         i64 expected_kind = 0;
+        if (operation >= 46 && operation <= 50) {
+            expected_kind = 9;
+        }
         if (operation >= 39 && operation < 46) {
             expected_kind = 8;
         } // Console: Next, Put
@@ -2322,7 +2334,20 @@ export namespace compiler_ir_instructions {
             && !store.kernel_target())) {
             return fail(store, InstructionError::service_platform);
         }
-        if (operation > 8 && operation != 14 && operation != 30 && operation != 32) {
+        if (operation >= 48 && operation <= 50) {
+            u64 required = 16u64;
+            if (operation == 49) {
+                required = 32u64;
+            }
+            if (operation == 50) {
+                required = 80u64;
+            }
+            if (result_offset != 0 || (result_enums & required) != required) {
+                return fail(store, InstructionError::service_operation);
+            }
+            return true;
+        }
+        if (operation > 8 && operation < 46 && operation != 14 && operation != 30 && operation != 32) {
             if (result_offset != 0) {
                 return fail(store, InstructionError::service_operation);
             }
@@ -2366,7 +2391,9 @@ export namespace compiler_ir_instructions {
             == 3 && !compiler_ir_metadata::named(metadata, type.name(), "__au_iommu_event_sample")) || (operation == 5
             && !compiler_ir_metadata::named(metadata, type.name(), "__au_call_result")) || ((operation == 8 || operation
             == 32) && !compiler_ir_metadata::named(metadata, type.name(), "__au_serve_request")) || ((operation == 14
-            || operation == 30) && !compiler_ir_metadata::named(metadata, type.name(), "__au_host_chunk"))) {
+            || operation == 30) && !compiler_ir_metadata::named(metadata, type.name(), "__au_host_chunk")) || (operation
+            == 46 && !compiler_ir_metadata::named(metadata, type.name(), "__au_execution_prep")) || (operation == 47
+            && !compiler_ir_metadata::named(metadata, type.name(), "__au_execution_step"))) {
             return fail(store, InstructionError::service_sample_result);
         }
         return true;

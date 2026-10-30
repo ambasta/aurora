@@ -935,11 +935,69 @@ export namespace compiler_x86 {
         emit_alu_rr(w, o, AluOp::test, Register::rdx, Register::rdx);
         return emit_branch(w, o, 5, 4, 0);
     }
+    // A private synchronous supervisor seam. Native code authenticates the
+    // grant; the emitter admits only copied, fully checked observation words.
+    auto emit_execution_operation(EmitWorkspace& w, ObjectWorkspace& o,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+        const i64 offset = operand_value(store, instruction, 0);
+        const i64 operation = operand_value(store, instruction, 1);
+        const i64 result = operand_value(store, instruction, 2);
+        const i64 grant = w.pack_address(0, offset);
+        const i64 generation = w.pack_address(0, offset - 8);
+        emit_load(w, o, grant, Register::rdi, false);
+        emit_load(w, o, generation, Register::rsi, false);
+        if (operation == 46 || operation == 47) {
+            i64 byte = 0;
+            while (byte < 24) {
+                const i64 address = w.pack_address(0, result - byte);
+                emit_store_imm(w, o, 0, address, false);
+                byte = byte + 8;
+            }
+            const i64 address = w.pack_address(0, result);
+            emit_lea(w, o, address, Register::rdx);
+            i64 symbol = w.intern_runtime("__au_runtime_execution_prepare");
+            i64 maximum = 2;
+            if (operation == 47) {
+                symbol = w.intern_runtime("__au_runtime_execution_advance");
+                maximum = 3;
+            }
+            emit_call_runtime(w, o, symbol);
+            emit_alu_mem_imm(w, o, AluOp::compare, maximum, address);
+            emit_branch(w, o, 7, 4, 0);
+            const i64 status = w.pack_address(0, result - 8);
+            emit_alu_mem_imm(w, o, AluOp::compare, 7, status);
+            emit_branch(w, o, 7, 4, 0);
+            if (operation == 46) {
+                const i64 finish = w.pack_address(0, result - 16);
+                emit_alu_mem_imm(w, o, AluOp::compare, 1, finish);
+                emit_branch(w, o, 7, 4, 0);
+            }
+            return w.ok();
+        }
+        i64 symbol = w.intern_runtime("__au_runtime_execution_output");
+        i64 arguments = 2;
+        i64 maximum = 1;
+        if (operation == 49) {
+            symbol = w.intern_runtime("__au_runtime_execution_request");
+            maximum = 2;
+        }
+        if (operation == 50) {
+            symbol = w.intern_runtime("__au_runtime_execution_finish");
+            emit_mov_rr(w, o, Register::rax, Register::rdx);
+            arguments = 3;
+        }
+        emit_call_runtime(w, o, symbol);
+        emit_service_completion(w, o, symbol, arguments, maximum);
+        return w.ok();
+    }
     auto emit_service_operation(EmitWorkspace& workspace, ObjectWorkspace& object,
         const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
         const i64 offset = operand_value(store, instruction, 0);
         const i64 operation = operand_value(store, instruction, 1);
         const i64 result = operand_value(store, instruction, 2);
+        if (operation >= 46 && operation <= 50) {
+            return emit_execution_operation(workspace, object, store, instruction);
+        }
         if (operation >= 39 && operation < 46) {
             return emit_writer_operation(workspace, object, store, instruction);
         }
