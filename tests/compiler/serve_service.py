@@ -188,6 +188,68 @@ __au_runtime_group_entry:
                     f"{name} mode {mode}: expected canonical result gate, got {result.returncode}",
                 )
 
+        # One compiled execution-effects consumer retains an ordinary private
+        # ledger across all five synchronous methods. Hostile reports are data.
+        assembly, execution_abi = work / "execution.s", work / "execution-abi.json"
+        result = run(
+            [compiler, "--abi-facts", execution_abi, ROOT / "tests/compiler/execution_effects.au", "-o", assembly]
+        )
+        need(result.returncode == 0, result.stderr.decode())
+        execution_facts = json.loads(execution_abi.read_text())
+        entry = next(
+            row for row in execution_facts["functions"].values() if row.get("source_name") == "execution_entry"
+        )
+        need(
+            entry["parameters"]
+            == [{"offset": 0, "bytes": 16, "kind": "service", "type_name": "builtin::ExecutionEffects"}],
+            "ExecutionEffects nominal entry ABI",
+        )
+        emitted = assembly.read_text()
+        symbol = next(
+            name
+            for name in re.findall(r"^\.local\s+(\S+)", emitted, re.MULTILINE)
+            if name.endswith("_d15execution_entry")
+        )
+        assembly.write_text(
+            emitted
+            + f"""\n.text
+.globl __au_runtime_group_entry
+.hidden __au_runtime_group_entry
+.type __au_runtime_group_entry,@function
+__au_runtime_group_entry:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r11
+    call {symbol}
+    leave
+    ret
+.size __au_runtime_group_entry,.-__au_runtime_group_entry
+"""
+        )
+        binary = work / "execution"
+        result = run(
+            shlex.split(os.environ.get("CXX", "c++"))
+            + [
+                "-std=c++23",
+                "-O1",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                "-no-pie",
+                ROOT / "tests/compiler/execution_effects_host.cpp",
+                assembly,
+                ROOT / "tests/compiler/service_group_abi.S",
+                "-o",
+                binary,
+            ]
+        )
+        need(result.returncode == 0, result.stderr.decode())
+        for mode in range(17):
+            result = run([binary, mode])
+            need(
+                result.returncode == (0 if mode == 0 else -signal.SIGILL), f"execution mode {mode}: {result.returncode}"
+            )
+
         # One actual endpoint consumer and one native trap adapter, with hostile
         # raw channels and bounds as runtime data (not a compilation per case).
         assembly = work / "endpoint.s"
@@ -654,6 +716,50 @@ __au_runtime_group_entry:
         )
         invalid["readonly-write"] = f"auto f({b})->u64{{return b.write_sector(0u64);}}"
         invalid["readonly-flush"] = f"auto f({b})->u64{{return b.flush();}}"
+        for label in (
+            "value",
+            "const",
+            "late",
+            "mint",
+            "construct",
+            "store",
+            "copy",
+            "move",
+            "return",
+            "reflect",
+            "reflect-id",
+            "cast",
+            "recursive",
+        ):
+            invalid["execution-" + label] = invalid[label].replace("ServeSession", "ExecutionEffects")
+        execution = "builtin::ExecutionEffects& e"
+        for kind in (
+            "ConsoleSession",
+            "DisplaySession",
+            "ServeSession",
+            "HostFiles",
+            "ReadOnlyBlock",
+            "WritableBlock",
+            "ExecutionEffects",
+        ):
+            for reverse in (False, True):
+                pair = [execution, f"builtin::{kind}& other"]
+                if reverse:
+                    pair.reverse()
+                invalid[f"execution-mixed-{kind}-{reverse}"] = f"auto f({','.join(pair)})->u64{{return 0u64;}}"
+        invalid["execution-finish-integer"] = f"auto f({execution})->builtin::ExecEffect{{return e.finish(0u64);}}"
+        invalid["execution-finish-wrong-enum"] = (
+            f"auto f({execution})->builtin::ExecEffect{{return e.finish(builtin::ExecEffect::success);}}"
+        )
+        invalid["execution-suspended"] = (
+            f"auto h({execution},builtin::ExecEffect r)->u64{{return 0u64;}}"
+            f"auto f({execution})->u64{{return h(e,e.output());}}"
+        )
+        invalid["execution-wrong-forward"] = (
+            f"auto h({execution})->u64{{return 0u64;}}auto f(builtin::ConsoleSession& c)->u64{{return h(c);}}"
+        )
+        invalid["execution-main"] = f"auto main({execution})->u64{{return 0u64;}}"
+        invalid["execution-region"] = f"auto f({execution},builtin::ByteRegion r)->u64{{return 0u64;}}"
         for label, code in invalid.items():
             source.write_text("module rejected;" + code)
             target = ["--target", "aurora"] if label.startswith(("writer-", "readonly-")) else []
@@ -666,7 +772,7 @@ __au_runtime_group_entry:
                     f"{label}: expected method arity diagnostic, got {result.stderr!r}",
                 )
         print(
-            "PASS Serve: source/IR, endpoint, block and writer execution, 58 hostile runtime traps, "
+            "PASS Serve: source/IR, endpoint, block, writer and execution effects, 74 hostile runtime traps, "
             f"eight catalogues, {len(invalid)} rejections"
         )
 

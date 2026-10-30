@@ -17,9 +17,9 @@ auto receive(builtin::ConsoleSession& session) -> builtin::ConsoleSample {
 
 `ConsoleSession`, `DisplaySession`, `IommuEventSession`, `CallSession`, `Com1UartGrant`, `ServeSession` and
 `HostFiles` ([below](#hosted-files)) and `ReadOnlyBlock` ([below](#read-only-block-volume)), plus `WritableBlock`
-([boot recovery writer](#boot-recovery-writer)), are distinct compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
-reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port, Serve, HostFiles, ReadOnlyBlock or WritableBlock alone, Console+Display
-in either order, Event+Console in either order, Serve+ReadOnlyBlock and Serve+WritableBlock in either helper order. Call, Port and HostFiles cannot mix with any other kind. Event+Display, duplicate kinds
+([boot recovery writer](#boot-recovery-writer)), and `ExecutionEffects` ([command orchestration](#command-orchestration)), are distinct compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
+reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port, Serve, HostFiles, ReadOnlyBlock or WritableBlock or ExecutionEffects alone, Console+Display
+in either order, Event+Console in either order, Serve+ReadOnlyBlock and Serve+WritableBlock in either helper order. Call, Port, HostFiles and ExecutionEffects cannot mix with any other kind. Event+Display, duplicate kinds
 and all triples are rejected. There is no
 by-value or const variant. It cannot be constructed, copied, moved, assigned, stored in a
 local/field/array, returned, reflected or converted. A reference is a parameter
@@ -712,3 +712,45 @@ the admitted recovery or mounted-service owner, memory window, extent and remain
 
 Writer boot minting and recovery handoff require separate kernel integration;
 compiler support alone does not enable writes in existing production modes.
+
+## Command orchestration
+
+`builtin::ExecutionEffects&` is a singleton sealed synchronous grant to one
+supervisor command invocation. It has no process `main`/`_start` form, mixed
+service group or region prefix. A trusted private entry binds its boot-volume,
+path, arguments and authenticated incarnation; source cannot select a process
+slot, forge a grant or retain the service reference after return. Ordinary named
+free functions can forward its exclusive loan. A local private copied class can
+retain orchestration facts across effects; that class is not an affine child
+capability. Authority remains in the sealed loan and checked native grant.
+
+The five named methods are:
+
+- `prepare() -> ExecutionPrep`: `state: ExecPrepared` is `loaded`, `refused` or
+  `service_lost`; `status: ExecStatus` is `exited`, `fault`, `watchdog`, `missing`,
+  `malformed`, `quota`, `unavailable` or `output_failed`; `finish_required: bool`
+  records a cleanup obligation, not necessarily a live client. `loaded` is not
+  evidence that the program exited.
+- `advance() -> ExecutionStep`: `state: ExecStep` is `retired`, `output`,
+  `request` or `parked`; `status: ExecStatus` and `value: u64` are frozen copied
+  observations. `retired` means native retirement already occurred.
+- `output() -> ExecEffect`, whose cases are `success` and `failed`.
+- `request() -> ExecRequest`, whose cases are `ready`, `cancelled` and
+  `service_lost`.
+- `finish(ExecFinish) -> ExecEffect`: the exact nominal disposition is
+  `complete`, `output_failed`, `cancelled` or `service_lost`. A copied disposition
+  requests an effect; it does not authenticate its cause or confer authority.
+
+The source command policy chooses ordering and terminal disposition. Native
+adapters validate the live grant and physical preconditions independently.
+Resident scheduling/accounting, persistent file-owner state and hardware effects
+remain native in this bounded increment; a suspended source loan is never lent
+back through a trap callback. Service reports carry no escaping views or owners.
+
+Permanent service kind 9 and operations 46–50 append to the existing identities.
+Private calls use grant/generation in RDI/RSI; `prepare` and `advance` fill a
+fresh 24-byte record through RDX (state at 0, status at 8, boolean/value at 16).
+`finish` takes its enum in RDX; scalar results use RAX. Every enum and boolean
+raw channel is checked at full qword width before becoming a typed source value.
+The nominal record, enum and service entry layouts are emitted as compiler ABI
+facts. No target startup adapter is synthesized for this authority.

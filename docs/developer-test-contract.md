@@ -66,10 +66,15 @@ image trap sites are verified again by the kernel itself at load time
 | --- | --- |
 | Development | incremental build, focused tests; a native host build directory is fine for feedback |
 | Every merge | pinned container, final source: build, merge suite, the guest families the change touches, normal BIOS and UEFI smokes |
-| Releases, compiler or seed changes | release suite, every guest family; it builds the first compiler with the seed ([compiler/README.md](../compiler/README.md#source-bootstrap)) |
+| Compiler or host-bridge changes | release suite in addition to the every-merge gates; guest scope remains the affected families |
+| Releases or seed changes | release suite and every guest family; the release suite builds the first compiler with the seed ([compiler/README.md](../compiler/README.md#source-bootstrap)) |
 
 Report the wall time of `make test` in a fresh build directory, at full
 concurrency, next to the previous main. Missing tools or skipped gates are reported, never passed.
+Run registered guest rows through Meson at `nproc` concurrency, retaining its
+explicit nonparallel cases and the memory watchdog. A measured high-memory
+workload may need separate scheduling; that is not a reason to serialize all
+guests. Do not run shared-output Makefile smoke shortcuts concurrently.
 
 ## Where tests live
 

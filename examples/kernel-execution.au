@@ -1,0 +1,8 @@
+module kernel_execution;
+import kernel.execution_session;
+
+// One synchronous production command invocation retains the source ledger.
+auto process_execute_command(builtin::ExecutionEffects& effects) -> kernel::ExecutionResult {
+    const kernel::ExecutionResult result = kernel::execute_command(effects);
+    return result;
+}

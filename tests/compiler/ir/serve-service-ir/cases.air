@@ -82,3 +82,113 @@ end
 @@ -2 +2 @@
 -fields __au_serve_request [((enum __au_serve_status display=builtin::ServeStatus) 0 1 false) (u64 1 1 false)]
 +fields __au_serve_request [((enum __au_serve_status display=builtin::ServeStatus) 0 1 false) (u64 0 1 false)]
+
+; ExecutionEffects is appended metadata type 25 and service kind 9. These
+; independent IR rows use numeric identities rather than parser aliases.
+; CASE: execution effects copied observations
+; RUN: emit
+; RUN: stack-facts
+; CHECK-NOT: __au_runtime_bytes_
+layout __au_execution_prep [(enum __au_exec_prepared display=builtin::ExecPrepared) (enum __au_exec_status display=builtin::ExecStatus) bool]
+fields __au_execution_prep [((enum __au_exec_prepared display=builtin::ExecPrepared) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false) (bool 2 1 false)]
+layout __au_execution_step [(enum __au_exec_step display=builtin::ExecStep) (enum __au_exec_status display=builtin::ExecStatus) u64]
+fields __au_execution_step [((enum __au_exec_step display=builtin::ExecStep) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false) (u64 2 1 false)]
+enum __au_exec_prepared 3
+enum __au_exec_status 8
+enum __au_exec_step 4
+enum __au_exec_effect 2
+enum __au_exec_request 3
+enum __au_exec_finish 4
+function execution_ir_entry
+  result u64
+  params [25]
+  frame 80
+  slot 24 bool
+  slot 32 (enum __au_exec_status display=builtin::ExecStatus)
+  slot 40 (enum __au_exec_prepared display=builtin::ExecPrepared)
+  slot 48 u64
+  slot 56 (enum __au_exec_status display=builtin::ExecStatus)
+  slot 64 (enum __au_exec_step display=builtin::ExecStep)
+  object 40 __au_execution_prep false
+  object 64 __au_execution_step false
+  service 16
+    BindServiceParameter 0 16 9
+    BeginObject 40
+    ServiceOperation 16 46 40 9
+    EndObject 40
+    BeginObject 64
+    ServiceOperation 16 47 64 9
+    EndObject 64
+    ServiceOperation 16 48 0 9
+    ServiceOperation 16 49 0 9
+    EnumConstant (enum __au_exec_finish display=builtin::ExecFinish) 0
+    ServiceOperation 16 50 0 9
+    Constant 1 u64
+    Return
+end
+
+; CASE: execution rejects unknown operation
+; BASE: execution effects copied observations
+; RUN: verify
+; EXPECT-ERROR: unknown sealed service operation
+@@ -34 +34 @@
+-    ServiceOperation 16 50 0 9
++    ServiceOperation 16 51 0 9
+
+; CASE: execution rejects wrong observation nominal identity
+; BASE: execution effects copied observations
+; RUN: verify
+; EXPECT-ERROR: service observation requires exact pristine active copied sample object
+@@ -26 +26 @@
+-    ServiceOperation 16 46 40 9
++    ServiceOperation 16 47 40 9
+
+; CASE: execution finish rejects integer argument
+; BASE: execution effects copied observations
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -33 +33 @@
+-    EnumConstant (enum __au_exec_finish display=builtin::ExecFinish) 0
++    Constant 0 u64
+
+; CASE: execution finish rejects same-cardinality enum
+; BASE: execution effects copied observations
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -33 +33 @@
+-    EnumConstant (enum __au_exec_finish display=builtin::ExecFinish) 0
++    EnumConstant (enum __au_exec_step display=builtin::ExecStep) 0
+
+; CASE: execution rejects wrong capability root
+; BASE: execution effects copied observations
+; RUN: verify
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
+@@ -26 +26 @@
+-    ServiceOperation 16 46 40 9
++    ServiceOperation 8 46 40 9
+
+; CASE: execution rejects mismatched capability kind
+; BASE: execution effects copied observations
+; RUN: verify
+; EXPECT-ERROR: service operation kind does not match active capability
+@@ -26 +26 @@
+-    ServiceOperation 16 46 40 9
++    ServiceOperation 16 46 40 8
+
+; CASE: execution rejects widened result enum
+; BASE: execution effects copied observations
+; RUN: verify
+; EXPECT-ERROR: noncanonical sealed service enum
+@@ -8 +8 @@
+-enum __au_exec_effect 2
++enum __au_exec_effect 3
+
+; CASE: execution rejects different state enum in report
+; BASE: execution effects copied observations
+; RUN: verify
+; EXPECT-ERROR: noncanonical sealed Execution observation layout
+@@ -1,2 +1,2 @@
+-layout __au_execution_prep [(enum __au_exec_prepared display=builtin::ExecPrepared) (enum __au_exec_status display=builtin::ExecStatus) bool]
+-fields __au_execution_prep [((enum __au_exec_prepared display=builtin::ExecPrepared) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false) (bool 2 1 false)]
++layout __au_execution_prep [(enum __au_exec_step display=builtin::ExecStep) (enum __au_exec_status display=builtin::ExecStatus) bool]
++fields __au_execution_prep [((enum __au_exec_step display=builtin::ExecStep) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false) (bool 2 1 false)]

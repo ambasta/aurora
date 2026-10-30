@@ -29,7 +29,8 @@ export namespace compiler_resolver {
         value_span,
         host_files,
         read_only_block,
-        writable_block
+        writable_block,
+        execution_effects
     };
     enum class DeclarationKind {
         invalid,

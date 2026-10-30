@@ -18,7 +18,20 @@ export namespace compiler_ir_verification {
             if ((operation == 1 && compiler_ir_metadata::named(m, name, "__au_console_put_result")) || (operation == 2
                 && compiler_ir_metadata::named(m, name, "__au_display_put_result")) || (operation == 4
                 && compiler_ir_metadata::named(m, name, "__au_event_ack_result")) || (operation == 7
-                && compiler_ir_metadata::named(m, name, "__au_port_write_result"))) {
+                && compiler_ir_metadata::named(m, name, "__au_port_write_result")) || ((operation == 48 || operation
+                == 50) && compiler_ir_metadata::named(m, name, "__au_exec_effect")) || (operation == 49
+                && compiler_ir_metadata::named(m, name, "__au_exec_request"))) {
+                return TypeKey(9, at);
+            }
+            at = at + 1;
+        }
+        return TypeKey(-1, -1);
+    }
+    auto transfer_execution_finish_type(const compiler_ir_metadata::MetadataStore& m) -> TypeKey {
+        i64 at = 0;
+        while (at < m.enum_count()) {
+            const compiler_ir_metadata::EnumRow row = m.enum_at(at);
+            if (compiler_ir_metadata::named(m, row.name(), "__au_exec_finish")) {
                 return TypeKey(9, at);
             }
             at = at + 1;
@@ -139,6 +152,19 @@ export namespace compiler_ir_verification {
                     VerificationErrorSecond::service_operation_requires_active_unsuspended_capability_provenance));
             }
             const i64 operation = transfer_value(s, id, 1);
+            if (operation >= 48 && operation <= 50) {
+                if (operation == 50) {
+                    const TypeKey argument_type = transfer_execution_finish_type(m);
+                    const ValueRow argument = current(w, argument_type);
+                    if (!w.good()) {
+                        return false;
+                    }
+                }
+                const TypeKey result_type = transfer_service_result(m, operation);
+                const BoundsEvidence guard = empty_bounds();
+                const ValueRow result_value = ValueRow(result_type, guard);
+                return w.set_current(result_value);
+            }
             if (operation == 44 || operation == 45) {
                 return transfer_set_kind(w, 7);
             }
@@ -231,7 +257,8 @@ export namespace compiler_ir_verification {
                 const ValueRow result_value = ValueRow(result_type, guard);
                 return w.set_current(result_value);
             }
-            if (operation == 0 || operation == 3 || operation == 5 || operation == 8 || operation == 32) {
+            if (operation == 0 || operation == 3 || operation == 5 || operation == 8 || operation == 32 || operation
+                == 46 || operation == 47) {
                 if ((operation == 5 || operation == 8 || operation == 32) && !transfer_current_kind(w, 7)) {
                     return false;
                 }

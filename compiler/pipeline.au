@@ -172,6 +172,8 @@ export namespace compiler_ir_metadata {
         value.typed(r == MetadataError::resource_overlap, "overlapping region or owned byte spills");
         value.typed(r == MetadataError::call_layout, "noncanonical sealed CallResult layout");
         value.typed(r == MetadataError::call_fields, "noncanonical sealed CallResult fields");
+        value.typed(r == MetadataError::execution_layout, "noncanonical sealed Execution observation layout");
+        value.typed(r == MetadataError::execution_fields, "noncanonical sealed Execution observation fields");
         value.typed(r == MetadataError::span_value_type, "invalid canonical typed span type");
         value.typed(r == MetadataError::span_element_unknown,
             "typed span element requires known canonical class layout");

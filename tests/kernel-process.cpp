@@ -13,6 +13,7 @@
 //   kernel-process files VOLUME CASES  file-service scripts over a volume
 //                                 (files.cases), one fresh service per line
 // stdout is compared with the golden file beside the cases.
+#include "../kernel/execution-session.hpp"
 #include "../kernel/uefi/frames.hpp"
 #include "../kernel/uefi/kernel-space.hpp"
 #include "kernel-process-files.hpp"
@@ -26,6 +27,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <sys/wait.h>
+#include <unistd.h>
 
 namespace {
 namespace frames = aurora::uefi::frames;
@@ -835,9 +838,196 @@ auto handoff_mode(const char *cases) -> int {
     }
     return 0;
 }
+namespace execution_fixture {
+namespace execution = aurora::execution;
+using U64 = std::uint64_t;
+constexpr const char *statuses[] = {
+    "exited", "fault", "watchdog", "missing", "malformed", "quota", "unavailable", "output_failed"};
+constexpr const char *preparations[] = {"loaded", "refused", "service_lost"};
+constexpr const char *steps[] = {"retired", "output", "request", "parked"};
+constexpr const char *effects[] = {"success", "failed"};
+constexpr const char *requests[] = {"ready", "cancelled", "service_lost"};
+constexpr const char *finishes[] = {"complete", "output_failed", "cancelled", "service_lost"};
+std::vector<std::vector<std::string>> script;
+std::size_t cursor{};
+std::string trace;
+execution::Argument argument{};
+unsigned calls{}, expected_calls{};
+bool quiet = true, reenter = false, release_inside = false;
+
+template <std::size_t N> auto named(const std::string &text, const char *const (&names)[N]) -> U64 {
+    for (std::size_t index = 0; index < N; ++index)
+        if (text == names[index])
+            return index;
+    usage("unknown execution case word: " + text);
+}
+auto next(const char *operation, std::size_t fields) -> const std::vector<std::string> & {
+    ++calls;
+    if (cursor == script.size() || script[cursor].size() != fields || script[cursor][0] != operation)
+        usage("unexpected execution effect: " + std::string{operation});
+    if (!trace.empty())
+        trace += ',';
+    trace += operation;
+    return script[cursor++];
+}
+class Transport {
+public:
+    static auto prepare() -> execution::Preparation;
+    static auto advance() -> execution::Observation {
+        const auto &row = next("advance", 4);
+        return {static_cast<execution::Step>(named(row[1], steps)),
+                static_cast<execution::Status>(named(row[2], statuses)),
+                number(row[3])};
+    }
+    static auto output() -> execution::Effect {
+        return static_cast<execution::Effect>(named(next("output", 2)[1], effects));
+    }
+    static auto request() -> execution::Request {
+        return static_cast<execution::Request>(named(next("request", 2)[1], requests));
+    }
+    static auto finish(execution::Finish disposition) -> execution::Effect {
+        const auto &row = next("finish", 3);
+        if (static_cast<U64>(disposition) != named(row[1], finishes))
+            usage("unexpected execution finish disposition");
+        trace += ':' + row[1];
+        return static_cast<execution::Effect>(named(row[2], effects));
+    }
+};
+class Platform {
+public:
+    static auto quiet() -> bool {
+        return execution_fixture::quiet;
+    }
+    [[noreturn]] static auto fail() -> void {
+        std::_Exit(calls == expected_calls ? 77 : 78);
+    }
+};
+using Session = execution::Session<Transport, Platform>;
+auto Transport::prepare() -> execution::Preparation {
+    if (reenter || release_inside) {
+        ++calls;
+        if (reenter)
+            static_cast<void>(Session::prepare(argument.grant, argument.generation));
+        else
+            Session::release(argument);
+        usage("execution adapter accepted reentry");
+    }
+    const auto &row = next("prepare", 4);
+    const auto required = number(row[3]);
+    if (required > 1)
+        usage("invalid fixture finish flag");
+    return {static_cast<execution::Prepared>(named(row[1], preparations)),
+            static_cast<execution::Status>(named(row[2], statuses)),
+            required};
+}
+auto denial(const std::string &kind) -> void {
+    const auto old = Session::open();
+    Session::release(old);
+    argument = Session::open();
+    const auto child = fork();
+    if (child < 0)
+        usage("execution fixture fork failed");
+    if (!child) {
+        calls = expected_calls = 0;
+        if (kind == "stale")
+            static_cast<void>(Session::prepare(old.grant, old.generation));
+        else if (kind == "forged")
+            static_cast<void>(Session::prepare(reinterpret_cast<const void *>(1), argument.generation));
+        else if (kind == "zero_generation")
+            static_cast<void>(Session::prepare(argument.grant, 0));
+        else if (kind == "duplicate_open")
+            static_cast<void>(Session::open());
+        else if (kind == "released") {
+            Session::release(argument);
+            static_cast<void>(Session::prepare(argument.grant, argument.generation));
+        } else if (kind == "not_quiet") {
+            quiet = false;
+            static_cast<void>(Session::prepare(argument.grant, argument.generation));
+        } else if (kind == "invalid_finish")
+            static_cast<void>(Session::finish(argument.grant, argument.generation, 4));
+        else if (kind == "reenter" || kind == "release_inside") {
+            expected_calls = 1;
+            reenter = kind == "reenter";
+            release_inside = kind == "release_inside";
+            static_cast<void>(Session::prepare(argument.grant, argument.generation));
+        } else
+            usage("unknown execution denial");
+        std::_Exit(1);
+    }
+    int status{};
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status) != 77)
+        usage("execution authority denial failed");
+    Session::release(argument);
+}
+} // namespace execution_fixture
+
+extern "C" auto __au_runtime_process_execute_command(const aurora::execution::Argument *, aurora::execution::Result *)
+    -> void;
+extern "C" auto __au_runtime_execution_prepare(const void *grant,
+                                               std::uint64_t generation,
+                                               aurora::execution::Preparation *result) -> void {
+    *result = execution_fixture::Session::prepare(grant, generation);
+}
+extern "C" auto __au_runtime_execution_advance(const void *grant,
+                                               std::uint64_t generation,
+                                               aurora::execution::Observation *result) -> void {
+    *result = execution_fixture::Session::advance(grant, generation);
+}
+extern "C" auto __au_runtime_execution_output(const void *grant, std::uint64_t generation) -> std::uint64_t {
+    return execution_fixture::Session::output(grant, generation);
+}
+extern "C" auto __au_runtime_execution_request(const void *grant, std::uint64_t generation) -> std::uint64_t {
+    return execution_fixture::Session::request(grant, generation);
+}
+extern "C" auto __au_runtime_execution_finish(const void *grant, std::uint64_t generation, std::uint64_t disposition)
+    -> std::uint64_t {
+    return execution_fixture::Session::finish(grant, generation, disposition);
+}
+
+auto execution_mode(const char *cases) -> int {
+    namespace fixture = execution_fixture;
+    std::ifstream input{cases};
+    if (!input)
+        usage("cannot read execution cases");
+    for (std::string line; std::getline(input, line);) {
+        if (line.empty() || line.starts_with('#'))
+            continue;
+        std::istringstream row{line};
+        std::string name, token;
+        row >> name;
+        fixture::script.clear();
+        fixture::cursor = fixture::calls = 0;
+        fixture::trace.clear();
+        while (row >> token) {
+            std::vector<std::string> fields;
+            std::istringstream part{token};
+            for (std::string field; std::getline(part, field, ':');)
+                fields.push_back(field);
+            fixture::script.push_back(std::move(fields));
+        }
+        if (fixture::script.size() == 1 && fixture::script[0].size() == 2 && fixture::script[0][0] == "deny") {
+            fixture::denial(fixture::script[0][1]);
+            std::cout << name << " denied\n";
+            continue;
+        }
+        fixture::argument = fixture::Session::open();
+        aurora::execution::Result result;
+        __au_runtime_process_execute_command(&fixture::argument, &result);
+        fixture::Session::release(fixture::argument);
+        if (fixture::cursor != fixture::script.size() ||
+            static_cast<std::uint64_t>(result.status) >= std::size(fixture::statuses))
+            usage("execution script not consumed or invalid result");
+        std::cout << name << ' ' << fixture::statuses[static_cast<std::size_t>(result.status)] << ':' << result.value
+                  << ' ' << fixture::trace << '\n';
+    }
+    return 0;
+}
+
 } // namespace
 
 auto main(int argc, char **argv) -> int {
+    if (argc == 3 && std::string{argv[1]} == "execution")
+        return execution_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "handoff")
         return handoff_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "frames")

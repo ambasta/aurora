@@ -144,7 +144,7 @@ export namespace compiler_resolver {
             == ResolvedTypeKind::event_session || kind == ResolvedTypeKind::call_session || kind
             == ResolvedTypeKind::port_range || kind == ResolvedTypeKind::serve_session || kind
             == ResolvedTypeKind::host_files || kind == ResolvedTypeKind::read_only_block || kind
-            == ResolvedTypeKind::writable_block;
+            == ResolvedTypeKind::writable_block || kind == ResolvedTypeKind::execution_effects;
     }
     auto resource_kind(ResolvedTypeKind kind) -> bool {
         return kind == ResolvedTypeKind::byte_region || kind == ResolvedTypeKind::owned_bytes || kind
@@ -221,6 +221,9 @@ export namespace compiler_resolver {
         }
         if (kind == ResolvedTypeKind::host_files) {
             return 23;
+        }
+        if (kind == ResolvedTypeKind::execution_effects) {
+            return 26;
         }
         if (kind == ResolvedTypeKind::writable_block) {
             return 25;
@@ -1744,6 +1747,7 @@ export namespace compiler_resolver {
         bool host = false;
         bool block = false;
         bool writer = false;
+        bool execution = false;
         i64 at = 0;
         while (at < session.syntax_count() && session.good()) {
             const SyntaxRow row = session.syntax(at);
@@ -1764,9 +1768,13 @@ export namespace compiler_resolver {
             host = host || family == 4;
             block = block || family == 5;
             writer = writer || family == 6;
+            execution = execution || family == 7;
             at = at + 1;
         }
         seed_family(session, 0);
+        if (execution) {
+            seed_family(session, 7);
+        }
         if (writer) {
             seed_family(session, 6);
         }
@@ -3694,7 +3702,8 @@ export namespace compiler_resolver {
             -1, -1, 0) >= 0 || session.index(34, type_rank(ResolvedTypeKind::serve_session), -1, -1, 0) >= 0
             || session.index(34, type_rank(ResolvedTypeKind::host_files), -1, -1, 0) >= 0 || session.index(34,
             type_rank(ResolvedTypeKind::read_only_block), -1, -1, 0) >= 0 || session.index(34,
-            type_rank(ResolvedTypeKind::writable_block), -1, -1, 0) >= 0) {
+            type_rank(ResolvedTypeKind::writable_block), -1, -1, 0) >= 0 || session.index(34,
+            type_rank(ResolvedTypeKind::execution_effects), -1, -1, 0) >= 0) {
             set_mw(session, status, 3, 1);
         }
         if (session.good()) {

@@ -151,9 +151,10 @@ shares append through exclusive mutable typed-buffer borrows.
 The seed, or a cached first compiler, builds current C1/C2 with convergence; execution and ABI
 tests qualify emission without a production fallback or historical-emitter dependency.
 Qualification requires final-source pinned-container `merge`, normal BIOS/UEFI
-and affected guest gates; releases and compiler or seed changes also run `release`
-and every guest family, which includes the
-[seed's bootstrap check](../compiler/README.md#source-bootstrap).
+and affected guest gates. Compiler or host-bridge changes additionally run
+`release`, including the [seed's bootstrap check](../compiler/README.md#source-bootstrap)
+and in-guest self-host row. Every guest family is required for releases and seed
+changes; an ordinary compiler change retains affected-family scope.
 Successful lowering-record projection now runs in Aurora, preserving exact
 identity/ordering and filling pending metadata/instruction owners before independent
 admission. The compiler is a hosted Aurora program: source file I/O, diagnostics

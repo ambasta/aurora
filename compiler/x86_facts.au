@@ -86,7 +86,7 @@ export namespace compiler_x86 {
             return false;
         }
         const i64 kind = type_kind(metadata, parameter_type(metadata, callable, 0));
-        return kind == 19 || kind == 20 || kind == 22 || kind == 23 || kind == 24;
+        return kind == 19 || kind == 20 || kind == 22 || kind == 23 || kind == 24 || kind == 25;
     }
     auto port_service_record_bytes(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> i64 {
         const i64 result = result_type(metadata, callable);
@@ -644,6 +644,9 @@ export namespace compiler_x86 {
         if (kind == 22) {
             return workspace.text("\"builtin::HostFiles\"");
         }
+        if (kind == 25) {
+            return workspace.text("\"builtin::ExecutionEffects\"");
+        }
         if (kind == 24) {
             return workspace.text("\"builtin::WritableBlock\"");
         }
@@ -1114,8 +1117,8 @@ export namespace compiler_x86 {
             workspace.byte(',');
             fact_emit_type(workspace, metadata, type);
             if (at <= region_index || type_kind(metadata, type) == 19 || type_kind(metadata, type) == 20
-                || type_kind(metadata, type) == 22 || type_kind(metadata, type) == 23 || type_kind(metadata, type)
-                == 24) {
+                || type_kind(metadata, type) == 22 || type_kind(metadata, type) == 23 || type_kind(metadata, type) == 24
+                || type_kind(metadata, type) == 25) {
                 workspace.text(",\"type_name\":");
                 fact_emit_service_kind(workspace, type_kind(metadata, type));
             }

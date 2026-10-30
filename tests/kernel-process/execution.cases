@@ -1,0 +1,32 @@
+# Named synchronous observations, consumed by the real source command loop.
+# finish includes the required disposition, so wrong or duplicate cleanup fails.
+exit prepare:loaded:exited:1 advance:retired:exited:0 finish:complete:success
+exit_value prepare:loaded:exited:1 advance:retired:exited:42 finish:complete:success
+fault prepare:loaded:exited:1 advance:retired:fault:14 finish:complete:success
+watchdog prepare:loaded:exited:1 advance:retired:watchdog:0 finish:complete:success
+park_resume prepare:loaded:exited:1 advance:parked:unavailable:0 advance:retired:exited:7 finish:complete:success
+output_resume prepare:loaded:exited:1 advance:output:unavailable:0 output:success advance:retired:exited:8 finish:complete:success
+output_failure prepare:loaded:exited:1 advance:output:unavailable:0 output:failed finish:output_failed:success
+request_resume prepare:loaded:exited:1 advance:request:unavailable:0 request:ready advance:retired:exited:9 finish:complete:success
+request_cancelled prepare:loaded:exited:1 advance:request:unavailable:0 request:cancelled finish:cancelled:success
+service_lost prepare:loaded:exited:1 advance:request:unavailable:0 request:service_lost finish:service_lost:success
+multiple_effects prepare:loaded:exited:1 advance:output:unavailable:0 output:success advance:request:unavailable:0 request:ready advance:parked:unavailable:0 advance:retired:exited:13 finish:complete:success
+missing prepare:refused:missing:1 finish:complete:success
+malformed prepare:refused:malformed:1 finish:complete:success
+quota prepare:refused:quota:1 finish:complete:success
+prepare_service_lost prepare:service_lost:unavailable:0
+identity_exhausted prepare:refused:unavailable:0
+exit_close_failure prepare:loaded:exited:1 advance:retired:exited:42 finish:complete:failed
+fault_close_failure prepare:loaded:exited:1 advance:retired:fault:14 finish:complete:failed
+output_close_failure prepare:loaded:exited:1 advance:output:unavailable:0 output:failed finish:output_failed:failed
+cancel_close_failure prepare:loaded:exited:1 advance:request:unavailable:0 request:cancelled finish:cancelled:failed
+missing_close_failure prepare:refused:missing:1 finish:complete:failed
+stale deny:stale
+forged deny:forged
+zero_generation deny:zero_generation
+duplicate_open deny:duplicate_open
+released deny:released
+not_quiet deny:not_quiet
+invalid_finish deny:invalid_finish
+reenter deny:reenter
+release_inside deny:release_inside

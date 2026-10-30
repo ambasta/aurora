@@ -42,19 +42,24 @@ export namespace compiler_lowering {
     auto has_writer_service(i64 groups) -> bool {
         return (u64(groups) & u64(compiler_catalog::writer_service_group())) != 0u64;
     }
+    auto has_execution_service(i64 groups) -> bool {
+        return (u64(groups) & u64(compiler_catalog::execution_service_group())) != 0u64;
+    }
     auto valid_service_groups(i64 groups) -> bool {
-        return groups >= 0 && groups == compiler_catalog::service_groups(has_call_service(groups),
+        return groups >= 0 && groups
+            == compiler_catalog::execution_groups(compiler_catalog::service_groups(has_call_service(groups),
             has_port_service(groups), has_serve_service(groups), has_host_service(groups), has_block_service(groups),
-            has_writer_service(groups));
+            has_writer_service(groups)), has_execution_service(groups));
     }
     auto active_service_kind(i64 groups, i64 kind) -> bool {
-        if (kind < 0 || kind > 8) {
+        if (kind < 0 || kind > 9) {
             return false;
         }
         const i64 family = compiler_catalog::kind_family(kind);
         return family == 0 || (family == 1 && has_call_service(groups)) || (family == 2 && has_port_service(groups))
             || (family == 3 && has_serve_service(groups)) || (family == 4 && has_host_service(groups)) || (family == 5
-            && has_block_service(groups)) || (family == 6 && has_writer_service(groups));
+            && has_block_service(groups)) || (family == 6 && has_writer_service(groups)) || (family == 7
+            && has_execution_service(groups));
     }
     auto active_service_operation(i64 groups, i64 operation) -> bool {
         return operation >= 0 && operation < compiler_catalog::operation_count() && active_service_kind(groups,
@@ -97,7 +102,11 @@ export namespace compiler_lowering {
         const i64 arguments = session.operand_count();
         i64 at = 0;
         while (at < count && session.good()) {
-            const i64 type = compiler_resolver::scalar_type(session, compiler_catalog::parameter_kind(operation, at));
+            i64 type = compiler_resolver::scalar_type(session, compiler_catalog::parameter_kind(operation, at));
+            const i64 nominal = compiler_catalog::parameter_nominal(operation, at);
+            if (nominal >= 0) {
+                type = compiler_resolver::catalog_type(session, nominal);
+            }
             put(session, OperandRole::TypeId, type);
             at = at + 1;
         }
@@ -209,10 +218,11 @@ export namespace compiler_lowering {
         if (mode < 0 || mode > 1) {
             return setup_invalid(session);
         }
-        const i64 groups = compiler_catalog::service_groups(compiler_resolver::family_seeded(session, 1),
-            compiler_resolver::family_seeded(session, 2), compiler_resolver::family_seeded(session, 3),
-            compiler_resolver::family_seeded(session, 4), compiler_resolver::family_seeded(session, 5),
-            compiler_resolver::family_seeded(session, 6));
+        const i64 groups = compiler_catalog::execution_groups(compiler_catalog::service_groups(
+            compiler_resolver::family_seeded(session, 1), compiler_resolver::family_seeded(session, 2),
+            compiler_resolver::family_seeded(session, 3), compiler_resolver::family_seeded(session, 4),
+            compiler_resolver::family_seeded(session, 5), compiler_resolver::family_seeded(session, 6)),
+            compiler_resolver::family_seeded(session, 7));
         const i64 begin = session.operand_count();
         put(session, OperandRole::MaximumCopiedByteLeaves, 512);
         put(session, OperandRole::MaximumCopiedNonByteLeaves, 64);
@@ -286,7 +296,7 @@ export namespace compiler_lowering {
         return ordinal + 9;
     }
     auto service_group_supported(compiler_resolver::Session& session, i64 first, i64 second) -> bool {
-        if (first < 0 || first > 8 || second < -1 || second > 8) {
+        if (first < 0 || first > 9 || second < -1 || second > 9) {
             setup_invalid(session);
             return false;
         }
@@ -296,6 +306,9 @@ export namespace compiler_lowering {
             return false;
         }
         if (second < 0) {
+            if (first == 9) {
+                return has_execution_service(allowed);
+            }
             if (first == 8) {
                 return has_writer_service(allowed);
             }

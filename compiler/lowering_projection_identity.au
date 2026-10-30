@@ -301,6 +301,9 @@ export namespace compiler_lowering_projection {
         if (kind == compiler_resolver::ResolvedTypeKind::host_files) {
             return 22;
         }
+        if (kind == compiler_resolver::ResolvedTypeKind::execution_effects) {
+            return 25;
+        }
         if (kind == compiler_resolver::ResolvedTypeKind::writable_block) {
             return 24;
         }

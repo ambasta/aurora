@@ -1009,6 +1009,67 @@ export namespace compiler_ir_metadata {
         }
         return true;
     }
+    // Execution observations are copied facts, never a child or grant authority.
+    auto sealed_execution_result(MetadataStore& store, i64 class_index, bool preparation) -> bool {
+        const ClassRow row = store.class_at(class_index);
+        const IndexRange leaves = row.leaves();
+        const ClassResultRow result = store.result_at(class_index);
+        const IndexRange fields = result.fields();
+        if (leaves.count() != 3 || fields.count() != 3) {
+            return fail(store, MetadataError::execution_layout);
+        }
+        i64 at = 0;
+        while (at < 3) {
+            const RawTypeRow type = store.type_at(leaves.begin() + at);
+            bool valid = canonical_tail(type);
+            if (at == 0) {
+                valid = valid && type.kind() == 9;
+                if (preparation) {
+                    valid = valid && named(store, type.name(), "__au_exec_prepared");
+                } else {
+                    valid = valid && named(store, type.name(), "__au_exec_step");
+                }
+            }
+            if (at == 1) {
+                valid = valid && type.kind() == 9 && named(store, type.name(), "__au_exec_status");
+            }
+            if (at == 2) {
+                if (preparation) {
+                    valid = valid && plain_type(type, 1);
+                } else {
+                    valid = valid && plain_type(type, 7);
+                }
+            }
+            if (!valid) {
+                return fail(store, MetadataError::execution_layout);
+            }
+            const FieldRow field = store.field_at(fields.begin() + at);
+            const RawTypeRow field_type = store.type_at(field.type());
+            if (field.array_flag() != 0 || field.first_leaf() != at || field.length() != 1 || !same_type(store,
+                field_type, type)) {
+                return fail(store, MetadataError::execution_fields);
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto sealed_execution_results(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
+        i64 at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, masks.class_layout())) {
+                if (named(store, row.name(), "__au_execution_prep") && !sealed_execution_result(store, at, true)) {
+                    return false;
+                }
+                if (named(store, row.name(), "__au_execution_step") && !sealed_execution_result(store, at, false)) {
+                    return false;
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
     auto sealed_host_results(MetadataStore& store) -> bool {
         const FlagMasks masks = FlagMasks();
         i64 at = 0;
@@ -1100,7 +1161,10 @@ export namespace compiler_ir_metadata {
             && sealed_enum(store, "__au_display_put_result", 2, false) && sealed_enum(store, "__au_display_completion",
             2, false) && sealed_enum(store, "__au_port_write_result", 1, false) && sealed_enum(store, "__au_host_exit",
             3, false) && sealed_enum(store, "__au_host_status", 10, false) && sealed_enum(store, "__au_host_stream", 2,
-            false) && sealed_host_results(store);
+            false) && sealed_host_results(store) && sealed_execution_results(store) && sealed_enum(store,
+            "__au_exec_prepared", 3, false) && sealed_enum(store, "__au_exec_status", 8, false) && sealed_enum(store,
+            "__au_exec_step", 4, false) && sealed_enum(store, "__au_exec_effect", 2, false) && sealed_enum(store,
+            "__au_exec_request", 3, false) && sealed_enum(store, "__au_exec_finish", 4, false);
     }
 
     // Children are complete before this computation starts. Offsets come only
@@ -1481,7 +1545,7 @@ export namespace compiler_ir_metadata {
     }
     auto service_type(RawTypeRow type) -> bool {
         return type.kind() == 14 || type.kind() == 15 || type.kind() == 16 || type.kind() == 18 || type.kind() == 19
-            || type.kind() == 20 || type.kind() == 22 || type.kind() == 23 || type.kind() == 24;
+            || type.kind() == 20 || type.kind() == 22 || type.kind() == 23 || type.kind() == 24 || type.kind() == 25;
     }
     auto service_kind(RawTypeRow type) -> i64 {
         if (type.kind() == 14) {
@@ -1504,6 +1568,9 @@ export namespace compiler_ir_metadata {
         }
         if (type.kind() == 22) {
             return 6;
+        }
+        if (type.kind() == 25) {
+            return 9;
         }
         if (type.kind() == 24) {
             return 8;
@@ -1579,6 +1646,9 @@ export namespace compiler_ir_metadata {
         if (type.kind() == 22) {
             return masks.service_host();
         }
+        if (type.kind() == 25) {
+            return masks.service_execution();
+        }
         if (type.kind() == 24) {
             return masks.service_writer();
         }
@@ -1642,9 +1712,10 @@ export namespace compiler_ir_metadata {
         if (at > 2 || (kinds != masks.service_console() && kinds != masks.service_display() && kinds
             != masks.service_iommu() && kinds != masks.service_call() && kinds != masks.service_port() && kinds
             != masks.service_serve() && kinds != masks.service_host() && kinds != masks.service_block() && kinds
-            != masks.service_writer() && kinds != (masks.service_serve() | masks.service_writer()) && kinds
-            != (masks.service_serve() | masks.service_block()) && kinds != (masks.service_console()
-            | masks.service_display()) && kinds != (masks.service_console() | masks.service_iommu()))) {
+            != masks.service_writer() && kinds != masks.service_execution() && kinds != (masks.service_serve()
+            | masks.service_writer()) && kinds != (masks.service_serve() | masks.service_block()) && kinds
+            != (masks.service_console() | masks.service_display()) && kinds != (masks.service_console()
+            | masks.service_iommu()))) {
             return fail(store, MetadataError::service_group);
         }
         const i64 region = service_region_index(store, row);

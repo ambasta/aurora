@@ -1239,6 +1239,7 @@ def uefi_profile(profile_mode, flags):
         (framebuffer, "display", "display-service", "display-service", ["kernel/policies", "library"]),
         (owned_bytes, "owned-bytes", "owned-bytes", "owned-bytes", ["kernel/policies", "library"]),
         (process, "process-policy", "process", "process", ["kernel/policies", "library"]),
+        (profile_mode == "production", "execution", "execution", "execution", ["kernel/policies"]),
     ):
         if enabled:
             languages[stem] = dict(

@@ -9,6 +9,7 @@
 #include "nvme.hpp"
 #endif
 #include "../console.hpp"
+#include "../execution-session.hpp"
 
 #ifdef AURORA_PRODUCTION
 #include "../console-uart.hpp"
@@ -28,6 +29,10 @@ using aurora::uefi::ProcessSpace;
 using aurora::uefi::RunResult;
 using aurora::uefi::RunStatus;
 using Timer = aurora::uefi::LocalApicTimerIo;
+#ifdef AURORA_PRODUCTION
+auto source_execute(const aurora::execution::Argument *, aurora::execution::Result *)
+    -> void asm("__au_runtime_process_execute_command") __attribute__((visibility("hidden")));
+#endif
 
 namespace {
 enum class XfsReadonlyProfile : U64 {
@@ -2695,66 +2700,147 @@ auto load_committed(std::span<const std::byte> volume,
         residents[1].continuation[frame_rax] = 0;
     return delivered;
 }
-auto execute_command(std::span<const std::byte> volume,
+// Native resource/effect facts only. The command loop and its terminal-result
+// choice live in one retained Aurora invocation, not a mirrored native phase.
+class ExecutionTransport final {
+    static inline std::span<const std::byte> volume_, path_, arguments_;
+    static inline U64 client_ = 0;
+    static inline bool prepared_ = false, output_pending_ = false, request_pending_ = false;
+    static inline bool output_failed_ = false, request_failed_ = false;
+    static auto require(bool valid) -> void {
+        if (!valid)
+            fail("execution effect state");
+    }
+    static auto status(RunStatus value) -> aurora::execution::Status {
+        return static_cast<aurora::execution::Status>(value);
+    }
+
+public:
+    static auto bind(std::span<const std::byte> volume,
                      std::span<const std::byte> path,
-                     std::span<const std::byte> arguments) -> RunResult {
-    if (!residents[0].space && !start_file_service(volume)) {
-        abandon_service();
-        return {};
+                     std::span<const std::byte> arguments) -> void {
+        require(volume_.empty() && !client_ && !residents[1].space);
+        volume_ = volume;
+        path_ = path;
+        arguments_ = arguments;
+        prepared_ = output_pending_ = request_pending_ = output_failed_ = request_failed_ = false;
     }
-    if (next_run >= 0xffffffffULL - frames::first_owner)
-        return {};
-    const U64 client = ++next_run;
-    if (!control_request(4, client)) {
-        abandon_service();
-        return {};
+    static auto unbind() -> void {
+        require(prepared_ && !client_ && !residents[1].space && !output_pending_ && !request_pending_);
+        volume_ = path_ = arguments_ = {};
+        prepared_ = output_failed_ = request_failed_ = false;
     }
-    RunResult result{load_committed(volume, client, path, arguments), 0};
-    loading_image = false;
-    if (result.status == RunStatus::unavailable) {
-        abandon_service();
-        return result;
-    }
-    if (residents[1].space) {
-        for (;;) {
-            if (run_resident(1)) {
-                result.status = outcome.exited     ? RunStatus::exited
-                                : outcome.watchdog ? RunStatus::watchdog
-                                                   : RunStatus::fault;
-                result.value = outcome.exited ? outcome.status : outcome.vector;
-                break;
-            }
-            if (outcome.output && !deliver_output()) {
-                outcome = {};
-                outcome.invalid_call = true;
-                outcome.operation = 2;
-                static_cast<void>(retire_resident(1));
-                result.status = RunStatus::output_failed;
-                break;
-            }
-            if (outcome.request) {
-                if (!client_request()) {
-                    abandon_service();
-                    return {};
-                }
-                if (endpoint.caller_cancelled) {
-                    outcome = {};
-                    outcome.watchdog = true;
-                    static_cast<void>(retire_resident(1));
-                    result.status = RunStatus::watchdog;
-                    break;
-                }
-            }
+    static auto prepare() -> aurora::execution::Preparation {
+        using namespace aurora::execution;
+        require(!prepared_ && !volume_.empty() && !client_ && !residents[1].space);
+        // Consumed admission effect, not a command phase that drives execution.
+        prepared_ = true;
+        if (!residents[0].space && !start_file_service(volume_)) {
+            abandon_service();
+            return {Prepared::service_lost, Status::unavailable, 0};
         }
+        if (next_run >= 0xffffffffULL - frames::first_owner)
+            return {Prepared::refused, Status::unavailable, 0};
+        client_ = ++next_run;
+        if (!control_request(4, client_)) {
+            abandon_service();
+            client_ = 0;
+            return {Prepared::service_lost, Status::unavailable, 0};
+        }
+        const auto loaded = load_committed(volume_, client_, path_, arguments_);
+        loading_image = false;
+        if (loaded == RunStatus::unavailable) {
+            abandon_service();
+            client_ = 0;
+            return {Prepared::service_lost, Status::unavailable, 0};
+        }
+        require((loaded == RunStatus::exited) == residents[1].space.has_value());
+        return {residents[1].space ? Prepared::loaded : Prepared::refused, status(loaded), 1};
     }
-    endpoint.caller.reset();
-    endpoint.completion = endpoint.replied = false;
-    if (!control_request(5, client)) {
-        abandon_service();
-        return {};
+    static auto advance() -> aurora::execution::Observation {
+        using namespace aurora::execution;
+        require(client_ && residents[1].space && residents[1].state.run == client_ && !output_pending_ &&
+                !request_pending_ && !output_failed_ && !request_failed_ && !endpoint.caller_cancelled);
+        if (run_resident(1)) {
+            // Retirement has already happened. Copy these facts before another
+            // effect can replace the shared trap outcome (notably service close).
+            const auto ended = outcome.exited ? Status::exited : outcome.watchdog ? Status::watchdog : Status::fault;
+            return {Step::retired, ended, outcome.exited ? outcome.status : outcome.vector};
+        }
+        require(!(outcome.output && outcome.request));
+        output_pending_ = outcome.output;
+        request_pending_ = outcome.request;
+        return {output_pending_    ? Step::output
+                : request_pending_ ? Step::request
+                                   : Step::parked,
+                Status::unavailable,
+                0};
     }
-    return result;
-}
+    static auto output() -> aurora::execution::Effect {
+        using namespace aurora::execution;
+        require(client_ && residents[1].space && output_pending_ && !request_pending_);
+        output_failed_ = !deliver_output();
+        output_pending_ = false;
+        return output_failed_ ? Effect::failed : Effect::success;
+    }
+    static auto request() -> aurora::execution::Request {
+        using namespace aurora::execution;
+        require(client_ && residents[1].space && request_pending_ && !output_pending_);
+        request_failed_ = !client_request();
+        request_pending_ = false;
+        if (request_failed_)
+            return Request::service_lost;
+        return endpoint.caller_cancelled ? Request::cancelled : Request::ready;
+    }
+    static auto finish(aurora::execution::Finish disposition) -> aurora::execution::Effect {
+        using namespace aurora::execution;
+        require(client_ && !output_pending_ && !request_pending_);
+        // A requested disposition is not evidence: the real effect/trap state
+        // must justify it before retirement or loss handling can run.
+        if (disposition == Finish::service_lost) {
+            require(request_failed_);
+            abandon_service();
+            client_ = 0;
+            return Effect::success;
+        }
+        require(!request_failed_);
+        if (disposition == Finish::output_failed) {
+            require(output_failed_ && residents[1].space);
+            outcome = {};
+            outcome.invalid_call = true;
+            outcome.operation = 2;
+            static_cast<void>(retire_resident(1));
+        } else if (disposition == Finish::cancelled) {
+            require(!output_failed_ && endpoint.caller_cancelled && residents[1].space);
+            outcome = {};
+            outcome.watchdog = true;
+            static_cast<void>(retire_resident(1));
+        } else {
+            require(disposition == Finish::complete && !output_failed_ && !residents[1].space);
+        }
+        endpoint.caller.reset();
+        endpoint.completion = endpoint.replied = false;
+        const U64 client = client_;
+        client_ = 0;
+        if (!control_request(5, client)) {
+            abandon_service();
+            return Effect::failed;
+        }
+        return Effect::success;
+    }
+};
+class ExecutionPlatform final {
+public:
+    static auto quiet() -> bool {
+        return Timer::irq_off() && root() == kernel_root && !running.space && !Timer::read(0x390) &&
+               Timer::quiet(0x100, false) && Timer::quiet(0x200, false);
+    }
+    [[noreturn]] static auto fail() -> void {
+        ::fail("execution grant");
+    }
+};
+using ExecutionSession = aurora::execution::Session<ExecutionTransport, ExecutionPlatform>;
+
 } // namespace
 
 namespace {
@@ -2808,7 +2894,15 @@ auto aurora::uefi::run_program(U64 arena,
         return {};
     output_sink = output;
     output_context = context;
-    const auto result = execute_command(space.volume(handoff.get(Handoff::volume_bytes_word)), path, arguments);
+    ExecutionTransport::bind(space.volume(handoff.get(Handoff::volume_bytes_word)), path, arguments);
+    const auto grant = ExecutionSession::open();
+    aurora::execution::Result observed;
+    source_execute(&grant, &observed);
+    ExecutionSession::release(grant);
+    ExecutionTransport::unbind();
+    if (static_cast<U64>(observed.status) > static_cast<U64>(aurora::execution::Status::output_failed))
+        fail("execution result");
+    const RunResult result{static_cast<RunStatus>(observed.status), observed.value};
     output_sink = nullptr;
     output_context = nullptr;
     leave_runtime(handoff);
@@ -2915,6 +3009,32 @@ auto aurora::uefi::reject_program_service(U64 arena, const Bytes &handoff, U64 e
     }
     leave_runtime(handoff);
     return result;
+}
+
+auto execution_prepare(const void *, U64, aurora::execution::Preparation *)
+    -> void asm("__au_runtime_execution_prepare") __attribute__((visibility("hidden")));
+auto execution_prepare(const void *grant, U64 generation, aurora::execution::Preparation *result) -> void {
+    *result = ExecutionSession::prepare(grant, generation);
+}
+auto execution_advance(const void *, U64, aurora::execution::Observation *)
+    -> void asm("__au_runtime_execution_advance") __attribute__((visibility("hidden")));
+auto execution_advance(const void *grant, U64 generation, aurora::execution::Observation *result) -> void {
+    *result = ExecutionSession::advance(grant, generation);
+}
+auto execution_output(const void *, U64) -> U64 asm("__au_runtime_execution_output")
+    __attribute__((visibility("hidden")));
+auto execution_output(const void *grant, U64 generation) -> U64 {
+    return ExecutionSession::output(grant, generation);
+}
+auto execution_request(const void *, U64) -> U64 asm("__au_runtime_execution_request")
+    __attribute__((visibility("hidden")));
+auto execution_request(const void *grant, U64 generation) -> U64 {
+    return ExecutionSession::request(grant, generation);
+}
+auto execution_finish(const void *, U64, U64) -> U64 asm("__au_runtime_execution_finish")
+    __attribute__((visibility("hidden")));
+auto execution_finish(const void *grant, U64 generation, U64 disposition) -> U64 {
+    return ExecutionSession::finish(grant, generation, disposition);
 }
 
 #endif

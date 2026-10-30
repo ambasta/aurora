@@ -1,0 +1,48 @@
+module execution_effects_probe;
+
+class Ledger {
+    u64 count;
+public:
+    Ledger() : count(0u64) {
+    }
+    auto observe() -> bool {
+        count = count + 1u64;
+        return true;
+    }
+    auto value() const -> u64 {
+        return count;
+    }
+};
+
+auto prepare_forward(builtin::ExecutionEffects& effects) -> builtin::ExecutionPrep {
+    const builtin::ExecutionPrep result = effects.prepare();
+    return result;
+}
+
+auto finish_forward(builtin::ExecutionEffects& effects, builtin::ExecFinish reason) -> builtin::ExecEffect {
+    return effects.finish(reason);
+}
+
+auto execution_entry(builtin::ExecutionEffects& effects) -> u64 {
+    Ledger ledger = Ledger();
+    const builtin::ExecutionPrep prepared = prepare_forward(effects);
+    if (prepared.state != builtin::ExecPrepared::loaded || prepared.status != builtin::ExecStatus::exited
+        || !prepared.finish_required) {
+        return 1u64;
+    }
+    ledger.observe();
+    const builtin::ExecutionStep step = effects.advance();
+    if (step.state != builtin::ExecStep::output || step.status != builtin::ExecStatus::exited || step.value
+        != 18446744073709551615u64) {
+        return 2u64;
+    }
+    ledger.observe();
+    if (effects.output() != builtin::ExecEffect::success || effects.request() != builtin::ExecRequest::ready) {
+        return 3u64;
+    }
+    ledger.observe();
+    if (finish_forward(effects, builtin::ExecFinish::complete) != builtin::ExecEffect::success) {
+        return 4u64;
+    }
+    return ledger.value() + 39u64;
+}
