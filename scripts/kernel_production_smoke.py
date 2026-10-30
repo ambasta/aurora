@@ -75,9 +75,11 @@ class Blocked(Exception):
     pass
 
 
-def golden(storage=False, clean=True, history=False, restart=False, exchange=False):
+def golden(storage=False, clean=True, history=False, restart=False, exchange=False, nested=False):
     path = GOLDEN
-    if restart:
+    if nested:
+        path = ROOT / "tests/kernel-production-storage-nested.json"
+    elif restart:
         path = ROOT / "tests/kernel-production-recovery-restart.json"
     elif storage:
         name = (
@@ -436,7 +438,12 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
     recover = args.xfs_recovery is not None
     restart = args.recovery_owner_restart
     commands, expected = golden(
-        bool(args.nvme_prefix), clean_storage, args.xfs_history is not None or recover, restart, args.xfs_exchange
+        bool(args.nvme_prefix),
+        clean_storage,
+        args.xfs_history is not None or recover,
+        restart,
+        args.xfs_exchange,
+        args.xfs_nested,
     )
     if args.xfs_mounted:
         commands, expected = mounted_golden(len(args.mounted_bytes), mounted_cold)
@@ -699,10 +706,15 @@ def main():
         action="store_true",
         help="private real-mount owner loss/restart fixture after clean recovery, not a HostFiles restart test",
     )
+    parser.add_argument("--xfs-nested", action="store_true", help="read-only shortform directories and shipped clients")
     parser.add_argument("--xfs-mounted", action="store_true", help="one tiny compiler commit, then readonly cold boot")
     parser.add_argument("--mounted-object", type=Path, help="independent Aurora-target object of MOUNTED_SOURCE")
     parser.add_argument("--xfs-db", type=Path, help="pinned read-only xfs_db metadata oracle for mounted mode")
     args = parser.parse_args()
+    need(
+        not args.xfs_nested or not (args.xfs_mounted or args.xfs_history or args.xfs_recovery),
+        "Choose nested, mounted, history or recovery",
+    )
     need(not args.xfs_mounted or not (args.xfs_history or args.xfs_recovery), "Choose mounted, history or recovery")
     need(
         bool(args.mounted_object) == args.xfs_mounted and bool(args.xfs_db) == args.xfs_mounted,
@@ -713,8 +725,8 @@ def main():
     need(not (args.xfs_exchange and args.recovery_owner_restart), "Exchange owner restart is not qualified")
     need(not (args.xfs_history and args.xfs_recovery), "Choose history or recovery, not both")
     need(
-        bool(args.xfs_image) == bool(args.xfs_history or args.xfs_recovery or args.xfs_mounted),
-        "Image requires explicit history or recovery outcome",
+        bool(args.xfs_image) == bool(args.xfs_history or args.xfs_recovery or args.xfs_mounted or args.xfs_nested),
+        "Image requires explicit history, recovery or nested-directory outcome",
     )
     need(not args.xfs_image or args.nvme_prefix, "Linux clean profile requires the NVMe graphics model")
     args.build_dir = args.build_dir.resolve(strict=True)
@@ -802,12 +814,11 @@ def main():
             )
             return
         if args.xfs_image:
-            directory = Path(tempfile.mkdtemp(prefix=f"production-storage-{args.xfs_history}-", dir=evidence))
+            profile = "nested" if args.xfs_nested else args.xfs_history
+            directory = Path(tempfile.mkdtemp(prefix=f"production-storage-{profile}-", dir=evidence))
             print("Production Linux-history storage guest: " + str(directory), flush=True)
             screen_guest(args, directory, clean_storage=args.xfs_history != "dirty")
-            print(
-                f"PASS: production {args.xfs_history} history, command/framebuffer oracle and unchanged readonly disk"
-            )
+            print(f"PASS: production {profile} profile, command/framebuffer oracle and unchanged readonly disk")
             return
         directory = Path(tempfile.mkdtemp(prefix="production-storage-", dir=evidence))
         print("Production storage screen guest: " + str(directory), flush=True)

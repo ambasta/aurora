@@ -20,7 +20,7 @@ repaired uninterpreted byte 232	header_geometry_consistent none header_integrity
 repaired uninterpreted byte 511	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
 extra version bit 1	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
 extra version bit 3	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
-extra version bit 4	unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46261,394,394 unsupported=0 unknown=0 facts=0 ok
+optional legacy ATTR marker	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46261,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
 required version bit 5	inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=46213,394,394 unsupported=0 unknown=0 facts=0 ok
 extra version bit 6	unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46309,394,394 unsupported=0 unknown=0 facts=0 ok
 required version bit 7	inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=46117,394,394 unsupported=0 unknown=0 facts=0 ok
@@ -249,6 +249,7 @@ count boundary 32768 delta 1	inconsistent_header ag_geometry header_integrity_va
 count boundary 98304 delta 1	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
 count boundary 131072 delta 1	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
 positive {'versionnum': 48293, 'logsectsize': 512, 'logsectlog': 9}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=48293,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+positive {'versionnum': 48309, 'logsectsize': 512, 'logsectlog': 9}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=48309,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
 positive {'logsunit': 0}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
 positive {'imax_pct': 0}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
 positive {'imax_pct': 100}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
@@ -686,10 +687,10 @@ metadata gate: v4	geometry_rejected success probe_rejected none unsupported_prof
 metadata before large capacity: v4	geometry_rejected success probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
 metadata gate: unrepaired byte 4	geometry_rejected success probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
 metadata before large capacity: unrepaired byte 4	geometry_rejected success probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
-metadata gate: extra version bit 4	geometry_rejected success unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46261,394,394 unsupported=0 unknown=0 facts=0 admitted=0
-metadata before large capacity: extra version bit 4	geometry_rejected success unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46261,394,394 unsupported=0 unknown=0 facts=0 admitted=0
 metadata gate: required version bit 5	geometry_rejected success inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=46213,394,394 unsupported=0 unknown=0 facts=0 admitted=0
 metadata before large capacity: required version bit 5	geometry_rejected success inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=46213,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: extra version bit 6	geometry_rejected success unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46309,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: extra version bit 6	geometry_rejected success unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46309,394,394 unsupported=0 unknown=0 facts=0 admitted=0
 metadata gate: features2 bit 0	geometry_rejected success unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,395,395 unsupported=0 unknown=0 facts=0 admitted=0
 metadata before large capacity: features2 bit 0	geometry_rejected success unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,395,395 unsupported=0 unknown=0 facts=0 admitted=0
 metadata gate: features2 bit 1	geometry_rejected success inconsistent_header features2_required_bits header_integrity_valid masks=0,15,43,0 raw=46245,392,392 unsupported=0 unknown=0 facts=0 admitted=0

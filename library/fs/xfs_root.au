@@ -279,8 +279,20 @@ namespace fs {
         if ((xr64(inode, 24) | xr64(inode, 64) | xr32(inode, 72) | xr32(inode, 76) | xr16(inode, 80)) != 0u64) {
             return XfsRootIssue::core;
         }
-        if (inode.at(82) != 0u8) {
-            return XfsRootIssue::core;
+        const i64 fork_bytes = i64(inode.at(82)) * 8;
+        if (fork_bytes != 0) {
+            if (fork_bytes >= 336) {
+                return XfsRootIssue::core;
+            }
+            // Only an empty reserved extent-format attribute fork is admitted.
+            // Its entire region is excluded from the data fork below.
+            i64 attribute = 176 + fork_bytes;
+            while (attribute < 512) {
+                if (inode.at(attribute) != 0u8) {
+                    return XfsRootIssue::core;
+                }
+                attribute = attribute + 1;
+            }
         }
         if (inode.at(83) != 2u8) {
             return XfsRootIssue::core;
@@ -305,7 +317,11 @@ namespace fs {
         if (payload < 6u64) {
             return XfsRootIssue::payload_size;
         }
-        if (payload > 336u64) {
+        u64 data_bytes = 336u64;
+        if (inode.at(82) != 0u8) {
+            data_bytes = u64(inode.at(82)) * 8u64;
+        }
+        if (payload > data_bytes) {
             return XfsRootIssue::payload_size;
         }
         const i64 end = 176 + i64(payload);

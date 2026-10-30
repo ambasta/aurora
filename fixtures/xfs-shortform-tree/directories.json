@@ -1,0 +1,32 @@
+[
+  {
+    "path": "/",
+    "inode": 96,
+    "parent": 96,
+    "lba": 96
+  },
+  {
+    "path": "/s",
+    "inode": 101,
+    "parent": 96,
+    "lba": 101
+  },
+  {
+    "path": "/s/deep",
+    "inode": 262240,
+    "parent": 101,
+    "lba": 262240
+  },
+  {
+    "path": "/empty",
+    "inode": 655456,
+    "parent": 96,
+    "lba": 655456
+  },
+  {
+    "path": "/s/.aurora-stage",
+    "inode": 786528,
+    "parent": 101,
+    "lba": 786528
+  }
+]

@@ -321,6 +321,10 @@ export namespace fs {
         if (superblock.size() != 512 || home.size() != 512 || logged_core.size() != 176) {
             return xcr_failure(XfsCoreRedoStatus::invalid_input);
         }
+        // Keep the mutation subset independent from readonly parser growth.
+        if (home.at(82) != 0u8 || (superblock.at(101) & 16u8) != 0u8) {
+            return xcr_failure(XfsCoreRedoStatus::invalid_home);
+        }
         const storage::SectorGeometry source = storage::SectorGeometry(request.volume_sectors(), false);
         const XfsFileRequest file_request = XfsFileRequest(request.inode_number(), 0);
         const XfsFileReport admitted = plan_xfs_v5_512_file_sector(source, superblock, home, file_request);
@@ -336,6 +340,10 @@ export namespace fs {
         builtin::span<const u8> logged, XfsCoreRedoRequest request) -> XfsCoreRedoResult {
         if (superblock.size() != 512 || home.size() != 512 || logged.size() < 176 || logged.size() > 512) {
             return xcr_failure(XfsCoreRedoStatus::invalid_input);
+        }
+        // Keep the mutation subset independent from readonly parser growth.
+        if (home.at(82) != 0u8 || (superblock.at(101) & 16u8) != 0u8) {
+            return xcr_failure(XfsCoreRedoStatus::invalid_home);
         }
         const std::ByteReadResult blocks = std::read_be64(superblock, 8);
         if (request.volume_sectors() == 0u64 || blocks.value_or(18446744073709551615u64) > request.volume_sectors()

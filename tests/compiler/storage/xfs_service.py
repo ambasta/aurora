@@ -16,6 +16,94 @@ from kernel_volume import volume
 ZERO_CHUNK = bytes(65536)
 
 
+def nested_cases(program, directory):
+    """One genuine clean tree, then real service requests and one torn response."""
+    reference = harness.ROOT / "fixtures/xfs-shortform-tree"
+    hashes = json.loads((reference / "hashes.json").read_text())
+    archive = reference / "clean.img.xz"
+    harness.require(hashlib.sha256(archive.read_bytes()).hexdigest() == hashes[archive.name], "nested archive hash")
+    image = directory / "nested.img"
+    digest, length = hashlib.sha256(), 0
+    with lzma.open(archive, "rb") as source, image.open("xb") as output:
+        while chunk := source.read(65536):
+            digest.update(chunk)
+            length += len(chunk)
+            if chunk != ZERO_CHUNK[: len(chunk)]:
+                output.write(chunk)
+            else:
+                output.seek(len(chunk), 1)
+        output.truncate(length)
+    harness.require(length == 536870912 and digest.hexdigest() == hashes["clean.img"], "nested image hash")
+    payloads = json.loads((reference / "files.json").read_text())
+    with image.open("rb") as stream:
+        stream.seek(72 * 512)
+        hello = stream.read(64)
+    rows = []
+
+    def case(label, operation, path=b"", reference=0, status=0, size=0, inode=0, data=b"", position=0):
+        rows.append(
+            (
+                label,
+                struct.pack("<8Q", operation, reference, position, status, size, inode, len(path), len(data))
+                + path
+                + data,
+            )
+        )
+        return len(rows)
+
+    root = case("root directory identity", 16, b"/disk", inode=96)
+    held = case("root file identity", 18, b"/disk/hello", size=64, inode=99)
+    sub = case("normalized nested directory identity", 16, b"/disk//s/.", inode=101)
+    case("held root read after directory_ready", 19, reference=held, data=hello)
+    case("directory is not a regular file", 18, b"/disk/s", status=5)
+    case("held root read after not_regular", 19, reference=held, data=hello)
+    value = case("directory-bound normalized nested lookup", 17, b"deep//./value", reference=sub, size=23, inode=262241)
+    case("directory-bound exact nested bytes", 19, reference=value, data=payloads["s/deep/value"]["text"].encode())
+    case("nested read offset", 19, reference=value, position=7, data=b"shortform value\n")
+    case("nested end of file", 19, reference=value, position=23)
+    case("direct normalized nested file", 18, b"/disk//s/./a.au", size=74, inode=102)
+    empty = case("empty shortform directory identity", 16, b"/disk/empty/", inode=655456)
+    case("empty directory missing name", 17, b"absent", reference=empty, status=2)
+    case("hidden intermediate directory", 17, b".aurora-stage/secret", reference=sub, status=3)
+    case("hidden nested leaf", 18, b"/disk/s/deep/.aurora-stage", status=3)
+    case("hidden directory cannot be opened", 16, b"/disk/s/.aurora-stage", status=3)
+    case("beneath absolute path refused", 17, b"/disk/hello", reference=sub, status=4)
+    case("beneath parent traversal refused", 17, b"../hello", reference=sub, status=4)
+    case("direct parent traversal refused", 18, b"/disk/s/../hello", status=4)
+    case("file cannot be a directory predecessor", 18, b"/disk/s/a.au/child", status=5)
+    case("file trailing slash refused", 18, b"/disk/s/a.au/", status=4)
+    case("full path quota accepted", 252, reference=sub, size=23, inode=262241)
+    case("full path quota overflow refused", 253, reference=sub, status=8)
+    case("component quota refused", 17, b"x" * 256, reference=sub, status=8)
+    case("embedded NUL refused", 17, b"deep\0/value", reference=sub, status=8)
+    case("foreign directory handle refused", 17, b"deep/value", reference=held, status=1)
+    case("readonly create refused", 21, b"/disk/s/new", status=3)
+    case("closed directory handle", 20, reference=sub)
+    case("stale directory handle refused", 17, b"deep/value", reference=sub, status=1)
+    case(
+        "retained child reader survives directory close",
+        19,
+        reference=value,
+        data=payloads["s/deep/value"]["text"].encode(),
+    )
+    case("client incarnation invalidates held handle", 0, reference=held, status=1)
+    case("old root directory is not new-client authority", 17, b"hello", reference=root, status=1)
+    case("new client traverses genuine nested tree", 18, b"/disk/s/deep/value", size=23, inode=262241)
+    # After the authentic mount, tear only the delivered child-inode CRC.
+    # The disk remains unchanged; this terminal case must poison the service.
+    case("torn child response fails closed", 255, b"/disk/s/a.au", status=9)
+    case("failed child walk leaves backend quarantined", 18, b"/disk/hello", status=9)
+    cases = directory / "nested.cases"
+    cases.write_bytes(b"".join(row for _, row in rows))
+    result = harness.command([program, image, "tree", cases], timeout=30)
+    harness.require(result.returncode == 0 and not result.stderr, "nested tree: " + result.stderr.decode())
+    harness.require(result.stdout == b"PASS nested case\n" * len(rows), "complete nested service sequence")
+    for label, _ in rows:
+        yield "nested " + label, "passed"
+    yield "nested busy walk entry points", "refused without mutation"
+    yield "nested genuine mounted allocation profile", "refused: icount=256 ifree=241, not 64/59"
+
+
 def mounted_cases(program, directory):
     """Production formatter against the Linux-accepted command witness.
 
@@ -289,6 +377,7 @@ def describe(compiler, directory):
         yield label, "exit={} stdout={!r} stderr={!r}".format(result.returncode, result.stdout, result.stderr)
 
     yield from mounted_cases(program, directory)
+    yield from nested_cases(program, directory)
 
 
 if __name__ == "__main__":

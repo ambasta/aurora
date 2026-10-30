@@ -35,3 +35,40 @@ mounted noncanonical append sector 37	refused; no writes
 mounted noncanonical append sector 38	refused; no writes
 mounted noncanonical append sector 39	refused; no writes
 mounted synthetic reversed inode roles	16 writes; 5 flushes; exact payload and zero tail
+nested root directory identity	passed
+nested root file identity	passed
+nested normalized nested directory identity	passed
+nested held root read after directory_ready	passed
+nested directory is not a regular file	passed
+nested held root read after not_regular	passed
+nested directory-bound normalized nested lookup	passed
+nested directory-bound exact nested bytes	passed
+nested nested read offset	passed
+nested nested end of file	passed
+nested direct normalized nested file	passed
+nested empty shortform directory identity	passed
+nested empty directory missing name	passed
+nested hidden intermediate directory	passed
+nested hidden nested leaf	passed
+nested hidden directory cannot be opened	passed
+nested beneath absolute path refused	passed
+nested beneath parent traversal refused	passed
+nested direct parent traversal refused	passed
+nested file cannot be a directory predecessor	passed
+nested file trailing slash refused	passed
+nested full path quota accepted	passed
+nested full path quota overflow refused	passed
+nested component quota refused	passed
+nested embedded NUL refused	passed
+nested foreign directory handle refused	passed
+nested readonly create refused	passed
+nested closed directory handle	passed
+nested stale directory handle refused	passed
+nested retained child reader survives directory close	passed
+nested client incarnation invalidates held handle	passed
+nested old root directory is not new-client authority	passed
+nested new client traverses genuine nested tree	passed
+nested torn child response fails closed	passed
+nested failed child walk leaves backend quarantined	passed
+nested busy walk entry points	refused without mutation
+nested genuine mounted allocation profile	refused: icount=256 ifree=241, not 64/59

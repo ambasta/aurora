@@ -366,7 +366,9 @@ namespace fs {
                 XfsGeometryIssue::features2_required_bits);
             return failure;
         }
-        if ((raw.versionnum() & (65535u64 ^ 48293u64)) != 0u64) {
+        // Legacy ATTR records attribute-fork capability, not nonempty attributes.
+        // Readonly inode parsers separately admit only an empty reservation.
+        if ((raw.versionnum() & (65535u64 ^ 48309u64)) != 0u64) {
             const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::unsupported_feature_profile,
                 XfsGeometryIssue::legacy_excluded_bits);
             return failure;

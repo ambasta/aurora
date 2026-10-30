@@ -27,17 +27,26 @@ class CoreInput {
     u64 lsn;
     u64 capacity;
     u64 encode;
+    u64 root;
 public:
     CoreInput() : sb{}, home{}, core{}, sb_length(0), home_length(0), core_length(0), inode(0u64), lsn(0u64),
-        capacity(0u64), encode(0u64) {
+        capacity(0u64), encode(0u64), root(0u64) {
     }
-    auto entry(i64 slot) const -> u64 {
+    auto converted() const -> fs::XfsCoreRedoResult {
         const builtin::span<const u8> sb_all = borrow_bytes(sb);
         const builtin::span<const u8> home_all = borrow_bytes(home);
         const builtin::span<const u8> core_all = borrow_bytes(core);
         const fs::XfsCoreRedoRequest request = fs::XfsCoreRedoRequest(inode, lsn, capacity);
-        const fs::XfsCoreRedoResult result = fs::convert_xfs_core_redo(sb_all.subspan(0, sb_length), home_all.subspan(0,
-            home_length), core_all.subspan(0, core_length), request);
+        if (root != 0u64) {
+            return fs::convert_xfs_root_redo(sb_all.subspan(0, sb_length), home_all.subspan(0, home_length),
+                core_all.subspan(0, core_length), request);
+        }
+        return fs::convert_xfs_core_redo(sb_all.subspan(0, sb_length), home_all.subspan(0, home_length),
+            core_all.subspan(0, core_length), request);
+    }
+    auto entry(i64 slot) const -> u64 {
+        const builtin::span<const u8> home_all = borrow_bytes(home);
+        const fs::XfsCoreRedoResult result = converted();
         if (slot == 0) {
             if (encode != 0u64) {
                 return 0u64;

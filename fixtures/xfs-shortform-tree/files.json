@@ -1,0 +1,32 @@
+{
+  "s/a.au": {
+    "bytes": 74,
+    "sha256": "bcdcc9b7b347efb59df27ef113755c13879a3e3ef0d5d8eefe79a00d61aa7b98",
+    "text": "module s.a;\nimport s.b;\nauto answer() -> i64 { return nested::answer(); }\n"
+  },
+  "s/b.au": {
+    "bytes": 88,
+    "sha256": "535a132c0d6a48d34c5922be0d5359256854f7ca19a6642565dbeb1b77d343f8",
+    "text": "export module s.b;\nexport namespace nested {\n    auto answer() -> i64 { return 42; }\n};\n"
+  },
+  "s/p": {
+    "bytes": 245,
+    "sha256": "da93f62a54c1cac9fd5c8ef6723df76c8d2959213b40e17e14a3e377fada8b46",
+    "text": "module nested_program;\nimport aurora.host;\nauto main(builtin::HostFiles& files, builtin::span<const u8> args) -> builtin::HostExit {\n    files.print(builtin::HostStream::stdout, \"nested disk program\\n\");\n    return builtin::HostExit::success;\n}\n"
+  },
+  "s/deep/value": {
+    "bytes": 23,
+    "sha256": "3825070c824c16bf5775787ba1fd52976505035e9232fbe43a880f237e615b23",
+    "text": "nested shortform value\n"
+  },
+  "s/.aurora-stage/secret": {
+    "bytes": 30,
+    "sha256": "eb01be230788c4e9f0e8119270be6bf771fc30e2b238437391d8a4b87cb8f904",
+    "text": "hidden intermediate directory\n"
+  },
+  "s/deep/.aurora-stage": {
+    "bytes": 12,
+    "sha256": "d16b775b2e96f61c78b0e324371de321eb5e52eac5f7cc2bc3b1b61999d985a7",
+    "text": "hidden leaf\n"
+  }
+}

@@ -127,6 +127,45 @@ def describe(compiler, directory):
             encoded[begin:end] = bytes(end - begin)
         case("encode " + name, source_home, source_core, expected=bytes(encoded) + bytes(336), encode=1)
     case("encode short home", staged_home, staged_core, expected=bytes(512), encode=1, home_length=511)
+    case(
+        "empty reserved attribute fork stays outside CORE mutation",
+        set_fields(staged_home, (82, 1, 24), crc=100),
+        staged_core,
+        100,
+        stage_lsn,
+        bytes(512),
+        sb=staged_sb,
+    )
+    case(
+        "empty reserved attribute fork stays outside root mutation",
+        set_fields(staged("root-before"), (82, 1, 24), crc=100),
+        bytes(176),
+        96,
+        stage_lsn,
+        bytes(512),
+        sb=staged_sb,
+        root=1,
+    )
+    marker = set_fields(staged_sb, (101, 1, staged_sb[101] | 16), crc=224)
+    case(
+        "legacy ATTR marker stays outside CORE mutation",
+        staged_home,
+        staged_core,
+        100,
+        stage_lsn,
+        bytes(512),
+        sb=marker,
+    )
+    case(
+        "legacy ATTR marker stays outside root mutation",
+        staged("root-before"),
+        bytes(176),
+        96,
+        stage_lsn,
+        bytes(512),
+        sb=marker,
+        root=1,
+    )
     driver = harness.Driver(compiler, directory, harness.HERE / "xfs_core_redo.au", "CoreInput")
     results = driver.run([(values, 65) for _, values, _ in rows])
     for (label, values, expected), result in zip(rows, results):

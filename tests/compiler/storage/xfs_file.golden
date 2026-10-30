@@ -193,6 +193,18 @@ checksum before index	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
 checksum before index	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
 geometry before capacity	geometry_rejected geometry 0 0 0 0 0 none 0 0 ok
 capacity before inode	source_too_small capacity 0 0 0 0 0 none 0 0 ok
+file reserved fork 1	unsupported_profile attribute_fork 0 0 0 0 0 none 0 0 ok
+file reserved fork 2	ready none 131 131 17003 1 5 written 192 512 ok
+file reserved fork 24	ready none 131 131 17003 1 5 written 192 512 ok
+file reserved fork 41	ready none 131 131 17003 1 5 written 192 512 ok
+file reserved fork 42	unsupported_profile attribute_fork 0 0 0 0 0 none 0 0 ok
+file reserved fork 255	unsupported_profile attribute_fork 0 0 0 0 0 none 0 0 ok
+file reserved fork extent count crosses	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+file reserved fork first attr byte	unsupported_profile attribute_fork 0 0 0 0 0 none 0 0 ok
+file reserved fork last attr byte	unsupported_profile attribute_fork 0 0 0 0 0 none 0 0 ok
+file reserved fork local attr format	unsupported_profile attribute_fork 0 0 0 0 0 none 0 0 ok
+file reserved fork nonempty attr count	invalid_inode core 0 0 0 0 0 none 0 0 ok
+file reserved fork extra allocated attr block	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
 actual file sector 0	success window@0+512 ok
 actual file sector 1	success window@512+512 ok
 actual file sector 2	success window@1024+512 ok

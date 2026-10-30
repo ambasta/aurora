@@ -48,3 +48,7 @@ encode Linux inode99	encoded Linux payload
 encode Linux inode100	encoded Linux payload
 encode Linux grown inode100	encoded Linux payload
 encode short home	encoded zero
+empty reserved attribute fork stays outside CORE mutation	invalid_home zero
+empty reserved attribute fork stays outside root mutation	invalid_home zero
+legacy ATTR marker stays outside CORE mutation	invalid_home zero
+legacy ATTR marker stays outside root mutation	invalid_home zero

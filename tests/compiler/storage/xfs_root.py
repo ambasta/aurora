@@ -171,10 +171,29 @@ def cases():
             values = inputs(operation, sb, directory, query=b"leaf")
             values.update(expected_inode=expected_identity, expected_parent=expected_parent)
             yield f"directory {label} operation {operation}", values, 11 if operation == DIRECTORY_LOOKUP else 12
+    # Empty reserved attribute forks are readonly metadata, never attr parsing.
+    for label, directory in reserved_fork_cases(inode):
+        yield label, inputs(LOOKUP, sb, directory, query=b"alpha"), 11
     for code, status in enumerate(LOOKUP_STATUSES):
         yield f"fabricated lookup report {status}", {"operation": FABRICATED_LOOKUP, "status": code}, 14
     for code, status in enumerate(ENTRY_STATUSES):
         yield f"fabricated entry report {status}", {"operation": FABRICATED_ENTRY, "status": code}, 14
+
+
+def reserved_fork_cases(inode):
+    for offset in (1, 4, 24, 41, 42, 255):
+        yield f"root reserved fork {offset}", set_fields(inode, (82, 1, offset))
+    empty = shortform(inode, [])
+    yield "root reserved fork empty minimum", set_fields(empty, (82, 1, 1))
+    reserved = set_fields(inode, (82, 1, 24))
+    for label, fields in (
+        ("payload crosses", ((56, 8, 193),)),
+        ("first attr byte", ((368, 1, 1),)),
+        ("last attr byte", ((511, 1, 1),)),
+        ("local attr format", ((83, 1, 1),)),
+        ("nonempty attr count", ((80, 2, 1),)),
+    ):
+        yield "root reserved fork " + label, set_fields(reserved, *fields)
 
 
 def inputs(operation, sb, inode, query=b"", index=0):

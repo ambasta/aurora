@@ -26,6 +26,10 @@ late failed IO discards prior converted homes	io_error writes=0 reads=114 reserv
 torn home 99	invalid_metadata writes=0 reads=69 reserve=0
 torn home 100	invalid_metadata writes=0 reads=70 reserve=0
 duplicate root target	unsupported writes=0 reads=68 reserve=0
+empty reserved attribute fork refused at inode 96	invalid_metadata writes=0 reads=68 reserve=0
+empty reserved attribute fork refused at inode 99	invalid_metadata writes=0 reads=69 reserve=0
+empty reserved attribute fork refused at inode 100	invalid_metadata writes=0 reads=70 reserve=0
+legacy ATTR marker stays outside recovery	unsupported writes=0 reads=1 reserve=0
 mismatched summary	unsupported writes=0 reads=110 reserve=0
 bad final AG CRC	invalid_metadata writes=0 reads=102 reserve=0
 bad final INOBT CRC	invalid_metadata writes=0 reads=110 reserve=0

@@ -361,6 +361,18 @@ The caller must establish which inode sector was read, actual ancestry, cycle
 policy, allocation and snapshot provenance. Supplying matching identities or
 constructing a report does not establish any of those properties.
 
+### Empty attribute-fork reservations
+
+Read-only directory and file parsing permits a reserved but empty extent-format
+attribute fork. With nonzero forkoff, data-fork capacity is `8 * forkoff` bytes
+from inode byte 176 and must be less than 336; attribute extent count is zero,
+attribute format is 2, and every byte in the remaining attribute region must be
+zero. Directory payloads and regular-file extent arrays must fit wholly within
+the data fork. File block accounting still equals the data extents alone.
+Forkoff zero retains the original full data-fork capacity. This does not admit
+attributes, ACLs, attribute blocks or btree/local attribute formats. Mutation
+and recovery profiles continue to require forkoff zero explicitly.
+
 ### Profile, bytes and order
 
 Run unchanged superblock geometry admission first. Further require512-byte inode
@@ -376,7 +388,7 @@ Dinode exact offsets, independent of Aurora class layout:
 - magic BE16@0=0x494e; directory mode type0x4000 atBE16@2; version@4=3; format@5=1
 - metatype BE16@6=0; nlink BE32@16 in1..0x7fffffff
 - count/padding24..31=0, size BE64@56, nblocks BE64@64=0, extsize BE32@72=0
-- count fields76..81=0, forkoff82=0, aformat83=2, DM84..89=0, flags BE16@90=0
+- count fields76..81=0, bounded forkoff82 as below, aformat83=2, DM84..89=0, flags BE16@90=0
 - next_unlinked BE32@96=0xffffffff, CRC LE32@100
 - flags2 BE64@120, cowextsize128..131=0, reserved132..143=0
 - embedded inode BE64@152 equals rootino; UUID160..175 matches sb UUID32..47
@@ -389,7 +401,7 @@ do not require every inode to set those flags. Timestamps remain opaque. Both
 Existing geometry excludes META_UUID. Uid/gid/project, permission bits,
 generation/change count and LSN are opaque; not every upstream property is checked.
 
-Payload6..336 bytes. Header: count byte0<=16, i8count byte1=0, parent BE32@2=rootino.
+Payload6..336 bytes, bounded further by the data fork when forkoff is nonzero. Header: count byte0<=16, i8count byte1=0, parent BE32@2=rootino.
 Record: namelen byte, BE16 saved offset, name bytes, filetype byte, BE32 inode;
 length=namelen+8. Bounds precede variable reads. Names1..255 are raw bytes,
 rejecting NUL, slash, dot and dotdot. No Unicode assumption. Raw ftype0..8 is
@@ -568,15 +580,16 @@ The v3 inode requires magic 0x494e, CRC32C over all 512 bytes with bytes 100..10
 zeroed, embedded number equal to the request and UUID equal to the superblock.
 Only BIGTIME/NREXT64 flags2 are admitted, each requiring its superblock feature.
 Only PREALLOC is allowed in legacy flags; PREALLOC does not itself mark a record
-unwritten. Mode must be regular, data format extents, forkoff zero and attribute
-format extents. Extent-size/cow hints are excluded. Nonzero metadata type,
+unwritten. Mode must be regular, data format extents and attribute format
+extents. A nonzero forkoff admits only the empty reservation described below. Extent-size/cow hints are excluded. Nonzero metadata type,
 absent/excessive link count, DM fields, count-layout padding, reserved bytes
 132..143 or an unlinked-list value other than 0xffffffff fail the core checks.
 Timestamps, IDs, permissions, generation/change count and LSN remain opaque.
 
 With NREXT64, data extent count is BE64 at 24 and bytes 76..81 are zero. Otherwise
 it is BE32 at 76, bytes 24..31 and 80..81 are zero. Admit 0..21 records, the complete
-capacity of the 336-byte attribute-free data fork at 176..511. Larger declared
+capacity of the 336-byte data fork at 176..511 without an attribute reservation.
+With a reservation, the bound is floor(data-fork bytes / 16). Larger declared
 counts are `invalid_inode/extent_count`. Undeclared fork bytes stay opaque but
 CRC-covered. Positive-size zero-record files are fully sparse and must have
 nblocks zero. Empty files remain `unsupported_profile/file_size`; sizes above
@@ -704,10 +717,12 @@ first-error status wins. Never sign-extend a 32-bit mask or accidentally apply a
 
 Legacy fields matter as well. v5 requires version feature flags 0xb4a0 and
 features2 flags 0x18a in the pinned read validator. Low version bits remain 5.
-For the smallest canonical profile admit versionnum only 0xb4a5 or 0xbca5
-(the latter additionally declares log-sector fields), and features2 only 0x18a.
-Thus additional legacy ATTR/QUOTA/DALIGN/ASCII-CI flags are honestly reported
-unsupported rather than quietly implying their downstream semantics. The pinned
+The read-only profile admits versionnum 0xb4a5/0xbca5 and their legacy ATTR
+variants 0xb4b5/0xbcb5; 0x0800 declares log-sector fields. Features2 remains
+0x18a. ATTR is a filesystem feature flag, not admission of attribute values: inode
+parsers still require the empty reserved fork described above. Mutation and
+recovery admission explicitly retain the previous ATTR-free subset. Additional
+legacy QUOTA/DALIGN/ASCII-CI flags remain unsupported. The pinned
 known version mask is 0xfdff; SHAREDBIT 0x0200 is excluded by Linux too. The pinned
 known v5 features2 mask is 0x38a, so features2 FTYPE 0x200 is known but excluded by
 this initial profile. Missing required legacy flags are `inconsistent_header`;
@@ -842,11 +857,12 @@ The profile first runs the existing geometry/CRC validator, then requires:
   Reserved/padding bytes and **every byte of the rest of the declared log** must
   be zero. The fresh record's CRC field is zero: this is an exact-content check,
   **not a record-CRC verification**. A zeroed entire log is rejected.
-- The existing validated shortform root, at most 16 entries, each a nonempty
-  regular file supported by the bounded inline-extent reader. All entries and
-  every advertised inode are checked before `ready`. Empty files, subdirectories,
-  symlinks, attributes, btree forks and other inode formats are refused. No
-  permission/ACL policy or allocation-tree cross-check is claimed.
+- The validated shortform root has at most 16 entries. Every immediate inode
+  is checked before `ready`: nonempty regular files use the bounded inline-extent
+  reader; the nested extension below also admits checked shortform directories.
+  Empty regular files, symlinks, nonempty attributes, btree forks and other inode
+  formats are refused. No permission/ACL policy or allocation-tree cross-check
+  is claimed. Deeper descendants are validated on demand, not during startup.
 
 The unmount marker, packed cycle and record layout follow Linux **v6.13**
 [`xfs_log_format.h`](https://github.com/torvalds/linux/blob/v6.13/fs/xfs/libxfs/xfs_log_format.h)
@@ -886,8 +902,9 @@ A genuine isolated Linux overwrite/fsync/unmount of the existing prototype file
 passes this complete hosted gate: the 64-byte changed file and the untouched
 9001-byte file match their producer inputs, and the whole image remains unchanged
 by Aurora reads and `xfs_repair -n`. Exact observed sectors and construction are
-in the existing XFS fixture directory. An earlier image that created a new inode
-remains refused at ATTRBIT, and also has an unsupported attribute fork. A separate
+in the existing XFS fixture directory. The nested read-only extension admits
+Linux-created inodes only when their attribute forks are absent or reserved and
+empty; nonempty attributes remain unsupported. A separate
 genuine write/fsync/sync followed by guest poweroff without unmount is DIRTY in
 `xfs_logprint` and produces `log_not_clean` with zero Aurora output; no replay is
 attempted and the image remains unchanged. Two further 70,000-write/fsync
@@ -1012,7 +1029,43 @@ ending a client preserves slot generations, so old IDs cannot alias a reopen.
 The mount and table remain sibling owners; neither stores a device capability.
 The `/disk` root is reserved even when the mount is absent or fails. This does
 not disable the independent boot/overlay Store. Disk create/write operations
-are denied; only supported root files are exposed.
+are denied by the read-only owner; the nested extension below exposes supported
+files beneath admitted shortform directories.
+
+### Nested read-only traversal (qualification pending)
+
+The mount and source file owner now implement component-wise lookup beneath
+`/disk` through the same checked shortform parser. Each directory is a 512-byte
+v3 local inode with at most 16 entries and four-byte inode numbers; supported
+entries are regular files or directories. Paths are bounded to 4095 bytes and
+components to 255 bytes. There is no fixed one-level depth restriction. Existing
+regular-file extent, EOF and clean-log constraints still apply.
+
+Startup checks the root and its immediate inode entries, including shortform
+child directories. Deeper directories are read and validated when traversed;
+this is not a recursive full-tree mount scrub. Each visited directory is bound
+to its expected inode and parent, validated against the admitted log state, and
+checked before selecting an entry. Unsupported formats and corrupt metadata
+fail closed rather than being treated as missing names.
+
+Directory handles retain their admitted inode and parent in the service's
+client-owned, generation-checked handle table. Relative `open_beneath` starts
+from that directory, not from the disk root; absolute paths and `..` components
+are denied. Repeated separators and `.` are normalized. Every component named
+`.aurora-stage` is private at the HostFiles boundary, including nested directory
+and leaf names. Raw-image inspection remains separate from this namespace rule.
+File handles retain their inode and containing-directory identity; nested reads
+revalidate that directory and file membership rather than reopening a mutable
+name. Closing or ending a client invalidates its handles without resetting slot
+generations. The independent RAM store remains available after disk quarantine.
+
+This extension does not widen mounted-write or recovery admission. The writer
+still admits only the existing root-level `/disk/hello` replacement in its
+fixed two-file profile, once per boot; nested writes and general allocation or
+namespace mutation remain unsupported. Recovery keeps its existing bounded
+root/inode transaction profiles. Focused component qualification of the nested service path passes; production
+guest and whole-build qualification remain pending; implementation alone is not a compatibility claim for
+arbitrary XFS directories or a general writable filesystem.
 
 `examples/xfs-fresh-cat.au IMAGE ROOT_FILENAME` is a running, source-owned hosted
 consumer of this state machine through read-only `HostFiles` reads. Its operator
