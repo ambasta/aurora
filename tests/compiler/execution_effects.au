@@ -1,55 +1,39 @@
 module execution_effects_probe;
 
-class Ledger {
-    u64 count;
-public:
-    Ledger() : count(0u64) {
+auto execution_consume(builtin::ExecutionEffects& effects) -> u64 {
+    builtin::ExecutionLease initial = effects.prepare();
+    builtin::ExecutionLease lease = move(initial);
+    const builtin::ExecutionPrep prepared = lease.preparation();
+    u64 result = 42u64;
+    if (prepared.state != builtin::ExecPrepared::loaded || (prepared.status != builtin::ExecStatus::exited
+        && prepared.status != builtin::ExecStatus::cancelled)) {
+        result = 1u64;
     }
-    auto observe() -> bool {
-        count = count + 1u64;
-        return true;
+    const builtin::ExecutionStep step = lease.advance();
+    if (step.state != builtin::ExecStep::output || (step.status != builtin::ExecStatus::exited && step.status
+        != builtin::ExecStatus::cancelled) || step.value != 18446744073709551615u64) {
+        result = 2u64;
     }
-    auto value() const -> u64 {
-        return count;
+    if (lease.output() != builtin::ExecEffect::success) {
+        result = 3u64;
     }
-};
-
-auto prepare_forward(builtin::ExecutionEffects& effects) -> builtin::ExecutionPrep {
-    const builtin::ExecutionPrep result = effects.prepare();
+    builtin::ExecRequest requested = lease.request();
+    while (requested == builtin::ExecRequest::pending) {
+        requested = lease.request();
+    }
+    if (requested != builtin::ExecRequest::ready && requested != builtin::ExecRequest::cancel_requested) {
+        result = 4u64;
+    }
+    const builtin::ExecCancel cancelled = lease.cancel();
+    if (cancelled != builtin::ExecCancel::settled && cancelled != builtin::ExecCancel::draining && cancelled
+        != builtin::ExecCancel::service_lost) {
+        result = 5u64;
+    }
+    if (lease.finish(builtin::ExecFinish::cancel_requested) != builtin::ExecEffect::success) {
+        result = 6u64;
+    }
     return result;
 }
-
-auto finish_forward(builtin::ExecutionEffects& effects, builtin::ExecFinish reason) -> builtin::ExecEffect {
-    return effects.finish(reason);
-}
-
 auto execution_entry(builtin::ExecutionEffects& effects) -> u64 {
-    Ledger ledger = Ledger();
-    const builtin::ExecutionPrep prepared = prepare_forward(effects);
-    if (prepared.state != builtin::ExecPrepared::loaded || prepared.status != builtin::ExecStatus::exited
-        || !prepared.finish_required) {
-        return 1u64;
-    }
-    ledger.observe();
-    const builtin::ExecutionStep step = effects.advance();
-    if (step.state != builtin::ExecStep::output || step.status != builtin::ExecStatus::exited || step.value
-        != 18446744073709551615u64) {
-        return 2u64;
-    }
-    ledger.observe();
-    if (effects.output() != builtin::ExecEffect::success) {
-        return 3u64;
-    }
-    builtin::ExecRequest requested = effects.request();
-    while (requested == builtin::ExecRequest::pending) {
-        requested = effects.request();
-    }
-    if (requested != builtin::ExecRequest::ready) {
-        return 3u64;
-    }
-    ledger.observe();
-    if (finish_forward(effects, builtin::ExecFinish::complete) != builtin::ExecEffect::success) {
-        return 4u64;
-    }
-    return ledger.value() + 39u64;
+    return execution_consume(effects);
 }

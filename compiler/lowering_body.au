@@ -277,7 +277,8 @@ export namespace compiler_lowering {
     auto function_slot_kind(RecordKind kind) -> bool {
         return kind == RecordKind::ScalarSlot || kind == RecordKind::ObjectSlot || kind == RecordKind::ArraySlot || kind
             == RecordKind::SpanSlot || kind == RecordKind::ServiceSlot || kind == RecordKind::RegionSlot || kind
-            == RecordKind::ByteSlot || kind == RecordKind::OwnedValueType || kind == RecordKind::SpanValueType;
+            == RecordKind::ByteSlot || kind == RecordKind::OwnedValueType || kind == RecordKind::SpanValueType || kind
+            == RecordKind::ServiceResourceSlot;
     }
     auto publish_function(compiler_resolver::Session& session, i64 receiver) -> i64 {
         const ContinuationRow root = session.continuation(0);

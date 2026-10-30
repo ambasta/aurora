@@ -2034,11 +2034,11 @@ void rawResolutionOwnership() {
     static_assert(sizeof(Operand) == 40 && alignof(Operand) == 8 && offsetof(Operand, operandRole) == 0 &&
                   offsetof(Operand, signedValue) == 8 && offsetof(Operand, unsignedValue) == 16 &&
                   offsetof(Operand, sliceBegin) == 24 && offsetof(Operand, sliceCount) == 32);
-    static_assert(sizeof(Snapshot) == 48 && alignof(Snapshot) == 8 && offsetof(Snapshot, sharedCount) == 0 &&
+    static_assert(sizeof(Snapshot) == 56 && alignof(Snapshot) == 8 && offsetof(Snapshot, sharedCount) == 0 &&
                   offsetof(Snapshot, objectSharedCount) == 8 && offsetof(Snapshot, liveValue) == 16 &&
                   offsetof(Snapshot, exclusiveValue) == 24 && offsetof(Snapshot, resourceActiveValue) == 32 &&
-                  offsetof(Snapshot, objectExclusiveValue) == 40);
-    static_assert(sizeof(Local) == 160 && alignof(Local) == 8 && offsetof(Local, nameSourceId) == 0 &&
+                  offsetof(Snapshot, objectExclusiveValue) == 40 && offsetof(Snapshot, issuerUsedValue) == 48);
+    static_assert(sizeof(Local) == 168 && alignof(Local) == 8 && offsetof(Local, nameSourceId) == 0 &&
                   offsetof(Local, concreteTypeId) == 8 && offsetof(Local, storageOffset) == 16 &&
                   offsetof(Local, scopeId) == 24 && offsetof(Local, previousBinding) == 32 &&
                   offsetof(Local, mutableValue) == 40 && offsetof(Local, borrowedObject) == 48 &&
@@ -2048,7 +2048,7 @@ void rawResolutionOwnership() {
                   offsetof(Local, temporaryParent) == 104 && offsetof(Local, sharedCount) == 112 &&
                   offsetof(Local, objectSharedCount) == 120 && offsetof(Local, liveValue) == 128 &&
                   offsetof(Local, exclusiveValue) == 136 && offsetof(Local, resourceActiveValue) == 144 &&
-                  offsetof(Local, objectExclusiveValue) == 152);
+                  offsetof(Local, objectExclusiveValue) == 152 && offsetof(Local, issuerUsedValue) == 160);
     static_assert(sizeof(Lane) == 56 && alignof(Lane) == 8 && offsetof(Lane, argumentIndex) == 0 &&
                   offsetof(Lane, argumentKind) == 8 && offsetof(Lane, concreteTypeId) == 16 &&
                   offsetof(Lane, localId) == 24 && offsetof(Lane, loanId) == 32 &&
@@ -2674,7 +2674,8 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(id)}}, Reason::service_loan_identity});
         services.push_back({{{release(id)}}, Reason::service_release});
     }
-    // Kinds 0..9 and operations 0..50 are the closed tables.
+    // Kinds 0..9 are closed; legacy service operations stop at 45.
+    // Issuance uses its own form, and retired issuer operations remain invalid.
     for (const auto kind : {std::int64_t{-1}, std::int64_t{10}, INT64_MAX}) {
         services.push_back({{{acquire(1, 16, kind)}}, Reason::service_loan_root});
         services.push_back({{{release(1, kind)}}, Reason::service_release});
@@ -2688,8 +2689,10 @@ void rawInstructionAdmission() {
     services.push_back({{{operation(1, 5)}}, Reason::service_operation_kind});
     services.push_back({{{operation(8, 0)}}, Reason::service_operation_kind});
     services.push_back({{{operation(9, 0)}}, Reason::service_operation_kind});
-    for (const auto op : {32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50})
+    for (const auto op : {32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45})
         services.push_back({{{operation(op, 0)}}, Reason::service_operation_kind});
+    for (const auto op : {46, 47, 48, 49, 50})
+        services.push_back({{{operation(op, 0)}}, Reason::service_operation});
     for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{51}, INT64_MAX})
         services.push_back({{{operation(op, 0)}}, Reason::service_operation});
     for (const auto &[op, kind, offset, reason] :

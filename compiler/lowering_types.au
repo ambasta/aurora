@@ -1234,6 +1234,9 @@ export namespace compiler_lowering {
         if (count > 6) {
             return fail(session, LoweringError::function_parameter_limit, source);
         }
+        if (result_kind == compiler_resolver::ResolvedTypeKind::service_resource) {
+            return fail(session, LoweringError::service_capability_result, source);
+        }
         if (!owned_element(session, result, source)) {
             return false;
         }
@@ -1241,6 +1244,9 @@ export namespace compiler_lowering {
         i64 borrowed = 0;
         while (at < count && session.good()) {
             const i64 type = parameter_type(session, symbol, at);
+            if (tk(session, type) == compiler_resolver::ResolvedTypeKind::service_resource) {
+                return fail(session, LoweringError::resource_argument_type, source);
+            }
             if (!owned_element(session, type, source)) {
                 return false;
             }

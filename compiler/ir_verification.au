@@ -34,9 +34,13 @@ export namespace compiler_ir_verification {
         const compiler_ir_metadata::IndexRange arrays = compiler_ir_metadata::slot_group(m, declaration, 12);
         const compiler_ir_metadata::IndexRange spans = compiler_ir_metadata::slot_group(m, declaration, 13);
         const compiler_ir_metadata::IndexRange bytes = compiler_ir_metadata::slot_group(m, declaration, 16);
+        const compiler_ir_metadata::IndexRange resources = compiler_ir_metadata::slot_group(m, declaration, 28);
+        const compiler_ir_metadata::IndexRange issuers = compiler_ir_metadata::slot_group(m, declaration, 14);
         i64 count = compiler_ir_metadata::count_sum(objects.count(), arrays.count());
         count = compiler_ir_metadata::count_sum(count, spans.count());
         count = compiler_ir_metadata::count_sum(count, bytes.count());
+        count = compiler_ir_metadata::count_sum(count, resources.count());
+        count = compiler_ir_metadata::count_sum(count, issuers.count());
         i64 at = 0;
         while (at < objects.count()) {
             const compiler_ir_metadata::SlotRow slot = m.slot_at(objects.begin() + at);
@@ -161,6 +165,10 @@ export namespace compiler_ir_verification {
         if (!w.same_facts(position, FactKind::owned_object) || !w.same_facts(position, FactKind::owned_field)) {
             return w.fail(first_error(
                 VerificationErrorFirst::incompatible_owning_object_lifetimes_or_field_ownership_at_control_flow_join));
+        }
+        if (!w.same_facts(position, FactKind::service_resource) || !w.same_facts(position,
+            FactKind::service_issuer_used) || !w.same_facts(position, FactKind::service_resource_dead)) {
+            return w.fail(second_error(VerificationErrorSecond::incompatible_service_resource_at_join));
         }
         if (!w.same_facts(position, FactKind::object_loan)) {
             return w.fail(first_error(VerificationErrorFirst::incompatible_object_loans_at_control_flow_join));

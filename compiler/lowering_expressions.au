@@ -557,6 +557,28 @@ export namespace compiler_lowering {
         }
         return finish_expression(session, result, -1);
     }
+    auto begin_service_resource(compiler_resolver::Session& session, i64 frame_id) -> bool {
+        const ContinuationRow frame = session.continuation(frame_id);
+        const i64 node = frame.syntax_node();
+        const i64 source = source_ref(session, node);
+        if (frame.scope_head() < 0) {
+            return fail(session, LoweringError::ownership_constructor_requires_typed_initializer, source);
+        }
+        const compiler_resolver::SyntaxRow syntax = session.syntax(node);
+        if (syntax.expression_kind() == compiler_parser::NodeKind::call && session.source_equal(source, "move")) {
+            const i64 original = moved_source(session, node, frame.output_mark());
+            const LocalRow owner = session.local(original);
+            const i64 destination = expression_destination(session, frame, frame.output_mark(), owner.owner_id());
+            const i64 target = local_offset(session, destination);
+            emit_MoveServiceResource(session, owner.offset(), target, 0);
+            set_live(session, original, false, false);
+            return finish_expression(session, frame.output_mark(), destination);
+        }
+        if (syntax.expression_kind() == compiler_parser::NodeKind::method_call) {
+            return begin_call(session, frame_id);
+        }
+        return fail(session, LoweringError::ownership_constructor_type, source);
+    }
     auto begin_owned_storage(compiler_resolver::Session& session, i64 frame_id) -> bool {
         const ContinuationRow frame = session.continuation(frame_id);
         const i64 node = frame.syntax_node();
@@ -623,6 +645,9 @@ export namespace compiler_lowering {
             }
             if (expected == compiler_resolver::ResolvedTypeKind::class_value) {
                 return begin_class(session, frame_id);
+            }
+            if (is_service_resource(session, frame.output_mark())) {
+                return begin_service_resource(session, frame_id);
             }
             if (is_owner_storage(session, frame.output_mark())) {
                 return begin_owned_storage(session, frame_id);

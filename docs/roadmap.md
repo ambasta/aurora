@@ -67,6 +67,17 @@ executables through a retained external file owner, then restores the console's
 exact architecture and mapping boundary. Same-boot compile/link/run is the native
 toolchain consumer; it does not require serial artifact export and a host link.
 
+The command admission is a scoped linear `ExecutionLease`, issued by a sealed
+`ExecutionEffects` loan. Every result, including an inert refusal or a failed load
+that still owes client close, must be explicitly finalized. Local moves transfer
+that obligation; normal scope exit cannot silently drop it. The issuer cannot
+release, forward or mint again while its lease is live, and forwarding consumes
+its single issuance opportunity without refund. Native bindings authenticate
+physical resources; they do not replace source command ordering. This is not an
+escaping child handle, automatic destructor, asynchronous task or general init
+contract. Explicit cancellation drains already-dispatched work under existing
+budgets and does not claim rollback or replay.
+
 The Serve-authorized Aurora service owns boot-volume copies, namespace/handle
 state and retained mutable RAM files. The kernel authenticates incarnations and
 copies bounded requests/replies; the legacy kernel file store is removed.

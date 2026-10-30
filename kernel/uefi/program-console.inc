@@ -1120,6 +1120,9 @@ auto production_output(void *, bool, std::span<const std::byte> bytes) -> bool {
     case RunStatus::watchdog:
         append("watchdog");
         break;
+    case RunStatus::cancelled:
+        append("cancelled");
+        break;
     case RunStatus::missing:
         append("program not found");
         break;

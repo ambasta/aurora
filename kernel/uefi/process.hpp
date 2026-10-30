@@ -9,7 +9,8 @@ enum class RunStatus {
     malformed,
     quota,
     unavailable,
-    output_failed
+    output_failed,
+    cancelled
 };
 class RunResult final {
 public:

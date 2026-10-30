@@ -340,6 +340,14 @@ def runs(text, mode):
                     )
             elif values["reason"] == "service_lost":
                 outcome = " | ".join(["service_lost", *streams])
+            elif values["reason"] == "cancelled":
+                need(
+                    mode == "process-service"
+                    and expected[current["run"] - 1][4] in ("raw-cancel-initial", "raw-cancel-tail")
+                    and not streams,
+                    "Unexpected explicit cancellation",
+                )
+                outcome = "cancelled"
             elif values["reason"] == "watchdog":
                 outcome = f"watchdog ticks={values['ticks']}"
             elif values["reason"] == "call":
@@ -800,6 +808,19 @@ def validate(
             text.count(" volatile_data=lost") == 10 and text.count("AURORA_FILE_SERVICE_OK:") == 1,
             "Service loss visibility or healthy restart",
         )
+        delivered = re.findall(
+            r"^AURORA_EXECUTION_CANCEL: client=(\d+) tail=(\d+) generation=(\d+) transaction=(\d+) next=(\d+)$",
+            text.replace("\r", ""),
+            re.MULTILINE,
+        )
+        need(
+            len(delivered) == 1
+            and delivered[0][:3] == ("18", "2", "9")
+            and int(delivered[0][3]) > 0
+            and delivered[0][3] == delivered[0][4]
+            and text.count("AURORA_EXECUTION_CANCEL:") == 1,
+            "Authenticated delivered-request cancellation boundary",
+        )
     if mode == "process-xfs":
         ready = re.findall(
             r"AURORA_FILE_SERVICE_READY: generation=(\d+) owner=\d+ block_generation=(\d+) block_sectors=(\d+)", text
@@ -824,6 +845,25 @@ def validate(
             "Retained file service did not run and terminate",
         )
         need("AURORA_FILE_SERVICE_LOST:" not in text, "File service lost its state")
+        cancelled = re.findall(
+            r"^AURORA_EXECUTION_CANCEL: client=(\d+) tail=([01]) generation=(\d+) transaction=(\d+) next=(\d+)$",
+            text.replace("\r", ""),
+            re.MULTILINE,
+        )
+        expected_cancel = [
+            (str(index), str(int(row[4] == "raw-cancel-tail")))
+            for index, row in enumerate(PROCESS_CASES[mode][1], 1)
+            if row[4] in ("raw-cancel-initial", "raw-cancel-tail")
+        ]
+        need(
+            [(client, tail) for client, tail, _, _, _ in cancelled] == expected_cancel
+            and all(
+                generation == "1" and int(transaction) > 0 and transaction == next_id
+                for _, _, generation, transaction, next_id in cancelled
+            ),
+            "Authenticated initial/tail cancellation boundaries",
+        )
+        need(text.count("AURORA_EXECUTION_CANCEL:") == len(cancelled), "Malformed cancellation boundary")
     if mode == "process-xfs-clean":
         ready = re.findall(
             r"AURORA_FILE_SERVICE_READY: generation=(\d+) owner=\d+ block_generation=(\d+) block_sectors=(\d+)", text

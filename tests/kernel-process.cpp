@@ -845,18 +845,21 @@ namespace execution_fixture {
 namespace execution = aurora::execution;
 using U64 = std::uint64_t;
 constexpr const char *statuses[] = {
-    "exited", "fault", "watchdog", "missing", "malformed", "quota", "unavailable", "output_failed"};
+    "exited", "fault", "watchdog", "missing", "malformed", "quota", "unavailable", "output_failed", "cancelled"};
 constexpr const char *preparations[] = {"loaded", "refused", "service_lost"};
 constexpr const char *steps[] = {"retired", "output", "request", "parked"};
 constexpr const char *effects[] = {"success", "failed"};
-constexpr const char *requests[] = {"ready", "cancelled", "service_lost", "pending"};
-constexpr const char *finishes[] = {"complete", "output_failed", "cancelled", "service_lost"};
+constexpr const char *requests[] = {"ready", "cancelled", "service_lost", "pending", "cancel_requested"};
+constexpr const char *finishes[] = {"complete", "output_failed", "cancelled", "service_lost", "cancel_requested"};
+constexpr const char *cancels[] = {"settled", "draining", "service_lost"};
 std::vector<std::vector<std::string>> script;
 std::size_t cursor{};
 std::string trace;
 execution::Argument argument{};
+execution::Lease lease{};
 unsigned calls{}, expected_calls{};
-bool quiet = true, reenter = false, release_inside = false;
+bool quiet = true, reenter = false, release_inside = false, authority_only = false, unsettled = false;
+bool owner_reentry = false, finish_release = false;
 
 template <std::size_t N> auto named(const std::string &text, const char *const (&names)[N]) -> U64 {
     for (std::size_t index = 0; index < N; ++index)
@@ -875,25 +878,24 @@ auto next(const char *operation, std::size_t fields) -> const std::vector<std::s
 }
 class Transport {
 public:
-    static auto prepare() -> execution::Preparation;
-    static auto advance() -> execution::Observation {
-        const auto &row = next("advance", 4);
-        return {static_cast<execution::Step>(named(row[1], steps)),
-                static_cast<execution::Status>(named(row[2], statuses)),
-                number(row[3])};
-    }
-    static auto output() -> execution::Effect {
+    class Binding {
+    public:
+        bool finished = false;
+    };
+    static auto prepare(Binding &) -> execution::Preparation;
+    static auto advance(Binding &) -> execution::Observation;
+    static auto output(Binding &) -> execution::Effect {
         return static_cast<execution::Effect>(named(next("output", 2)[1], effects));
     }
-    static auto request() -> execution::Request {
+    static auto request(Binding &) -> execution::Request {
         return static_cast<execution::Request>(named(next("request", 2)[1], requests));
     }
-    static auto finish(execution::Finish disposition) -> execution::Effect {
-        const auto &row = next("finish", 3);
-        if (static_cast<U64>(disposition) != named(row[1], finishes))
-            usage("unexpected execution finish disposition");
-        trace += ':' + row[1];
-        return static_cast<execution::Effect>(named(row[2], effects));
+    static auto cancel(Binding &) -> execution::Cancel {
+        return static_cast<execution::Cancel>(named(next("cancel", 2)[1], cancels));
+    }
+    static auto finish(Binding &, execution::Finish) -> execution::Effect;
+    static auto settled(const Binding &binding) -> bool {
+        return binding.finished && !unsettled;
     }
 };
 class Platform {
@@ -906,22 +908,44 @@ public:
     }
 };
 using Session = execution::Session<Transport, Platform>;
-auto Transport::prepare() -> execution::Preparation {
-    if (reenter || release_inside) {
+auto Transport::prepare(Binding &) -> execution::Preparation {
+    if (reenter || release_inside || authority_only) {
         ++calls;
         if (reenter)
             static_cast<void>(Session::prepare(argument.grant, argument.generation));
-        else
+        if (release_inside)
             Session::release(argument);
-        usage("execution adapter accepted reentry");
+        return {execution::Prepared::refused, execution::Status::unavailable};
     }
-    const auto &row = next("prepare", 4);
-    const auto required = number(row[3]);
-    if (required > 1)
-        usage("invalid fixture finish flag");
+    const auto &row = next("prepare", 3);
     return {static_cast<execution::Prepared>(named(row[1], preparations)),
+            static_cast<execution::Status>(named(row[2], statuses))};
+}
+auto Transport::advance(Binding &) -> execution::Observation {
+    if (owner_reentry) {
+        ++calls;
+        static_cast<void>(Session::preparation(lease.binding, lease.generation));
+        usage("execution owner accepted reentry");
+    }
+    const auto &row = next("advance", 4);
+    return {static_cast<execution::Step>(named(row[1], steps)),
             static_cast<execution::Status>(named(row[2], statuses)),
-            required};
+            number(row[3])};
+}
+auto Transport::finish(Binding &binding, execution::Finish disposition) -> execution::Effect {
+    if (authority_only) {
+        ++calls;
+        if (finish_release)
+            Session::release(argument);
+        binding.finished = true;
+        return execution::Effect::success;
+    }
+    const auto &row = next("finish", 3);
+    if (static_cast<U64>(disposition) != named(row[1], finishes))
+        usage("unexpected execution finish disposition");
+    trace += ':' + row[1];
+    binding.finished = true;
+    return static_cast<execution::Effect>(named(row[2], effects));
 }
 auto denial(const std::string &kind) -> void {
     const auto old = Session::open();
@@ -946,15 +970,46 @@ auto denial(const std::string &kind) -> void {
         } else if (kind == "not_quiet") {
             quiet = false;
             static_cast<void>(Session::prepare(argument.grant, argument.generation));
-        } else if (kind == "invalid_finish")
-            static_cast<void>(Session::finish(argument.grant, argument.generation, 4));
-        else if (kind == "reenter" || kind == "release_inside") {
+        } else if (kind == "reenter" || kind == "release_inside") {
             expected_calls = 1;
             reenter = kind == "reenter";
             release_inside = kind == "release_inside";
             static_cast<void>(Session::prepare(argument.grant, argument.generation));
-        } else
-            usage("unknown execution denial");
+        } else {
+            authority_only = true;
+            lease = Session::prepare(argument.grant, argument.generation);
+            expected_calls = 1;
+            if (kind == "invalid_finish")
+                static_cast<void>(Session::finish(lease.binding, lease.generation, 5));
+            else if (kind == "issuer_as_owner")
+                static_cast<void>(Session::advance(argument.grant, argument.generation));
+            else if (kind == "forged_owner")
+                static_cast<void>(Session::advance(reinterpret_cast<const void *>(1), lease.generation));
+            else if (kind == "stale_owner")
+                static_cast<void>(Session::preparation(lease.binding, old.generation));
+            else if (kind == "release_live")
+                Session::release(argument);
+            else if (kind == "second_prepare")
+                static_cast<void>(Session::prepare(argument.grant, argument.generation));
+            else if (kind == "owner_reentry") {
+                expected_calls = 2;
+                owner_reentry = true;
+                static_cast<void>(Session::advance(lease.binding, lease.generation));
+            } else {
+                expected_calls = 2;
+                unsettled = kind == "unsettled_finish";
+                finish_release = kind == "release_during_finish";
+                static_cast<void>(Session::finish(lease.binding, lease.generation, 0));
+                if (kind == "double_finish")
+                    static_cast<void>(Session::finish(lease.binding, lease.generation, 0));
+                else if (kind == "use_after_finish")
+                    static_cast<void>(Session::preparation(lease.binding, lease.generation));
+                else if (kind == "reissue_after_finish")
+                    static_cast<void>(Session::prepare(argument.grant, argument.generation));
+                else
+                    usage("unknown execution denial");
+            }
+        }
         std::_Exit(1);
     }
     int status{};
@@ -966,10 +1021,14 @@ auto denial(const std::string &kind) -> void {
 
 extern "C" auto __au_runtime_process_execute_command(const aurora::execution::Argument *, aurora::execution::Result *)
     -> void;
-extern "C" auto __au_runtime_execution_prepare(const void *grant,
-                                               std::uint64_t generation,
-                                               aurora::execution::Preparation *result) -> void {
+extern "C" auto
+__au_runtime_execution_prepare(const void *grant, std::uint64_t generation, aurora::execution::Lease *result) -> void {
     *result = execution_fixture::Session::prepare(grant, generation);
+}
+extern "C" auto __au_runtime_execution_preparation(const void *binding,
+                                                   std::uint64_t generation,
+                                                   aurora::execution::Preparation *result) -> void {
+    *result = execution_fixture::Session::preparation(binding, generation);
 }
 extern "C" auto __au_runtime_execution_advance(const void *grant,
                                                std::uint64_t generation,
@@ -982,10 +1041,21 @@ extern "C" auto __au_runtime_execution_output(const void *grant, std::uint64_t g
 extern "C" auto __au_runtime_execution_request(const void *grant, std::uint64_t generation) -> std::uint64_t {
     return execution_fixture::Session::request(grant, generation);
 }
+extern "C" auto __au_runtime_execution_cancel(const void *binding, std::uint64_t generation) -> std::uint64_t {
+    return execution_fixture::Session::cancel(binding, generation);
+}
 extern "C" auto __au_runtime_execution_finish(const void *grant, std::uint64_t generation, std::uint64_t disposition)
     -> std::uint64_t {
     return execution_fixture::Session::finish(grant, generation, disposition);
 }
+
+class ExecutionCancelArgument final {
+public:
+    aurora::execution::Argument issuer;
+    std::uint64_t point, padding = 0;
+};
+extern "C" auto __au_runtime_process_cancel_command(const ExecutionCancelArgument *, aurora::execution::Result *)
+    -> void;
 
 auto execution_mode(const char *cases) -> int {
     namespace fixture = execution_fixture;
@@ -1015,7 +1085,14 @@ auto execution_mode(const char *cases) -> int {
         }
         fixture::argument = fixture::Session::open();
         aurora::execution::Result result;
-        __au_runtime_process_execute_command(&fixture::argument, &result);
+        if (!fixture::script.empty() && fixture::script[0].size() == 2 && fixture::script[0][0] == "point") {
+            const auto point = number(fixture::script[0][1]);
+            fixture::script.erase(fixture::script.begin());
+            const ExecutionCancelArgument arguments{fixture::argument, point};
+            __au_runtime_process_cancel_command(&arguments, &result);
+        } else {
+            __au_runtime_process_execute_command(&fixture::argument, &result);
+        }
         fixture::Session::release(fixture::argument);
         if (fixture::cursor != fixture::script.size() ||
             static_cast<std::uint64_t>(result.status) >= std::size(fixture::statuses))

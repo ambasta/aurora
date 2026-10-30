@@ -62,7 +62,7 @@ export namespace compiler_lowering {
             && has_execution_service(groups));
     }
     auto active_service_operation(i64 groups, i64 operation) -> bool {
-        return operation >= 0 && operation < compiler_catalog::operation_count() && active_service_kind(groups,
+        return compiler_catalog::operation_admitted(operation) && active_service_kind(groups,
             compiler_catalog::operation_kind(operation));
     }
     auto service_operation_count(i64 groups) -> i64 {

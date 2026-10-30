@@ -18,9 +18,7 @@ export namespace compiler_ir_verification {
             if ((operation == 1 && compiler_ir_metadata::named(m, name, "__au_console_put_result")) || (operation == 2
                 && compiler_ir_metadata::named(m, name, "__au_display_put_result")) || (operation == 4
                 && compiler_ir_metadata::named(m, name, "__au_event_ack_result")) || (operation == 7
-                && compiler_ir_metadata::named(m, name, "__au_port_write_result")) || ((operation == 48 || operation
-                == 50) && compiler_ir_metadata::named(m, name, "__au_exec_effect")) || (operation == 49
-                && compiler_ir_metadata::named(m, name, "__au_exec_request"))) {
+                && compiler_ir_metadata::named(m, name, "__au_port_write_result"))) {
                 return TypeKey(9, at);
             }
             at = at + 1;
@@ -124,6 +122,136 @@ export namespace compiler_ir_verification {
         }
         return w.clear_current();
     }
+    // Active/dead: key=descriptor, site=immutable issuer slot. Used: key=issuer,
+    // site=one issuing/forwarding instruction. Exact joins retain both records;
+    // no token is borrowed from byte allocation or object ownership.
+    auto service_origin_fact(FactKind kind, i64 key, i64 site) -> FactRow {
+        FactRow result = object_fact(key, site);
+        result.set_kind(kind);
+        return result;
+    }
+    auto service_resource_pinned(VerificationWorkspace& w, i64 issuer) -> bool {
+        i64 at = w.first_fact(FactKind::service_resource);
+        while (at >= 0 && fact_kind_at(w, at, FactKind::service_resource)) {
+            const FactRow fact = w.fact_at(at);
+            if (fact.site() == issuer) {
+                return true;
+            }
+            at = w.next_fact(at);
+        }
+        return false;
+    }
+    auto service_issuer_available(VerificationWorkspace& w, i64 issuer) -> bool {
+        if (service_resource_pinned(w, issuer)) {
+            return w.fail(second_error(VerificationErrorSecond::service_resource_issuer_is_pinned));
+        }
+        if (has_fact(w, FactKind::service_issuer_used, issuer, -1)) {
+            return w.fail(second_error(VerificationErrorSecond::service_resource_issuer_already_used));
+        }
+        return w.good();
+    }
+    auto fresh_service_resource(VerificationWorkspace& w, i64 root) -> bool {
+        if (has_fact(w, FactKind::service_resource, root, -1) || has_fact(w, FactKind::service_resource_dead, root,
+            -1)) {
+            return w.fail(second_error(VerificationErrorSecond::service_resource_requires_fresh_storage));
+        }
+        return w.good();
+    }
+    auto transfer_resource_result(const compiler_ir_metadata::MetadataStore& m, i64 method) -> TypeKey {
+        i64 at = 0;
+        while (at < m.enum_count()) {
+            const compiler_ir_metadata::EnumRow row = m.enum_at(at);
+            if (((method == 2 || method == 5) && compiler_ir_metadata::named(m, row.name(), "__au_exec_effect"))
+                || (method == 3 && compiler_ir_metadata::named(m, row.name(), "__au_exec_request")) || (method == 4
+                && compiler_ir_metadata::named(m, row.name(), "__au_exec_cancel"))) {
+                return TypeKey(9, at);
+            }
+            at = at + 1;
+        }
+        return TypeKey(-1, -1);
+    }
+    auto transfer_service_resource(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const compiler_ir_instructions::RawInstructionRow op = s.instruction_at(id);
+        const i64 form = op.form();
+        const i64 root = transfer_value(s, id, 0);
+        if (form == 85) {
+            const i64 destination = transfer_value(s, id, 2);
+            if (!service_issuer_available(w, root) || !fresh_service_resource(w, destination)) {
+                return false;
+            }
+            const i64 issuer_kind = compiler_ir_instructions::service_resource_issuer(m, w.callable(), destination);
+            if (issuer_kind < 0 || !compiler_ir_instructions::service_entry_matches(s, m, w.callable(), root,
+                issuer_kind) || w.service_unsuspended(root) != 1) {
+                return w.fail(second_error(VerificationErrorSecond::service_resource_provenance_mismatch));
+            }
+            const FactRow used = service_origin_fact(FactKind::service_issuer_used, root, id);
+            const FactRow issued = service_origin_fact(FactKind::service_resource, destination, root);
+            return w.fact_set(used) && w.fact_set(issued) && w.clear_current();
+        }
+        if (!has_fact(w, FactKind::service_resource, root, -1)) {
+            return w.fail(second_error(VerificationErrorSecond::service_resource_requires_live_owner));
+        }
+        const FactRow resource = w.fact_find(FactKind::service_resource, root, -1);
+        const i64 issuer = resource.site();
+        const i64 issuer_kind = compiler_ir_instructions::service_resource_issuer(m, w.callable(), root);
+        const FactRow used = w.fact_find(FactKind::service_issuer_used, issuer, -1);
+        const compiler_ir_instructions::RawInstructionRow issuance = s.instruction_at(used.site());
+        if (issuer_kind < 0 || used.kind() != FactKind::service_issuer_used || used.site() <= 0 || issuance.form() != 85
+            || transfer_value(s, used.site(), 0) != issuer || transfer_value(s, used.site(), 1) != 46
+            || transfer_value(s, used.site(), 3) != 0 || !compiler_ir_instructions::service_entry_matches(s, m,
+            w.callable(), issuer, issuer_kind) || w.service_unsuspended(issuer) != 1) {
+            return w.fail(second_error(VerificationErrorSecond::service_resource_provenance_mismatch));
+        }
+        if (form == 86) {
+            const i64 destination = transfer_value(s, id, 1);
+            if (!fresh_service_resource(w, destination)) {
+                return false;
+            }
+            const FactRow moved = service_origin_fact(FactKind::service_resource, destination, issuer);
+            const FactRow dead = service_origin_fact(FactKind::service_resource_dead, root, issuer);
+            return w.fact_erase(FactKind::service_resource, root, -1) && w.fact_set(dead) && w.fact_set(moved)
+                && w.clear_current();
+        }
+        const i64 method = transfer_value(s, id, 1);
+        if (method < 2) {
+            const i64 base = transfer_value(s, id, 2);
+            if (!transfer_has(w, FactKind::object, base)) {
+                return w.fail(second_error(VerificationErrorSecond::service_observation_requires_pristine_sample));
+            }
+            const i64 constructed = compiler_ir_initialization::object_was_constructed(w, m, base);
+            if (constructed < 0 || !w.good()) {
+                return false;
+            }
+            if (constructed == 1) {
+                return w.fail(second_error(VerificationErrorSecond::service_observation_requires_pristine_sample));
+            }
+            const i64 pristine = compiler_ir_initialization::object_pristine(w, m, base);
+            if (pristine < 0 || !w.good()) {
+                return false;
+            }
+            if (pristine == 0) {
+                return w.fail(second_error(
+                    VerificationErrorSecond::service_observation_cannot_overwrite_initialized_sample_storage));
+            }
+            return compiler_ir_initialization::mark_object(w, m, base) && w.clear_current();
+        }
+        if (method == 5) {
+            const TypeKey disposition = transfer_execution_finish_type(m);
+            const ValueRow argument = current(w, disposition);
+            if (!w.good()) {
+                return false;
+            }
+            const FactRow dead = service_origin_fact(FactKind::service_resource_dead, root, issuer);
+            if (!w.fact_erase(FactKind::service_resource, root, -1) || !w.fact_set(dead)) {
+                return false;
+            }
+        }
+        const TypeKey result_type = transfer_resource_result(m, method);
+        const BoundsEvidence bounds = empty_bounds();
+        const ValueRow result = ValueRow(result_type, bounds);
+        return w.set_current(result);
+    }
     auto transfer_services(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
         const compiler_ir_instructions::RawInstructionRow op = s.instruction_at(id);
@@ -131,7 +259,21 @@ export namespace compiler_ir_verification {
         if (form == 0) {
             return true;
         }
+        if (form >= 85 && form <= 87) {
+            return transfer_service_resource(w, m, s, id);
+        }
         if (form == 1) {
+            const i64 issuer = transfer_value(s, id, 1);
+            const i64 kind = transfer_value(s, id, 2);
+            if (kind == 9) {
+                if (!service_issuer_available(w, issuer)) {
+                    return false;
+                }
+                const FactRow used = service_origin_fact(FactKind::service_issuer_used, issuer, id);
+                if (!w.fact_set(used)) {
+                    return false;
+                }
+            }
             if (w.acquire_service_loan(transfer_value(s, id, 0), transfer_value(s, id, 1), transfer_value(s, id, 2))
                 != 1) {
                 return w.fail(second_error(
@@ -152,19 +294,6 @@ export namespace compiler_ir_verification {
                     VerificationErrorSecond::service_operation_requires_active_unsuspended_capability_provenance));
             }
             const i64 operation = transfer_value(s, id, 1);
-            if (operation >= 48 && operation <= 50) {
-                if (operation == 50) {
-                    const TypeKey argument_type = transfer_execution_finish_type(m);
-                    const ValueRow argument = current(w, argument_type);
-                    if (!w.good()) {
-                        return false;
-                    }
-                }
-                const TypeKey result_type = transfer_service_result(m, operation);
-                const BoundsEvidence guard = empty_bounds();
-                const ValueRow result_value = ValueRow(result_type, guard);
-                return w.set_current(result_value);
-            }
             if (operation == 44 || operation == 45) {
                 return transfer_set_kind(w, 7);
             }
@@ -257,8 +386,7 @@ export namespace compiler_ir_verification {
                 const ValueRow result_value = ValueRow(result_type, guard);
                 return w.set_current(result_value);
             }
-            if (operation == 0 || operation == 3 || operation == 5 || operation == 8 || operation == 32 || operation
-                == 46 || operation == 47) {
+            if (operation == 0 || operation == 3 || operation == 5 || operation == 8 || operation == 32) {
                 if ((operation == 5 || operation == 8 || operation == 32) && !transfer_current_kind(w, 7)) {
                     return false;
                 }

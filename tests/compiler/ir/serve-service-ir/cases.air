@@ -83,100 +83,126 @@ end
 -fields __au_serve_request [((enum __au_serve_status display=builtin::ServeStatus) 0 1 false) (u64 1 1 false)]
 +fields __au_serve_request [((enum __au_serve_status display=builtin::ServeStatus) 0 1 false) (u64 0 1 false)]
 
-; ExecutionEffects is appended metadata type 25 and service kind 9. These
-; independent IR rows use numeric identities rather than parser aliases.
-; CASE: execution effects copied observations
+; Service-origin owner type26 and resource kind0 are independent IR identities.
+; CASE: execution lease observations move and helper transfer
 ; RUN: emit
 ; RUN: stack-facts
 ; CHECK-NOT: __au_runtime_bytes_
-layout __au_execution_prep [(enum __au_exec_prepared display=builtin::ExecPrepared) (enum __au_exec_status display=builtin::ExecStatus) bool]
-fields __au_execution_prep [((enum __au_exec_prepared display=builtin::ExecPrepared) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false) (bool 2 1 false)]
+layout __au_execution_prep [(enum __au_exec_prepared display=builtin::ExecPrepared) (enum __au_exec_status display=builtin::ExecStatus)]
+fields __au_execution_prep [((enum __au_exec_prepared display=builtin::ExecPrepared) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false)]
 layout __au_execution_step [(enum __au_exec_step display=builtin::ExecStep) (enum __au_exec_status display=builtin::ExecStatus) u64]
 fields __au_execution_step [((enum __au_exec_step display=builtin::ExecStep) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false) (u64 2 1 false)]
 enum __au_exec_prepared 3
-enum __au_exec_status 8
+enum __au_exec_status 9
 enum __au_exec_step 4
 enum __au_exec_effect 2
-enum __au_exec_request 4
-enum __au_exec_finish 4
+enum __au_exec_request 5
+enum __au_exec_finish 5
+enum __au_exec_cancel 3
 function execution_ir_entry
   result u64
   params [25]
-  frame 80
-  slot 24 bool
-  slot 32 (enum __au_exec_status display=builtin::ExecStatus)
-  slot 40 (enum __au_exec_prepared display=builtin::ExecPrepared)
-  slot 48 u64
-  slot 56 (enum __au_exec_status display=builtin::ExecStatus)
-  slot 64 (enum __au_exec_step display=builtin::ExecStep)
-  object 40 __au_execution_prep false
-  object 64 __au_execution_step false
+  frame 112
+  slot 40 (enum __au_exec_status display=builtin::ExecStatus)
+  slot 48 (enum __au_exec_prepared display=builtin::ExecPrepared)
+  slot 56 u64
+  slot 64 (enum __au_exec_status display=builtin::ExecStatus)
+  slot 72 (enum __au_exec_step display=builtin::ExecStep)
+  object 48 __au_execution_prep false
+  object 72 __au_execution_step false
   service 16
+  service_resource 32 0 true
+  service_resource 96 0 true
+  service_resource 112 0 true
     BindServiceParameter 0 16 9
-    BeginObject 40
-    ServiceOperation 16 46 40 9
-    EndObject 40
-    BeginObject 64
-    ServiceOperation 16 47 64 9
-    EndObject 64
-    ServiceOperation 16 48 0 9
-    ServiceOperation 16 49 0 9
+    IssueServiceResource 16 46 32 0
+    MoveServiceResource 32 96 0
+    BeginObject 48
+    ServiceResourceOperation 96 0 48 0
+    EndObject 48
+    BeginObject 72
+    ServiceResourceOperation 96 1 72 0
+    EndObject 72
+    ServiceResourceOperation 96 2 0 0
+    ServiceResourceOperation 96 3 0 0
+    ServiceResourceOperation 96 4 0 0
     EnumConstant (enum __au_exec_finish display=builtin::ExecFinish) 0
-    ServiceOperation 16 50 0 9
+    ServiceResourceOperation 96 5 0 0
     Constant 1 u64
     Return
 end
+function execution_delegate
+  result u64
+  params [25]
+  frame 32
+  service 16
+  service_resource 32 0 true
+    BindServiceParameter 0 16 9
+    AcquireServiceLoan 1 16 9
+    ServiceCall execution_ir_entry 1 0 [0] 9
+    ReleaseServiceLoan 1 9
+    Return
+end
+function execution_no_issue
+  result u64
+  params [25]
+  frame 16
+  service 16
+    BindServiceParameter 0 16 9
+    Constant 0 u64
+    Return
+end
 
-; CASE: execution rejects unknown operation
-; BASE: execution effects copied observations
+; CASE: execution rejects unknown resource method
+; BASE: execution lease observations move and helper transfer
 ; RUN: verify
-; EXPECT-ERROR: unknown sealed service operation
-@@ -34 +34 @@
--    ServiceOperation 16 50 0 9
-+    ServiceOperation 16 51 0 9
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -40 +40 @@
+-    ServiceResourceOperation 96 5 0 0
++    ServiceResourceOperation 96 6 0 0
 
 ; CASE: execution rejects wrong observation nominal identity
-; BASE: execution effects copied observations
+; BASE: execution lease observations move and helper transfer
 ; RUN: verify
-; EXPECT-ERROR: service observation requires exact pristine active copied sample object
-@@ -26 +26 @@
--    ServiceOperation 16 46 40 9
-+    ServiceOperation 16 47 40 9
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -31 +31 @@
+-    ServiceResourceOperation 96 0 48 0
++    ServiceResourceOperation 96 1 48 0
 
 ; CASE: execution finish rejects integer argument
-; BASE: execution effects copied observations
+; BASE: execution lease observations move and helper transfer
 ; RUN: verify
 ; EXPECT-ERROR: missing or mistyped current value
-@@ -33 +33 @@
+@@ -39 +39 @@
 -    EnumConstant (enum __au_exec_finish display=builtin::ExecFinish) 0
 +    Constant 0 u64
 
 ; CASE: execution finish rejects same-cardinality enum
-; BASE: execution effects copied observations
+; BASE: execution lease observations move and helper transfer
 ; RUN: verify
 ; EXPECT-ERROR: missing or mistyped current value
-@@ -33 +33 @@
+@@ -39 +39 @@
 -    EnumConstant (enum __au_exec_finish display=builtin::ExecFinish) 0
-+    EnumConstant (enum __au_exec_step display=builtin::ExecStep) 0
++    EnumConstant (enum __au_exec_request display=builtin::ExecRequest) 0
 
-; CASE: execution rejects wrong capability root
-; BASE: execution effects copied observations
+; CASE: execution rejects wrong issuer root
+; BASE: execution lease observations move and helper transfer
 ; RUN: verify
-; EXPECT-ERROR: service operation requires active unsuspended capability provenance
-@@ -26 +26 @@
--    ServiceOperation 16 46 40 9
-+    ServiceOperation 8 46 40 9
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -28 +28 @@
+-    IssueServiceResource 16 46 32 0
++    IssueServiceResource 8 46 32 0
 
-; CASE: execution rejects mismatched capability kind
-; BASE: execution effects copied observations
+; CASE: execution rejects mismatched resource kind
+; BASE: execution lease observations move and helper transfer
 ; RUN: verify
-; EXPECT-ERROR: service operation kind does not match active capability
-@@ -26 +26 @@
--    ServiceOperation 16 46 40 9
-+    ServiceOperation 16 46 40 8
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -28 +28 @@
+-    IssueServiceResource 16 46 32 0
++    IssueServiceResource 16 46 32 1
 
 ; CASE: execution rejects widened result enum
-; BASE: execution effects copied observations
+; BASE: execution lease observations move and helper transfer
 ; RUN: verify
 ; EXPECT-ERROR: noncanonical sealed service enum
 @@ -8 +8 @@
@@ -184,27 +210,242 @@ end
 +enum __au_exec_effect 3
 
 ; CASE: execution rejects different state enum in report
-; BASE: execution effects copied observations
+; BASE: execution lease observations move and helper transfer
 ; RUN: verify
 ; EXPECT-ERROR: noncanonical sealed Execution observation layout
 @@ -1,2 +1,2 @@
--layout __au_execution_prep [(enum __au_exec_prepared display=builtin::ExecPrepared) (enum __au_exec_status display=builtin::ExecStatus) bool]
--fields __au_execution_prep [((enum __au_exec_prepared display=builtin::ExecPrepared) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false) (bool 2 1 false)]
-+layout __au_execution_prep [(enum __au_exec_step display=builtin::ExecStep) (enum __au_exec_status display=builtin::ExecStatus) bool]
-+fields __au_execution_prep [((enum __au_exec_step display=builtin::ExecStep) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false) (bool 2 1 false)]
+-layout __au_execution_prep [(enum __au_exec_prepared display=builtin::ExecPrepared) (enum __au_exec_status display=builtin::ExecStatus)]
+-fields __au_execution_prep [((enum __au_exec_prepared display=builtin::ExecPrepared) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false)]
++layout __au_execution_prep [(enum __au_exec_step display=builtin::ExecStep) (enum __au_exec_status display=builtin::ExecStatus)]
++fields __au_execution_prep [((enum __au_exec_step display=builtin::ExecStep) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false)]
 
 ; CASE: execution rejects old request enum
-; BASE: execution effects copied observations
+; BASE: execution lease observations move and helper transfer
 ; RUN: verify
 ; EXPECT-ERROR: noncanonical sealed service enum
 @@ -9 +9 @@
--enum __au_exec_request 4
-+enum __au_exec_request 3
+-enum __au_exec_request 5
++enum __au_exec_request 4
 
 ; CASE: execution rejects widened request enum
-; BASE: execution effects copied observations
+; BASE: execution lease observations move and helper transfer
 ; RUN: verify
 ; EXPECT-ERROR: noncanonical sealed service enum
 @@ -9 +9 @@
--enum __au_exec_request 4
-+enum __au_exec_request 5
+-enum __au_exec_request 5
++enum __au_exec_request 6
+
+; CASE: execution rejects old issuer effect operation
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: unknown sealed service operation
+@@ -28 +28 @@
+-    IssueServiceResource 16 46 32 0
++    ServiceOperation 16 46 0 9
+
+; CASE: lease cannot disappear at return
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -40 +39,0 @@
+-    ServiceResourceOperation 96 5 0 0
+
+; CASE: lease cannot finish twice
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource operation requires a live owner
+@@ -40,0 +41,2 @@
++    EnumConstant (enum __au_exec_finish display=builtin::ExecFinish) 0
++    ServiceResourceOperation 96 5 0 0
+
+; CASE: moved lease cannot be observed
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource operation requires a live owner
+@@ -36 +36 @@
+-    ServiceResourceOperation 96 2 0 0
++    ServiceResourceOperation 32 2 0 0
+
+; CASE: finished lease cannot be observed
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource operation requires a live owner
+@@ -40,0 +41 @@
++    ServiceResourceOperation 96 2 0 0
+
+; CASE: move requires fresh storage
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource requires fresh descriptor storage
+@@ -29,0 +30 @@
++    MoveServiceResource 96 32 0
+
+; CASE: live lease blocks new issuance
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer has a live resource
+@@ -28,0 +29 @@
++    IssueServiceResource 16 46 112 0
+
+; CASE: finish does not refund issuance
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer opportunity already spent
+@@ -40,0 +41 @@
++    IssueServiceResource 16 46 112 0
+
+; CASE: live lease pins issuer against forwarding
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer has a live resource
+@@ -28,0 +29 @@
++    AcquireServiceLoan 2 16 9
+
+; CASE: finished issuer cannot be forwarded
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer opportunity already spent
+@@ -40,0 +41 @@
++    AcquireServiceLoan 2 16 9
+
+; CASE: forwarding spends caller issuance
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer opportunity already spent
+@@ -53,0 +54 @@
++    IssueServiceResource 16 46 32 0
+
+; CASE: nonissuing helper still spends caller issuance
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer opportunity already spent
+@@ -52 +52 @@
+-    ServiceCall execution_ir_entry 1 0 [0] 9
++    ServiceCall execution_no_issue 1 0 [0] 9
+@@ -53,0 +54 @@
++    IssueServiceResource 16 46 32 0
+
+; CASE: issuer cannot forward twice
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer opportunity already spent
+@@ -53,0 +54 @@
++    AcquireServiceLoan 2 16 9
+
+; CASE: resource slot requires mutable local
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource storage declaration
+@@ -24 +24 @@
+-  service_resource 32 0 true
++  service_resource 32 0 false
+@@ -49 +49 @@
+-  service_resource 32 0 true
++  service_resource 32 0 false
+
+; CASE: resource slot rejects unknown nominal kind
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+@@ -24 +24 @@
+-  service_resource 32 0 true
++  service_resource 32 1 true
+@@ -49 +49 @@
+-  service_resource 32 0 true
++  service_resource 32 1 true
+
+; CASE: resource slot requires sixteen-byte alignment
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource storage declaration
+@@ -26 +26 @@
+-  service_resource 112 0 true
++  service_resource 104 0 true
+
+; CASE: lease move cannot alias its source
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -29 +29 @@
+-    MoveServiceResource 32 96 0
++    MoveServiceResource 32 32 0
+
+; CASE: unissued resource cannot be observed
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource operation requires a live owner
+@@ -36 +36 @@
+-    ServiceResourceOperation 96 2 0 0
++    ServiceResourceOperation 112 2 0 0
+
+; CASE: resource cannot be returned as ordinary scalar
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -41 +41 @@
+-    Constant 1 u64
++    Load 96 u64
+
+; CASE: lease survives equal branch join
+; BASE: execution lease observations move and helper transfer
+; RUN: emit
+@@ -35,0 +36,5 @@
++    Constant 1 bool
++    BranchFalse 1
++    Jump 2
++    Label 1
++    Label 2
+
+; CASE: lease divergence at branch join is rejected
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: incompatible service resource lifetime or issuer opportunity at join
+@@ -38,0 +39,7 @@
++    Constant 1 bool
++    BranchFalse 1
++    MoveServiceResource 96 112 0
++    EnumConstant (enum __au_exec_finish display=builtin::ExecFinish) 0
++    ServiceResourceOperation 112 5 0 0
++    Jump 2
++    Label 1
+@@ -40,0 +48 @@
++    Label 2
+
+; CASE: issuer cannot be rebound after resource issuance
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+@@ -28,0 +29 @@
++    BindServiceParameter 0 16 9
+
+; CASE: moved lease retains issuer pin
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer has a live resource
+@@ -29,0 +30 @@
++    AcquireServiceLoan 2 16 9
+
+; CASE: false loop condition keeps forwarded issuer spent
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: service resource issuer opportunity already spent
+@@ -52 +52 @@
+-    ServiceCall execution_ir_entry 1 0 [0] 9
++    ServiceCall execution_probe 1 0 [0] 9
+@@ -53,0 +54,6 @@
++    BranchFalse 1
++    Constant 0 u64
++    Return
++    Label 1
++    IssueServiceResource 16 46 32 0
++    Constant 0 u64
+@@ -64,0 +71,9 @@
++function execution_probe
++  result bool
++  params [25]
++  frame 16
++  service 16
++    BindServiceParameter 0 16 9
++    Constant 0 bool
++    Return
++end

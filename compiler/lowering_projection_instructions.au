@@ -373,6 +373,18 @@ export namespace compiler_lowering_projection {
             // Offset, ResultOffset.
             return InstructionShape(84, 770u64);
         }
+        if (form == compiler_lowering::InstructionForm::IssueServiceResource) {
+            // Offset, ServiceOperationId, ResultOffset, ResourceKindId.
+            return InstructionShape(85, 220299906u64);
+        }
+        if (form == compiler_lowering::InstructionForm::MoveServiceResource) {
+            // SourceOffset, ResultOffset, ResourceKindId.
+            return InstructionShape(86, 1721110u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ServiceResourceOperation) {
+            // OwnerOffset, ResourceMethodId, ResultOffset, ResourceKindId.
+            return InstructionShape(87, 220312851u64);
+        }
         return InstructionShape(-1, 0u64);
     }
     // The known schema role selects a balanced scalar decision tree. Only a
@@ -498,6 +510,12 @@ export namespace compiler_lowering_projection {
         }
         if (expected < 102) {
             return expected == 79 && role == compiler_lowering::OperandRole::ServiceLoanId;
+        }
+        if (expected == 105) {
+            return role == compiler_lowering::OperandRole::ResourceKindId;
+        }
+        if (expected == 106) {
+            return role == compiler_lowering::OperandRole::ResourceMethodId;
         }
         return expected == 102 && role == compiler_lowering::OperandRole::BorrowedRoots;
     }

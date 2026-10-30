@@ -41,7 +41,8 @@ export namespace compiler_ir_metadata {
         HostFiles,
         ReadOnlyBlock,
         WritableBlock,
-        ExecutionEffects
+        ExecutionEffects,
+        ExecutionLease
     };
     // Each reason's message is in pipeline.au (compiler_ir_metadata::metadata_text).
     enum class MetadataError {
@@ -177,7 +178,8 @@ export namespace compiler_ir_metadata {
         host_layout,
         host_fields,
         execution_layout,
-        execution_fields
+        execution_fields,
+        service_resource_slot
     };
     class ByteRange {
         i64 firstByte;

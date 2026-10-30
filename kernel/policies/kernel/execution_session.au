@@ -18,6 +18,7 @@ export namespace kernel {
     enum class ExecutionPhase {
         client,
         request,
+        cancelling,
         terminal
     };
 
@@ -29,31 +30,26 @@ export namespace kernel {
     }
 
     // Command sequencing only. This ordinary local value is not an affine
-    // child handle: execution authority stays in the exclusive effects loan.
-    // Resident budgets, trap frames and the persistent service stay native.
+    // child handle: the separate linear lease owns the finalization obligation.
+    // Resident budgets and service lifecycle have their own retained roots.
     class ExecutionSession {
         ExecutionPhase phase;
-        bool close_owed;
         builtin::ExecStatus outcome;
         u64 result_value;
         builtin::ExecFinish disposition;
     public:
         ExecutionSession(builtin::ExecutionPrep prepared) : phase(prepared_phase(prepared.state)),
-            close_owed(prepared.finish_required), outcome(prepared.status), result_value(0u64),
-            disposition(builtin::ExecFinish::complete) {
+            outcome(prepared.status), result_value(0u64), disposition(builtin::ExecFinish::complete) {
         }
         auto active() const -> bool {
             return phase != ExecutionPhase::terminal;
         }
         auto awaiting_request() const -> bool {
-            return phase == ExecutionPhase::request;
+            return phase == ExecutionPhase::request || phase == ExecutionPhase::cancelling;
         }
         auto begin_request() -> bool {
             phase = ExecutionPhase::request;
             return true;
-        }
-        auto finish_required() const -> bool {
-            return close_owed;
         }
         auto finish_kind() const -> builtin::ExecFinish {
             return disposition;
@@ -72,15 +68,25 @@ export namespace kernel {
             return true;
         }
         auto requested(builtin::ExecRequest result) -> bool {
-            if (result == builtin::ExecRequest::ready) {
+            if (result == builtin::ExecRequest::ready && phase != ExecutionPhase::cancelling) {
                 phase = ExecutionPhase::client;
             }
             // A pending observation preserves the request phase. Only the
             // source loop chooses another bounded service progress effect.
             if (result == builtin::ExecRequest::cancelled) {
-                outcome = builtin::ExecStatus::watchdog;
-                result_value = 0u64;
-                disposition = builtin::ExecFinish::cancelled;
+                if (outcome != builtin::ExecStatus::output_failed) {
+                    outcome = builtin::ExecStatus::watchdog;
+                    result_value = 0u64;
+                    disposition = builtin::ExecFinish::cancelled;
+                }
+                phase = ExecutionPhase::terminal;
+            }
+            if (result == builtin::ExecRequest::cancel_requested) {
+                if (outcome != builtin::ExecStatus::output_failed) {
+                    outcome = builtin::ExecStatus::cancelled;
+                    result_value = 0u64;
+                    disposition = builtin::ExecFinish::cancel_requested;
+                }
                 phase = ExecutionPhase::terminal;
             }
             if (result == builtin::ExecRequest::service_lost) {
@@ -91,8 +97,25 @@ export namespace kernel {
             }
             return true;
         }
+        auto cancelled(builtin::ExecCancel result) -> bool {
+            if (result == builtin::ExecCancel::draining) {
+                phase = ExecutionPhase::cancelling;
+            }
+            if (result == builtin::ExecCancel::settled && phase != ExecutionPhase::terminal) {
+                outcome = builtin::ExecStatus::cancelled;
+                result_value = 0u64;
+                disposition = builtin::ExecFinish::cancel_requested;
+                phase = ExecutionPhase::terminal;
+            }
+            if (result == builtin::ExecCancel::service_lost) {
+                outcome = builtin::ExecStatus::unavailable;
+                result_value = 0u64;
+                disposition = builtin::ExecFinish::service_lost;
+                phase = ExecutionPhase::terminal;
+            }
+            return true;
+        }
         auto finished(builtin::ExecEffect result) -> bool {
-            close_owed = false;
             if (result == builtin::ExecEffect::failed) {
                 outcome = builtin::ExecStatus::unavailable;
                 result_value = 0u64;
@@ -105,24 +128,27 @@ export namespace kernel {
         }
     };
 
-    // The retained session spans each synchronous effect. No service reference
-    // escapes, and no native callback borrows or mutates this source state.
+    // The issuer creates one linear lease, including inert refusals. Its explicit
+    // finish is unconditional; no hidden destructor or native drain loop exists.
     auto execute_command(builtin::ExecutionEffects& effects) -> ExecutionResult {
-        const builtin::ExecutionPrep prepared = effects.prepare();
+        builtin::ExecutionLease lease = effects.prepare();
+        const builtin::ExecutionPrep prepared = lease.preparation();
         ExecutionSession session = ExecutionSession(prepared);
         while (session.active()) {
             if (session.awaiting_request()) {
-                const builtin::ExecRequest requested = effects.request();
+                const builtin::ExecRequest requested = lease.request();
                 session.requested(requested);
             } else {
-                const builtin::ExecutionStep step = effects.advance();
+                const builtin::ExecutionStep step = lease.advance();
                 if (step.state == builtin::ExecStep::retired) {
                     session.retired(step);
                 }
                 if (step.state == builtin::ExecStep::output) {
-                    const builtin::ExecEffect output = effects.output();
+                    const builtin::ExecEffect output = lease.output();
                     if (output == builtin::ExecEffect::failed) {
                         session.output_failed();
+                        const builtin::ExecCancel cancelled = lease.cancel();
+                        session.cancelled(cancelled);
                     }
                 }
                 if (step.state == builtin::ExecStep::request) {
@@ -130,11 +156,9 @@ export namespace kernel {
                 }
             }
         }
-        if (session.finish_required()) {
-            const builtin::ExecFinish disposition = session.finish_kind();
-            const builtin::ExecEffect finished = effects.finish(disposition);
-            session.finished(finished);
-        }
+        const builtin::ExecFinish disposition = session.finish_kind();
+        const builtin::ExecEffect finished = lease.finish(disposition);
+        session.finished(finished);
         const ExecutionResult result = session.result();
         return result;
     }

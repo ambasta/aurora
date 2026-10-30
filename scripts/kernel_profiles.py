@@ -230,6 +230,9 @@ PROCESS_CASES = {
             (8, 0, 8192, "bin/isolation-6", "forge-service"),
             (8, 0, 8192, "bin/file-service", "file-service unauthorized"),
             (128, 0, 8192, "bin/probe", "probe file tree/shared read @1 0"),
+            (128, 0, 8192, "bin/isolation-6", "raw-cancel-initial"),
+            (128, 0, 8192, "bin/isolation-6", "raw-cancel-tail"),
+            (128, 0, 8192, "bin/probe", "probe file tree/shared read @1 0"),
         ),
     ),
     "process-service-hostile": (

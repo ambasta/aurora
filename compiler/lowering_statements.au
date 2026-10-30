@@ -58,6 +58,10 @@ export namespace compiler_lowering {
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
         const i64 source = source_ref(session, declaration);
         const i64 node = compiler_resolver::sw(session, declaration, 3);
+        if (kind == compiler_resolver::ResolvedTypeKind::service_resource && compiler_resolver::sw(session, declaration,
+            9) != 1) {
+            return fail(session, LoweringError::ownership_binding_requires_constructor, source);
+        }
         if (compiler_resolver::service_kind(kind)) {
             return fail(session, LoweringError::local_service_capability, source);
         }
@@ -75,7 +79,7 @@ export namespace compiler_lowering {
         }
         if (kind == compiler_resolver::ResolvedTypeKind::class_value || kind
             == compiler_resolver::ResolvedTypeKind::array_value || is_span(session, type) || is_owner_storage(session,
-            type)) {
+            type) || is_service_resource(session, type)) {
             return push_expression(session, node, type, declaration);
         }
         const compiler_resolver::SyntaxRow expression = session.syntax(node);
@@ -744,7 +748,8 @@ export namespace compiler_lowering {
                 const LocalRow local = session.local(at);
                 const SnapshotRow current = local.state();
                 const SnapshotRow incoming = session.snapshot(frame.incoming_snapshot_base() + at);
-                if (is_resource_owner(session, local.concrete_type_id()) && current.live() != incoming.live()) {
+                if ((is_resource_owner(session, local.concrete_type_id()) && current.live() != incoming.live())
+                    || current.issuer_used() != incoming.issuer_used()) {
                     return fail(session, LoweringError::loop_condition_transfers_outer_owner, source);
                 }
                 at = at + 1;

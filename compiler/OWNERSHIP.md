@@ -4,6 +4,25 @@ Authority is explicit, checked by the semantic frontend and independently valida
 
 Current spans use the 56-byte tagged array/owner representation documented below. Runtime owner lengths are not limited to the fixed-array 4096-byte cap. Nonconstructor methods accept readonly span arguments, and returned views use only the narrow const receiver-field rules below.
 
+## Service-issued explicit-finalize owners
+
+Resource kinds declare their cleanup contract. Unlike automatically dropped byte
+owners, `builtin::ExecutionLease` is a service-issued linear local: every issued
+value, including an inert preparation failure, must be consumed explicitly by
+`finish()` before normal return or scope exit. `cancel()` does not consume it,
+and the compiler never inserts implicit finalization.
+
+The first supported surface is a mutable standalone local initialized by its
+issuer or by `move(named_local)`. Fields, parameters, returned owners, borrowed
+owner helpers, copies and reflection are excluded. A live lease pins its exact
+issuer; moving the lease preserves that binding. Issuance spends the issuer's
+single opportunity permanently, even after finalization. Forwarding the issuer
+to a synchronous helper also spends the caller's opportunity, whether or not the
+helper issues a lease. The frontend and independent IR enforce these lifetime,
+provenance and control-flow rules. This adds neither asynchronous loans nor
+unrestricted child-process ownership. See the concrete capability and native
+boundary in [command orchestration](SERVICES.md#command-orchestration).
+
 ## Runtime-sized byte ownership
 
 ### Source contract

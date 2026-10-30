@@ -156,6 +156,7 @@ def validate_native_abi(facts, source):
                 "__au_exec_effect",
                 "__au_exec_request",
                 "__au_exec_finish",
+                "__au_exec_cancel",
             )
             else "records"
         )
@@ -454,19 +455,19 @@ def validate_native_abi(facts, source):
             )
 
     if "# EXECUTION_POLICY_ABI:" in source:
-        enum("__au_exec_status", "exited fault watchdog missing malformed quota unavailable output_failed")
+        enum("__au_exec_status", "exited fault watchdog missing malformed quota unavailable output_failed cancelled")
         enum("__au_exec_prepared", "loaded refused service_lost")
         enum("__au_exec_step", "retired output request parked")
         enum("__au_exec_effect", "success failed")
-        enum("__au_exec_request", "ready cancelled service_lost pending")
-        enum("__au_exec_finish", "complete output_failed cancelled service_lost")
+        enum("__au_exec_request", "ready cancelled service_lost pending cancel_requested")
+        enum("__au_exec_finish", "complete output_failed cancelled service_lost cancel_requested")
+        enum("__au_exec_cancel", "settled draining service_lost")
         record(
             "__au_execution_prep",
-            24,
+            16,
             [
                 ("state", "__au_exec_prepared", 0),
                 ("status", "__au_exec_status", 0),
-                ("finish_required", "bool", 0),
             ],
         )
         record(
@@ -476,6 +477,11 @@ def validate_native_abi(facts, source):
         )
         record("kernel::ExecutionResult", 16, [("outcome", "__au_exec_status", 0), ("result_value", "u64", 0)])
         entry("process_execute_command", ["builtin::ExecutionEffects"], "kernel::ExecutionResult")
+
+    if "# EXECUTION_CANCEL_TEST_ABI:" in source:
+        enum("__au_exec_status", "exited fault watchdog missing malformed quota unavailable output_failed cancelled")
+        record("kernel::ExecutionResult", 16, [("outcome", "__au_exec_status", 0), ("result_value", "u64", 0)])
+        entry("process_cancel_command", ["builtin::ExecutionEffects", "u64"], "kernel::ExecutionResult")
 
     if "# PROCESS_POLICY_ABI:" in source:
         for name, names in (

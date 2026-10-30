@@ -27,20 +27,31 @@ Each C++ decoder rejects a result outside its closed encoding before using it.
 ### Production command orchestration
 
 A production `run` invokes `kernel.execution_session` once with an exclusive
-`builtin::ExecutionEffects` loan. Its local scalar session retains command
-sequencing, terminal status/value and the obligation to finish across synchronous
-`prepare`, `advance`, `output`, `request` and `finish` effects. The ordinary class
-is not an affine child handle; authority belongs to the compiler-sealed loan.
-No reference, child handle, address or authority-bearing result escapes it.
+`builtin::ExecutionEffects` issuer loan. Its one `prepare` creates a linear
+`builtin::ExecutionLease`, including for an inert refusal. The issuer cannot
+advance, cancel or finish a child. The lease exposes copied preparation and step
+observations, bounded output/request effects, explicit cancellation and a consuming
+`finish`. Moving a lease transfers its obligation; copying, dropping or returning
+with an unfinished lease is rejected. Finishing never refunds the issuer's one
+preparation opportunity.
 
-Native preparation still starts the file owner and loads the committed image.
-The preparation report distinguishes a loaded client from a failed load, and
-reports whether cleanup remains due. A terminal advance report means native
-retirement already happened; its result is copied before subsequent cleanup can
-replace the shared trap observation. Output failure and caller expiry request
-specific retirement, checked against the actual native effect state. Service
-loss follows the existing abandonment path. A failed final close overrides the
-command result to unavailable. No failed request is replayed.
+The ordinary scalar session retains sequencing and terminal status/value, not
+execution authority. The separately authenticated private lease binding retains
+actual native resource and pending-I/O evidence. Native preparation still starts
+the file owner and loads the committed image. A terminal advance means native
+retirement already happened; source copies its result before cleanup can replace
+the shared trap observation. Every lease is explicitly finished, including inert
+failures; no destructor hides cleanup. Finish consumes even a failed final close
+only after physical reclamation is established, and reports unavailable.
+
+Explicit cancellation is distinct from caller expiry and actual output failure.
+Cancellation of inert or already retired work preserves its frozen result.
+Undispatched requests, including a staged raw-write tail, can settle without
+running the server or renewing its budget. Delivered work drains through source
+request effects; cancellation does not promise rollback. An expiry preceding
+explicit intent remains watchdog, while earlier explicit intent remains cancelled
+if its subsequent drain exhausts the caller budget. Withdrawing pending output
+is not a delivery failure. Service loss follows authenticated abandonment.
 
 During a caller's file request, the session retains a separate request phase.
 Each `request` effect enters the server at most once and may report `pending`;
@@ -56,13 +67,24 @@ fixture consumers still pump the same transport primitives natively.
 
 This removes the native production command loop, not the resident scheduler,
 physical resource accounting or persistent owner policy. Native effect receipts authenticate the
-live grant/generation, prevent reentry and duplicate physical effects, and keep
+distinct issuer/lease binding and epoch, prevent reentry and duplicate physical effects, and keep
 pending I/O distinct from command decisions. The grant is revoked before return
 to the console. The retained source frame stays on the supervisor stack while
 CPL3 traps use the separate guarded RSP0 stack; the existing whole-image stack
 check and 15,360-byte bound apply without an increased allowance. The private
 entry/report layouts are checked against emitted compiler facts in the same
 bridge admission as the existing process policies.
+
+The existing compiled component driver exercises source cancellation selection
+and drain ordering through the same linear owner contract. Physical fixture
+coverage is separate: selector 8 cancels an actual initial 64 KiB write message
+and its staged tail, checking unchanged endpoint ordinals and server budget;
+selector 9 cancels the existing spinning service's delivered request and drains
+it to its original watchdog loss. These fixture selectors observe real endpoint
+state without modifying it. They use canonical lease issuance and the shared
+native effects, but do not claim that a production source command selects those
+exact cancellation boundaries. The following ordinary client verifies retained
+service progress after staged cancellation.
 
 ## Handoff
 

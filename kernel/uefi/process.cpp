@@ -275,7 +275,7 @@ public:
 class Outcome final {
 public:
     bool exited = false, watchdog = false, invalid_call = false, parked = false, exchange = false, request = false,
-         output = false, unavailable = false;
+         output = false, unavailable = false, cancelled = false;
     process::TrapClass trap = process::TrapClass::kernel;
     U64 status = 0, vector = 0, error = 0, rip = 0, cr2 = 0, operation = 0;
     U64 terminal_ticks = 0, terminal_run = 0, terminal_service = 0;
@@ -285,8 +285,8 @@ constinit Outcome outcome;
 constinit U64 owned_arena = 0, kernel_root = 0;
 constinit bool draining = false;
 constinit aurora::uefi::ProcessOutput output_sink = nullptr;
-#ifdef AURORA_PRODUCTION
 constinit void *output_context = nullptr;
+#ifdef AURORA_PRODUCTION
 constinit bool runtime_initialized = false, runtime_detached = false;
 #endif
 constinit aurora::uefi::BootStorageSelection runtime_storage;
@@ -1192,6 +1192,8 @@ auto end_record(U64 run) -> void {
     } else if (outcome.watchdog) {
         Serial::text(" reason=watchdog");
         field("ticks", outcome.terminal_ticks);
+    } else if (outcome.cancelled) {
+        Serial::text(" reason=cancelled");
     } else if (outcome.unavailable) {
         Serial::text(" reason=service_lost");
     } else if (outcome.invalid_call) {
@@ -1797,10 +1799,26 @@ enum class ClientProgress {
     complete,
     failed
 };
-auto advance_client_request() -> ClientProgress {
+// Only an authenticated, still-undispatched request can be withdrawn. This
+// changes no server continuation, transaction ordinal or budget.
+auto settle_staged_cancellation(U64 client, U64 service) -> bool {
+    if (!client || !service || !residents[1].space || residents[1].state.run != client || !residents[0].space ||
+        residents[0].state.service != service || endpoint.generation != service ||
+        endpoint.caller != std::optional<std::size_t>{1} || !endpoint.caller_cancelled || !endpoint.waiting ||
+        endpoint.replied || endpoint.delivery)
+        return false;
+    endpoint.caller.reset();
+    endpoint.replied = endpoint.completion = false;
+    return true;
+}
+auto advance_client_request(bool cancel_staged = false) -> ClientProgress {
     if (!residents[1].space || endpoint.caller != std::optional<std::size_t>{1})
         return ClientProgress::failed;
     const U64 client = residents[1].state.run;
+    if (cancel_staged && endpoint.caller_cancelled && endpoint.waiting && !endpoint.replied && !endpoint.delivery) {
+        return settle_staged_cancellation(client, endpoint.generation) ? ClientProgress::complete
+                                                                       : ClientProgress::failed;
+    }
     if (endpoint.waiting && !endpoint.replied) {
         if (!begin_exchange(client))
             return ClientProgress::failed;
@@ -2154,6 +2172,185 @@ auto ensure_file_service(std::span<const std::byte> volume, U64 expected = 0, bo
     return start_file_service(volume, generation);
 }
 
+[[gnu::noinline]] auto deliver_output() -> bool {
+    if (!output_sink || !Timer::irq_off() || root() != kernel_root || Timer::read(0x390) ||
+        !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false) || endpoint.count > Endpoint::capacity)
+        fail("process output ownership");
+    const bool delivered = output_sink(output_context, output_error_stream, {endpoint.bytes.data(), endpoint.count});
+    if (delivered)
+        residents[1].continuation[frame_rax] = 0;
+    return delivered;
+}
+// Actual resources/effect evidence belong to the private authenticated lease
+// binding. Aurora owns command sequencing; there is no native command loop.
+class ExecutionEffects {
+protected:
+    static auto require(bool valid) -> void {
+        if (!valid)
+            fail("execution effect state");
+    }
+    static auto status(RunStatus value) -> aurora::execution::Status {
+        return static_cast<aurora::execution::Status>(value);
+    }
+
+public:
+    class Binding final {
+    public:
+        U64 client = 0, service_generation = 0;
+        bool output_pending = false, request_pending = false;
+        bool output_failed = false, request_failed = false;
+        bool explicit_cancel_requested = false, expiry_preceded_cancel = false;
+    };
+    static auto bound_client(const Binding &binding) -> bool {
+        return binding.client && residents[1].space && residents[1].state.run == binding.client;
+    }
+    static auto bound_service(const Binding &binding) -> bool {
+        return binding.service_generation && residents[0].space && endpoint.generation == binding.service_generation &&
+               residents[0].state.service == binding.service_generation;
+    }
+    static auto advance(Binding &binding) -> aurora::execution::Observation {
+        using namespace aurora::execution;
+        require(bound_client(binding) && !binding.output_pending && !binding.request_pending &&
+                !binding.output_failed && !binding.request_failed && !binding.explicit_cancel_requested &&
+                !endpoint.caller_cancelled);
+        if (run_resident(1)) {
+            // Freeze terminal facts before any later cleanup can replace outcome.
+            const auto ended = outcome.exited ? Status::exited : outcome.watchdog ? Status::watchdog : Status::fault;
+            return {Step::retired, ended, outcome.exited ? outcome.status : outcome.vector};
+        }
+        require(!(outcome.output && outcome.request));
+        binding.output_pending = outcome.output;
+        binding.request_pending = outcome.request;
+        return {binding.output_pending    ? Step::output
+                : binding.request_pending ? Step::request
+                                          : Step::parked,
+                Status::unavailable,
+                0};
+    }
+    static auto output(Binding &binding) -> aurora::execution::Effect {
+        using namespace aurora::execution;
+        require(bound_client(binding) && binding.output_pending && !binding.request_pending &&
+                !binding.explicit_cancel_requested);
+        binding.output_failed = !deliver_output();
+        binding.output_pending = false;
+        return binding.output_failed ? Effect::failed : Effect::success;
+    }
+    static auto request(Binding &binding) -> aurora::execution::Request {
+        using namespace aurora::execution;
+        require(bound_client(binding) && binding.request_pending && !binding.output_pending);
+        const auto progress =
+            bound_service(binding) ? advance_client_request(binding.explicit_cancel_requested) : ClientProgress::failed;
+        if (progress == ClientProgress::pending)
+            return Request::pending;
+        binding.request_failed = progress == ClientProgress::failed;
+        binding.request_pending = false;
+        if (binding.request_failed)
+            return Request::service_lost;
+        if (binding.explicit_cancel_requested && !binding.expiry_preceded_cancel)
+            return Request::cancel_requested;
+        return endpoint.caller_cancelled ? Request::cancelled : Request::ready;
+    }
+    static auto cancel(Binding &binding) -> aurora::execution::Cancel {
+        using namespace aurora::execution;
+        // Inert refusals and already retired clients retain their frozen result.
+        if (!binding.client || !residents[1].space) {
+            require(!binding.output_pending && !binding.request_pending);
+            return Cancel::settled;
+        }
+        require(bound_client(binding));
+        if (binding.request_failed || !bound_service(binding)) {
+            binding.request_failed = true;
+            binding.output_pending = binding.request_pending = false;
+            return Cancel::service_lost;
+        }
+        if (!binding.explicit_cancel_requested) {
+            binding.expiry_preceded_cancel = endpoint.caller_cancelled;
+            binding.explicit_cancel_requested = true;
+        }
+        endpoint.caller_cancelled = true;
+        // Withdrawing undelivered output does not manufacture delivery failure.
+        binding.output_pending = false;
+        if (!binding.request_pending) {
+            require(!endpoint.caller);
+            endpoint.completion = false;
+            return Cancel::settled;
+        }
+        require(endpoint.caller == std::optional<std::size_t>{1});
+        // Preserve an earlier expiry through the request observation. The
+        // settled cancel result alone cannot communicate its watchdog cause.
+        if (binding.expiry_preceded_cancel)
+            return Cancel::draining;
+        if (endpoint.waiting && !endpoint.replied && !endpoint.delivery) {
+            // An initial message or raw-write tail has not been dispatched.
+            // Preserve server waiting/transaction/next and its existing budget.
+            require(settle_staged_cancellation(binding.client, binding.service_generation));
+            binding.request_pending = false;
+            return Cancel::settled;
+        }
+        return Cancel::draining;
+    }
+    static auto finish(Binding &binding, aurora::execution::Finish disposition) -> aurora::execution::Effect {
+        using namespace aurora::execution;
+        require(!binding.output_pending && !binding.request_pending);
+        if (!binding.client) {
+            require(disposition == Finish::complete && !residents[1].space && !snapshot && !endpoint.caller);
+            return Effect::success;
+        }
+        // Source disposition is a request, never evidence for retirement.
+        if (disposition == Finish::service_lost) {
+            require(binding.request_failed);
+            abandon_service();
+            binding.client = 0;
+            return Effect::success;
+        }
+        require(!binding.request_failed && bound_service(binding));
+        if (disposition == Finish::output_failed) {
+            require(binding.output_failed && bound_client(binding));
+            outcome = {};
+            outcome.invalid_call = true;
+            outcome.operation = 2;
+            static_cast<void>(retire_resident(1));
+        } else if (disposition == Finish::cancelled) {
+            require(!binding.output_failed && endpoint.caller_cancelled && bound_client(binding) &&
+                    (!binding.explicit_cancel_requested || binding.expiry_preceded_cancel));
+            outcome = {};
+            outcome.watchdog = true;
+            static_cast<void>(retire_resident(1));
+        } else if (disposition == Finish::cancel_requested) {
+            require(!binding.output_failed && binding.explicit_cancel_requested && !binding.expiry_preceded_cancel &&
+                    endpoint.caller_cancelled && bound_client(binding));
+            outcome = {};
+            outcome.cancelled = true;
+            static_cast<void>(retire_resident(1));
+        } else {
+            require(disposition == Finish::complete && !binding.output_failed && !residents[1].space);
+        }
+        endpoint.caller.reset();
+        endpoint.completion = endpoint.replied = false;
+        const U64 client = binding.client;
+        binding.client = 0;
+        if (!control_request(5, client)) {
+            abandon_service();
+            return Effect::failed;
+        }
+        return Effect::success;
+    }
+    static auto settled(const Binding &binding) -> bool {
+        return !binding.client && !binding.output_pending && !binding.request_pending && !residents[1].space &&
+               !snapshot && !endpoint.caller && !endpoint.delivery && !endpoint.completion;
+    }
+};
+class ExecutionPlatform final {
+public:
+    static auto quiet() -> bool {
+        return Timer::irq_off() && root() == kernel_root && !running.space && !Timer::read(0x390) &&
+               Timer::quiet(0x100, false) && Timer::quiet(0x200, false);
+    }
+    [[noreturn]] static auto fail() -> void {
+        ::fail("execution grant");
+    }
+};
+
 #ifndef AURORA_PRODUCTION
 // Every legacy golden describes an independent namespace. Its companion is
 // the same source service as production, with a fresh incarnation per case;
@@ -2404,6 +2601,147 @@ auto run_independent(std::span<const std::byte> view, std::span<const std::byte>
     return count;
 }
 
+#ifdef AURORA_PROCESS_FIXTURE
+// This preparation adapter uses the real run-list load and client admission.
+// All later effects and binding authentication are the production implementation.
+class FixtureExecutionTransport final : public ExecutionEffects {
+    static inline std::span<const std::byte> volume_, runs_;
+    static inline const process::RunEntry *entry_ = nullptr;
+    static inline U64 client_ = 0;
+
+public:
+    static auto
+    bind(std::span<const std::byte> volume, std::span<const std::byte> runs, const process::RunEntry &entry, U64 client)
+        -> void {
+        require(!entry_ && !residents[1].space);
+        volume_ = volume;
+        runs_ = runs;
+        entry_ = &entry;
+        client_ = client;
+    }
+    static auto unbind() -> void {
+        require(entry_ && !residents[1].space && !endpoint.caller && !endpoint.completion && !snapshot);
+        volume_ = runs_ = {};
+        entry_ = nullptr;
+        client_ = 0;
+    }
+    static auto prepare(Binding &binding) -> aurora::execution::Preparation {
+        using namespace aurora::execution;
+        require(entry_ && client_ && !binding.client && !residents[1].space && residents[0].space);
+        binding.client = client_;
+        binding.service_generation = endpoint.generation;
+        require(bound_service(binding));
+        if (!control_request(4, binding.client)) {
+            abandon_service();
+            binding.client = 0;
+            return {Prepared::service_lost, Status::unavailable};
+        }
+        // A newly admitted client does not inherit the prior client's terminal
+        // cancellation observation; production load_committed does the same.
+        endpoint.caller_cancelled = false;
+        const bool loaded = load_one(volume_, runs_, *entry_, binding.client, 1, true, true);
+        return {loaded ? Prepared::loaded : Prepared::refused, loaded ? Status::exited : status(load_refusal)};
+    }
+};
+using FixtureExecutionSession = aurora::execution::Session<FixtureExecutionTransport, ExecutionPlatform>;
+
+auto execution_cancel_fixture(std::span<const std::byte> volume,
+                              std::span<const std::byte> runs,
+                              const process::RunEntry &entry,
+                              U64 client,
+                              U64 point) -> bool {
+    using namespace aurora::execution;
+    using Session = FixtureExecutionSession;
+    FixtureExecutionTransport::bind(volume, runs, entry, client);
+    const auto issuer = Session::open();
+    const auto lease = Session::prepare(issuer.grant, issuer.generation);
+    const auto prepared = Session::preparation(lease.binding, lease.generation);
+    bool observed = false, request = false;
+    U64 drain_transaction = 0, drain_next = 0, drain_used = 0, drain_quantum = 0;
+    Finish disposition = Finish::complete;
+    if (prepared.state == Prepared::loaded) {
+        for (;;) {
+            if (!request) {
+                const auto step = Session::advance(lease.binding, lease.generation);
+                if (step.state == Step::retired)
+                    break;
+                if (step.state == Step::output)
+                    fail("unexpected fixture output effect");
+                request = step.state == Step::request;
+                if (!request)
+                    continue;
+            }
+            // The observer selects a real initial or final raw-write message;
+            // it never alters endpoint state or manufactures a service reply.
+            const bool staged = endpoint.waiting && !endpoint.replied && !endpoint.delivery;
+            const bool write =
+                endpoint.call.action == static_cast<U64>(process::CallAction::write) && endpoint.call.length == 65536;
+            const bool boundary = point == 2 ? !endpoint.waiting && !endpoint.replied && !endpoint.delivery
+                                             : write && staged &&
+                                                   (point == 1 ? endpoint.written == endpoint.call.length
+                                                               : endpoint.written < endpoint.call.length);
+            if (boundary && !observed) {
+                const U64 generation = endpoint.generation, transaction = endpoint.transaction, next = endpoint.next;
+                const U64 used = residents[0].state.budget->used();
+                const U64 quantum = residents[0].state.budget->quantum();
+                const bool available = residents[0].state.budget->available();
+                const bool was_waiting = endpoint.waiting;
+                const auto cancelled = static_cast<Cancel>(Session::cancel(lease.binding, lease.generation));
+                if (cancelled != (point == 2 ? Cancel::draining : Cancel::settled) ||
+                    endpoint.generation != generation || endpoint.transaction != transaction || endpoint.next != next ||
+                    endpoint.waiting != was_waiting || endpoint.replied || endpoint.delivery ||
+                    (point == 2 ? endpoint.caller != std::optional<std::size_t>{1} : endpoint.caller.has_value()) ||
+                    endpoint.completion || residents[0].state.budget->used() != used ||
+                    residents[0].state.budget->quantum() != quantum ||
+                    residents[0].state.budget->available() != available)
+                    fail("execution staged cancellation preservation");
+                observed = true;
+                drain_transaction = transaction;
+                drain_next = next;
+                drain_used = used;
+                drain_quantum = quantum;
+                disposition = Finish::cancel_requested;
+                Serial::text("AURORA_EXECUTION_CANCEL:");
+                field("client", client);
+                field("tail", point);
+                field("generation", generation);
+                field("transaction", transaction);
+                field("next", next);
+                Serial::text("\r\n");
+                if (point != 2)
+                    break;
+            }
+            const auto result = static_cast<Request>(Session::request(lease.binding, lease.generation));
+            if (result == Request::pending) {
+                if (point == 2 && observed) {
+                    if (endpoint.transaction != drain_transaction || endpoint.next != drain_next ||
+                        residents[0].state.budget->used() < drain_used ||
+                        residents[0].state.budget->quantum() != drain_quantum)
+                        fail("execution cancellation drain renewed transaction or budget");
+                    drain_used = residents[0].state.budget->used();
+                }
+                continue;
+            }
+            if (result == Request::ready) {
+                request = false;
+                continue;
+            }
+            disposition = result == Request::service_lost ? Finish::service_lost : Finish::cancelled;
+            break;
+        }
+    }
+    const bool finished = Session::finish(lease.binding, lease.generation, static_cast<U64>(disposition)) ==
+                          static_cast<U64>(Effect::success);
+    Session::release(issuer);
+    FixtureExecutionTransport::unbind();
+    if (!observed || !finished)
+        fail("execution cancellation boundary not observed");
+    if (point == 2 && disposition != Finish::service_lost)
+        fail("execution delivered cancellation did not observe service loss");
+    return disposition != Finish::service_lost;
+}
+#endif
+
 // The first run is a kernel-designated server, never a role selected by its
 // argv or exported symbols. The remaining entries are ordinary HostFiles
 // clients. Committed files live only in that server's private ByteRegion.
@@ -2414,7 +2752,9 @@ auto run_external(std::span<const std::byte> view,
                   U64 limit = ~U64{0},
                   bool recover = false,
                   XfsReadonlyProfile profile = XfsReadonlyProfile::fresh_format,
-                  bool mounted = false) -> U64 {
+                  bool mounted = false,
+                  bool cancel_delivered = false) -> U64 {
+    static_cast<void>(cancel_delivered);
     if (residents[0].space || residents[1].space || !service_root.open_operation())
         fail("file service restart state");
     const auto service = process::run(runs, first);
@@ -2461,6 +2801,29 @@ auto run_external(std::span<const std::byte> view,
         if (!entry->found)
             break;
         ++count;
+#ifdef AURORA_PROCESS_FIXTURE
+        const auto arguments = runs.subspan(entry->arguments, entry->argument_bytes);
+        constexpr std::string_view initial_cancel{"raw-cancel-initial\0", 19};
+        constexpr std::string_view tail_cancel{"raw-cancel-tail\0", 16};
+        const auto matches = [&](std::string_view name) {
+            if (arguments.size() != name.size())
+                return false;
+            for (U64 at = 0; at < arguments.size(); ++at)
+                if (arguments[at] != std::byte(static_cast<unsigned char>(name[at])))
+                    return false;
+            return true;
+        };
+        const bool initial = matches(initial_cancel), tail = matches(tail_cancel);
+        if (initial || tail || cancel_delivered) {
+            if (!execution_cancel_fixture(view, runs, *entry, count, cancel_delivered ? 2 : tail ? 1 : 0)) {
+                if (!recover)
+                    fail("execution fixture service loss");
+                close_service_operation();
+                return count;
+            }
+            continue;
+        }
+#endif
         if (!load_one(view, runs, *entry, count, 1, true, true))
             continue;
         if (!control_request(4, count)) {
@@ -2599,7 +2962,8 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
         // next pair starts a new incarnation, never replays the failed request.
         for (; count < 20;) {
             const auto end = count + 2;
-            count = run_external(view, *runs, false, count, end, true);
+            count = run_external(
+                view, *runs, false, count, end, true, XfsReadonlyProfile::fresh_format, false, count == 16);
             if (count != end || residents[0].space || residents[1].space || endpoint.generation ||
                 table.free() != baseline || !audit_residents())
                 fail("file service loss cleanup");
@@ -2851,155 +3215,47 @@ auto load_committed(std::span<const std::byte> volume,
     }
     return RunStatus::exited; // Loaded, not yet executed.
 }
-[[gnu::noinline]] auto deliver_output() -> bool {
-    if (!output_sink || !Timer::irq_off() || root() != kernel_root || Timer::read(0x390) ||
-        !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false) || endpoint.count > Endpoint::capacity)
-        fail("process output ownership");
-    const bool delivered = output_sink(output_context, output_error_stream, {endpoint.bytes.data(), endpoint.count});
-    if (delivered)
-        residents[1].continuation[frame_rax] = 0;
-    return delivered;
-}
-// Native resource/effect facts only. The command loop and its terminal-result
-// choice live in one retained Aurora invocation, not a mirrored native phase.
-class ExecutionTransport final {
+class ExecutionTransport final : public ExecutionEffects {
     static inline std::span<const std::byte> volume_, path_, arguments_;
-    static inline U64 client_ = 0;
-    static inline bool prepared_ = false, output_pending_ = false, request_pending_ = false;
-    static inline bool output_failed_ = false, request_failed_ = false;
-    static auto require(bool valid) -> void {
-        if (!valid)
-            fail("execution effect state");
-    }
-    static auto status(RunStatus value) -> aurora::execution::Status {
-        return static_cast<aurora::execution::Status>(value);
-    }
 
 public:
     static auto bind(std::span<const std::byte> volume,
                      std::span<const std::byte> path,
                      std::span<const std::byte> arguments) -> void {
-        require(volume_.empty() && !client_ && !residents[1].space);
+        require(volume_.empty() && !residents[1].space);
         volume_ = volume;
         path_ = path;
         arguments_ = arguments;
-        prepared_ = output_pending_ = request_pending_ = output_failed_ = request_failed_ = false;
     }
     static auto unbind() -> void {
-        require(prepared_ && !client_ && !residents[1].space && !output_pending_ && !request_pending_);
+        require(!residents[1].space && !endpoint.caller && !endpoint.completion && !snapshot);
         volume_ = path_ = arguments_ = {};
-        prepared_ = output_failed_ = request_failed_ = false;
     }
-    static auto prepare() -> aurora::execution::Preparation {
+    static auto prepare(Binding &binding) -> aurora::execution::Preparation {
         using namespace aurora::execution;
-        require(!prepared_ && !volume_.empty() && !client_ && !residents[1].space);
-        // Consumed admission effect, not a command phase that drives execution.
-        prepared_ = true;
+        require(!volume_.empty() && !binding.client && !residents[1].space);
         if (!ensure_file_service(volume_)) {
             abandon_service();
-            return {Prepared::service_lost, Status::unavailable, 0};
+            return {Prepared::service_lost, Status::unavailable};
         }
         if (next_run >= 0xffffffffULL - frames::first_owner)
-            return {Prepared::refused, Status::unavailable, 0};
-        client_ = ++next_run;
-        if (!control_request(4, client_)) {
+            return {Prepared::refused, Status::unavailable};
+        binding.client = ++next_run;
+        binding.service_generation = endpoint.generation;
+        if (!control_request(4, binding.client)) {
             abandon_service();
-            client_ = 0;
-            return {Prepared::service_lost, Status::unavailable, 0};
+            binding.client = 0;
+            return {Prepared::service_lost, Status::unavailable};
         }
-        const auto loaded = load_committed(volume_, client_, path_, arguments_);
+        const auto loaded = load_committed(volume_, binding.client, path_, arguments_);
         loading_image = false;
         if (loaded == RunStatus::unavailable) {
             abandon_service();
-            client_ = 0;
-            return {Prepared::service_lost, Status::unavailable, 0};
+            binding.client = 0;
+            return {Prepared::service_lost, Status::unavailable};
         }
         require((loaded == RunStatus::exited) == residents[1].space.has_value());
-        return {residents[1].space ? Prepared::loaded : Prepared::refused, status(loaded), 1};
-    }
-    static auto advance() -> aurora::execution::Observation {
-        using namespace aurora::execution;
-        require(client_ && residents[1].space && residents[1].state.run == client_ && !output_pending_ &&
-                !request_pending_ && !output_failed_ && !request_failed_ && !endpoint.caller_cancelled);
-        if (run_resident(1)) {
-            // Retirement has already happened. Copy these facts before another
-            // effect can replace the shared trap outcome (notably service close).
-            const auto ended = outcome.exited ? Status::exited : outcome.watchdog ? Status::watchdog : Status::fault;
-            return {Step::retired, ended, outcome.exited ? outcome.status : outcome.vector};
-        }
-        require(!(outcome.output && outcome.request));
-        output_pending_ = outcome.output;
-        request_pending_ = outcome.request;
-        return {output_pending_    ? Step::output
-                : request_pending_ ? Step::request
-                                   : Step::parked,
-                Status::unavailable,
-                0};
-    }
-    static auto output() -> aurora::execution::Effect {
-        using namespace aurora::execution;
-        require(client_ && residents[1].space && output_pending_ && !request_pending_);
-        output_failed_ = !deliver_output();
-        output_pending_ = false;
-        return output_failed_ ? Effect::failed : Effect::success;
-    }
-    static auto request() -> aurora::execution::Request {
-        using namespace aurora::execution;
-        require(client_ && residents[1].space && request_pending_ && !output_pending_);
-        const auto progress = advance_client_request();
-        if (progress == ClientProgress::pending)
-            return Request::pending;
-        request_failed_ = progress == ClientProgress::failed;
-        request_pending_ = false;
-        if (request_failed_)
-            return Request::service_lost;
-        return endpoint.caller_cancelled ? Request::cancelled : Request::ready;
-    }
-    static auto finish(aurora::execution::Finish disposition) -> aurora::execution::Effect {
-        using namespace aurora::execution;
-        require(client_ && !output_pending_ && !request_pending_);
-        // A requested disposition is not evidence: the real effect/trap state
-        // must justify it before retirement or loss handling can run.
-        if (disposition == Finish::service_lost) {
-            require(request_failed_);
-            abandon_service();
-            client_ = 0;
-            return Effect::success;
-        }
-        require(!request_failed_);
-        if (disposition == Finish::output_failed) {
-            require(output_failed_ && residents[1].space);
-            outcome = {};
-            outcome.invalid_call = true;
-            outcome.operation = 2;
-            static_cast<void>(retire_resident(1));
-        } else if (disposition == Finish::cancelled) {
-            require(!output_failed_ && endpoint.caller_cancelled && residents[1].space);
-            outcome = {};
-            outcome.watchdog = true;
-            static_cast<void>(retire_resident(1));
-        } else {
-            require(disposition == Finish::complete && !output_failed_ && !residents[1].space);
-        }
-        endpoint.caller.reset();
-        endpoint.completion = endpoint.replied = false;
-        const U64 client = client_;
-        client_ = 0;
-        if (!control_request(5, client)) {
-            abandon_service();
-            return Effect::failed;
-        }
-        return Effect::success;
-    }
-};
-class ExecutionPlatform final {
-public:
-    static auto quiet() -> bool {
-        return Timer::irq_off() && root() == kernel_root && !running.space && !Timer::read(0x390) &&
-               Timer::quiet(0x100, false) && Timer::quiet(0x200, false);
-    }
-    [[noreturn]] static auto fail() -> void {
-        ::fail("execution grant");
+        return {residents[1].space ? Prepared::loaded : Prepared::refused, status(loaded)};
     }
 };
 using ExecutionSession = aurora::execution::Session<ExecutionTransport, ExecutionPlatform>;
@@ -3067,7 +3323,7 @@ auto aurora::uefi::run_program(U64 arena,
     source_execute(&grant, &observed);
     ExecutionSession::release(grant);
     ExecutionTransport::unbind();
-    if (static_cast<U64>(observed.status) > static_cast<U64>(aurora::execution::Status::output_failed))
+    if (static_cast<U64>(observed.status) > static_cast<U64>(aurora::execution::Status::cancelled))
         fail("execution result");
     const RunResult result{static_cast<RunStatus>(observed.status), observed.value};
     output_sink = nullptr;
@@ -3177,10 +3433,15 @@ auto aurora::uefi::reject_program_service(U64 arena, const Bytes &handoff, U64 e
     return result;
 }
 
-auto execution_prepare(const void *, U64, aurora::execution::Preparation *)
-    -> void asm("__au_runtime_execution_prepare") __attribute__((visibility("hidden")));
-auto execution_prepare(const void *grant, U64 generation, aurora::execution::Preparation *result) -> void {
+auto execution_prepare(const void *, U64, aurora::execution::Lease *) -> void asm("__au_runtime_execution_prepare")
+    __attribute__((visibility("hidden")));
+auto execution_prepare(const void *grant, U64 generation, aurora::execution::Lease *result) -> void {
     *result = ExecutionSession::prepare(grant, generation);
+}
+auto execution_preparation(const void *, U64, aurora::execution::Preparation *)
+    -> void asm("__au_runtime_execution_preparation") __attribute__((visibility("hidden")));
+auto execution_preparation(const void *binding, U64 generation, aurora::execution::Preparation *result) -> void {
+    *result = ExecutionSession::preparation(binding, generation);
 }
 auto execution_advance(const void *, U64, aurora::execution::Observation *)
     -> void asm("__au_runtime_execution_advance") __attribute__((visibility("hidden")));
@@ -3196,6 +3457,11 @@ auto execution_request(const void *, U64) -> U64 asm("__au_runtime_execution_req
     __attribute__((visibility("hidden")));
 auto execution_request(const void *grant, U64 generation) -> U64 {
     return ExecutionSession::request(grant, generation);
+}
+auto execution_cancel(const void *, U64) -> U64 asm("__au_runtime_execution_cancel")
+    __attribute__((visibility("hidden")));
+auto execution_cancel(const void *binding, U64 generation) -> U64 {
+    return ExecutionSession::cancel(binding, generation);
 }
 auto execution_finish(const void *, U64, U64) -> U64 asm("__au_runtime_execution_finish")
     __attribute__((visibility("hidden")));

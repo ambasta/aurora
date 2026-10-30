@@ -2,6 +2,7 @@ export module aurora.compiler.ir_instructions;
 import aurora.compiler.ir_instruction_storage;
 import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.builtin_catalog;
 
 // Generic durable transport admission precedes the sole native field walk for
 // exact opcode shapes. Source admission normalizes every body, then checks all
@@ -60,8 +61,8 @@ export namespace compiler_ir_instructions {
             const RawOperandRow operand = store.operand_at(begin + at);
             // All nested lists contain scalar leaves. Their exact entry roles
             // and pair grouping belong to the sole native field walk.
-            if (operand.role() <= 0 || operand.role() > 102 || (operand.role() >= 96 && operand.role() <= 99)
-                || !scalar_payload(operand)) {
+            if (operand.role() <= 0 || (operand.role() > 102 && operand.role() != 105 && operand.role() != 106)
+                || (operand.role() >= 96 && operand.role() <= 99) || !scalar_payload(operand)) {
                 return fail(store, InstructionError::integrity);
             }
             at = at + 1;
@@ -96,7 +97,7 @@ export namespace compiler_ir_instructions {
         i64 instruction = 0;
         while (instruction < store.instruction_count()) {
             const RawInstructionRow row = store.instruction_at(instruction + 1);
-            if (row.kind() != 1 || row.form() < 0 || row.form() > 84 || !bounded_range(row.operand_begin(),
+            if (row.kind() != 1 || row.form() < 0 || row.form() > 87 || !bounded_range(row.operand_begin(),
                 row.operand_count(), store.operand_count()) || (row.operand_count() != 0 && row.operand_begin()
                 != next_operand)) {
                 return fail(store, InstructionError::integrity);
@@ -108,7 +109,7 @@ export namespace compiler_ir_instructions {
             while (at < row.operand_count()) {
                 const RawOperandRow operand = store.operand_at(row.operand_begin() + at);
                 const i64 role = operand.role();
-                if (role <= 0 || role > 102 || (role >= 96 && role <= 99)) {
+                if (role <= 0 || (role > 102 && role != 105 && role != 106) || (role >= 96 && role <= 99)) {
                     return fail(store, InstructionError::integrity);
                 }
                 if (type_role(role)) {
@@ -2137,7 +2138,7 @@ export namespace compiler_ir_instructions {
         }
         return true;
     }
-    auto service_entry_matches(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+    auto service_entry_matches(const InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 offset, i64 kind) -> bool {
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
         // Entry admission already proved the exact kind and spill declaration.
@@ -2176,6 +2177,9 @@ export namespace compiler_ir_instructions {
             }
             if (compiler_ir_metadata::named(metadata, row.name(), "__au_exec_request")) {
                 result = result | 32u64;
+            }
+            if (compiler_ir_metadata::named(metadata, row.name(), "__au_exec_cancel")) {
+                result = result | 128u64;
             }
             if (compiler_ir_metadata::named(metadata, row.name(), "__au_exec_finish")) {
                 result = result | 64u64;
@@ -2239,10 +2243,126 @@ export namespace compiler_ir_instructions {
             && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + name.count() - 11,
             11), "_n0__d4main");
     }
+    auto service_resource_slot(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 offset) -> bool {
+        const i64 index = entry_slot(metadata, callable, 28, offset);
+        if (index < 0) {
+            return false;
+        }
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(index);
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
+        return slot.mutable_value() == 1 && compiler_ir_metadata::plain_type(type, 26);
+    }
+    auto service_resource_issuer(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 offset) -> i64 {
+        if (!service_resource_slot(metadata, callable, offset)) {
+            return -1;
+        }
+        // The admitted nominal RawType26 maps to the closed catalog's resource0.
+        return compiler_catalog::resource_issuer(0);
+    }
+    auto verify_service_resource_instruction(InstructionStore& store,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 instruction, u64 result_enums) -> bool {
+        const RawInstructionRow row = store.instruction_at(instruction);
+        const i64 form = row.form();
+        i64 count = 4;
+        if (form == 86) {
+            count = 3;
+        }
+        if (row.operand_count() != count) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        i64 at = 0;
+        while (at < count) {
+            const RawOperandRow operand = store.operand_at(row.operand_begin() + at);
+            i64 role = 105;
+            if (at == 0) {
+                role = 2;
+                if (form == 86) {
+                    role = 22;
+                }
+                if (form == 87) {
+                    role = 19;
+                }
+            }
+            if (at == 1) {
+                role = 5;
+                if (form == 86) {
+                    role = 6;
+                }
+                if (form == 87) {
+                    role = 106;
+                }
+            }
+            if (at == 2 && form != 86) {
+                role = 6;
+            }
+            if (operand.role() != role || !scalar_payload(operand)) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+            at = at + 1;
+        }
+        if (call_value(store, instruction, count - 1) != 0) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        const i64 root = call_value(store, instruction, 0);
+        if (form == 85) {
+            const i64 issuer_kind = service_resource_issuer(metadata, callable, call_value(store, instruction, 2));
+            if (issuer_kind < 0 || !service_entry_matches(store, metadata, callable, root, issuer_kind)
+                || call_value(store, instruction, 1) != 46 || !service_resource_slot(metadata, callable,
+                call_value(store, instruction, 2))) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+            return true;
+        }
+        if (!service_resource_slot(metadata, callable, root)) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        if (form == 86) {
+            const i64 destination = call_value(store, instruction, 1);
+            if (root == destination || !service_resource_slot(metadata, callable, destination)) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+            return true;
+        }
+        const i64 method = call_value(store, instruction, 1);
+        const i64 result = call_value(store, instruction, 2);
+        if (method < 0 || method > 5) {
+            return fail(store, InstructionError::service_resource_shape);
+        }
+        if (method < 2) {
+            const i64 index = entry_slot(metadata, callable, 11, result);
+            if (index < 0) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+            const compiler_ir_metadata::SlotRow slot = metadata.slot_at(index);
+            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
+            if ((method == 0 && !compiler_ir_metadata::named(metadata, type.name(), "__au_execution_prep")) || (method
+                == 1 && !compiler_ir_metadata::named(metadata, type.name(), "__au_execution_step"))) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+        } else {
+            u64 required = 16u64;
+            if (method == 3) {
+                required = 32u64;
+            }
+            if (method == 4) {
+                required = 128u64;
+            }
+            if (method == 5) {
+                required = 80u64;
+            }
+            if (result != 0 || (result_enums & required) != required) {
+                return fail(store, InstructionError::service_resource_shape);
+            }
+        }
+        return true;
+    }
     auto verify_service_instruction(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 instruction, u64 result_enums) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
+        if (form >= 85 && form <= 87) {
+            return verify_service_resource_instruction(store, metadata, callable, instruction, result_enums);
+        }
         if (form == 1) { // AcquireServiceLoan: positivity and stable ID roots were checked for this body.
             const i64 root = call_value(store, instruction, 1);
             const i64 kind = call_value(store, instruction, 2);
@@ -2262,13 +2382,10 @@ export namespace compiler_ir_instructions {
             return true;
         } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || operation > 50) {
+        if (operation < 0 || operation > 45) {
             return fail(store, InstructionError::service_operation);
         }
         i64 expected_kind = 0;
-        if (operation >= 46 && operation <= 50) {
-            expected_kind = 9;
-        }
         if (operation >= 39 && operation < 46) {
             expected_kind = 8;
         } // Console: Next, Put
@@ -2334,19 +2451,6 @@ export namespace compiler_ir_instructions {
             && !store.kernel_target())) {
             return fail(store, InstructionError::service_platform);
         }
-        if (operation >= 48 && operation <= 50) {
-            u64 required = 16u64;
-            if (operation == 49) {
-                required = 32u64;
-            }
-            if (operation == 50) {
-                required = 80u64;
-            }
-            if (result_offset != 0 || (result_enums & required) != required) {
-                return fail(store, InstructionError::service_operation);
-            }
-            return true;
-        }
         if (operation > 8 && operation < 46 && operation != 14 && operation != 30 && operation != 32) {
             if (result_offset != 0) {
                 return fail(store, InstructionError::service_operation);
@@ -2391,9 +2495,7 @@ export namespace compiler_ir_instructions {
             == 3 && !compiler_ir_metadata::named(metadata, type.name(), "__au_iommu_event_sample")) || (operation == 5
             && !compiler_ir_metadata::named(metadata, type.name(), "__au_call_result")) || ((operation == 8 || operation
             == 32) && !compiler_ir_metadata::named(metadata, type.name(), "__au_serve_request")) || ((operation == 14
-            || operation == 30) && !compiler_ir_metadata::named(metadata, type.name(), "__au_host_chunk")) || (operation
-            == 46 && !compiler_ir_metadata::named(metadata, type.name(), "__au_execution_prep")) || (operation == 47
-            && !compiler_ir_metadata::named(metadata, type.name(), "__au_execution_step"))) {
+            || operation == 30) && !compiler_ir_metadata::named(metadata, type.name(), "__au_host_chunk"))) {
             return fail(store, InstructionError::service_sample_result);
         }
         return true;
