@@ -297,9 +297,10 @@ auto confirm_mounted_plan(fs::XfsMountedCommitPlan& plan, u64 fault) -> bool {
     return fault == 22u64 && index == 18u64 && plan.confirmed();
 }
 
-auto mounted_planned_sector(const fs::XfsMountedCommitPlan& plan, u64 lba) -> fs::XfsRecoveryWrite {
+auto mounted_planned_sector(const fs::XfsMountedCommitPlan& plan, u64 lba,
+    bool overlay_enabled) -> fs::XfsRecoveryWrite {
     u64 at = 0u64;
-    while (at < 16u64) {
+    while (overlay_enabled && at < 16u64) {
         const fs::XfsRecoveryWrite write = plan.write_at(at);
         if (write.valid() && write.lba() == lba) {
             return write;
@@ -350,16 +351,25 @@ auto mounted_commit(builtin::HostFiles& files, builtin::ByteRegion region, built
     }
     while (clean.needs_read()) {
         const u64 lba = clean.requested_lba();
-        const storage::SectorReadResult read = image_sector(files, image.id, lba);
-        const storage::Sector512 loaded = read.sector_or_zero();
-        if (read.status() != storage::SectorIoStatus::success) {
-            return builtin::HostExit::failure;
-        }
-        i64 position = 0;
-        while (position < 512) {
-            const std::ByteReadResult byte = loaded.read_byte(position);
-            sector.set(position, u8(byte.value_or(0u64)));
-            position = position + 1;
+        // Feed the authentic scan directly; avoid an intermediate Sector512
+        // and its second checked byte copy for every full-ring read.
+        i64 copied = 0;
+        while (copied < 512) {
+            const builtin::HostChunk chunk = files.read(image.id, lba * 512u64 + u64(copied));
+            if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64) {
+                return builtin::HostExit::failure;
+            }
+            const builtin::array<u8, 504> bytes = chunk.bytes;
+            i64 count = i64(chunk.count);
+            if (count > 512 - copied) {
+                count = 512 - copied;
+            }
+            i64 at = 0;
+            while (at < count) {
+                sector.set(copied + at, bytes[at]);
+                at = at + 1;
+            }
+            copied = copied + count;
         }
         clean.accept(lba, storage::SectorIoStatus::success, borrow_bytes(sector));
     }
@@ -615,11 +625,7 @@ auto mounted_commit(builtin::HostFiles& files, builtin::ByteRegion region, built
                     u64 reads = 0u64;
                     while (mount.needs_read()) {
                         const u64 lba = mount.requested_lba();
-                        u64 selected_lba = lba;
-                        if (phase == 0u64) {
-                            selected_lba = 18446744073709551615u64;
-                        }
-                        const fs::XfsRecoveryWrite planned = mounted_planned_sector(commit, selected_lba);
+                        const fs::XfsRecoveryWrite planned = mounted_planned_sector(commit, lba, phase != 0u64);
                         if (planned.valid()) {
                             const storage::Sector512 bytes = planned.sector_or_zero();
                             i64 at = 0;
@@ -629,16 +635,25 @@ auto mounted_commit(builtin::HostFiles& files, builtin::ByteRegion region, built
                                 at = at + 1;
                             }
                         } else {
-                            const storage::SectorReadResult read = image_sector(files, image.id, lba);
-                            if (read.status() != storage::SectorIoStatus::success) {
-                                return builtin::HostExit::failure;
-                            }
-                            const storage::Sector512 bytes = read.sector_or_zero();
-                            i64 at = 0;
-                            while (at < 512) {
-                                const std::ByteReadResult byte = bytes.read_byte(at);
-                                sector.set(at, u8(byte.value_or(0u64)));
-                                at = at + 1;
+                            // Feed the authentic scan directly; avoid an intermediate Sector512
+                            // and its second checked byte copy for every full-ring read.
+                            i64 copied = 0;
+                            while (copied < 512) {
+                                const builtin::HostChunk chunk = files.read(image.id, lba * 512u64 + u64(copied));
+                                if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64) {
+                                    return builtin::HostExit::failure;
+                                }
+                                const builtin::array<u8, 504> bytes = chunk.bytes;
+                                i64 count = i64(chunk.count);
+                                if (count > 512 - copied) {
+                                    count = 512 - copied;
+                                }
+                                i64 at = 0;
+                                while (at < count) {
+                                    sector.set(copied + at, bytes[at]);
+                                    at = at + 1;
+                                }
+                                copied = copied + count;
                             }
                         }
                         mount.accept(lba, storage::SectorIoStatus::success, borrow_bytes(sector));
