@@ -3,6 +3,7 @@
 // operation 1: entry_at_xfs_v5_512_root(superblock, inode, index)
 // operation 2: fabricated XfsRootReport with the selected status
 // operation 3: fabricated XfsRootEntryReport with the selected status
+// operations 4/5: parameterized directory lookup/index with expected inode/parent
 module xfs_root_driver;
 import fs.xfs_root;
 
@@ -126,9 +127,11 @@ class RootInput {
     i64 operation;
     i64 index;
     i64 status;
+    u64 expected_inode;
+    u64 expected_parent;
 public:
     RootInput() : sb0{}, sb1{}, inode0{}, inode1{}, query0{}, sb_length(0), inode_length(0), query_length(0),
-        operation(0), index(0), status(0) {
+        operation(0), index(0), status(0), expected_inode(0u64), expected_parent(0u64) {
     }
 
     auto sb_at(i64 offset) const -> u8 {
@@ -285,6 +288,11 @@ public:
         const builtin::span<const u8> sb_all = borrow_bytes(sb);
         const builtin::span<const u8> inode_all = borrow_bytes(inode);
         const builtin::span<const u8> query_all = borrow_bytes(query0);
+        if (operation == 4) {
+            const fs::XfsRootReport report = fs::lookup_xfs_v5_512_directory(sb_all.subspan(0, sb_length),
+                inode_all.subspan(0, inode_length), expected_inode, expected_parent, query_all.subspan(0, query_length));
+            return report;
+        }
         const fs::XfsRootReport report = fs::lookup_xfs_v5_512_root(sb_all.subspan(0, sb_length),
             inode_all.subspan(0, inode_length), query_all.subspan(0, query_length));
         return report;
@@ -407,6 +415,11 @@ public:
         }
         const builtin::span<const u8> sb_all = borrow_bytes(sb);
         const builtin::span<const u8> inode_all = borrow_bytes(inode);
+        if (operation == 5) {
+            const fs::XfsRootEntryReport report = fs::entry_at_xfs_v5_512_directory(sb_all.subspan(0, sb_length),
+                inode_all.subspan(0, inode_length), expected_inode, expected_parent, index);
+            return report;
+        }
         const fs::XfsRootEntryReport report = fs::entry_at_xfs_v5_512_root(sb_all.subspan(0, sb_length),
             inode_all.subspan(0, inode_length), index);
         return report;
@@ -414,8 +427,8 @@ public:
 
     // The last slot (10 lookup, 11 entry) is 1 when a repeated call agrees with a copy.
     auto entry(i64 slot) const -> u64 {
-        if (operation >= 2) { return fabricated(slot); }
-        if (operation == 0) {
+        if (operation == 2 || operation == 3) { return fabricated(slot); }
+        if (operation == 0 || operation == 4) {
             const fs::XfsRootReport report = lookup_report();
             if (slot < 10) { return lookup_slot(report, slot); }
             const fs::XfsRootReport copy = report;
