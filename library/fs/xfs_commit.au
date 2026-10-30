@@ -168,6 +168,12 @@ export namespace fs {
             if (_profile_ready) {
                 return true;
             }
+            // Readonly parsing may admit an empty reserved attribute fork;
+            // the fixed mutation profile deliberately still excludes it.
+            if ((_cache.at(101) & 16u8) != 0u8 || _cache.at(512 + 82) != 0u8 || _cache.at(1024 + 82) != 0u8
+                || _cache.at(1536 + 82) != 0u8) {
+                return refuse();
+            }
             const XfsRootReport target = lookup_xfs_v5_512_root(view(0, 512), view(512, 512), "hello");
             const XfsRootReport stage = lookup_xfs_v5_512_root(view(0, 512), view(512, 512), ".aurora-stage");
             const XfsRootFacts root = target.facts();

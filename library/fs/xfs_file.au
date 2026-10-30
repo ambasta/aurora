@@ -275,8 +275,23 @@ namespace fs {
         if (inode.at(5) != 2u8) {
             return XfsFileIssue::file_format;
         }
-        if (inode.at(82) != 0u8 || inode.at(83) != 2u8) {
+        if (inode.at(83) != 2u8) {
             return XfsFileIssue::attribute_fork;
+        }
+        const i64 fork_bytes = i64(inode.at(82)) * 8;
+        if (fork_bytes != 0) {
+            if (fork_bytes >= 336) {
+                return XfsFileIssue::attribute_fork;
+            }
+            // An empty reserved attribute fork owns no extents or blocks.
+            // Check all its bytes, not only the declared zero extent count.
+            i64 attribute = 176 + fork_bytes;
+            while (attribute < 512) {
+                if (inode.at(attribute) != 0u8) {
+                    return XfsFileIssue::attribute_fork;
+                }
+                attribute = attribute + 1;
+            }
         }
         if ((xf32(inode, 72) | xf32(inode, 128)) != 0u64) {
             return XfsFileIssue::extent_hints;
@@ -363,7 +378,11 @@ export namespace fs {
         if ((xf64(inode, 120) & 16u64) != 0u64) {
             extent_count = xf64(inode, 24);
         }
-        if (extent_count > 21u64) {
+        u64 data_bytes = 336u64;
+        if (inode.at(82) != 0u8) {
+            data_bytes = u64(inode.at(82)) * 8u64;
+        }
+        if (extent_count > data_bytes / 16u64) {
             const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_inode, XfsFileIssue::extent_count);
             return failure;
         }
@@ -409,7 +428,7 @@ export namespace fs {
             }
             record = record + 1;
         }
-        // At most 21 positive 21-bit counts fit this attribute-free inline fork.
+        // At most 21 positive 21-bit counts fit this bounded inline data fork.
         if (xf64(inode, 64) != allocated) {
             const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_extent, XfsFileIssue::block_count);
             return failure;

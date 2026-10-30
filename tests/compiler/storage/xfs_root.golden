@@ -1260,6 +1260,36 @@ duplicate second name index 0	invalid_directory duplicate_name 0 0 0 0 0 0 0 0 0
 duplicate second name index 2	invalid_directory duplicate_name 0 0 0 0 0 0 0 0 0 ok
 duplicate second name index 3	invalid_directory duplicate_name 0 0 0 0 0 0 0 0 0 ok
 duplicate second name index 9223372036854775807	invalid_directory duplicate_name 0 0 0 0 0 0 0 0 0 ok
+directory child operation 4	found none 1 132 67584 128 1 18 140 1 ok
+directory child operation 5	found none 132 67584 128 1 18 140 1 185 4 ok
+directory grandchild operation 4	found none 1 136 69632 132 1 18 140 1 ok
+directory grandchild operation 5	found none 136 69632 132 1 18 140 1 185 4 ok
+directory wrong identity operation 4	invalid_inode identity 0 0 0 0 0 0 0 0 ok
+directory wrong identity operation 5	invalid_inode identity 0 0 0 0 0 0 0 0 0 ok
+directory wrong parent operation 4	invalid_directory parent 0 0 0 0 0 0 0 0 ok
+directory wrong parent operation 5	invalid_directory parent 0 0 0 0 0 0 0 0 0 ok
+directory zero identity operation 4	invalid_inode root_address 0 0 0 0 0 0 0 0 ok
+directory zero identity operation 5	invalid_inode root_address 0 0 0 0 0 0 0 0 0 ok
+directory wide identity operation 4	invalid_inode root_address 0 0 0 0 0 0 0 0 ok
+directory wide identity operation 5	invalid_inode root_address 0 0 0 0 0 0 0 0 0 ok
+directory zero parent operation 4	invalid_directory parent 0 0 0 0 0 0 0 0 ok
+directory zero parent operation 5	invalid_directory parent 0 0 0 0 0 0 0 0 0 ok
+directory header parent operation 4	invalid_directory parent 0 0 0 0 0 0 0 0 ok
+directory header parent operation 5	invalid_directory parent 0 0 0 0 0 0 0 0 0 ok
+directory wide expected parent operation 4	invalid_directory parent 0 0 0 0 0 0 0 0 ok
+directory wide expected parent operation 5	invalid_directory parent 0 0 0 0 0 0 0 0 0 ok
+root reserved fork 1	invalid_inode core 0 0 0 0 0 0 0 0 ok
+root reserved fork 4	found none 1 128 65536 128 2 31 131 1 ok
+root reserved fork 24	found none 1 128 65536 128 2 31 131 1 ok
+root reserved fork 41	found none 1 128 65536 128 2 31 131 1 ok
+root reserved fork 42	invalid_inode core 0 0 0 0 0 0 0 0 ok
+root reserved fork 255	invalid_inode core 0 0 0 0 0 0 0 0 ok
+root reserved fork empty minimum	not_found none 0 128 65536 128 0 6 0 0 ok
+root reserved fork payload crosses	invalid_directory payload_size 0 0 0 0 0 0 0 0 ok
+root reserved fork first attr byte	invalid_inode core 0 0 0 0 0 0 0 0 ok
+root reserved fork last attr byte	invalid_inode core 0 0 0 0 0 0 0 0 ok
+root reserved fork local attr format	invalid_inode core 0 0 0 0 0 0 0 0 ok
+root reserved fork nonempty attr count	invalid_inode core 0 0 0 0 0 0 0 0 ok
 fabricated lookup report found	found none 1 9223372036854775808 18446744073709551615 3 4 5 6 7 40 16 72 0
 fabricated lookup report not_found	not_found none 0 9223372036854775808 18446744073709551615 3 4 5 0 0 40 16 72 0
 fabricated lookup report geometry_rejected	geometry_rejected none 0 0 0 0 0 0 0 0 40 16 72 0

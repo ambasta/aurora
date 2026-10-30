@@ -666,6 +666,21 @@ def indexed_root_case(sb, root, inode, data):
     return "real indexed-root entry to actual first file sector", {**values, "window": data[:512]}, 68
 
 
+def reserved_fork_cases(sb, inode):
+    for offset in (1, 2, 24, 41, 42, 255):
+        yield plan_case(f"file reserved fork {offset}", sb, set_inode(inode, (82, 1, offset)))
+    reserved = set_inode(inode, (82, 1, 24))
+    for label, fields in (
+        ("extent count crosses", ((24, 8, 13),)),
+        ("first attr byte", ((368, 1, 1),)),
+        ("last attr byte", ((511, 1, 1),)),
+        ("local attr format", ((83, 1, 1),)),
+        ("nonempty attr count", ((80, 2, 1),)),
+        ("extra allocated attr block", ((64, 8, 6),)),
+    ):
+        yield plan_case("file reserved fork " + label, sb, set_inode(reserved, *fields))
+
+
 def cases():
     sb, inode, root = (fixture(name) for name in ("superblock.hex", "written-inode.hex", "root.hex"))
     data = fixture("written-extent-0.hex")
@@ -673,6 +688,7 @@ def cases():
     require(len(payload) == 17003 and len(data) == 20480 and data[:17003] == payload, "complete actual payload")
     return [
         *plan_cases(sb, inode),
+        *reserved_fork_cases(sb, inode),
         *read_cases(sb, inode, data),
         *report_cases(),
         *historical_sparse_cases(sb),

@@ -783,6 +783,9 @@ export namespace fs {
                 return fail(XfsRecoveryStatus::unsupported);
             }
             if (_status == XfsRecoveryStatus::superblock) {
+                if ((bytes.at(101) & 16u8) != 0u8) {
+                    return fail(XfsRecoveryStatus::unsupported);
+                }
                 const XfsGeometryReport admitted = inspect_xfs_v5_512_geometry(bytes);
                 if (admitted.status() != XfsGeometryStatus::header_geometry_consistent
                     || !xfs_bounded_namespace_profile(bytes)) {
@@ -967,6 +970,10 @@ export namespace fs {
                 return _status;
             }
             if (_status == XfsRecoveryStatus::root) {
+                // Recovery does not inherit readonly attribute-fork support.
+                if (bytes.at(82) != 0u8) {
+                    return fail(XfsRecoveryStatus::invalid_metadata);
+                }
                 const XfsRootEntryReport first = entry_at_xfs_v5_512_root(view(0, 512), bytes, 0);
                 if (first.status() != XfsRootEntryStatus::found || !lsn_valid(xp64(bytes, 112))) {
                     return fail(XfsRecoveryStatus::invalid_metadata);
@@ -1005,6 +1012,10 @@ export namespace fs {
                 return _status;
             }
             if (_status == XfsRecoveryStatus::home) {
+                // Recovery does not inherit readonly attribute-fork support.
+                if (bytes.at(82) != 0u8) {
+                    return fail(XfsRecoveryStatus::invalid_metadata);
+                }
                 const storage::SectorGeometry source = storage::SectorGeometry(_capacity, true);
                 const XfsFileRequest request = XfsFileRequest(meta(_home_index, 0), 0);
                 const XfsFileReport admitted = plan_xfs_v5_512_file_sector(source, view(0, 512), bytes, request);

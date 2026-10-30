@@ -12,7 +12,7 @@ import random
 import harness
 from xfs_inputs import change, fix_inode, root_fixture, set_fields, shortform
 
-LOOKUP, ENTRY, FABRICATED_LOOKUP, FABRICATED_ENTRY = range(4)
+LOOKUP, ENTRY, FABRICATED_LOOKUP, FABRICATED_ENTRY, DIRECTORY_LOOKUP, DIRECTORY_ENTRY = range(6)
 LOOKUP_STATUSES = ("found", "not_found", "geometry_rejected", "unsupported_profile", "invalid_query")
 LOOKUP_STATUSES += ("invalid_inode", "invalid_directory")
 ENTRY_STATUSES = ("found", "end", "invalid_index", "geometry_rejected", "unsupported_profile", "invalid_inode")
@@ -152,10 +152,48 @@ def cases():
     ):
         for index in (0, 2, 3, (1 << 63) - 1):
             yield f"{label} index {index}", inputs(ENTRY, sb, damaged, index=index), 12
+    sb, inode = root_fixture("named-superblock.hex"), root_fixture("named-root.hex")
+    # Synthetic non-root directories: the same parser admits any bounded depth;
+    # traversal, ancestry/cycle policy and reads belong to the mounted caller.
+    for label, identity, parent, expected_identity, expected_parent in (
+        ("child", 132, 128, 132, 128),
+        ("grandchild", 136, 132, 136, 132),
+        ("wrong identity", 136, 132, 135, 132),
+        ("wrong parent", 136, 132, 136, 128),
+        ("zero identity", 0, 128, 0, 128),
+        ("wide identity", 1 << 32, 128, 1 << 32, 128),
+        ("zero parent", 136, 0, 136, 0),
+        ("header parent", 136, 1, 136, 1),
+        ("wide expected parent", 136, 132, 136, 1 << 32),
+    ):
+        directory = set_fields(shortform(inode, [(b"leaf", 140, 1, 96)], parent=parent), (152, 8, identity))
+        for operation in (DIRECTORY_LOOKUP, DIRECTORY_ENTRY):
+            values = inputs(operation, sb, directory, query=b"leaf")
+            values.update(expected_inode=expected_identity, expected_parent=expected_parent)
+            yield f"directory {label} operation {operation}", values, 11 if operation == DIRECTORY_LOOKUP else 12
+    # Empty reserved attribute forks are readonly metadata, never attr parsing.
+    for label, directory in reserved_fork_cases(inode):
+        yield label, inputs(LOOKUP, sb, directory, query=b"alpha"), 11
     for code, status in enumerate(LOOKUP_STATUSES):
         yield f"fabricated lookup report {status}", {"operation": FABRICATED_LOOKUP, "status": code}, 14
     for code, status in enumerate(ENTRY_STATUSES):
         yield f"fabricated entry report {status}", {"operation": FABRICATED_ENTRY, "status": code}, 14
+
+
+def reserved_fork_cases(inode):
+    for offset in (1, 4, 24, 41, 42, 255):
+        yield f"root reserved fork {offset}", set_fields(inode, (82, 1, offset))
+    empty = shortform(inode, [])
+    yield "root reserved fork empty minimum", set_fields(empty, (82, 1, 1))
+    reserved = set_fields(inode, (82, 1, 24))
+    for label, fields in (
+        ("payload crosses", ((56, 8, 193),)),
+        ("first attr byte", ((368, 1, 1),)),
+        ("last attr byte", ((511, 1, 1),)),
+        ("local attr format", ((83, 1, 1),)),
+        ("nonempty attr count", ((80, 2, 1),)),
+    ):
+        yield "root reserved fork " + label, set_fields(reserved, *fields)
 
 
 def inputs(operation, sb, inode, query=b"", index=0):
@@ -166,9 +204,9 @@ def inputs(operation, sb, inode, query=b"", index=0):
 
 def format_result(driver, operation, observed):
     """status issue, then every scalar leaf; the final slot must report a passed self-check."""
-    check = {LOOKUP: 10, ENTRY: 11}.get(operation)
+    check = {LOOKUP: 10, ENTRY: 11, DIRECTORY_LOOKUP: 10, DIRECTORY_ENTRY: 11}.get(operation)
     words = [str(value) for value in observed]
-    if operation in (LOOKUP, FABRICATED_LOOKUP):
+    if operation in (LOOKUP, FABRICATED_LOOKUP, DIRECTORY_LOOKUP):
         words[0] = driver.name("XfsRootStatus", observed[0])
     else:
         words[0] = driver.name("XfsRootEntryStatus", observed[0])

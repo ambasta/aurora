@@ -168,14 +168,48 @@ def describe(compiler, directory):
     cases.append(("nonzero inode LSN", {99: set_fields(inode, (112, 8, 1), crc=100)}, "hello", 1048576))
     cases.append(("null UUID", {0: set_fields(base[0], (32, 16, 0), crc=224)}, "hello", 1048576))
     cases.append(("all-zero log rejected", {log_lba: bytes(512), log_lba + 1: bytes(512)}, "hello", 1048576))
-    cases.append(("unsupported nested directory", {96: set_fields(root, (190, 1, 2), crc=100)}, "hello", 1048576))
+    cases.append(
+        ("regular inode advertised as directory", {96: set_fields(root, (190, 1, 2), crc=100)}, "hello", 1048576)
+    )
     cases.append(("unsupported empty regular file", {99: set_fields(inode, (56, 8, 0), crc=100)}, "hello", 1048576))
     hole = set_fields(inode, (64, 8, 0), (76, 4, 0), crc=100)
     unwritten = set_fields(inode, (176, 1, inode[176] | 128), crc=100)
     cases.append(("mounted sparse hole masks poison data", {99: hole, 72: b"X" * 512}, "hello", 1048576))
     cases.append(("mounted unwritten extent masks poison data", {99: unwritten, 72: b"X" * 512}, "hello", 1048576))
     later = shortform(root, [(b"hello", 99, 1, 96), (b"later", 100, 2, 120)], parent=96)
-    cases.append(("unsupported later entry prevents earlier file publication", {96: later}, "hello", 1048576))
+    cases.append(("invalid later directory prevents earlier file publication", {96: later}, "hello", 1048576))
+    # Synthetic fresh-profile namespace walks use the same state machine.
+    # These sparse inputs are not additional Linux filesystem witnesses.
+    nested_root = shortform(root, [(b"d", 101, 2, 96)], parent=96)
+
+    def directory_inode(number, parent, entries):
+        return shortform(set_fields(root, (152, 8, number), crc=100), entries, parent=parent)
+
+    child = directory_inode(101, 96, [(b"hello", 99, 1, 96)])
+    nested = {96: nested_root, 101: child}
+    cases.append(("synthetic rooted shortform walk", nested, "d/hello", 1048576))
+    for label, entries in (
+        ("symlink child refused", [(b"hello", 99, 7, 96)]),
+        ("directory self edge refused", [(b"self", 101, 2, 96)]),
+        ("directory root backedge refused", [(b"root", 96, 2, 96)]),
+    ):
+        cases.append((label, {96: nested_root, 101: directory_inode(101, 96, entries)}, "d/hello", 1048576))
+    for label, changed in (
+        ("unsupported block directory refused", set_fields(child, (5, 1, 2), crc=100)),
+        ("forged child parent refused", directory_inode(101, 102, [(b"hello", 99, 1, 96)])),
+        ("fresh child nonzero LSN refused", set_fields(child, (112, 8, 1), crc=100)),
+    ):
+        cases.append((label, {96: nested_root, 101: changed}, "d/hello", 1048576))
+    deep = directory_inode(101, 96, [(b"e", 102, 2, 96)])
+    cycle = directory_inode(102, 101, [(b"d", 101, 2, 96)])
+    cases.append(
+        (
+            "longer directory cycle refused by parent identity",
+            {96: nested_root, 101: deep, 102: cycle},
+            "d/e/d/hello",
+            1048576,
+        )
+    )
     cases.append(("late full-log stale record", {0: sb, log_lba + 131071: header}, "hello", 1048576))
     cases.append(
         (

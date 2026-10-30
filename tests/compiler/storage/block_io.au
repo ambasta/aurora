@@ -827,6 +827,12 @@ auto mount_protocol(builtin::ByteRegion region, i64 mode) -> u64 {
             return 8u64;
         }
     } else {
+        // Protocol faults must start from a fully allocated mount, rather than
+        // accidentally exercising resource rejection before the intended reply.
+        if (mount.status() != fs::XfsMountStatus::reading_superblock || !mount.needs_read() || mount.requested_lba()
+            != 0u64) {
+            return 9u64;
+        }
         if (mode == 0) {
             if (mount.read_file("hello", 0)) {
                 return 1u64;

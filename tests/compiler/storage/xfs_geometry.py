@@ -59,7 +59,10 @@ def header_cases(real, seed, random_count):
         if 0xB4A0 & (1 << bit):
             mutate(f"required version bit {bit}", versionnum=0xB4A5 ^ (1 << bit))
         if not 0xBCA5 & (1 << bit):
-            mutate(f"extra version bit {bit}", versionnum=0xB4A5 | (1 << bit))
+            mutate(
+                "optional legacy ATTR marker" if bit == 4 else f"extra version bit {bit}",
+                versionnum=0xB4A5 | (1 << bit),
+            )
     for bit in range(32):
         value = 0x18A ^ (1 << bit) if 0x18A & (1 << bit) else 0x18A | (1 << bit)
         mutate(f"features2 bit {bit}", features2=value, bad_features2=value)
@@ -103,6 +106,7 @@ def header_cases(real, seed, random_count):
             mutate(f"count boundary {boundary} delta {delta}", dblocks=boundary + delta)
     for values in (
         {"versionnum": 0xBCA5, "logsectsize": 512, "logsectlog": 9},
+        {"versionnum": 0xBCB5, "logsectsize": 512, "logsectlog": 9},
         {"logsunit": 0},
         {"imax_pct": 0},
         {"imax_pct": 100},

@@ -623,6 +623,21 @@ def describe(compiler, directory):
             "0",
         )
     )
+    rows.extend(
+        (
+            f"empty reserved attribute fork refused at inode {inode}",
+            {inode: set_fields(base[inode], (82, 1, 24), crc=100)},
+            "0",
+        )
+        for inode in (96, 99, 100)
+    )
+    rows.append(
+        (
+            "legacy ATTR marker stays outside recovery",
+            {0: set_fields(base[0], (101, 1, base[0][101] | 16), crc=224)},
+            "0",
+        )
+    )
     rows.append(("mismatched summary", {0: set_fields(base[0], (144, 8, 58), crc=224)}, "0"))
     rows.append(("bad final AG CRC", {3 * 262144 + 2: set_fields(base[3 * 262144 + 2], (312, 1, 0), crc=None)}, "0"))
     rows.append(
