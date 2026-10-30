@@ -35,6 +35,11 @@ or recovery authority. Production checks use the existing graphics/NVMe
 runner with `--xfs-nested --xfs-image <expanded-image>` and its unchanged
 command/framebuffer, source hash and terminal cleanup checks.
 
+The sibling module sources were checked with the current hosted compiler
+before generating this image. The image was regenerated through the same Linux
+recipe after correcting the namespace terminator in `s/b.au` (now 87 bytes);
+no filesystem metadata or payload sectors were patched offline.
+
 The Linux-generated fixture is the reference, not Aurora output. Directory
 parser mutations, if used by component tests, are explicitly negative cases;
 they are not claimed to be Linux-created filesystems.

@@ -654,6 +654,9 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
             path.unlink()
         record.update(status="passed", diagnostics=skipped, probes=attempt + 1, exit_status=33)
     finally:
+        primary_error = sys.exception()
+        if primary_error is not None:
+            record["failure"] = str(primary_error)
         errors, _, unsettled = transport.finish(
             proc,
             drains=[channel.drain_serial] if channel else [],
@@ -676,7 +679,11 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
                 recovery_delta(directory, args.xfs_recovery, before, args.xfs_exchange)
             else:
                 need(file_hash(disk) == before, "Readonly production XFS image changed")
-            need(not (directory / "qemu.stderr").stat().st_size, "Production storage QEMU diagnostics")
+            # Failure cleanup may terminate QEMU and produce its SIGTERM notice.
+            # Preserve the original failed oracle; successful runs still require
+            # completely empty diagnostics.
+            if primary_error is None:
+                need(not (directory / "qemu.stderr").stat().st_size, "Production storage QEMU diagnostics")
         need(not errors, "guest cleanup: " + "; ".join(errors))
 
 
