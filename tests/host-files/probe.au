@@ -150,11 +150,32 @@ auto chunk_line(builtin::HostFiles& files, u64 file, u64 offset) -> builtin::Hos
     return files.print(builtin::HostStream::stdout, part);
 }
 
+// Fill is specified in KiB. Two bounded writes per unit test its byte limit
+// without making the fixture's setup cost depend on tiny transport messages.
+class FillBlock {
+    builtin::array<u8, 512> elements;
+public:
+    FillBlock() : elements{} {
+    }
+    auto initialize() -> bool {
+        i64 at = 0;
+        while (at < 512) {
+            elements[at] = 'x';
+            at = at + 1;
+        }
+        return true;
+    }
+    auto bytes() const -> builtin::span<const u8> {
+        return borrow_bytes(elements);
+    }
+};
+
 auto fill(builtin::HostFiles& files, u64 output, u64 kibibytes) -> builtin::HostStatus {
-    const array<u8, 64> block = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-    const builtin::span<const u8> bytes = borrow_bytes(block);
+    FillBlock block = FillBlock();
+    block.initialize();
+    const builtin::span<const u8> bytes = block.bytes();
     u64 written = 0u64;
-    while (written < kibibytes * 16u64) {
+    while (written < kibibytes * 2u64) {
         const builtin::HostStatus result = files.write(output, bytes);
         if (result != builtin::HostStatus::success) {
             return result;
