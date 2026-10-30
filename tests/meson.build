@@ -491,6 +491,18 @@ process_budget_object = custom_target('process-budget-root',
               '--module-root', meson.project_source_root() / 'kernel/policies', '--local-symbols',
               '--referenced-reflection-only', '--bridge', files('../kernel/uefi/budget-root-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+process_service_object = custom_target('process-service-root',
+    input: '../examples/kernel-service-root.au', output: 'service-root.o', depfile: 'service-root.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'kernel/policies', '--local-symbols',
+              '--referenced-reflection-only', '--bridge', files('../kernel/uefi/service-root-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+process_service_saturation_object = custom_target('process-service-saturation-root',
+    input: 'kernel-process-service-root.au', output: 'service-saturation-root.o', depfile: 'service-saturation-root.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'kernel/policies', '--local-symbols',
+              '--referenced-reflection-only', '--bridge', files('kernel-process-service-root-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 process_files_policy_object = custom_target('process-files-policy-reference',
     input: 'kernel-process-files.au', output: 'process-files-policy-reference.o', depfile: 'process-files-policy-reference.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
@@ -499,7 +511,7 @@ process_files_policy_object = custom_target('process-files-policy-reference',
               '--referenced-reflection-only', '--bridge', files('kernel-process-files-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 kernel_process = executable('kernel-process', 'kernel-process.cpp', process_policy_object, process_execution_object,
-    process_files_policy_object, process_budget_object,
+    process_files_policy_object, process_budget_object, process_service_object, process_service_saturation_object,
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DAURORA_PROCESS_FIXTURE', '-DAURORA_UEFI_NVME'], link_args: ['-no-pie'],
     native: true, override_options: fixture_options, install: false)
 # The native static linker runs once-built objects and itself; its ELF output
@@ -517,6 +529,10 @@ process_volume_cases = custom_target('process-volume-cases', input: 'kernel-proc
     depend_files: files('../scripts/kernel_volume.py', '../examples/core_math.au', '../examples/host-sort.au'),
     command: [python, '-B', files('../scripts/kernel_volume.py'), '--cases', '@INPUT@',
               '--root', meson.project_source_root(), '--output', '@OUTPUT@'])
+test('kernel-process-service-incarnation', python,
+     args: ['-B', golden_runner, files('kernel-process/service-incarnation.golden'), '--', kernel_process,
+            'service-incarnation', files('kernel-process/service-incarnation.cases')],
+     suite: ['full', 'merge', 'dev'], timeout: 60)
 test('kernel-process-budget', python,
      args: ['-B', golden_runner, files('kernel-process/budget.golden'), '--', kernel_process, 'budget',
             files('kernel-process/budget.cases')],

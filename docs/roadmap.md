@@ -25,8 +25,9 @@ reboots. The protected-console source also uses ConsoleSession for individual
 input and response turns, exercised by the production-console qualification in
 [9aa7b5d](https://github.com/ambasta/aurora/commit/9aa7b5dd72e005ead6053e7ec5742f5663786fa9);
 its retained `ProgramSession` now selects protected-console commands and owns
-phase, CR carry and terminal outcome. Native effect execution and authenticated
-lifecycle remain migration dependencies. The BIOS console uses the same Aurora
+phase, CR carry and terminal outcome. Native effects and general authenticated child lifetimes remain migration
+dependencies. The retained source file-owner incarnation policy now owns startup,
+readiness, terminal cleanup eligibility and later-operation restart admission. The BIOS console uses the same Aurora
 editor and sealed ConsoleSession for its bounded three-command session and
 presentation; trusted native code retains interrupt transport and shutdown.
 General terminal sessions remain open. The shared typed named-file core remains
@@ -41,8 +42,9 @@ page-table effects and process/IPC transport; this is not an all-Aurora kernel.
 Retiring those components needs these language and bridge capabilities, each a
 milestone with its own consumer:
 
-- kernel-side Aurora state that persists across bridge calls (frame records,
-  mapping records and run state still live in C++);
+- further kernel-side Aurora state that persists across bridge calls: retained
+  budget and service-incarnation roots now exist, while frame/mapping records and
+  physical run state still live in C++;
 - mutable spans over kernel-supplied memory (record insertion, data copies);
 - a privileged-instruction and physical-address capability (page-table writes,
   CR3, INVLPG, MSRs, LAPIC, GDT/IDT loads, IRETQ);

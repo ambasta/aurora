@@ -1,0 +1,28 @@
+fresh view=absent:0:0:none:0 open=1 admit=start view=starting:1:0:none:0 ready=1 view=ready:1:1:none:0 close=1
+ready_reuse open=1 admit=start ready=1 close=1 open=1 admit=reuse admit=reuse view=ready:1:0:none:0 close=1
+pinned_absent open=1 admit=refused view=absent:0:0:none:0 close=1
+permission_refusal open=1 admit=refused view=absent:0:0:none:0 admit=start ready=1 close=1
+zero_generation_loss open=1 loss=0 view=absent:0:0:none:0 close=1
+operation_exclusion open=1 open=0 close=1 close=0 admit=refused view=absent:0:0:none:0
+startup_failure open=1 admit=start loss=1 clean=1 admit=refused view=absent:1:0:unavailable:3 close=1 open=1 admit=start ready=1 view=ready:2:0:none:0 close=1
+cleanup_required open=1 admit=start ready=1 loss=1 view=retiring:1:0:fault:14 admit=refused clean=0 close=0 clean=1 view=absent:1:0:fault:14 close=1
+stale_bindings open=1 admit=start ready=0 ready=1 loss=0 shutdown=0 clean=0 view=ready:1:1:none:0 close=1
+ready_once open=1 ready=0 admit=start ready=1 ready=0 clean=0 view=ready:1:1:none:0 close=1
+frozen_loss open=1 admit=start ready=1 loss=1 loss=0 view=retiring:1:0:invalid_reply:19 clean=1 clean=0 view=absent:1:0:invalid_reply:19 close=1
+unexpected_zero_exit open=1 admit=start ready=1 exit=0 loss=1 view=retiring:1:0:exited:0 clean=1 close=1
+normal_shutdown open=1 admit=start ready=1 shutdown=1 view=stopping:1:0:none:0 admit=refused close=0 exit=1 view=retiring:1:0:shutdown:0 clean=1 view=absent:1:0:shutdown:0 close=1
+shutdown_failure open=1 admit=start ready=1 shutdown=1 loss=1 view=retiring:1:0:exited:7 exit=0 clean=1 close=1
+shutdown_intent_once open=1 admit=start ready=1 shutdown=1 shutdown=0 exit=0 exit=1 clean=1 admit=refused close=1
+pinned_ready open=1 admit=start ready=1 admit=refused disk=0 disk=1 view=ready:1:1:none:0 close=1
+stale_after_restart open=1 admit=start loss=1 clean=1 close=1 open=1 admit=refused view=absent:1:0:watchdog:64 admit=start ready=0 ready=1 loss=0 clean=0 view=ready:2:1:none:0 close=1
+closed_mutations open=1 admit=start ready=1 close=1 loss=0 shutdown=0 ready=0 clean=0 view=ready:1:1:none:0
+invalid_reasons open=1 admit=start ready=1 loss=0 loss=0 loss=0 view=ready:1:1:none:0 close=1
+starting_cannot_close open=1 admit=start close=0 open=0 ready=1 close=1
+normal_exit_without_start open=1 exit=0 exit=0 view=absent:0:0:none:0 close=1
+maximum_generation open=1 admit=start generation=18446744073709551615 ready=1 admit=reuse close=1 open=1 admit=reuse loss=1 clean=1 close=1 open=1 admit=refused view=absent:18446744073709551615:0:fault:14 close=1
+before_create denied
+duplicate_create denied
+not_excluded denied
+reentrant denied
+reused_loss_no_restart open=1 admit=start ready=1 close=1 open=1 admit=reuse loss=1 clean=1 admit=refused view=absent:1:0:fault:14 close=1 open=1 admit=start ready=1 view=ready:2:0:none:0 close=1
+pinned_reused_loss_no_restart open=1 admit=start ready=1 close=1 open=1 admit=reuse loss=1 clean=1 admit=refused admit=refused view=absent:1:0:invalid_reply:19 close=1 open=1 admit=start ready=1 view=ready:2:1:none:0 close=1

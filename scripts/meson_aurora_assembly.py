@@ -146,6 +146,9 @@ def validate_native_abi(facts, source):
                 "kernel::MemoryVerdict",
                 "kernel::BudgetVerdict",
                 "kernel::BudgetCharge",
+                "kernel::ServiceAction",
+                "kernel::ServicePhase",
+                "kernel::ServiceReason",
                 "kernel::FileStatus",
                 "__au_exec_status",
                 "__au_exec_prepared",
@@ -206,14 +209,45 @@ def validate_native_abi(facts, source):
         if value["cases"] != dict(zip(names, range(len(names)))):
             raise ValueError("Native enum encoding differs from compiler facts: " + source)
 
-    if "# RETAINED_BUDGET_ABI:" in source:
-        nominal, layout = abi_declaration(facts, "records", "kernel::BudgetLedger")
+    def retained_root(name):
+        nominal, layout = abi_declaration(facts, "records", name)
         if not (
             0 < layout["size"] <= layout["reserved"] <= 128
             and layout["alignment"] in (1, 2, 4, 8, 16)
             and layout["reserved"] % layout["alignment"] == 0
         ):
-            raise ValueError("Retained budget root exceeds its aligned opaque reservation")
+            raise ValueError("Retained root exceeds its aligned opaque reservation: " + name)
+        return nominal
+
+    def borrowed_entry(nominal, name, parameters, result, mutable):
+        _, raw = abi_declaration(facts, "functions", name)
+        expected_parameters, offset = [], 0
+        for kind in parameters:
+            field = shape(kind)
+            expected_parameters.append(dict(offset=offset, **field))
+            offset += field["bytes"]
+        expected = dict(
+            source_name=name,
+            receiver=None,
+            receiver_mutable=None,
+            borrowed_root_count=1,
+            borrowed_roots=[dict(ordinal=0, selector=0, type_name=nominal, mutable=mutable)],
+            borrowed_root_abi=dict(
+                kind="direct",
+                register="r10",
+                tuple_payload_bytes=0,
+                tuple_reserved_bytes=0,
+                saved_root_reserved_bytes=16,
+            ),
+            parameter_bytes=offset,
+            parameters=expected_parameters,
+            result=shape(result),
+        )
+        if normalize_function_abi(facts, raw) != expected:
+            raise ValueError("Retained root entry differs from its native boundary: " + name)
+
+    if "# RETAINED_BUDGET_ABI:" in source:
+        nominal = retained_root("kernel::BudgetLedger")
         enum("kernel::BudgetCharge", "rejected available exhausted")
         entry("process_budget_create", ["u64", "u64"], "kernel::BudgetLedger")
         for name, tail, result, mutable in (
@@ -227,27 +261,38 @@ def validate_native_abi(facts, source):
             ("quantum", 0, "u64", False),
             ("used", 0, "u64", False),
         ):
-            name = "process_budget_" + name
-            _, raw = abi_declaration(facts, "functions", name)
-            expected = dict(
-                source_name=name,
-                receiver=None,
-                receiver_mutable=None,
-                borrowed_root_count=1,
-                borrowed_roots=[dict(ordinal=0, selector=0, type_name=nominal, mutable=mutable)],
-                borrowed_root_abi=dict(
-                    kind="direct",
-                    register="r10",
-                    tuple_payload_bytes=0,
-                    tuple_reserved_bytes=0,
-                    saved_root_reserved_bytes=16,
-                ),
-                parameter_bytes=8 * tail,
-                parameters=[dict(offset=8 * i, bytes=8, kind="u64") for i in range(tail)],
-                result=shape(result),
-            )
-            if normalize_function_abi(facts, raw) != expected:
-                raise ValueError("Retained budget root entry differs from its native boundary: " + name)
+            borrowed_entry(nominal, "process_budget_" + name, ["u64"] * tail, result, mutable)
+
+    if "# RETAINED_SERVICE_ABI:" in source:
+        nominal = retained_root("kernel::ServiceIncarnation")
+        enum("kernel::ServiceAction", "refused reuse start")
+        enum("kernel::ServicePhase", "absent starting ready stopping retiring")
+        enum(
+            "kernel::ServiceReason",
+            "none invalid_reply consumer_rejected exited watchdog invalid_call fault "
+            "caller_expired unavailable shutdown",
+        )
+        entry("process_service_create", [], "kernel::ServiceIncarnation")
+        for name, tail, result, mutable in (
+            ("open_operation", [], "bool", True),
+            ("close_operation", [], "bool", True),
+            ("admit", ["u64", "bool"], "kernel::ServiceAction", True),
+            ("mark_ready", ["u64", "bool"], "bool", True),
+            ("begin_shutdown", ["u64"], "bool", True),
+            ("lose", ["u64", "kernel::ServiceReason", "u64"], "bool", True),
+            ("normal_exit", ["u64"], "bool", True),
+            ("cleaned", ["u64"], "bool", True),
+            ("generation", [], "u64", False),
+            ("phase", [], "kernel::ServicePhase", False),
+            ("disk_ready", ["u64"], "bool", False),
+            ("reason", [], "kernel::ServiceReason", False),
+            ("detail", [], "u64", False),
+        ):
+            borrowed_entry(nominal, "process_service_" + name, tail, result, mutable)
+
+    if "# SERVICE_SATURATION_TEST_ABI:" in source:
+        retained_root("kernel::ServiceIncarnation")
+        entry("process_service_saturation_create", [], "kernel::ServiceIncarnation")
 
     if "# UART_POLICY_ABI:" in source:
         validate_uart_policy_abi(facts)

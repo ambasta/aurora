@@ -2,6 +2,7 @@
 #include "acpi.hpp"
 #include "apic-timer-io.hpp"
 #include "../retained-budget.hpp"
+#include "../retained-service.hpp"
 #include "../round-robin-transport.hpp"
 #include "process-space.hpp"
 #include "image-snapshot.hpp"
@@ -288,12 +289,22 @@ constinit aurora::uefi::ProcessOutput output_sink = nullptr;
 constinit void *output_context = nullptr;
 constinit bool runtime_initialized = false, runtime_detached = false;
 #endif
-constinit bool runtime_disk_ready = false;
 constinit aurora::uefi::BootStorageSelection runtime_storage;
 constinit U64 next_run = 0;
 constinit bool output_error_stream = false;
 constinit RunStatus load_refusal = RunStatus::malformed;
-constinit U64 next_service_generation = 0;
+auto root() -> U64;
+class ServicePlatform final {
+public:
+    static auto quiet() -> bool {
+        return Timer::irq_off() && root() == kernel_root && !running.space;
+    }
+    [[noreturn]] static auto fail() -> void {
+        ::fail("retained service lifetime");
+    }
+};
+using ServiceRoot = aurora::service::Root<ServicePlatform>;
+constinit ServiceRoot service_root;
 
 auto root() -> U64 {
     U64 value;
@@ -1883,10 +1894,9 @@ auto observe_service_loss(ServiceFailure kind) -> ServiceLoss {
         return {ServiceFailure::fault, outcome.vector};
     return {ServiceFailure::unavailable, 0};
 }
-auto service_lost(ServiceLoss loss) -> void {
-    runtime_disk_ready = false;
+auto service_lost(ServiceLoss loss, U64 generation) -> void {
     Serial::text("AURORA_FILE_SERVICE_LOST:");
-    field("generation", endpoint.generation);
+    field("generation", generation);
     field("transaction", endpoint.transaction);
     switch (loss.kind) {
     case ServiceFailure::invalid_reply:
@@ -1929,6 +1939,15 @@ auto service_lost(ServiceLoss loss) -> void {
         *static_cast<volatile std::byte *>(&byte) = std::byte{0};
 }
 
+// A cleanup observation is admitted only at the actual resource boundary. The
+// copied generation is not sufficient to manufacture this acknowledgement.
+auto acknowledge_service_cleanup(U64 generation) -> void {
+    if (residents[0].space || residents[1].space || snapshot || running.space || endpoint.generation ||
+        endpoint.caller || endpoint.waiting || endpoint.replied || endpoint.delivery || endpoint.completion ||
+        !audit_residents() || !service_root.cleaned(generation))
+        fail("file service cleanup acknowledgement");
+}
+
 auto discard_snapshot() -> void {
     if (snapshot) {
         if (!snapshot->release())
@@ -1940,6 +1959,15 @@ auto abandon_service(ServiceFailure failure = ServiceFailure::observe) -> void {
     // Capture the actual server result before forced client/server retirement
     // replaces the shared outcome. The cause is diagnostic, never authority.
     const auto loss = observe_service_loss(failure);
+    const auto phase = service_root.phase();
+    const U64 generation = phase == aurora::service::Phase::absent ? 0 : service_root.generation();
+    if (generation) {
+        if ((endpoint.generation && endpoint.generation != generation) ||
+            !service_root.lose(generation, static_cast<aurora::service::Reason>(loss.kind), loss.detail))
+            fail("file service loss observation");
+    } else if (endpoint.generation || residents[0].space || residents[1].space || snapshot) {
+        fail("absent file service physical owner");
+    }
     // No process may see a late reply or a writable staging alias after loss.
     loading_image = false;
     endpoint.caller.reset();
@@ -1952,7 +1980,11 @@ auto abandon_service(ServiceFailure failure = ServiceFailure::observe) -> void {
         outcome.unavailable = true;
         static_cast<void>(retire_resident(slot));
     }
-    service_lost(loss);
+    const auto frozen =
+        generation ? ServiceLoss{static_cast<ServiceFailure>(service_root.reason()), service_root.detail()} : loss;
+    service_lost(frozen, generation);
+    if (generation)
+        acknowledge_service_cleanup(generation);
 }
 
 #ifdef AURORA_UEFI_NVME
@@ -1999,15 +2031,17 @@ auto file_start_refused(bool mounted_attempt) -> bool {
 #endif
     return false;
 }
-auto start_file_service(std::span<const std::byte> volume) -> bool {
+auto start_file_service(std::span<const std::byte> volume, U64 generation) -> bool {
     constexpr std::string_view arguments{"file-service\0", 13};
-    if (residents[0].space || residents[1].space || snapshot || next_service_generation == ~U64{0} ||
+    if (residents[0].space || residents[1].space || snapshot || !generation ||
+        service_root.phase() != aurora::service::Phase::starting || service_root.generation() != generation ||
         next_run >= 0xffffffffULL - frames::first_owner)
         return false;
     // The attempt is consumed before image lookup or admission. A failed or
     // retired owner can restart RAM service, never reacquire this writer.
     const bool mounted_attempt = runtime_storage.claim_mounted();
     bool mounted_entry = false;
+    bool disk_ready = false;
 #ifdef AURORA_UEFI_NVME
     mounted_entry = mounted_attempt && aurora::uefi::nvme_mounted_sector_count();
 #else
@@ -2017,8 +2051,7 @@ auto start_file_service(std::span<const std::byte> volume) -> bool {
         mounted_entry ? std::string_view{"bin/file-service-mounted", 24} : std::string_view{"bin/file-service", 16};
     reset_loader(128);
     loading_image = true;
-    endpoint.generation = ++next_service_generation;
-    runtime_disk_ready = false;
+    endpoint.generation = generation;
     endpoint.window = endpoint.transaction = endpoint.source = endpoint.count = 0;
     endpoint.request_operation = endpoint.invalid_reply_operation = 0;
     endpoint.waiting = endpoint.replied = endpoint.delivery = endpoint.completion = endpoint.caller_cancelled = false;
@@ -2073,16 +2106,16 @@ auto start_file_service(std::span<const std::byte> volume) -> bool {
             return file_start_refused(mounted_attempt);
         }
         endpoint.replied = false;
-        runtime_disk_ready = status == 0;
+        disk_ready = status == 0;
 #ifdef AURORA_UEFI_NVME
         if (mounted_entry) {
             if (server.mounted_generation != mounted_generation || server.service != mounted_service ||
                 endpoint.generation != mounted_service || endpoint.source ||
                 residents[0].space->owner() != mounted_owner || residents[0].space->root() != mounted_root)
                 fail("mounted startup authority");
-            if (!runtime_disk_ready || !aurora::uefi::nvme_mounted_arm()) {
+            if (!disk_ready || !aurora::uefi::nvme_mounted_arm()) {
                 aurora::uefi::nvme_mounted_abandon();
-                runtime_disk_ready = false;
+                disk_ready = false;
             } else {
                 Serial::text("AURORA_MOUNTED_ARMED:");
                 field("generation", mounted_generation);
@@ -2094,13 +2127,31 @@ auto start_file_service(std::span<const std::byte> volume) -> bool {
             fail("mounted runtime budget profile");
     }
     loading_image = false;
+    if (!service_root.mark_ready(generation, disk_ready))
+        fail("file service readiness");
     Serial::text("AURORA_FILE_SERVICE_READY:");
     field("generation", endpoint.generation);
     if (runtime_storage.block())
-        Serial::text(runtime_disk_ready ? std::string_view{" disk=ready", 11}
-                                        : std::string_view{" disk=unavailable", 17});
+        Serial::text(disk_ready ? std::string_view{" disk=ready", 11} : std::string_view{" disk=unavailable", 17});
     Serial::text("\r\n");
     return true;
+}
+
+// Source alone selects reuse/start/refusal. Native checks only the physical
+// binding and executes the selected one-shot startup, without a retry loop.
+auto ensure_file_service(std::span<const std::byte> volume, U64 expected = 0, bool permit_start = true) -> bool {
+    const auto action = service_root.admit(expected, permit_start);
+    if (action == aurora::service::Action::refused)
+        return false;
+    const U64 generation = service_root.generation();
+    if (action == aurora::service::Action::reuse) {
+        if (!residents[0].space || endpoint.generation != generation || residents[0].state.service != generation)
+            fail("file service retained binding");
+        return true;
+    }
+    if (action != aurora::service::Action::start)
+        fail("file service admission action");
+    return start_file_service(volume, generation);
 }
 
 #ifndef AURORA_PRODUCTION
@@ -2109,10 +2160,12 @@ auto start_file_service(std::span<const std::byte> volume) -> bool {
 // only client ordinals stay stable. The admitted list has at most64 entries,
 // so companion owners64+ordinal cannot alias any client owner in this boot.
 auto start_companion(std::span<const std::byte> volume, U64 client) -> bool {
-    if (client == 0 || client > 64 || residents[0].space || residents[1].space || next_service_generation == ~U64{0})
+    if (client == 0 || client > 64 || residents[0].space || residents[1].space)
+        return false;
+    if (service_root.admit(0, true) != aurora::service::Action::start)
         return false;
     endpoint = {};
-    endpoint.generation = ++next_service_generation;
+    endpoint.generation = service_root.generation();
     reset_loader(128);
     loading_image = true;
     constexpr std::string_view path = "bin/file-service", arguments{"file-service\0", 13};
@@ -2137,6 +2190,8 @@ auto start_companion(std::span<const std::byte> volume, U64 client) -> bool {
     if (!control_request(3))
         return false;
     loading_image = false;
+    if (!service_root.mark_ready(endpoint.generation, false))
+        fail("companion readiness");
     return true;
 }
 
@@ -2291,6 +2346,26 @@ auto run_file_client() -> bool {
     endpoint.completion = endpoint.replied = false;
     return true;
 }
+auto begin_service_shutdown() -> void {
+    if (!residents[0].space || residents[1].space || snapshot || !service_root.begin_shutdown(endpoint.generation))
+        fail("file service shutdown intent");
+}
+auto finish_service_shutdown() -> void {
+    const U64 generation = endpoint.generation;
+    if (!generation || residents[0].space || residents[1].space || !outcome.exited || outcome.status ||
+        outcome.terminal_service != generation || running.service != generation ||
+        outcome.terminal_run != running.run || !service_root.normal_exit(generation))
+        fail("file service normal terminal observation");
+    endpoint.generation = 0;
+    endpoint.waiting = endpoint.replied = endpoint.delivery = endpoint.completion = false;
+    endpoint.caller.reset();
+    acknowledge_service_cleanup(generation);
+}
+auto close_service_operation() -> void {
+    if (residents[1].space || snapshot || endpoint.caller || endpoint.delivery || endpoint.completion ||
+        !audit_residents() || !service_root.close_operation())
+        fail("file service operation cleanup");
+}
 auto run_independent(std::span<const std::byte> view, std::span<const std::byte> runs) -> U64 {
     U64 count = 0;
     for (;;) {
@@ -2300,6 +2375,8 @@ auto run_independent(std::span<const std::byte> view, std::span<const std::byte>
         if (!entry->found)
             break;
         ++count;
+        if (!service_root.open_operation())
+            fail("companion operation admission");
         if (!start_companion(view, count) || !control_request(4, count)) {
             abandon_service();
             fail("companion startup");
@@ -2312,12 +2389,15 @@ auto run_independent(std::span<const std::byte> view, std::span<const std::byte>
             abandon_service();
             fail("companion cleanup/export");
         }
+        begin_service_shutdown();
         message_header(6, 0, 0, 0);
         if (exchange_request(0) || residents[0].space || !outcome.exited || outcome.status) {
             abandon_service();
             fail("companion shutdown");
         }
+        finish_service_shutdown();
         endpoint = {};
+        close_service_operation();
         if (!audit_residents())
             fail("companion final audit");
     }
@@ -2335,7 +2415,7 @@ auto run_external(std::span<const std::byte> view,
                   bool recover = false,
                   XfsReadonlyProfile profile = XfsReadonlyProfile::fresh_format,
                   bool mounted = false) -> U64 {
-    if (residents[0].space || residents[1].space || next_service_generation == ~U64{0})
+    if (residents[0].space || residents[1].space || !service_root.open_operation())
         fail("file service restart state");
     const auto service = process::run(runs, first);
     if (!service || !service->found)
@@ -2343,11 +2423,13 @@ auto run_external(std::span<const std::byte> view,
     if (mounted) {
         if (next_run < first)
             next_run = first;
-        if (!runtime_storage.select(true, 3) || !start_file_service(view))
+        if (!runtime_storage.select(true, 3) || !ensure_file_service(view))
             fail("mounted file service startup");
     } else {
+        if (service_root.admit(0, true) != aurora::service::Action::start)
+            fail("file service incarnation admission");
         endpoint = {};
-        endpoint.generation = ++next_service_generation;
+        endpoint.generation = service_root.generation();
         if (!load_one(view, runs, *service, first + 1, 0, true, true, endpoint.generation, disk))
             fail("file service load");
         while (residents[0].space && !endpoint.waiting)
@@ -2362,6 +2444,8 @@ auto run_external(std::span<const std::byte> view,
         }
         if (!control_request(3))
             fail("file service volume admission");
+        if (!service_root.mark_ready(endpoint.generation, false))
+            fail("file service fixture readiness");
         Serial::text("AURORA_FILE_SERVICE_READY:");
         field("generation", endpoint.generation);
         field("owner", residents[0].space->owner());
@@ -2381,31 +2465,41 @@ auto run_external(std::span<const std::byte> view,
             continue;
         if (!control_request(4, count)) {
             abandon_service();
-            if (recover)
+            if (recover) {
+                close_service_operation();
                 return count;
+            }
             fail("file service client admission");
         }
         if (!run_file_client()) {
             abandon_service();
-            if (recover)
+            if (recover) {
+                close_service_operation();
                 return count;
+            }
             fail("external file service terminated");
         }
         if (!control_request(5, count)) {
             abandon_service();
-            if (recover)
+            if (recover) {
+                close_service_operation();
                 return count;
+            }
             fail("file service client cleanup");
         }
     }
+    begin_service_shutdown();
     message_header(6, 0, 0, 0);
     if (exchange_request(0) || residents[0].space || !outcome.exited || outcome.status) {
         abandon_service();
-        if (recover)
+        if (recover) {
+            close_service_operation();
             return count;
+        }
         fail("file service shutdown");
     }
-    endpoint.generation = 0;
+    finish_service_shutdown();
+    close_service_operation();
     if (!audit_residents())
         fail("file service final audit");
     Serial::text("AURORA_FILE_SERVICE_OK:");
@@ -2631,6 +2725,8 @@ auto initialize_process(U64 arena, const Bytes &h, U64 selected, bool timer_read
     field("pages", volume_pages);
     Serial::text("\r\n");
     runtime_plan = *plan;
+    if (selected)
+        service_root.create();
     return view;
 }
 } // namespace
@@ -2799,7 +2895,7 @@ public:
         require(!prepared_ && !volume_.empty() && !client_ && !residents[1].space);
         // Consumed admission effect, not a command phase that drives execution.
         prepared_ = true;
-        if (!residents[0].space && !start_file_service(volume_)) {
+        if (!ensure_file_service(volume_)) {
             abandon_service();
             return {Prepared::service_lost, Status::unavailable, 0};
         }
@@ -2939,13 +3035,17 @@ auto enter_runtime(U64 arena, const Bytes &handoff) -> bool {
     }
     install_architecture(arena);
     prepare_recovery(space.volume(handoff.get(Handoff::volume_bytes_word)));
+    if (!service_root.open_operation())
+        fail("file service operation admission");
     return true;
 }
 auto leave_runtime(const Bytes &handoff) -> void {
     if (running.space || residents[1].space || snapshot || endpoint.caller || endpoint.delivery ||
         endpoint.completion || Timer::read(0x390) || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false) ||
-        !audit_residents() || !space.verify(table, ranges, handoff.get(96)) || !space.detach())
+        !audit_residents() || !space.verify(table, ranges, handoff.get(96)))
         fail("process runtime return audit");
+    if (!service_root.close_operation() || !space.detach())
+        fail("process runtime lifecycle return");
     runtime_detached = true;
 }
 } // namespace
@@ -2979,9 +3079,9 @@ auto aurora::uefi::run_program(U64 arena,
 auto aurora::uefi::prepare_programs(U64 arena, const Bytes &handoff) -> bool {
     bool ready = false;
     if (handoff.get(Handoff::composition_word) == 4 && enter_runtime(arena, handoff)) {
-        if (!residents[0].space && !start_file_service(space.volume(handoff.get(Handoff::volume_bytes_word))))
+        if (!ensure_file_service(space.volume(handoff.get(Handoff::volume_bytes_word))))
             abandon_service();
-        ready = residents[0].space && runtime_disk_ready;
+        ready = service_root.disk_ready(endpoint.generation);
         leave_runtime(handoff);
     }
     Serial::text(ready ? std::string_view{"AURORA_PROCESS_DISK: ready"}
@@ -3008,16 +3108,18 @@ auto aurora::uefi::console_request(U64 arena,
     if (!enter_runtime(arena, handoff))
         return {};
     ConsoleResult result;
-    if (expected_generation && expected_generation != endpoint.generation) {
-        result = {endpoint.generation ? ConsoleStatus::conflict : ConsoleStatus::unavailable, endpoint.generation, 0};
+    if (!ensure_file_service(
+            space.volume(handoff.get(Handoff::volume_bytes_word)), expected_generation, expected_generation == 0)) {
+        if (expected_generation) {
+            // The source refused this pinned incarnation; the endpoint ordinal
+            // is only the current physical binding reported to the consumer.
+            result = {
+                endpoint.generation ? ConsoleStatus::conflict : ConsoleStatus::unavailable, endpoint.generation, 0};
+        } else {
+            abandon_service();
+        }
         leave_runtime(handoff);
         return result;
-    }
-    if (!residents[0].space &&
-        (expected_generation || !start_file_service(space.volume(handoff.get(Handoff::volume_bytes_word))))) {
-        abandon_service();
-        leave_runtime(handoff);
-        return {};
     }
     reset_loader(128);
     loading_image = true;
@@ -3065,12 +3167,11 @@ auto aurora::uefi::reject_program_service(U64 arena, const Bytes &handoff, U64 e
     if (!enter_runtime(arena, handoff))
         return ConsoleStatus::unavailable;
     ConsoleStatus result = ConsoleStatus::unavailable;
-    if (residents[0].space && endpoint.generation) {
+    if (ensure_file_service(space.volume(handoff.get(Handoff::volume_bytes_word)), expected_generation, false)) {
+        abandon_service(ServiceFailure::consumer_rejected);
+        result = ConsoleStatus::success;
+    } else if (endpoint.generation) {
         result = ConsoleStatus::conflict;
-        if (endpoint.generation == expected_generation) {
-            abandon_service(ServiceFailure::consumer_rejected);
-            result = ConsoleStatus::success;
-        }
     }
     leave_runtime(handoff);
     return result;

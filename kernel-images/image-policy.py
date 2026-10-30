@@ -46,7 +46,8 @@ RULES = [
     {
         "profiles": ["*"],
         "imports": [],
-        "import_free": ["budget-root"],
+        "import_free": ["budget-root", "service-root"],
+        "forbidden": ["__au_runtime_service_saturation_create", "*process_service_saturation_create*"],
     },
     {
         "profiles": [
@@ -172,6 +173,32 @@ RULES = [
             "__au_runtime_budget_quantum",
             "__au_runtime_budget_used",
         ],
+    },
+    # Retained incarnation admission must be reached by real process paths.
+    {
+        "profiles": ["uefi/process-fixture", "uefi/production"],
+        "reachable": [
+            "__au_runtime_service_create",
+            "__au_runtime_service_open_operation",
+            "__au_runtime_service_close_operation",
+            "__au_runtime_service_admit",
+            "__au_runtime_service_mark_ready",
+            "__au_runtime_service_lose",
+            "__au_runtime_service_cleaned",
+            "__au_runtime_service_generation",
+            "__au_runtime_service_phase",
+            "__au_runtime_service_reason",
+            "__au_runtime_service_detail",
+        ],
+    },
+    {
+        "profiles": ["uefi/production"],
+        "reachable": ["__au_runtime_service_disk_ready"],
+    },
+    # Only boot-selected fixtures currently request orderly owner shutdown.
+    {
+        "profiles": ["uefi/process-fixture"],
+        "reachable": ["__au_runtime_service_begin_shutdown", "__au_runtime_service_normal_exit"],
     },
     # The process image's frame, map, volume, export, program, trap and run decisions stay in Aurora.
     {
