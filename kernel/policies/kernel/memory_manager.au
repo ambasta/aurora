@@ -827,21 +827,34 @@ export namespace kernel {
             builtin::require(authority.scrub_unpublished_frame(identity));
             return identity;
         }
-        auto install_mapping(u64 identity) -> bool {
+        auto staged_index(u64 identity) const -> u64 {
+            const u64 count = staged_count;
+            if (count == 0u64) {
+                return count;
+            }
+            const u64 base = staged_word(0u64, 0u64);
+            const u64 stride = layout_stage_stride();
+            const u64 capacity = layout_stage_count();
+            const builtin::span<const u64> staged = borrow_words(reservation_words);
             u64 index = 0u64;
-            while (index < staged_count && reservation_words.at(staged_word(index, 0u64)) != identity) {
+            while (index < count) {
+                builtin::require(index < capacity);
+                if (staged.at(i64(base + index * stride)) == identity) {
+                    return index;
+                }
                 index = index + 1u64;
             }
+            return count;
+        }
+        auto install_mapping(u64 identity) -> bool {
+            const u64 index = staged_index(identity);
             builtin::require(index < staged_count && mapping_words.at(identity & 4294967295u64) == 0u64);
             builtin::require(mapping_words.set(identity & 4294967295u64, reservation_words.at(staged_word(index,
                 1u64))));
             return true;
         }
         auto unstage(u64 identity) -> bool {
-            u64 index = 0u64;
-            while (index < staged_count && reservation_words.at(staged_word(index, 0u64)) != identity) {
-                index = index + 1u64;
-            }
+            const u64 index = staged_index(identity);
             builtin::require(index < staged_count);
             // Staging is keyed by ticket or mapping, never insertion order.
             const u64 last = staged_count - 1u64;
@@ -938,10 +951,20 @@ export namespace kernel {
             return ticket(index);
         }
         auto staged_mapping(u64 mapping) const -> u64 {
+            const u64 count = staged_count;
+            if (count == 0u64) {
+                return 18446744073709551615u64;
+            }
+            const u64 base = staged_word(0u64, 0u64);
+            const u64 stride = layout_stage_stride();
+            const u64 capacity = layout_stage_count();
+            const builtin::span<const u64> staged = borrow_words(reservation_words);
             u64 index = 0u64;
-            while (index < staged_count) {
-                if (reservation_words.at(staged_word(index, 1u64)) == mapping) {
-                    return reservation_words.at(staged_word(index, 0u64));
+            while (index < count) {
+                builtin::require(index < capacity);
+                const u64 at = base + index * stride;
+                if (staged.at(i64(at + 1u64)) == mapping) {
+                    return staged.at(i64(at));
                 }
                 index = index + 1u64;
             }
