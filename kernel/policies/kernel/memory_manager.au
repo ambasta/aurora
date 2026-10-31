@@ -843,12 +843,13 @@ export namespace kernel {
                 index = index + 1u64;
             }
             builtin::require(index < staged_count);
-            while (index + 1u64 < staged_count) {
-                builtin::require(reservation_words.set(staged_word(index, 0u64), reservation_words.at(staged_word(index
-                    + 1u64, 0u64))));
-                builtin::require(reservation_words.set(staged_word(index, 1u64), reservation_words.at(staged_word(index
-                    + 1u64, 1u64))));
-                index = index + 1u64;
+            // Staging is keyed by ticket or mapping, never insertion order.
+            const u64 last = staged_count - 1u64;
+            if (index != last) {
+                builtin::require(reservation_words.set(staged_word(index, 0u64), reservation_words.at(staged_word(last,
+                    0u64))));
+                builtin::require(reservation_words.set(staged_word(index, 1u64), reservation_words.at(staged_word(last,
+                    1u64))));
             }
             staged_count = staged_count - 1u64;
             builtin::require(reservation_words.set(staged_word(staged_count, 0u64), 0u64));
@@ -1376,25 +1377,50 @@ export namespace kernel {
             const builtin::span<const u64> allocations = borrow_words(words);
             const builtin::span<const u64> mappings = borrow_words(mapping_words);
             const builtin::span<const u64> metadata = borrow_words(reservation_words);
+            const u64 extent = u64(allocations.size());
+            const u64 allocated = frame_allocated();
             const u64 self = identity & 4294967295u64;
-            if (self >= u64(allocations.size()) || (allocations.at(i64(self)) & 15u64) != frame_allocated()
-                || allocations.at(i64(self)) >> 32 != owner || ((allocations.at(i64(self)) >> 4) & generation_limit())
-                != identity >> 32 || (mappings.at(i64(self)) & 18446744073709535247u64) != (prefix | (8u64 + level))) {
+            if (self >= extent) {
                 return refused;
             }
+            const u64 self_allocation = allocations.at(i64(self));
+            if ((self_allocation & 15u64) != allocated || self_allocation >> 32 != owner || ((self_allocation >> 4)
+                & generation_limit()) != identity >> 32 || (mappings.at(i64(self)) & 18446744073709535247u64) != (prefix
+                | (8u64 + level))) {
+                return refused;
+            }
+            // The level is invariant across this complete table observation.
+            const i64 shift = level_shift(level);
+            const u64 heap_first = memory_base();
+            const u64 heap_end = memory_limit();
+            const u64 writable = leaf_write();
+            const u64 records = get_count(slot);
+            const u64 regions = get_region_count(slot);
+            // These private checked bases and strides stay stable while all
+            // four banks are borrowed. Each accessed index remains checked.
+            const u64 record_base = record_word(slot, 0u64);
+            const u64 record_stride = layout_record_stride();
+            const u64 record_capacity = layout_record_count();
+            const u64 region_base = region_word(slot, 0u64);
+            const u64 region_stride = layout_region_stride();
+            const u64 region_capacity = layout_region_count();
+            const u64 shared_base = shared_word(0u64);
             u64 present = 0u64;
             u64 position = 0u64;
             while (position < 512u64) {
                 const u64 value = observed.at(i64(position)) & 18446744073709551519u64;
-                const u64 address = prefix | (position << level_shift(level));
                 if (level == 4u64 && position >= 256u64) {
-                    if (value != (metadata.at(i64(shared_word(position - 256u64))) & 18446744073709551519u64)) {
+                    if (value != (metadata.at(i64(shared_base + position - 256u64)) & 18446744073709551519u64)) {
                         return refused;
                     }
                 } else {
                     if (value != 0u64) {
+                        const u64 address = prefix | (position << shift);
                         present = present + 1u64;
-                        const u64 shared = shared_index(address);
+                        u64 shared = 0u64;
+                        if (level == 2u64) {
+                            shared = shared_index(address);
+                        }
                         if (level == 2u64 && shared != 0u64) {
                             u64 expected = shared_entry0;
                             if (shared == 2u64) {
@@ -1408,8 +1434,11 @@ export namespace kernel {
                             // observe_table normalizes only physical inventory
                             // addresses to frame indices; flags remain exact.
                             const u64 index = (value & 4503599627366400u64) >> 12;
-                            if (index >= u64(allocations.size()) || (allocations.at(i64(index)) & 15u64)
-                                != frame_allocated() || allocations.at(i64(index)) >> 32 != owner) {
+                            if (index >= extent) {
+                                return refused;
+                            }
+                            const u64 allocation = allocations.at(i64(index));
+                            if ((allocation & 15u64) != allocated || allocation >> 32 != owner) {
                                 return refused;
                             }
                             const u64 mapping = mappings.at(i64(index));
@@ -1420,29 +1449,31 @@ export namespace kernel {
                                     return refused;
                                 }
                                 result.tables = result.tables + 1u64;
-                                if (heap_address(address)) {
+                                if (address >= heap_first && address < heap_end) {
                                     result.heap_tables = result.heap_tables + 1u64;
                                 }
                             } else {
                                 if (mapping != (address | 1u64)) {
                                     return refused;
                                 }
-                                if (heap_address(address)) {
+                                if (address >= heap_first && address < heap_end) {
                                     u64 low = 0u64;
-                                    u64 high = get_count(slot);
+                                    u64 high = records;
                                     while (low < high) {
                                         const u64 middle = low + (high - low) / 2u64;
-                                        const u64 first = metadata.at(i64(record_word(slot, middle)));
+                                        builtin::require(middle < record_capacity);
+                                        const u64 first = metadata.at(i64(record_base + middle * record_stride));
                                         if (first <= address) {
                                             low = middle + 1u64;
                                         } else {
                                             high = middle;
                                         }
                                     }
-                                    if (low == 0u64 || flags != leaf_write()) {
+                                    if (low == 0u64 || flags != writable) {
                                         return refused;
                                     }
-                                    const u64 record = record_word(slot, low - 1u64);
+                                    builtin::require(low - 1u64 < record_capacity);
+                                    const u64 record = record_base + (low - 1u64) * record_stride;
                                     if (address - metadata.at(i64(record)) >= metadata.at(i64(record + 2u64))
                                         * 4096u64) {
                                         return refused;
@@ -1451,8 +1482,9 @@ export namespace kernel {
                                 } else {
                                     u64 region = 0u64;
                                     bool found = false;
-                                    while (region < get_region_count(slot) && !found) {
-                                        const u64 record = region_word(slot, region);
+                                    while (region < regions && !found) {
+                                        builtin::require(region < region_capacity);
+                                        const u64 record = region_base + region * region_stride;
                                         const u64 first = metadata.at(i64(record + 1u64));
                                         const u64 pages = metadata.at(i64(record + 2u64));
                                         if (address >= first && address - first < pages * 4096u64) {

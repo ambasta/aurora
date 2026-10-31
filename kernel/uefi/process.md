@@ -218,6 +218,13 @@ ancillary pages and any additional metadata page-table pages from rounding are
 charged by `KernelSpace::plan`; they add no resident slots or reservation capacity.
 Native writable aliases are revoked at handoff.
 
+Unpublished staging is an unordered set of ticket/mapping pairs; removing a pair
+moves the last pair into its place. Publication still selects the exact ticket or
+mapping, and rollback releases every remaining ticket through its allocation
+generation. A complete table audit caches only operation-local scalar bounds and
+private bank offsets while its readonly loans live; every accessed index and PTE
+classification remains checked.
+
 A private `MappingAuthority` permits named synchronous physical effects. Native
 admission authenticates the manager bank set, root and allocation generations,
 slot epoch, table role, exact expected PTE and current CR3 before opening the
