@@ -1140,6 +1140,8 @@ export namespace kernel {
             set_region(slot, get_region_count(slot), region);
             set_region_count(slot, get_region_count(slot) + 1u64);
             u64 page = region.first;
+            u64 leaf = 18446744073709551615u64;
+            u64 leaf_prefix = 0u64;
             while (page < end) {
                 const u64 made = stage_frame(get_owner(slot), page | 1u64);
                 builtin::require(made != 18446744073709551615u64);
@@ -1155,7 +1157,12 @@ export namespace kernel {
                     builtin::require(authority.copy_source_frame(made, first - page, region.offset + first
                         - region.vaddr, last - first));
                 }
-                const u64 leaf = table_for(slot, page, 1u64, true);
+                // This operation only adds mappings; no ancestor can retire.
+                // Every publication still authenticates the copied ticket.
+                if (leaf == 18446744073709551615u64 || leaf_prefix != (page >> 21)) {
+                    leaf = table_for(slot, page, 1u64, true);
+                    leaf_prefix = page >> 21;
+                }
                 publish(leaf, (page >> 12) & 511u64, made, region.flags);
                 set_leaves(slot, get_leaves(slot) + 1u64);
                 page = page + 4096u64;

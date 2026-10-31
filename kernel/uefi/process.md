@@ -225,6 +225,12 @@ generation. A complete table audit caches only operation-local scalar bounds and
 private bank offsets while its readonly loans live; every accessed index and PTE
 classification remains checked.
 
+While loading one contiguous region, source policy retains a copied leaf-table
+ticket only until its 2 MiB prefix changes or the operation returns. No ancestor
+can be removed during that operation. Each leaf publication still authenticates
+its table and child identities and exact empty entry; this is not a repeated
+native walk from the root.
+
 A private `MappingAuthority` permits named synchronous physical effects. Native
 admission authenticates the manager bank set, root and allocation generations,
 slot epoch, table role, exact expected PTE and current CR3 before opening the

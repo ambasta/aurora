@@ -154,3 +154,40 @@ case staged-rollback-generation-boundary
   unmap slot=0 outcome=0 value=0
   retire slot=0 released=5
   end ok=1
+case load-leaf-boundary
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  verify slot=0 ok=1
+  audit ok=1
+  retire slot=0 released=520
+  audit ok=1
+  end ok=1
+case load-directory-boundary
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  verify slot=0 ok=1
+  audit ok=1
+  retire slot=0 released=8
+  audit ok=1
+  end ok=1
+case load-root-boundary
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  verify slot=0 ok=1
+  audit ok=1
+  retire slot=0 released=10
+  audit ok=1
+  end ok=1
+case load-regions-share-leaf
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  verify slot=0 ok=1
+  audit ok=1
+  retire slot=0 released=8
+  audit ok=1
+  end ok=1
