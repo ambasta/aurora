@@ -36,7 +36,10 @@ qualification and compile-time measurements remain revision-specific.
 
 Numeric scalar register immediates select compact, flag-preserving MOV forms in
 both text and direct-object output, without changing scalar bits, stack facts,
-symbol-address materialization or relocation policy. Qualification remains revision-specific.
+symbol-address materialization or relocation policy. Ordinary const methods with
+no arguments or borrowed roots and an exact unsigned u32-range literal-return
+body may emit that literal after full verification; receiver evaluation, callee
+retention and actual emitted-call stack facts remain intact. Qualification remains revision-specific.
 Contiguous canonical u8 receiver arrays use compact exact zero initialization
 with register/arithmetic-flag preservation and emitted transient-stack facts; array bytes,
 neighboring fields and padding semantics are unchanged.

@@ -1063,6 +1063,15 @@ span record remains 56 bytes. Packed methods use R10 for receiver and R11 for
 arguments; class/span results additionally use RAX for their hidden destination.
 These private entry points are never exported as scalar C-callable boundaries.
 
+After full IR and call-graph verification, direct calls to ordinary const methods
+with no value parameters or borrowed roots may emit a literal load instead. The
+entire body must be an unsigned `u64` constant followed by return, with value at
+most `UINT32_MAX`; mutable/consuming methods, constructors and other call forms
+retain their calls. Receiver/subobject evaluation and loan checks stay intact.
+The callee, ABI and literal facts remain retained; stack facts record the actual
+emitted calls. This is a bounded emission optimization, not general inlining or
+a proof of policy arithmetic.
+
 ### Fixed memory-manager bank layout facts
 
 ABI sidecars include `literal_results` only for retained zero-argument `u64`

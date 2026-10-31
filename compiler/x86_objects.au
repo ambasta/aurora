@@ -1241,6 +1241,34 @@ export namespace compiler_x86 {
         }
         return first.id();
     }
+    // This is a post-verification emission choice, not an IR rewrite. Ordinary
+    // const methods have no native entry/exit hooks; resource primitives and
+    // borrowed-root/service calls use other instruction forms and stay calls.
+    auto inline_literal_operand(const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& store, i64 target) -> i64 {
+        if (target < 0 || target >= metadata.callable_count() || target >= store.body_count() || !has_receiver(metadata,
+            target)) {
+            return -1;
+        }
+        const compiler_ir_metadata::CallableRow callable = metadata.callable_at(target);
+        const compiler_ir_metadata::ReceiverShape receiver = callable.first_receiver();
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::flag_masks();
+        // Reject every flag except ordinary receiver identity and visibility:
+        // constructors, consuming/mutable methods and span summaries do not fold.
+        if (callable.attributes() != masks.callable_receiver() || (receiver.attributes() & ~masks.receiver_public())
+            != 0u64) {
+            return -1;
+        }
+        const i64 operand = literal_u64_result_operand(metadata, store, target);
+        if (operand < 0) {
+            return -1;
+        }
+        const compiler_ir_instructions::RawOperandRow literal = store.operand_at(operand);
+        if (literal.unsigned_value() > 4294967295u64) {
+            return -1;
+        }
+        return operand;
+    }
     auto emit_object_calls(EmitWorkspace& workspace, ObjectWorkspace& object,
         const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
         i64 instruction) -> bool {
@@ -1358,8 +1386,10 @@ export namespace compiler_x86 {
             }
         }
         i64 getter = -1;
+        i64 literal = -1;
         if (form == 38 && count == 0 && !aggregate && root_bytes == 0 && result_kind != 5 && !span_kind(result_kind)) {
             getter = inline_getter_load(metadata, store, target);
+            literal = inline_literal_operand(metadata, store, target);
         }
         if (getter > 0) {
             // The receiver is already in %r10, exactly where the getter reloads it.
@@ -1369,7 +1399,14 @@ export namespace compiler_x86 {
             const i64 address = workspace.pack_address(2, offset);
             load_value(workspace, object, metadata, type, address);
         } else {
-            call_target(workspace, object, metadata, target);
+            if (literal >= 0) {
+                // Receiver/subobject setup above and all verified loan/evaluation
+                // instructions remain. Record no call edge for this literal load.
+                const compiler_ir_instructions::RawOperandRow value = store.operand_at(literal);
+                emit_mov_uimm(workspace, object, value.unsigned_value(), Register::rax);
+            } else {
+                call_target(workspace, object, metadata, target);
+            }
         }
         if (root_bytes != 0) {
             emit_release_stack(workspace, object, root_bytes);
