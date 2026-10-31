@@ -140,6 +140,15 @@ export namespace compiler_ir_verification {
         const compiler_ir_metadata::RawTypeRow type = m.type_at(slot.type());
         return named_class(m, type);
     }
+    auto word_span(const compiler_ir_metadata::MetadataStore& m, i64 callable, i64 base) -> bool {
+        const i64 annotation = exact_slot(m, callable, 27, base);
+        if (annotation < 0) {
+            return false;
+        }
+        const compiler_ir_metadata::SlotRow slot = m.slot_at(annotation);
+        const compiler_ir_metadata::RawTypeRow type = m.type_at(slot.type());
+        return compiler_ir_metadata::plain_type(type, 28);
+    }
     auto slot_class(const compiler_ir_metadata::MetadataStore& m, i64 slot) -> i64 {
         const compiler_ir_metadata::SlotRow row = m.slot_at(slot);
         const compiler_ir_metadata::RawTypeRow type = m.type_at(row.type());
@@ -412,113 +421,130 @@ export namespace compiler_ir_verification {
         const SpanPayload capability = row.span();
         const TokenRow token = row.token();
         const ControlRow control = w.control();
-        if (capability.origin_kind() == SpanOrigin::literal) {
-            if (!require(w, token.kind() == TokenKind::none && capability.owned_field() == -1,
-                first_error(VerificationErrorFirst::literal_span_cannot_carry_another_origin_kind))) {
+        if (capability.origin_kind() == SpanOrigin::words) {
+            const i64 callable = w.callable();
+            const FactRow root = w.fact_find(FactKind::owned_object, capability.origin(), -1);
+            const FactRow field = w.fact_find(FactKind::resident_field, capability.origin(), capability.owned_field());
+            if (!require(w, capability.origin() == 0 && capability.owned_field() >= 0 && present(root)
+                && root.disposition() == ByteDisposition::live && present(field) && field.disposition()
+                == ByteDisposition::live && field.site() == capability.origin_site() && token.kind() == TokenKind::none
+                && word_span(m, callable, base), first_error(VerificationErrorFirst::span_owner_token_is_not_active))
+                || !loan_access(w, s, capability.origin(), read_mode(mode))) {
                 return false;
             }
-            const compiler_ir_instructions::RawInstructionRow origin = s.instruction_at(capability.origin_site());
-            if (!require(w, origin.form() == 51 && compiler_ir_instructions::call_value(s, capability.origin_site(), 1)
-                == capability.origin() && compiler_ir_instructions::call_count(s, capability.origin_site(), 0) <= 4096,
-                first_error(VerificationErrorFirst::literal_span_must_retain_its_exact_immutable_origin))) {
-                return false;
-            }
-        } else {
-            if (capability.array_field() >= 0) {
-                if (!require(w, capability.origin_kind() != SpanOrigin::parameter && token.kind() == TokenKind::none
-                    && capability.owned_field() == -1,
-                    first_error(VerificationErrorFirst::fixed_array_span_cannot_carry_another_origin_kind))
-                    || !loan_access(w, s, capability.origin(), read_mode(mode))) {
+        }
+        if (capability.origin_kind() != SpanOrigin::words) {
+            if (capability.origin_kind() == SpanOrigin::literal) {
+                if (!require(w, token.kind() == TokenKind::none && capability.owned_field() == -1,
+                    first_error(VerificationErrorFirst::literal_span_cannot_carry_another_origin_kind))) {
                     return false;
                 }
-                if (capability.origin() == 0) {
-                    const bool condition_310 = control.has_receiver() && !receiver_constructor(m, w.callable())
-                        && capability.origin_site() == 0;
-                    if (!require(w, condition_310,
-                        first_error(VerificationErrorFirst::fixed_array_span_receiver_lifetime_is_not_active))) {
-                        return false;
-                    }
-                } else {
-                    const FactRow object = w.fact_find(FactKind::object, capability.origin(), -1);
-                    if (!require(w, present(object) && object.site() == capability.origin_site(),
-                        first_error(VerificationErrorFirst::fixed_array_span_object_lifetime_is_not_active))) {
-                        return false;
-                    }
-                }
-                i64 nominal = control.receiver_class();
-                if (capability.origin() != 0) {
-                    nominal = slot_class(m, exact_slot(m, w.callable(), 11, capability.origin()));
-                }
-                const i64 field_index = class_field(m, nominal, capability.array_field());
-                const compiler_ir_metadata::FieldRow field = m.field_at(field_index);
-                const compiler_ir_metadata::RawTypeRow element = m.type_at(field.type());
-                if (!require(w, field_index >= 0 && field.array_flag() != 0 && compiler_ir_metadata::plain_type(element,
-                    10), first_error(VerificationErrorFirst::fixed_array_span_field_provenance_mismatch))) {
+                const compiler_ir_instructions::RawInstructionRow origin = s.instruction_at(capability.origin_site());
+                if (!require(w, origin.form() == 51 && compiler_ir_instructions::call_value(s, capability.origin_site(),
+                    1) == capability.origin() && compiler_ir_instructions::call_count(s, capability.origin_site(), 0)
+                    <= 4096,
+                    first_error(VerificationErrorFirst::literal_span_must_retain_its_exact_immutable_origin))) {
                     return false;
                 }
             } else {
-                if (token.kind() != TokenKind::none) {
-                    if (!loan_access(w, s, capability.origin(), read_mode(mode)) || !require(w, capability.origin_kind()
-                        != SpanOrigin::parameter,
-                        first_error(VerificationErrorFirst::owned_span_cannot_have_parameter_origin))) {
+                if (capability.array_field() >= 0) {
+                    if (!require(w, capability.origin_kind() != SpanOrigin::parameter && token.kind() == TokenKind::none
+                        && capability.owned_field() == -1,
+                        first_error(VerificationErrorFirst::fixed_array_span_cannot_carry_another_origin_kind))
+                        || !loan_access(w, s, capability.origin(), read_mode(mode))) {
                         return false;
                     }
-                    const FactRow owner = span_owner_binding(w, capability);
-                    if (capability.owned_field() == -1) {
-                        if (!require(w, present(owner) && owner.site() == capability.origin_site(),
-                            first_error(VerificationErrorFirst::span_owned_byte_origin_lifetime_is_not_active))) {
+                    if (capability.origin() == 0) {
+                        const bool condition_310 = control.has_receiver() && !receiver_constructor(m, w.callable())
+                            && capability.origin_site() == 0;
+                        if (!require(w, condition_310,
+                            first_error(VerificationErrorFirst::fixed_array_span_receiver_lifetime_is_not_active))) {
                             return false;
                         }
                     } else {
-                        const FactRow object = w.fact_find(FactKind::owned_object, capability.origin(), -1);
-                        if (!require(w, present(object) && object.site() == capability.origin_site()
-                            && object.disposition() == ByteDisposition::live && present(owner),
-                            first_error(VerificationErrorFirst::span_owning_root_lifetime_is_not_active))) {
+                        const FactRow object = w.fact_find(FactKind::object, capability.origin(), -1);
+                        if (!require(w, present(object) && object.site() == capability.origin_site(),
+                            first_error(VerificationErrorFirst::fixed_array_span_object_lifetime_is_not_active))) {
                             return false;
                         }
                     }
-                    const TokenRow owner_token = owner.token();
-                    if (!require(w, owner.disposition() == ByteDisposition::live && owner_token.same(token),
-                        first_error(VerificationErrorFirst::span_owner_token_is_not_active))) {
+                    i64 nominal = control.receiver_class();
+                    if (capability.origin() != 0) {
+                        nominal = slot_class(m, exact_slot(m, w.callable(), 11, capability.origin()));
+                    }
+                    const i64 field_index = class_field(m, nominal, capability.array_field());
+                    const compiler_ir_metadata::FieldRow field = m.field_at(field_index);
+                    const compiler_ir_metadata::RawTypeRow element = m.type_at(field.type());
+                    if (!require(w, field_index >= 0 && field.array_flag() != 0
+                        && compiler_ir_metadata::plain_type(element, 10),
+                        first_error(VerificationErrorFirst::fixed_array_span_field_provenance_mismatch))) {
                         return false;
-                    }
-                    if (token.kind() == TokenKind::borrowed) {
-                        if (!require(w, capability.origin() == 0 && capability.owned_field() >= 0
-                            && control.has_receiver(),
-                            first_error(VerificationErrorFirst::span_borrowed_receiver_provenance_mismatch))) {
-                            return false;
-                        }
-                    } else {
-                        if (!require(w, control.has_region() && control.region_offset() == token.region_root()
-                            && control.region_site() == token.region_site(),
-                            first_error(VerificationErrorFirst::span_owner_region_identity_is_not_active))) {
-                            return false;
-                        }
                     }
                 } else {
-                    if (capability.origin_kind() == SpanOrigin::parameter) {
-                        const compiler_ir_metadata::CallableRow signature = m.callable_at(w.callable());
-                        i64 parameter_root = -1;
-                        if (capability.origin() >= 0 && capability.origin() < signature.value_parameter_count()) {
-                            parameter_root = entry_root(s, w.callable(), capability.origin(), 59);
-                        }
-                        if (!require(w, parameter_root >= 0,
-                            first_error(VerificationErrorFirst::span_parameter_origin_does_not_exist))) {
+                    if (token.kind() != TokenKind::none) {
+                        if (!loan_access(w, s, capability.origin(), read_mode(mode)) || !require(w,
+                            capability.origin_kind() != SpanOrigin::parameter,
+                            first_error(VerificationErrorFirst::owned_span_cannot_have_parameter_origin))) {
                             return false;
                         }
-                        const FactRow root = w.fact_find(FactKind::span, parameter_root, -1);
-                        const SpanPayload origin = root.span();
-                        if (!require(w, present(root) && root.site() == capability.origin_site() && origin.origin_kind()
-                            == SpanOrigin::parameter && origin.origin() == capability.origin() && origin.origin_site()
-                            == capability.origin_site() && origin.parent() == 0,
-                            first_error(VerificationErrorFirst::span_parameter_origin_lifetime_is_not_active))) {
+                        const FactRow owner = span_owner_binding(w, capability);
+                        if (capability.owned_field() == -1) {
+                            if (!require(w, present(owner) && owner.site() == capability.origin_site(),
+                                first_error(VerificationErrorFirst::span_owned_byte_origin_lifetime_is_not_active))) {
+                                return false;
+                            }
+                        } else {
+                            const FactRow object = w.fact_find(FactKind::owned_object, capability.origin(), -1);
+                            if (!require(w, present(object) && object.site() == capability.origin_site()
+                                && object.disposition() == ByteDisposition::live && present(owner),
+                                first_error(VerificationErrorFirst::span_owning_root_lifetime_is_not_active))) {
+                                return false;
+                            }
+                        }
+                        const TokenRow owner_token = owner.token();
+                        if (!require(w, owner.disposition() == ByteDisposition::live && owner_token.same(token),
+                            first_error(VerificationErrorFirst::span_owner_token_is_not_active))) {
                             return false;
+                        }
+                        if (token.kind() == TokenKind::borrowed) {
+                            if (!require(w, capability.origin() == 0 && capability.owned_field() >= 0
+                                && control.has_receiver(),
+                                first_error(VerificationErrorFirst::span_borrowed_receiver_provenance_mismatch))) {
+                                return false;
+                            }
+                        } else {
+                            if (!require(w, control.has_region() && control.region_offset() == token.region_root()
+                                && control.region_site() == token.region_site(),
+                                first_error(VerificationErrorFirst::span_owner_region_identity_is_not_active))) {
+                                return false;
+                            }
                         }
                     } else {
-                        const FactRow array_fact = w.fact_find(FactKind::array_lifetime, capability.origin(), -1);
-                        if (!require(w, present(array_fact) && array_fact.site() == capability.origin_site(),
-                            first_error(VerificationErrorFirst::span_array_origin_lifetime_is_not_active))) {
-                            return false;
+                        if (capability.origin_kind() == SpanOrigin::parameter) {
+                            const compiler_ir_metadata::CallableRow signature = m.callable_at(w.callable());
+                            i64 parameter_root = -1;
+                            if (capability.origin() >= 0 && capability.origin() < signature.value_parameter_count()) {
+                                parameter_root = entry_root(s, w.callable(), capability.origin(), 59);
+                            }
+                            if (!require(w, parameter_root >= 0,
+                                first_error(VerificationErrorFirst::span_parameter_origin_does_not_exist))) {
+                                return false;
+                            }
+                            const FactRow root = w.fact_find(FactKind::span, parameter_root, -1);
+                            const SpanPayload origin = root.span();
+                            if (!require(w, present(root) && root.site() == capability.origin_site()
+                                && origin.origin_kind() == SpanOrigin::parameter && origin.origin()
+                                == capability.origin() && origin.origin_site() == capability.origin_site()
+                                && origin.parent() == 0,
+                                first_error(VerificationErrorFirst::span_parameter_origin_lifetime_is_not_active))) {
+                                return false;
+                            }
+                        } else {
+                            const FactRow array_fact = w.fact_find(FactKind::array_lifetime, capability.origin(), -1);
+                            if (!require(w, present(array_fact) && array_fact.site() == capability.origin_site(),
+                                first_error(VerificationErrorFirst::span_array_origin_lifetime_is_not_active))) {
+                                return false;
+                            }
                         }
                     }
                 }
@@ -580,8 +606,8 @@ export namespace compiler_ir_verification {
             if (capability.array_field() >= 0) {
                 ordinal = capability.array_field();
             }
-            if (!require(w, (token.kind() == TokenKind::none && capability.array_field() < 0) || capability.origin()
-                != root || (field != -2 && ordinal != field),
+            if (!require(w, (token.kind() == TokenKind::none && capability.array_field() < 0 && capability.origin_kind()
+                != SpanOrigin::words) || capability.origin() != root || (field != -2 && ordinal != field),
                 first_error(VerificationErrorFirst::owned_byte_or_root_mutation_with_live_readonly_span))) {
                 return false;
             }
@@ -1609,6 +1635,9 @@ export namespace compiler_ir_verification {
     }
     auto borrow_owned(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 root, i64 ordinal, i64 result) -> bool {
+        if (word_span(m, w.callable(), result)) {
+            return w.fail(first_error(VerificationErrorFirst::internal));
+        }
         if (!access_bytes(w, m, s, root, ordinal, AccessMode::read) || !accessed_owner_type(w, m, root, ordinal)) {
             return false;
         }

@@ -4050,6 +4050,11 @@ auto accessible() -> bool {
 }
 } // namespace aurora::words
 extern "C" {
+__attribute__((visibility("hidden"))) auto
+__au_runtime_owned_words_borrow_span(const void *binding, U64 epoch, aurora::hosted::bytes::NativeSpan *output)
+    -> void {
+    *output = aurora::words::Binding::borrow_span(binding, epoch);
+}
 __attribute__((visibility("hidden"))) auto __au_runtime_owned_words_size(const void *binding, U64 epoch) -> U64 {
     return aurora::words::Binding::size(binding, epoch);
 }

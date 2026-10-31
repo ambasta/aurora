@@ -43,7 +43,8 @@ export namespace compiler_ir_metadata {
         WritableBlock,
         ExecutionEffects,
         ServiceResource,
-        ServiceBootstrapEffects
+        ServiceBootstrapEffects,
+        WordSpan
     };
     // Each reason's message is in pipeline.au (compiler_ir_metadata::metadata_text).
     enum class MetadataError {

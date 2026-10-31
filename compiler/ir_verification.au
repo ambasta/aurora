@@ -207,6 +207,15 @@ export namespace compiler_ir_verification {
         const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
         const bool has_receiver = compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver());
+        i64 word_parameter = 0;
+        while (word_parameter < declaration.value_parameter_count()) {
+            const compiler_ir_metadata::RawTypeRow type = m.type_at(declaration.value_parameter_begin()
+                + word_parameter);
+            if (type.kind() == 28 && !closed_word_call(w, m, s, callable)) {
+                return w.verification_status();
+            }
+            word_parameter = word_parameter + 1;
+        }
         const i64 roots = declaration.borrowed_root_count();
         bool builtin_owner = false;
         if (roots != 0) {

@@ -1634,6 +1634,10 @@ export namespace compiler_ir_metadata {
     }
     // A typed readonly span names one copied element class, like OwnedValues.
     auto verify_span_element(MetadataStore& store, RawTypeRow type) -> bool {
+        if (type.kind() == 28) {
+            return (canonical_tail(type) && name_length(type.name()) == 0) || fail(store,
+                MetadataError::span_value_type);
+        }
         if (type.kind() != 21 || !canonical_tail(type) || name_length(type.name()) == 0) {
             return fail(store, MetadataError::span_value_type);
         }
@@ -1742,7 +1746,7 @@ export namespace compiler_ir_metadata {
     }
     // Byte spans (11) and typed readonly spans (21) share one capability shape.
     auto span_type(RawTypeRow type) -> bool {
-        return type.kind() == 11 || type.kind() == 21;
+        return type.kind() == 11 || type.kind() == 21 || type.kind() == 28;
     }
     auto plain_type(RawTypeRow type, i64 kind) -> bool {
         return type.kind() == kind && name_length(type.name()) == 0 && canonical_tail(type);
@@ -2163,6 +2167,11 @@ export namespace compiler_ir_metadata {
             return true;
         }
         const ReceiverShape receiver = row.first_receiver();
+        if (type.kind() == 28) {
+            return (parameter && plain_type(type, 28) && (!callable_flag(row, masks.callable_receiver())
+                || !receiver_flag(receiver, masks.receiver_constructor()))) || fail(store,
+                MetadataError::span_boundary);
+        }
         if (type.kind() == 11 || type.kind() == 21) {
             if (type.kind() == 21 && !verify_span_element(store, type)) {
                 return false;

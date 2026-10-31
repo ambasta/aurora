@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include "../runtime/bytes_abi.hpp"
 
 namespace aurora::words {
 using U64 = std::uint64_t;
@@ -114,6 +115,17 @@ public:
         auto &value = *current_;
         require(value.live_ && value.attached_ && epoch && epoch == value.epoch_ && value.identity());
         return value;
+    }
+    // Compiler-private readonly loan. The independent source verifier pins the
+    // exact owner and closes calls for its lexical lifetime; Scope is not a
+    // dynamic span counter. No address is published before grant authentication.
+    [[nodiscard]] static auto borrow_span(const void *binding, U64 epoch) -> hosted::bytes::NativeSpan {
+        auto &value = admitted(binding, epoch);
+        require(accessible());
+        hosted::bytes::NativeSpan result{};
+        result.payload[0] = reinterpret_cast<std::uintptr_t>(value.backing_);
+        result.length = static_cast<std::int64_t>(value.count_);
+        return result;
     }
     [[nodiscard]] static auto size(const void *binding, U64 epoch) -> U64 {
         return admitted(binding, epoch).count_;

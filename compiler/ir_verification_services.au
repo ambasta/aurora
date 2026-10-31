@@ -309,8 +309,14 @@ export namespace compiler_ir_verification {
         if (effect != 0) {
             mode = AccessMode::write;
         }
-        if (!owner_writable(w, s, 0, ordinal, mode)) {
-            return false;
+        if (kind == 3 && effect == 0) {
+            if (!loan_access(w, s, 0, AccessMode::read)) {
+                return false;
+            }
+        } else {
+            if (!owner_writable(w, s, 0, ordinal, mode)) {
+                return false;
+            }
         }
         if (compiler_catalog::resource_method_parameters(kind, method) == 1) {
             const TypeKey expected = transfer_catalogue_type(m, compiler_catalog::resource_method_parameter(kind,

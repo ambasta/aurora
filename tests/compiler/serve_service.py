@@ -1054,6 +1054,65 @@ __au_runtime_group_entry:
         )
         result = run([compiler, "--check", source])
         need(result.returncode == 0, f"words-admitted: {result.stderr!r}")
+        word_span = "builtin::span<const u64>"
+        word_helpers = (
+            f"auto word_first({word_span} input)->u64{{return input.at(0);}}"
+            f"auto word_forward({word_span} input)->u64{{const {word_span} copy=input;return word_first(copy);}}"
+        )
+        word_view = (
+            f"auto observe_word(u64 index) const->u64{{const {word_span} view=borrow_words(data);"
+            f"const {word_span} copy=view;builtin::require(copy.size()>0);return word_forward(copy);}}"
+        )
+        word_view_class = words_head + word_view + words_set + words_finish + "};"
+        source.write_text(
+            "module word_view_admitted;" + word_helpers + word_view_class + "auto witness()->u64{return 0u64;}"
+        )
+        result = run([compiler, "--check", source])
+        need(result.returncode == 0, f"words-view-admitted: {result.stderr!r}")
+        invalid["words-view-missing-input"] = word_view_class.replace("borrow_words(data)", "borrow_words()")
+        invalid["words-view-extra-input"] = word_view_class.replace("borrow_words(data)", "borrow_words(data,data)")
+        invalid["words-view-owner-mutation"] = word_view_class.replace(
+            "return word_forward(copy);", "data.set(0u64,1u64);return copy.at(0);"
+        ).replace("observe_word(u64 index) const", "observe_word(u64 index)")
+        invalid["words-view-member-alias-mutation"] = word_view_class.replace(
+            "return word_forward(copy);", "store_word(0u64,1u64);return copy.at(0);"
+        ).replace("observe_word(u64 index) const", "observe_word(u64 index)")
+        invalid["words-view-member-helper-alias-mutation"] = (
+            word_view_class.replace("return word_forward(copy);", "mutate_again();return copy.at(0);")
+            .replace("observe_word(u64 index) const", "observe_word(u64 index)")
+            .replace(words_set, words_set + "auto mutate_again()->bool{return store_word(0u64,1u64);}")
+        )
+        invalid["words-view-consume"] = words_class.replace(
+            "return data.finish();", f"const {word_span} view=borrow_words(data);return data.finish();"
+        )
+        invalid["words-view-direct-return"] = words_head + (
+            f"auto view()const->{word_span}{{return borrow_words(data);}}" + words_finish + "};"
+        )
+        invalid["words-view-copied-return"] = words_head + (
+            f"auto view()const->{word_span}{{const {word_span} first=borrow_words(data);"
+            f"const {word_span} copy=first;return copy;}}" + words_finish + "};"
+        )
+        invalid["words-view-helper-return"] = (
+            f"auto escape({word_span} input)->{word_span}{{return input;}}" + word_view_class
+        )
+        invalid["words-view-u8-confusion"] = word_view_class.replace("span<const u64>", "span<const u8>")
+        invalid["words-view-i64-not-admitted"] = word_view_class.replace("span<const u64>", "span<const i64>")
+        invalid["words-view-u64-index-not-i64"] = word_view_class.replace(
+            "return word_forward(copy);", "return copy.at(index);"
+        )
+        invalid["words-view-no-array-adoption"] = (
+            f"auto f()->u64{{builtin::array<u64,2> data={{1u64,2u64}};"
+            f"const {word_span} view=borrow_words(data);return view.at(0);}}"
+        )
+        invalid["words-view-recursive-helper"] = (
+            f"auto recursive({word_span} input)->u64{{return recursive(input);}}"
+            + word_view_class.replace("return word_forward(copy);", "return recursive(copy);")
+        )
+        invalid["words-view-mutual-helper"] = (
+            f"auto first({word_span} input)->u64{{return second(input);}}"
+            f"auto second({word_span} input)->u64{{return first(input);}}"
+            + word_view_class.replace("return word_forward(copy);", "return first(copy);")
+        )
         invalid["words-source-mint"] = f"auto f()->u64{{{words} data={words}();return 0u64;}}"
         invalid["words-direct-input"] = f"auto f({words} input)->u64{{return input.size();}}"
         invalid["words-copy-input"] = words_class.replace("data(move(input))", "data(input)")
@@ -1080,6 +1139,8 @@ __au_runtime_group_entry:
         invalid["words-resize"] = words_class.replace("data.set(index,value)", "data.resize(index,value)")
         invalid["words-native-finish-borrow"] = words_class + "auto f(Words& root)->bool{return move(root).finish();}"
         for label, code in invalid.items():
+            if label.startswith("words-view-"):
+                code = word_helpers + code
             if label.startswith(("resident-", "command-", "words-")):
                 code += "auto witness()->u64{return 0u64;}"
             source.write_text("module rejected;" + code)

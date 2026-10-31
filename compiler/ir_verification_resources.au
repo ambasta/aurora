@@ -413,6 +413,38 @@ export namespace compiler_ir_verification {
             fact.set_span(payload);
             return w.fact_set(fact);
         }
+        if (form == 92) {
+            const i64 callable = w.callable();
+            const i64 ordinal = transfer_value(s, id, 1);
+            const i64 result = transfer_value(s, id, 2);
+            const i64 field_index = receiver_shape(w, m, s, ordinal);
+            if (!w.good()) {
+                return false;
+            }
+            const compiler_ir_metadata::FieldRow shape = m.field_at(field_index);
+            const compiler_ir_metadata::RawTypeRow type = m.type_at(shape.type());
+            const FactRow root = w.fact_find(FactKind::owned_object, 0, -1);
+            const FactRow field = w.fact_find(FactKind::resident_field, 0, ordinal);
+            if (!require(w, base == 0 && ordinal >= 0 && !receiver_constructor(m, callable)
+                && compiler_ir_metadata::field_resource_kind(m, type) == 3 && shape.array_flag() == 0 && present(root)
+                && root.disposition() == ByteDisposition::live && present(field) && field.disposition()
+                == ByteDisposition::live && word_span(m, callable, result),
+                first_error(VerificationErrorFirst::resource_field_does_not_hold_live_ownership)) || !loan_access(w, s,
+                0, AccessMode::read) || !span_target(w, m, s, result)) {
+                return false;
+            }
+            SpanPayload payload = SpanPayload(SpanOrigin::words, 0, field.site(), 0, 0);
+            payload.set_owned_field(ordinal);
+            const TokenRow token = no_token();
+            FactRow fact = transfer_resource_fact(FactKind::span, result, -1, control.instruction_id(),
+                ByteDisposition::pristine, token);
+            fact.set_span(payload);
+            return w.fact_set(fact);
+        }
+        if (form == 93) {
+            return word_span(m, w.callable(), base) && span(w, m, s, base, AccessMode::read) && transfer_current_kind(w,
+                0) && transfer_set_kind(w, 7);
+        }
         if (form == 52) {
             return borrow_owned(w, m, s, base, transfer_value(s, id, 1), transfer_value(s, id, 2));
         }

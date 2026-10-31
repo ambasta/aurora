@@ -247,9 +247,10 @@ export namespace kernel {
             u64 counted0 = 0u64;
             u64 counted1 = 0u64;
             u64 index = 0u64;
-            const u64 size = words.size();
+            const builtin::span<const u64> records = borrow_words(words);
+            const u64 size = u64(records.size());
             while (index < size) {
-                const u64 value = words.at(index);
+                const u64 value = records.at(i64(index));
                 const u64 kind = value & 15u64;
                 const u64 holder = value >> 32;
                 if ((kind == kernel_state) != (index < reserved_count)) {
@@ -298,7 +299,7 @@ export namespace kernel {
                 if (walked > result.free || link > size) {
                     return result;
                 }
-                const u64 value = words.at(link - 1u64);
+                const u64 value = records.at(i64(link - 1u64));
                 if ((value & 15u64) != free_state) {
                     return result;
                 }

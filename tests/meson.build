@@ -484,6 +484,11 @@ process_frame_allocator_object = custom_target('process-frame-allocator',
               '--module-root', meson.project_source_root() / 'kernel/policies', '--local-symbols',
               '--referenced-reflection-only', '--bridge', files('../kernel/uefi/frame-allocator-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+process_word_view_object = custom_target('process-word-view',
+    input: 'kernel-process-word-view.au', output: 'process-word-view.o', depfile: 'process-word-view.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@', '--local-symbols',
+              '--referenced-reflection-only', '--bridge', files('kernel-process-word-view-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 process_bootstrap_object = custom_target('process-service-bootstrap',
     input: '../examples/kernel-service-bootstrap.au', output: 'process-service-bootstrap.o',
     depfile: 'process-service-bootstrap.d',
@@ -540,6 +545,7 @@ process_files_policy_object = custom_target('process-files-policy-reference',
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 kernel_process = executable('kernel-process', 'kernel-process.cpp', process_policy_object, process_execution_object,
     process_execution_cancel_object, process_bootstrap_object, process_resident_object, process_frame_allocator_object,
+    process_word_view_object,
     process_files_policy_object, process_budget_object, process_service_object, process_service_saturation_object,
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DAURORA_PROCESS_FIXTURE', '-DAURORA_UEFI_NVME'], link_args: ['-no-pie'],
     native: true, override_options: fixture_options, install: false)

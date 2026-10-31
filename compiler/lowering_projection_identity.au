@@ -540,6 +540,9 @@ export namespace compiler_lowering_projection {
                         i64 metadata_kind = 17;
                         if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
                             metadata_kind = 21;
+                            if (element.kind() == 7) {
+                                metadata_kind = 28;
+                            }
                         }
                         const compiler_ir_metadata::RawTypeRow type = compiler_ir_metadata::RawTypeRow(metadata_kind,
                             element.name(), element.tail());

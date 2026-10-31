@@ -811,6 +811,10 @@ export namespace compiler_lowering {
             return true;
         }
         const i64 element = tm(session, type, 2);
+        if (kind == compiler_resolver::ResolvedTypeKind::value_span && tk(session, element)
+            == compiler_resolver::ResolvedTypeKind::u64_value) {
+            return true;
+        }
         const i64 nominal = tm(session, element, 1);
         const i64 shape = class_row(session, element);
         if (shape < 0) {

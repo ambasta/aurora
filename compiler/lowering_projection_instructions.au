@@ -397,6 +397,12 @@ export namespace compiler_lowering_projection {
         if (form == compiler_lowering::InstructionForm::Require) {
             return InstructionShape(91, 0u64);
         }
+        if (form == compiler_lowering::InstructionForm::BorrowWordsSpan) {
+            return InstructionShape(92, 101250u64);
+        }
+        if (form == compiler_lowering::InstructionForm::SpanWordLoad) {
+            return InstructionShape(93, 2u64);
+        }
         return InstructionShape(-1, 0u64);
     }
     // The known schema role selects a balanced scalar decision tree. Only a

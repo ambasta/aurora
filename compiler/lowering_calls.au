@@ -128,6 +128,40 @@ export namespace compiler_lowering {
         emit_BorrowOwnedSpan(session, offset, field, result_offset);
         return finish_expression(session, expected, destination);
     }
+    auto borrow_words_span(compiler_resolver::Session& session, i64 frame_id) -> bool {
+        const ContinuationRow frame = session.continuation(frame_id);
+        const i64 node = frame.syntax_node();
+        const i64 reference = source_ref(session, node);
+        const i64 expected = frame.output_mark();
+        const i64 element = span_element(session, expected);
+        if (element < 0 || value_kind(session, element) != compiler_resolver::ResolvedTypeKind::u64_value) {
+            return fail(session, LoweringError::invalid_span_initializer, reference);
+        }
+        if (!require_arity(session, node, 1)) {
+            return false;
+        }
+        const i64 target = expression_argument(session, node, 0);
+        const compiler_resolver::SyntaxRow target_row = session.syntax(target);
+        if (!session.good() || target_row.expression_kind() != compiler_parser::NodeKind::name) {
+            return fail(session, LoweringError::invalid_span_initializer, reference);
+        }
+        const i64 name = source_ref(session, target);
+        const i64 field = implicit_field(session, name);
+        if (lookup_local(session, name) >= 0 || field < 0 || !no_exclusive_object_loan(session, -2, reference)) {
+            return fail(session, LoweringError::invalid_span_initializer, reference);
+        }
+        const i64 receiver = body_receiver_nominal(session);
+        const i64 type = field_type(session, receiver, field);
+        if (!session.good() || value_kind(session, type) != compiler_resolver::ResolvedTypeKind::service_resource
+            || service_resource_kind(session, type) != 3) {
+            return fail(session, LoweringError::invalid_span_initializer, reference);
+        }
+        const LocalRequest request = expression_request(session, frame, expected, false);
+        const i64 destination = add_span(session, request, -1, -2, field, false);
+        const i64 result_offset = local_offset(session, destination);
+        emit_BorrowWordsSpan(session, 0, field, result_offset);
+        return finish_expression(session, expected, destination);
+    }
     auto begin_span(compiler_resolver::Session& session, i64 frame_id) -> bool {
         ContinuationRow frame = session.continuation(frame_id);
         const i64 node = frame.syntax_node();
@@ -170,6 +204,10 @@ export namespace compiler_lowering {
             const i64 staged_a1_13 = local_offset(session, destination);
             emit_ReborrowSpan(session, span.offset(), staged_a1_13);
             return finish_expression(session, span.concrete_type_id(), destination);
+        }
+        if (syntax.expression_kind() == compiler_parser::NodeKind::call && session.source_equal(reference,
+            "borrow_words")) {
+            return borrow_words_span(session, frame_id);
         }
         if (syntax.expression_kind() == compiler_parser::NodeKind::call && session.source_equal(reference,
             "borrow_values")) {
@@ -1061,12 +1099,13 @@ export namespace compiler_lowering {
                                     if (actual != 1) {
                                         return fail(session, LoweringError::span_at_argument_count, reference);
                                     }
-                                    if (!binding) {
+                                    const i64 element = compiler_resolver::mw(session, type, 2);
+                                    if (!binding && value_kind(session, element)
+                                        != compiler_resolver::ResolvedTypeKind::u64_value) {
                                         return fail(session,
                                             LoweringError::typed_span_access_requires_copied_destination, reference);
                                     }
                                     if (frame.output_mark() >= 0) {
-                                        const i64 element = compiler_resolver::mw(session, type, 2);
                                         match_type(session, frame.output_mark(), element, reference);
                                     }
                                 } else {
@@ -2003,6 +2042,10 @@ export namespace compiler_lowering {
                 result_offset = local_offset(session, destination);
             }
             if (field >= 0) {
+                if (compiler_catalog::resource_method_effect(resource, method) != 0 && !no_span_borrow(session,
+                    frame.capability_root_local(), field, source)) {
+                    return false;
+                }
                 emit_RetainedFieldOperation(session, offset, field, method, result_offset, resource);
                 if (compiler_catalog::resource_method_effect(resource, method) == 2) {
                     const i64 receiver = object_loan_local(session, frame.capability_root_local());
@@ -2068,9 +2111,13 @@ export namespace compiler_lowering {
                     } else {
                         if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
                             result = compiler_resolver::mw(session, type, 2);
-                            destination = expression_destination(session, frame, result, -1);
-                            const i64 element_offset = local_offset(session, destination);
-                            emit_SpanValuesLoad(session, offset, element_offset);
+                            if (value_kind(session, result) == compiler_resolver::ResolvedTypeKind::u64_value) {
+                                emit_SpanWordLoad(session, offset);
+                            } else {
+                                destination = expression_destination(session, frame, result, -1);
+                                const i64 element_offset = local_offset(session, destination);
+                                emit_SpanValuesLoad(session, offset, element_offset);
+                            }
                         } else {
                             emit_SpanLoad(session, offset);
                             result = scalar_id(session, compiler_resolver::ResolvedTypeKind::u8_value);

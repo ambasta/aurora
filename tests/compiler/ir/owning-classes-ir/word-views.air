@@ -1,0 +1,302 @@
+; CASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-OK
+; RUN: emit
+; CHECK: __au_runtime_owned_words_borrow_span
+layout WordOwner []
+fields WordOwner [((26 __au_owned_words) 0 0 false)]
+storage WordOwner [] [0] 16 16 16
+function words_constructor
+  result i64
+  params [(26 __au_owned_words)]
+  frame 16
+  receiver WordOwner true true
+  service_resource 16 __au_owned_words true
+    BindRetainedResourceParameter 0 16 3
+    InitializeBytesField 0 0 16
+    Constant
+    Return
+end
+function word_helper
+  result u64
+  params [(28)]
+  frame 64
+  slot 64 u64
+  span 56
+  spanvalues 56 (28)
+    BindSpanParameter 0 56
+    Constant 0
+    SpanWordLoad 56
+    Store 64 u64
+    EndSpan 56
+    Load 64 u64
+    Return
+end
+function words_read
+  result u64
+  params []
+  frame 128
+  receiver WordOwner false false
+  slot 120 u64
+  span 56
+  span 112
+  spanvalues 56 (28)
+  spanvalues 112 (28)
+    BorrowWordsSpan 0 0 56
+    ReborrowSpan 56 112
+    AggregateCall word_helper [0] 0 [112]
+    Store 120 u64
+    EndSpan 112
+    EndSpan 56
+    Load 120 u64
+    Return
+end
+
+; CASE: word view requires exact scalar annotation
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-ERROR: span parameter type mismatch
+@@ -21 +20,0 @@
+-  spanvalues 56 (28)
+
+; CASE: word view cannot forge the receiver field
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-ERROR: receiver field type/layout mismatch
+@@ -40 +40 @@
+-    BorrowWordsSpan 0 0 56
++    BorrowWordsSpan 0 1 56
+
+; CASE: word view cannot borrow an arbitrary root
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-ERROR: changes the span element type
+@@ -40 +40 @@
+-    BorrowWordsSpan 0 0 56
++    BorrowWordsSpan 16 0 56
+
+; CASE: word view cannot load after its lifetime ends
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -23,0 +24 @@
++    EndSpan 56
+
+; CASE: word view scalar index is signed i64
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -23 +23 @@
+-    Constant 0
++    Constant 0 u64
+
+; CASE: word view does not permit byte load confusion
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-ERROR: changes the span element type
+@@ -24 +24 @@
+-    SpanWordLoad 56
++    SpanLoad 56
+
+; CASE: word view full u64 result cannot narrow to i64
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -25 +25 @@
+-    Store 64 u64
++    Store 64 i64
+
+; CASE: word view parent cannot end before reborrow
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-ERROR: span lifetime ends with live child reborrow
+@@ -43,0 +44 @@
++    EndSpan 56
+@@ -45 +45,0 @@
+-    EndSpan 56
+
+; CASE: word view cannot mutate backing while loan lives
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-ERROR: word borrow requires a closed readonly call graph
+@@ -34 +34 @@
+-  receiver WordOwner false false
++  receiver WordOwner true false
+@@ -42 +42,5 @@
+-    AggregateCall word_helper [0] 0 [112]
++    Constant 0 u64
++    Push
++    Constant 1 u64
++    Push
++    RetainedFieldOperation 0 0 2 0 3
+
+; CASE: word view helper direct recursion is not a trusted summary
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-ERROR: word borrow requires a closed readonly call graph
+@@ -23,2 +23 @@
+-    Constant 0
+-    SpanWordLoad 56
++    AggregateCall word_helper [0] 0 [56]
+
+; CASE: word view helper reborrow cannot escape by return
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-ERROR: readonly span boundary requires ordinary parameter or const receiver result
+@@ -16 +16 @@
+-  result u64
++  result (28)
+
+; CASE: word view readonly primitive uses audited import
+; BASE: word view exact scalar origin through readonly helper and reborrow
+; RUN: verify
+; EXPECT-OK
+@@ -41,0 +42 @@
++    RetainedFieldOperation 0 0 0 0 3
+
+; CASE: word helper cannot hide a byte adapter after ending its local word parameter
+; RUN: verify
+; EXPECT-ERROR: word borrow requires a closed readonly call graph
+function mixed_helper
+  result u8
+  params [(28) span]
+  frame 112
+  span 56
+  span 112
+  spanvalues 56 (28)
+    BindSpanParameter 0 56
+    BindSpanParameter 1 112
+    EndSpan 56
+    Constant 0
+    SpanLoad 112
+    EndSpan 112
+    Return
+end
+
+; CASE: word scalar span cannot enter copied-class load path
+; RUN: verify
+; EXPECT-ERROR: typed span element copy requires a typed span and an exact element object
+layout Record [u64]
+fields Record [(u64 0 1 false)]
+storage Record [0] [0] 8 8 8
+function confused
+  result i64
+  params [(28)]
+  frame 80
+  slot 64 u64
+  object 64 Record true
+  span 56
+  spanvalues 56 (28)
+    BindSpanParameter 0 56
+    BeginObject 64
+    Constant 0
+    SpanValuesLoad 56 64
+    EndObject 64
+    EndSpan 56
+    Constant 0
+    Return
+end
+
+; CASE: word helper mutual recursive closure is rejected
+; RUN: verify
+; EXPECT-ERROR: word borrow requires a closed readonly call graph
+function first
+  result i64
+  params [(28)]
+  frame 64
+  span 56
+  spanvalues 56 (28)
+    BindSpanParameter 0 56
+    AggregateCall second [0] 0 [56]
+    EndSpan 56
+    Return
+end
+function second
+  result i64
+  params [(28)]
+  frame 64
+  span 56
+  spanvalues 56 (28)
+    BindSpanParameter 0 56
+    AggregateCall first [0] 0 [56]
+    EndSpan 56
+    Return
+end
+
+; CASE: word loan rejects implicit native cleanup of a pristine owning local
+; RUN: verify
+; EXPECT-ERROR: word borrow requires a closed readonly call graph
+layout Buffer []
+layout WordOwner []
+fields Buffer [(bytes 0 0 false)]
+fields WordOwner [((26 __au_owned_words) 0 0 false)]
+storage Buffer [] [0] 32 8 32
+storage WordOwner [] [0] 16 16 16
+function cleanup
+  result i64
+  params []
+  frame 96
+  receiver WordOwner false false
+  object 32 Buffer true
+  span 88
+  spanvalues 88 (28)
+    BeginObject 32
+    BorrowWordsSpan 0 0 88
+    EndObject 32
+    EndSpan 88
+    Constant 0
+    Return
+end
+
+; CASE: receiver span result summary cannot authorize a physical word view escape
+; RUN: verify
+; EXPECT-ERROR: receiver span field summary requires span result
+layout WordOwner []
+fields WordOwner [((26 __au_owned_words) 0 0 false)]
+storage WordOwner [] [0] 16 16 16
+function escape
+  result (28)
+  params []
+  frame 64
+  receiver WordOwner false false
+  spanfield 0
+  span 56
+  spanvalues 56 (28)
+    BorrowWordsSpan 0 0 56
+    ReturnSpan 56
+end
+
+; CASE: word loan cannot call a mutable helper on the same owning receiver
+; RUN: verify
+; EXPECT-ERROR: word borrow requires a closed readonly call graph
+layout WordOwner []
+fields WordOwner [((26 __au_owned_words) 0 0 false)]
+storage WordOwner [] [0] 16 16 16
+function alias_back
+  result u64
+  params []
+  frame 64
+  receiver WordOwner true false
+  slot 64 u64
+  span 56
+  spanvalues 56 (28)
+    BorrowWordsSpan 0 0 56
+    MethodCall mutate
+    Store 64 u64
+    EndSpan 56
+    Load 64 u64
+    Return
+end
+function mutate
+  result u64
+  params []
+  frame 0
+  receiver WordOwner true false
+    Constant 0 u64
+    Push
+    Constant 1 u64
+    Push
+    RetainedFieldOperation 0 0 2 0 3
+    Constant 1 u64
+    Return
+end

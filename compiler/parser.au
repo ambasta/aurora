@@ -796,8 +796,10 @@ namespace compiler_parser {
                         TypeKind kind = TypeKind::owned_values;
                         if (frame.state() == FrameState::type_owned_element || frame.state()
                             == FrameState::type_span_element) {
-                            if ((element.kind() != TypeKind::named && element.kind() != TypeKind::builtin_class)
-                                || element.first() >= 0) {
+                            const bool word_span = frame.state() == FrameState::type_span_element && element.kind()
+                                == TypeKind::u64_type;
+                            if (!word_span && ((element.kind() != TypeKind::named && element.kind()
+                                != TypeKind::builtin_class) || element.first() >= 0)) {
                                 if (frame.state() == FrameState::type_span_element) {
                                     return TypeResult(ParseStatus::span_element, -1, token);
                                 }
@@ -1005,10 +1007,11 @@ namespace compiler_parser {
                                         token.update(advance(source, token));
                                         const TypeWord element_word = type_word(source, token);
                                         if (!(element_word == TypeWord::u8_type)) {
-                                            // Any other builtin scalar is still a misspelled byte span.
+                                            // Only u64 extends scalar span elements; other builtin
+                                            // scalars remain outside the readonly span contract.
                                             if ((element_word != TypeWord::invalid && element_word
-                                                != TypeWord::builtin_type) || token.kind()
-                                                != compiler_lexer::Event::token
+                                                != TypeWord::builtin_type && element_word != TypeWord::u64_type)
+                                                || token.kind() != compiler_lexer::Event::token
                                                 || !compiler_lexer::letter(source.at(token.first()))) {
                                                 return TypeResult(ParseStatus::expected_u8, -1, token);
                                             }

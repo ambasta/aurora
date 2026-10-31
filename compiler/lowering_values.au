@@ -334,6 +334,18 @@ export namespace compiler_lowering {
         put(session, OperandRole::ResultOffset, a1);
         return emit(session, InstructionForm::BorrowLiteralSpan, begin);
     }
+    auto emit_BorrowWordsSpan(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        put(session, OperandRole::ResultOffset, a2);
+        return emit(session, InstructionForm::BorrowWordsSpan, begin);
+    }
+    auto emit_SpanWordLoad(compiler_resolver::Session& session, i64 offset) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, offset);
+        return emit(session, InstructionForm::SpanWordLoad, begin);
+    }
     auto emit_BorrowOwnedSpan(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
         const i64 begin = session.operand_count();
         put(session, OperandRole::Offset, a0);
@@ -1044,8 +1056,13 @@ export namespace compiler_lowering {
                                     const i64 element = compiler_resolver::mw(session, type, 2);
                                     const i64 span_begin = session.operand_count();
                                     put(session, OperandRole::Offset, offset);
-                                    const i64 span_nominal = compiler_resolver::mw(session, element, 1);
-                                    put(session, OperandRole::ClassNominalId, span_nominal);
+                                    if (value_kind(session, element)
+                                        == compiler_resolver::ResolvedTypeKind::u64_value) {
+                                        put(session, OperandRole::TypeId, type);
+                                    } else {
+                                        const i64 span_nominal = compiler_resolver::mw(session, element, 1);
+                                        put(session, OperandRole::ClassNominalId, span_nominal);
+                                    }
                                     emit_record(session, RecordKind::SpanValueType, span_begin);
                                 }
                             } else {

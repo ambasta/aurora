@@ -378,10 +378,139 @@ export namespace compiler_ir_verification {
     // Outside 0..84: first_error(VerificationErrorFirst::internal), never success.
     // Each admitted form has exactly one real route. In particular the immutable
     // service/region bindings and CFG-only forms are explicit, not a catch-all.
+    auto live_word_borrow(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m) -> bool {
+        i64 at = w.first_fact(FactKind::span);
+        while (at >= 0 && fact_kind_at(w, at, FactKind::span)) {
+            const FactRow fact = w.fact_at(at);
+            if (word_span(m, w.callable(), fact.key())) {
+                return true;
+            }
+            at = w.next_fact(at);
+        }
+        return false;
+    }
+    auto word_call_form(i64 form) -> bool {
+        return form == 19 || form == 20 || form == 38 || form == 83;
+    }
+    auto word_local_form(i64 form) -> bool {
+        // Source scalar/copy/control operations, lexical bookkeeping and the
+        // specifically admitted contiguous word borrow/load. Byte-owner borrow
+        // and byte/typed span loads may dispatch other native adapters: exclude
+        // them rather than infer safety from a readonly source signature.
+        return (form >= 5 && form <= 17) || (form >= 21 && form <= 37) || (form >= 39 && form <= 51) || (form >= 54
+            && form <= 57) || form == 59 || form == 81 || form == 82 || form == 91 || form == 92 || form == 93;
+    }
+    auto word_read_primitive(const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(id);
+        // Besides explicit BorrowWordsSpan, the only native imports audited
+        // for a live word view are readonly size/at on the same fixed bank. No write, revoke or callback.
+        return row.form() == 89 && transfer_value(s, id, 4) == 3 && (transfer_value(s, id, 2) == 0 || transfer_value(s,
+            id, 2) == 1);
+    }
+    auto word_local_instruction(const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 callable, i64 id) -> bool {
+        const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(id);
+        const i64 form = row.form();
+        if (form == 23) {
+            // EndObject is not always local bookkeeping: byte-owner fields
+            // emit native drop calls. Copied result temporaries remain local.
+            const i64 slot = exact_slot(m, callable, 11, transfer_value(s, id, 0));
+            return slot >= 0 && !compiler_ir_metadata::owning_class(m, slot_class(m, slot));
+        }
+        return word_local_form(form) || word_read_primitive(s, id);
+    }
+    auto word_call_signature(const compiler_ir_metadata::MetadataStore& m, i64 target) -> bool {
+        const compiler_ir_metadata::CallableRow signature = m.callable_at(target);
+        if (receiver_mutable(m, target) && compiler_ir_metadata::owning_class(m, receiver_class(m, target))) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < signature.borrowed_root_count()) {
+            if (signature.borrowed_root_mutable(at)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto closed_word_call(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 target) -> bool {
+        const i64 count = m.callable_count();
+        const VerificationError error = second_error(
+            VerificationErrorSecond::word_borrow_call_requires_closed_readonly_graph);
+        if (!require(w, target >= 0 && target < count && target < s.body_count(), error)) {
+            return false;
+        }
+        const i64 scratch = w.word_calls_prepare(count);
+        if (scratch < 0 || !w.word_call_frame_set(scratch, count, 0, target, 0) || !w.word_call_mark_set(scratch,
+            target, 1)) {
+            return false;
+        }
+        i64 depth = 1;
+        while (depth > 0) {
+            const CountPair frame = w.word_call_frame(scratch, count, depth - 1);
+            const i64 owner = frame.must_count();
+            const i64 position = frame.may_count();
+            const compiler_ir_instructions::BodyRow body = s.body_at(owner);
+            if (!require(w, body.count() > 0 && word_call_signature(m, owner), error)) {
+                return false;
+            }
+            if (position == body.count()) {
+                if (!w.word_call_mark_set(scratch, owner, 2)) {
+                    return false;
+                }
+                depth = depth - 1;
+            } else {
+                const compiler_ir_instructions::CodeRow code = s.code_at(body.begin() + position);
+                const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(code.id());
+                const i64 form = row.form();
+                if (!w.word_call_frame_set(scratch, count, depth - 1, owner, position + 1)) {
+                    return false;
+                }
+                if (word_call_form(form)) {
+                    const i64 next = transfer_target(m, s, code.id());
+                    if (!require(w, next >= 0 && next < count && next < s.body_count(), error)) {
+                        return false;
+                    }
+                    const i64 mark = w.word_call_mark(scratch, next);
+                    // Grey means direct or mutual recursion: fail closed, never
+                    // trust a signature to discharge an unvisited body.
+                    if (!require(w, mark != 1, error)) {
+                        return false;
+                    }
+                    if (mark == 0) {
+                        if (!require(w, depth < count, error) || !w.word_call_mark_set(scratch, next, 1)
+                            || !w.word_call_frame_set(scratch, count, depth, next, 0)) {
+                            return false;
+                        }
+                        depth = depth + 1;
+                    }
+                } else {
+                    if (!require(w, word_local_instruction(m, s, owner, code.id()), error)) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return w.word_calls_finish(scratch);
+    }
     auto transfer(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(id);
         const i64 form = row.form();
+        if (live_word_borrow(w, m)) {
+            if (word_call_form(form)) {
+                if (!closed_word_call(w, m, s, transfer_target(m, s, id))) {
+                    return false;
+                }
+            } else {
+                const i64 callable = w.callable();
+                if (!require(w, word_local_instruction(m, s, callable, id),
+                    second_error(VerificationErrorSecond::word_borrow_call_requires_closed_readonly_graph))) {
+                    return false;
+                }
+            }
+        }
         if (form == 91) {
             return transfer_current_kind(w, 1) && w.clear_current();
         }
@@ -415,7 +544,7 @@ export namespace compiler_ir_verification {
         if (form == 44) {
             return return_object(w, m, transfer_value(s, id, 0));
         }
-        if ((form >= 47 && form <= 52) || (form >= 54 && form <= 59) || form == 84) {
+        if ((form >= 47 && form <= 52) || (form >= 54 && form <= 59) || form == 84 || form == 92 || form == 93) {
             return transfer_spans(w, m, s, id);
         }
         if (form == 53) {

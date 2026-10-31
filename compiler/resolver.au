@@ -329,11 +329,11 @@ export namespace compiler_resolver {
         return leaf_is(session, name, "i64") || leaf_is(session, name, "u64") || leaf_is(session, name, "u8")
             || leaf_is(session, name, "own") || leaf_is(session, name, "move") || leaf_is(session, name, "borrow")
             || leaf_is(session, name, "borrow_mut") || leaf_is(session, name, "borrow_bytes") || leaf_is(session, name,
-            "borrow_values") || leaf_is(session, name, "read") || leaf_is(session, name, "write") || leaf_is(session,
-            name, "size_of") || leaf_is(session, name, "type_id") || leaf_is(session, name, "field_count")
-            || leaf_is(session, name, "len") || leaf_is(session, name, "reflect_size") || leaf_is(session, name,
-            "reflect_field_count") || leaf_is(session, name, "aurora_reflect_size") || leaf_is(session, name,
-            "aurora_reflect_field_count");
+            "borrow_values") || leaf_is(session, name, "borrow_words") || leaf_is(session, name, "read")
+            || leaf_is(session, name, "write") || leaf_is(session, name, "size_of") || leaf_is(session, name, "type_id")
+            || leaf_is(session, name, "field_count") || leaf_is(session, name, "len") || leaf_is(session, name,
+            "reflect_size") || leaf_is(session, name, "reflect_field_count") || leaf_is(session, name,
+            "aurora_reflect_size") || leaf_is(session, name, "aurora_reflect_field_count");
     }
     auto concrete_type(Session& session, ResolvedTypeKind kind, i64 nominal, i64 element, i64 length) -> i64 {
         const i64 rank = type_rank(kind);
@@ -2115,7 +2115,8 @@ export namespace compiler_resolver {
                         == compiler_parser::TypeKind::value_span) {
                         const i64 element = rw(session, row.word(3), 2);
                         if (row.type_kind() == compiler_parser::TypeKind::value_span) {
-                            if (type_kind(session, element) != ResolvedTypeKind::class_value) {
+                            if (type_kind(session, element) != ResolvedTypeKind::class_value && type_kind(session,
+                                element) != ResolvedTypeKind::u64_value) {
                                 return reject(session, SemanticError::span_named, node, -1, -1);
                             }
                             bound = concrete_type(session, ResolvedTypeKind::value_span, -1, element, 0);

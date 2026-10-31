@@ -1061,6 +1061,8 @@ export namespace compiler_ir_verification {
             "normal return requires explicit service resource finalization");
         value.typed(r == VerificationErrorSecond::incompatible_service_resource_at_join,
             "incompatible service resource lifetime or issuer opportunity at join");
+        value.typed(r == VerificationErrorSecond::word_borrow_call_requires_closed_readonly_graph,
+            "word borrow requires a closed readonly call graph");
         value.typed(r == VerificationErrorSecond::unreachable_semantic_instruction, "unreachable semantic instruction");
         value.typed(r == VerificationErrorSecond::callable_body_count_mismatch, "callable body count mismatch");
         value.typed(r == VerificationErrorSecond::callable_body_id_does_not_match_declaration_order,

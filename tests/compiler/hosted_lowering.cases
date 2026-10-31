@@ -127,3 +127,6 @@ reject orphan-output orphan
 reject duplicate-class-name class-duplicate
 reject duplicate-carrier-name carrier-duplicate
 reject identifier-outside-module identifier
+
+shape 92 BorrowWordsSpan 2 23 6
+shape 93 SpanWordLoad 2

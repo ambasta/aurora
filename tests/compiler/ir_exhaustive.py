@@ -88,7 +88,11 @@ def source_verifier_probes(directory, args):
         if mutation == "unknown-form":
             # Corrupt only the observation inside the real dynamic dispatcher,
             # after immutable instruction admission and CFG normalization.
-            changed = replace_once(changed, "const i64 form = row.form();", "const i64 form = 999;")
+            dispatcher = "    auto transfer(VerificationWorkspace& w,"
+            if changed.count(dispatcher) != 1:
+                raise AssertionError("dynamic dispatcher anchor is not unique")
+            prefix, separator, body = changed.partition(dispatcher)
+            changed = prefix + separator + replace_once(body, "const i64 form = row.form();", "const i64 form = 999;")
         elif mutation == "missing-handler":
             # Remove the actual Constant route while preserving all other routes.
             changed = replace_once(changed, "(form >= 5 && form <= 19)", "(form >= 6 && form <= 19)")

@@ -115,6 +115,42 @@ reminting or reinitializing records. Revocation ends access, not the physical
 reservation of bootstrap metadata. Source FrameAllocator owns the allocation
 records/free list/counts/audit; the adapter owns no duplicate allocator ledger.
 
+### Lexical readonly word views
+
+`borrow_words(field)` borrows a direct private `OwnedWords` receiver field as
+`builtin::span<const u64>`. This admits exactly one additional scalar element,
+not arbitrary scalar spans or copied-class elements. `size()` and `at(i64)` use
+the existing signed span bounds; `at` copies a full u64, including its high bit.
+The admitted fixed word extent fits i64. No word reference or address escapes.
+
+The view pins its exact receiver/field for its lexical lifetime and every
+readonly copy or reborrow. Source cannot set words, mutate the root, move or
+consume the owner while a loan lives. Synchronous source helpers may receive the
+view, but no word view may be returned (including receiver-bound returns), stored,
+reflected or admitted as a native entry parameter/result. Emitted ABI facts use
+`word_span`, distinct from byte spans; the existing exact native bridge entry
+matcher admits no such shape. A source module may export a synchronous helper
+for other Aurora source callers; that does not create a source C ABI or authorize
+native code to bypass the admitted bridge. These restrictions follow provenance through helpers and reborrows, not just direct borrow syntax.
+An owner can outlive an unmapped interval; a borrowed view cannot.
+
+Borrow creation authenticates the same live attached binding, epoch and native
+access scope before returning a compiler-private contiguous span. The scope
+admits the current kernel or process root and forbids reentrancy/detachment;
+trusted native code may not invalidate its bank, root or interrupt state behind
+a loan. Generated loads retain signed bounds checks, using the admitted aligned,
+nonoverflowing eight-byte extent rather than reentering native code per word.
+Ordinary `OwnedWords` primitives keep their per-call validation.
+
+Independent IR verifies the exact u64 element, eight-byte stride, scalar result,
+field origin and all lifetime joins. Class-element load paths cannot fabricate
+word views. Calls reachable while a word loan lives require closed direct-call
+admission: only source operations and audited imports that preserve backing and
+scope are allowed; unknown effects, callbacks and call cycles reject. This is
+not a frontend assertion or a general effect system. The source FrameAllocator
+uses this view for its complete audit; native mapping authority and physical
+page-table verification remain separate.
+
 ## Always-on checked requirement
 
 `builtin::require(condition);` is a statement, not an expression or an optimizer
