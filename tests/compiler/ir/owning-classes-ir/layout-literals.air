@@ -1,0 +1,50 @@
+; CASE: literal layout facts derive from executable IR and exact receiver identity
+; RUN: verify
+; EXPECT-OK
+; RUN: abi-facts
+; ABI: record Layout fixture::Layout word
+; ABI: function layout_count fixture::layout_count
+; ABI: function computed_count fixture::computed_count
+; ABI: function mutable_count fixture::mutable_count
+; CHECK-JSON: literal_results.layout_count {"source_name":"fixture::layout_count","receiver":"Layout","value":512}
+; CHECK-JSON-COUNT: literal_results 1
+layout Layout [u64]
+fields Layout [(u64 0 1 false)]
+storage Layout [0] [0] 8 8 8
+function layout_count
+  result u64
+  frame 0
+  receiver Layout false false
+    Constant 512 u64
+    Return
+end
+function computed_count
+  result u64
+  frame 0
+  receiver Layout false false
+    MethodCall layout_count
+    Return
+end
+function mutable_count
+  result u64
+  frame 0
+  receiver Layout true false
+    Constant 512 u64
+    Return
+end
+
+; CASE: changed literal changes independently emitted layout evidence
+; RUN: abi-facts
+; ABI: record Layout fixture::Layout word
+; ABI: function layout_count fixture::layout_count
+; CHECK-JSON: literal_results.layout_count.value 513
+layout Layout [u64]
+fields Layout [(u64 0 1 false)]
+storage Layout [0] [0] 8 8 8
+function layout_count
+  result u64
+  frame 0
+  receiver Layout false false
+    Constant 513 u64
+    Return
+end

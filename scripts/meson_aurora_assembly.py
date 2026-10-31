@@ -122,7 +122,7 @@ def validate_native_abi(facts, source):
             return dict(bytes=8, kind=source)
         if source == "span":
             return dict(bytes=56, kind="span")
-        if source in ("__au_resident_slot", "__au_owned_words"):
+        if source in ("__au_resident_slot", "__au_owned_words", "__au_mapping_authority"):
             return dict(bytes=16, kind="owner", type_name=source)
         if source in ("builtin::CallSession", "builtin::ConsoleSession"):
             return dict(bytes=16, kind="service")
@@ -220,10 +220,10 @@ def validate_native_abi(facts, source):
         if value["cases"] != dict(zip(names, range(len(names)))):
             raise ValueError("Native enum encoding differs from compiler facts: " + source)
 
-    def retained_root(name):
+    def retained_root(name, *, reservation=128):
         nominal, layout = abi_declaration(facts, "records", name)
         if not (
-            0 < layout["size"] <= layout["reserved"] <= 128
+            0 < layout["size"] <= layout["reserved"] <= reservation
             and layout["alignment"] in (1, 2, 4, 8, 16)
             and layout["reserved"] % layout["alignment"] == 0
         ):
@@ -361,6 +361,168 @@ def validate_native_abi(facts, source):
             ("audit", 0, "kernel::FrameAudit", False),
         ):
             borrowed_entry(nominal, "process_frames_" + name, ["u64"] * tail, result, mutable)
+
+    if "# MEMORY_MANAGER_ABI:" in source:
+        nominal = retained_root("kernel::MemoryManager", reservation=496)
+        fields = [
+            (name, "__au_owned_words", 0) for name in ("words", "mapping_words", "reservation_words", "scratch_words")
+        ]
+        fields += [("authority", "__au_mapping_authority", 0)]
+        fields += [
+            (name, "u64", 0)
+            for name in (
+                "head",
+                "free_count",
+                "allocated_count",
+                "reserved_count",
+                "owner0",
+                "count0",
+                "owner1",
+                "count1",
+            )
+        ]
+        fields += [("initialized", "bool", 0), ("poison", "bool", 0)]
+        for slot in (0, 1):
+            fields += [
+                (f"slot{slot}_{name}", "u64", 0)
+                for name in (
+                    "owner",
+                    "epoch",
+                    "phase",
+                    "root_ticket",
+                    "tables",
+                    "leaves",
+                    "heap",
+                    "heap_tables",
+                    "next",
+                    "charged",
+                    "quota",
+                    "count",
+                    "region_count",
+                )
+            ]
+        fields += [
+            (f"snapshot_{name}", "u64", 0) for name in ("owner", "epoch", "phase", "directory_ticket", "bytes", "held")
+        ]
+        fields += [
+            (f"shared_{name}", "u64", 0)
+            for name in ("slots", "slot0", "slot1", "entry0", "entry1", "reserved_first", "reserved_end")
+        ]
+        fields += [(name, "u64", 0) for name in ("staged_count", "active_slot", "operation")]
+        # Complete private layout, not just the first descriptor or copied
+        # caller claims: native authentication reads exactly these fields.
+        record("kernel::MemoryManager", 496, fields, alignment=16)
+        # These values describe verified literal-return IR bodies, not source
+        # comments or caller-supplied AIR annotations. They authenticate the
+        # fixed partition vocabulary used by private source layout helpers.
+        layout = {}
+        expected_layout = dict(
+            slot_count=2,
+            record_count=16384,
+            record_stride=3,
+            region_count=10,
+            region_stride=7,
+            shared_count=256,
+            stage_count=19,
+            stage_stride=2,
+            tail_words=512,
+            scratch_words=512,
+        )
+        literals = facts.get("literal_results", {})
+        for name, expected in expected_layout.items():
+            source_name = "kernel::layout_" + name
+            matches = [
+                (symbol, value)
+                for symbol, value in literals.items()
+                if value.get("source_name") == source_name and value.get("receiver") == nominal
+            ]
+            if len(matches) != 1:
+                raise ValueError("Missing unique verified MemoryManager layout literal: " + source_name)
+            symbol, value = matches[0]
+            if value != dict(source_name=source_name, receiver=nominal, value=expected):
+                raise ValueError("MemoryManager layout literal differs from native partition: " + source_name)
+            declaration = normalize_function_abi(facts, facts["functions"][symbol])
+            if (
+                declaration["receiver"] != nominal
+                or declaration["receiver_mutable"] is not False
+                or declaration["parameters"]
+                or declaration["borrowed_root_count"] != 0
+                or declaration["result"] != dict(bytes=8, kind="u64")
+            ):
+                raise ValueError("Invalid MemoryManager layout literal signature: " + source_name)
+            layout[name] = value["value"]
+        records = layout["slot_count"] * layout["record_count"] * layout["record_stride"]
+        regions = layout["slot_count"] * layout["region_count"] * layout["region_stride"]
+        shared = records + regions
+        staged = shared + layout["shared_count"]
+        used = staged + layout["stage_count"] * layout["stage_stride"]
+        extent = records + layout["tail_words"]
+        # Word offsets below are relative to the reservation bank. Allocation
+        # and mapping extents remain inventory-dependent native grants; they
+        # are not compile-time facts. Native BankLayout checks their physical
+        # nonoverlap, page rounding and the separately granted scratch page.
+        if (records, shared, staged, used, extent, layout["scratch_words"]) != (98304, 98444, 98700, 98738, 98816, 512):
+            raise ValueError("MemoryManager reservation partition differs from native admission")
+        if records % 512 or extent % 512 or used > extent or layout["scratch_words"] != 512:
+            raise ValueError("MemoryManager bank partition is unaligned or overlaps its extent")
+        record("kernel::FrameAllocation", 24, [("index", "u64", 0), ("generation", "u64", 0), ("valid", "bool", 0)])
+        record(
+            "kernel::FrameAudit",
+            40,
+            [("consistent", "bool", 0)] + [(name, "u64", 0) for name in ("free", "allocated", "kernel", "retired")],
+        )
+        record("kernel::MemoryResult", 16, [("outcome", "u64", 0), ("value", "u64", 0)])
+        record("kernel::MemoryEntry", 24, [("table", "u64", 0), ("slot", "u64", 0), ("valid", "bool", 0)])
+        record(
+            "kernel::ProcessRegion",
+            56,
+            [(name, "u64", 0) for name in ("kind", "first", "pages", "flags", "vaddr", "offset", "bytes")],
+        )
+        entry(
+            "kernel::MemoryManager",
+            ["__au_owned_words"] * 4 + ["__au_mapping_authority"],
+            "i64",
+            receiver=nominal,
+            mode="complete_constructor",
+        )
+        entry("kernel::finish", [], "bool", receiver=nominal, mode="receiver_consuming")
+        for name, count, result, mutable in (
+            ("frames_initialize", 2, "bool", True),
+            ("frames_allocate", 1, "kernel::FrameAllocation", True),
+            ("frames_release", 3, "u64", True),
+            ("frames_record", 1, "u64", False),
+            ("frames_frames", 0, "u64", False),
+            ("frames_reserved", 0, "u64", False),
+            ("frames_free", 0, "u64", False),
+            ("frames_allocated", 0, "u64", False),
+            ("frames_owner_allocated", 1, "u64", False),
+            ("frames_poisoned", 0, "bool", False),
+            ("frames_audit", 0, "kernel::FrameAudit", False),
+            ("attach_shared", 0, "bool", True),
+            ("prepare_load", 4, "u64", True),
+            ("finish_load", 2, "bool", True),
+            ("space_value", 3, "u64", False),
+            ("map_memory", 3, "kernel::MemoryResult", True),
+            ("remap_memory", 5, "kernel::MemoryResult", True),
+            ("unmap_memory", 4, "kernel::MemoryResult", True),
+            ("fault_access", 4, "u64", False),
+            ("commit_fault_block", 3, "bool", True),
+            ("verify_space", 2, "bool", True),
+            ("retire_space", 2, "u64", True),
+            ("space_contains", 4, "bool", False),
+            ("space_executable", 4, "bool", False),
+            ("space_entry", 4, "kernel::MemoryEntry", True),
+            ("snapshot_begin", 2, "u64", True),
+            ("snapshot_fill", 3, "bool", True),
+            ("snapshot_seal", 1, "bool", True),
+            ("snapshot_discard", 1, "bool", True),
+            ("snapshot_verify", 1, "bool", True),
+            ("snapshot_value", 2, "u64", False),
+            ("audit_residents", 0, "bool", True),
+        ):
+            borrowed_entry(nominal, "manager_" + name, ["u64"] * count, result, mutable)
+        borrowed_entry(nominal, "manager_validate_access", ["u64"] * 4 + ["bool"], "u64", True)
+        borrowed_entry(nominal, "manager_map_region", ["u64", "u64", "kernel::ProcessRegion", "u64"], "bool", True)
 
     if "# RESIDENT_OWNER_ABI:" in source:
         nominal = retained_root("kernel::ServiceOwner")
@@ -588,7 +750,8 @@ def validate_native_abi(facts, source):
         record("kernel::ExecutionResult", 16, [("outcome", "__au_exec_status", 0), ("result_value", "u64", 0)])
         entry("process_cancel_command", ["builtin::ExecutionEffects", "u64"], "kernel::ExecutionResult")
 
-    if "# PROCESS_POLICY_ABI:" in source:
+    if "# PROCESS_POLICY_ABI:" in source or "# PRODUCTION_PROCESS_POLICY_ABI:" in source:
+        fixture_process = "# PROCESS_POLICY_ABI:" in source
         for name, names in (
             ("kernel::MapVerdict", "valid version stride length alignment range overlap"),
             ("kernel::GrantVerdict", "granted map bounds arena uncovered"),
@@ -607,8 +770,6 @@ def validate_native_abi(facts, source):
         entry("process_volume_admit", ["span"], "kernel::VolumeVerdict")
         entry("process_volume_find", ["span", "span"], "u64")
         entry("process_volume_entry", ["span", "u64"], "kernel::VolumeEntry")
-        entry("process_base64_group", ["span", "u64"], "u64")
-        entry("aurora_kernel_frame_transition", ["u64", "u64", "u64", "u64", "u64"], "u64")
         for name, names in (
             (
                 "kernel::ElfVerdict",
@@ -626,12 +787,6 @@ def validate_native_abi(facts, source):
                 "invalid exit print read map remap unmap open_directory open_beneath open_file close create_output "
                 "write commit discard",
             ),
-            ("kernel::MemoryVerdict", "mapped resized moved unmapped quota space records length malformed"),
-            ("kernel::BudgetVerdict", "valid quota"),
-            (
-                "kernel::RunsVerdict",
-                "valid truncated magic version count ticks path arguments flags padding trailing",
-            ),
         ):
             enum(name, names)
         region = ("kind", "first", "pages", "flags", "vaddr", "offset", "bytes")
@@ -640,8 +795,27 @@ def validate_native_abi(facts, source):
         record("kernel::ProcessTrap", 72, [(name, "u64", 0) for name in trap])
         call = [("_value", "u64", 0), ("_length", "u64", 0), ("_base", "u64", 0), ("_record", "u64", 0)]
         record("kernel::KernelCall", 40, [("_action", "kernel::CallAction", 0)] + call)
-        run = ("found", "ticks", "flags", "quota", "path", "path_bytes", "arguments", "argument_bytes")
-        record("kernel::RunEntry", 64, [(name, "u64", 0) for name in run])
+        entry("process_elf_admit", ["span"], "kernel::ElfVerdict")
+        entry("process_layout", ["span", "u64", "u64", "u64"], "kernel::LayoutVerdict")
+        entry("process_region", ["span", "u64", "u64"], "kernel::ProcessRegion")
+        entry("process_memory_load_charge", ["span", "u64", "u64"], "u64")
+        entry("process_elf_entry", ["span"], "u64")
+        entry("process_trap", ["kernel::ProcessTrap"], "kernel::TrapClass")
+        entry("process_call", ["u64", "u64", "u64", "u64", "u64"], "kernel::KernelCall")
+        if fixture_process:
+            enum(
+                "kernel::RunsVerdict", "valid truncated magic version count ticks path arguments flags padding trailing"
+            )
+            run = ("found", "ticks", "flags", "quota", "path", "path_bytes", "arguments", "argument_bytes")
+            record("kernel::RunEntry", 64, [(name, "u64", 0) for name in run])
+            entry("process_runs_admit", ["span"], "kernel::RunsVerdict")
+            entry("process_run", ["span", "u64"], "kernel::RunEntry")
+            entry("process_base64_group", ["span", "u64"], "u64")
+            entry("process_path_text", ["u64"], "u64")
+
+    if "# PROCESS_MEMORY_POLICY_ABI:" in source:
+        enum("kernel::MemoryVerdict", "mapped resized moved unmapped quota space records length malformed")
+        enum("kernel::BudgetVerdict", "valid quota")
         record("kernel::MemoryState", 32, [(name, "u64", 0) for name in ("next", "charged", "quota", "count")])
         record("kernel::MemoryRecord", 24, [(name, "u64", 0) for name in ("first", "reserved", "pages")])
         decision = ("first", "reserved", "pages", "next", "charged")
@@ -659,14 +833,6 @@ def validate_native_abi(facts, source):
                 ("charged", "u64", 0),
             ],
         )
-        entry("process_elf_admit", ["span"], "kernel::ElfVerdict")
-        entry("process_layout", ["span", "u64", "u64", "u64"], "kernel::LayoutVerdict")
-        entry("process_region", ["span", "u64", "u64"], "kernel::ProcessRegion")
-        entry("process_elf_entry", ["span"], "u64")
-        entry("process_trap", ["kernel::ProcessTrap"], "kernel::TrapClass")
-        entry("process_call", ["u64", "u64", "u64", "u64", "u64"], "kernel::KernelCall")
-        entry("process_runs_admit", ["span"], "kernel::RunsVerdict")
-        entry("process_run", ["span", "u64"], "kernel::RunEntry")
         entry("process_memory_map", ["kernel::MemoryState", "u64"], "kernel::MemoryDecision")
         entry(
             "process_memory_remap",
@@ -677,7 +843,7 @@ def validate_native_abi(facts, source):
         entry("process_memory_find", ["span", "u64", "u64"], "u64")
         entry("process_memory_fault", ["span", "u64", "u64", "u64"], "u64")
         entry("process_memory_budget", ["span", "u64", "u64", "u64", "u64"], "kernel::MemoryBudget")
-        entry("process_path_text", ["u64"], "u64")
+        entry("aurora_kernel_frame_transition", ["u64", "u64", "u64", "u64", "u64"], "u64")
 
     if "# PROCESS_FILES_ABI:" in source:
         enum(

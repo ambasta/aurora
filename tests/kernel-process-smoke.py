@@ -38,7 +38,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "tests"))
 from golden import compare, flat  # noqa: E402
 from host_files import TREE  # noqa: E402
-from kernel_profiles import COMPILE_GOLDEN, PROCESS_CASES  # noqa: E402
+from kernel_profiles import COMPILE_GOLDEN, MAPPING_AUTHORITY_PROBES, PROCESS_CASES  # noqa: E402
 from kernel_uefi_oracle import exports, loader_selection, need  # noqa: E402
 
 RECORD = re.compile(
@@ -283,7 +283,7 @@ def runs(text, mode):
             continue
         if kind == "AURORA_PROCESS_WALK_OK":
             need(current and not current["loaded"] and expected[current["run"] - 1][1] & 2, "Walk probes")
-            need(int(values["run"]) == current["run"] and values["rejected"] == "4", "Walk edit admitted")
+            need(int(values["run"]) == current["run"] and values["rejected"] == "11", "Walk edit admitted")
             current["walked"] = True
             continue
         if kind not in ("AURORA_PROCESS_KERNEL_FAULT", "AURORA_PROCESS_FAIL", "AURORA_PROCESS_RUNS_OK"):
@@ -649,6 +649,37 @@ def validate(
     need("AURORA_UEFI_FAIL:" not in text, "Loader failure")
     ordered(text, BASE)
     volume = (image / "esp/aurora/volume").read_bytes()
+    if mode in MAPPING_AUTHORITY_PROBES:
+        frames(text)
+        probes = re.findall(r"AURORA_MAPPING_AUTHORITY_PROBE: case=(\d+) root=(\d+) kernel=(\d+) closed=1", text)
+        need(len(probes) == 1 and int(probes[0][0]) == PROCESS_CASES[mode][0], "One real authority rejection probe")
+        probe = int(probes[0][0])
+        current, kernel = map(int, probes[0][1:])
+        need(current > 0 and kernel > 0 and current % 4096 == 0 and kernel % 4096 == 0, "Real aligned authority roots")
+        need(current != kernel if probe == 50 else current == kernel, "Exact authority probe root context")
+        after = text[text.index("AURORA_MAPPING_AUTHORITY_PROBE:") :]
+        if probe >= 50:
+            receipts = re.findall(r"AURORA_MAPPING_AUTHORITY_REJECT: case=(\d+) closed=(\d+) opens=(\d+)", after)
+            need(receipts == [(str(probe), "1", "0")], "Closed window and zero opens after exact hostile boundary")
+        need(
+            status == 35 and after.count("AURORA_PROCESS_FAIL: frame metadata authority") == 1,
+            "Native authority must reject before accessing backing or opening a window",
+        )
+        need(
+            not any(
+                marker in after
+                for marker in (
+                    "AURORA_PROCESS_KERNEL_FAULT",
+                    "AURORA_PROCESS_END:",
+                    "AURORA_PROCESS_RELEASED:",
+                    "AURORA_PROCESS_RUNS_OK",
+                    "AURORA_PROCESS_OK",
+                    "mapping authority probe returned",
+                )
+            ),
+            "No trap fallback, continuation or successful return after authority rejection",
+        )
+        return
     if mode in ("process-frame-require-kernel", "process-frame-require-process"):
         frames(text)
         context = "kernel" if mode.endswith("-kernel") else "process"

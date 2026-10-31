@@ -69,6 +69,72 @@ def program(body, definition=COUNTER, helpers=""):
 check("constructor and private mutation", program("Counter c = Counter(40); return c.add(2);"))
 check("const accessor", program("const Counter c = Counter(42); return c.get();"))
 check("argument before exclusive call", program("Counter c = Counter(21); return c.add(c.get());"))
+# Numeric results and semantic call presence, not instruction encodings. The
+# packed runner executes every boundary with the same native component driver.
+for value, folded in [
+    (0, True),
+    (2147483647, True),
+    (2147483648, True),
+    (4294967295, True),
+    (4294967296, False),
+    (9223372036854775808, False),
+    (18446744073709551615, False),
+]:
+    check(
+        f"const u64 literal boundary {value}",
+        program(
+            f"Literal c=Literal(); if(c.literal()=={value}u64){{return 42;}}return 0;",
+            f"class Literal{{public:Literal(){{}}auto literal()const->u64{{return {value}u64;}}}};",
+        ),
+        inlined=("_d7literal",) if folded else (),
+        called=() if folded else ("_d7literal",),
+    )
+for name, signature, body, invocation in [
+    ("mutable receiver", "auto literal()->u64", "return 42u64;", "c.literal()"),
+    ("explicit parameter", "auto literal(u64 value)const->u64", "return 42u64;", "c.literal(9u64)"),
+    ("extra local operation", "auto literal()const->u64", "const u64 copy=42u64;return copy;", "c.literal()"),
+]:
+    check(
+        "literal fallback " + name,
+        program(
+            f"Literal c=Literal();return i64({invocation});",
+            f"class Literal{{public:Literal(){{}}{signature}{{{body}}}}};",
+        ),
+        called=("_d7literal",),
+    )
+check(
+    "literal does not discard checked effect",
+    program(
+        "Literal c=Literal();return i64(c.literal());",
+        "class Literal{public:Literal(){}auto literal()const->u64{builtin::require(false);return 42u64;}};",
+    ),
+    expected=Trap.BOUNDS,
+    called=("_d7literal",),
+)
+check(
+    "literal subobject preserves constructor evaluation",
+    program(
+        "Counter count=Counter(20);const Literal child=Literal(count.add(1));"
+        "const Outer outer=Outer(7,child);"
+        "if(outer.value()!=42u64||count.get()!=21||outer.tag()!=7){return 0;}return 42;",
+        COUNTER + "class Literal{i64 marker;public:Literal(i64 value):marker(value){}"
+        "auto literal()const->u64{return 42u64;}};"
+        "class Outer{i64 prefix;Literal child;public:Outer(i64 tag,Literal value):prefix(tag),child(value){}"
+        "auto value()const->u64{return child.literal();}auto tag()const->i64{return prefix;}};",
+    ),
+    inlined=("_d7literal",),
+    called=("_d5value",),
+)
+check(
+    "literal receiver construction still traps",
+    program(
+        "Counter count=Counter(9223372036854775807);Literal c=Literal(count.add(1));return i64(c.literal());",
+        COUNTER + "class Literal{i64 marker;public:Literal(i64 value):marker(value){}"
+        "auto literal()const->u64{return 42u64;}};",
+    ),
+    trap=True,
+    inlined=("_d7literal",),
+)
 # Single-field getters become a load at the call site; any other body stays a call.
 check("inlined getter", program("const Counter c = Counter(42); return c.get();"), inlined=("_d3get",))
 check(

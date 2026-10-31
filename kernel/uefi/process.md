@@ -160,9 +160,11 @@ its reason and leaves the record unchanged. A generation that would wrap retires
 the frame. Owners 1..15 are kernel uses (1 tables, 2 metadata); allocation
 starts at 16.
 
-The retained Aurora `FrameAllocator` owns every record, free-list head, free and
-allocated count, the two owner counters, poison state and the complete audit.
-The native `Table` is an opaque forwarding facade, not a second allocator.
+The retained Aurora `MemoryManager` owns every allocation and mapping record,
+free-list head, free and allocated count, the two owner counters, poison state
+and the complete audit. It also owns both resident reservation catalogs, regions,
+quotas and the loader snapshot. Native `ProcessSpace` and `ImageSnapshot` retain
+only manager and lifetime identities and transport copied results.
 Allocation and release validate transitions and arithmetic before the committing
 record store; ordinary rejection leaves the ledger unchanged. The full audit
 borrows the private word bank once as a lexical readonly u64 span. It retains
@@ -172,8 +174,8 @@ mutation. This does not remove independent native physical mapping checks or
 make the retained owner continuously mapped. Full audit walks
 every record and free-list link, detects cycles and checks owner and total counts.
 
-A private `builtin::OwnedWords` field holds exclusive access to the fixed metadata
-bank. Native boot admission reserves, maps and zeros that backing without using
+Four private `builtin::OwnedWords` fields hold exclusive access to allocation,
+mapping, reservation and scratch banks under one atomic issuer and scope. Native boot admission reserves, maps and zeros that backing without using
 the allocator it is about to initialize. Complete construction transfers the
 unique grant; explicit unpublished initialization fills the ledger before use.
 The grant cannot be copied, resized, rebound or created from a source address.
@@ -207,11 +209,52 @@ the frame cases. The baseline row then checks that it rejects four single-entry
 edits: a user bit on a table link, an executable metadata leaf, a writable volume
 leaf and an open window.
 
-The metadata is one 8-byte record per frame and, from the next page, one
-8-byte mapping word per frame (`KernelSpace::mappings`), zero unless a process maps the
-frame, then 96 pages per resident slot for its 16384 memory records. Case 0
-needs one slot; process rows and production admit exactly two slots (an extra
-384 KiB), without widening image, stack or user mapping bounds.
+The metadata contains one 8-byte allocation record per frame, a page-aligned
+8-byte mapping word per frame, and two complete 96-page reservation extents
+(16384 three-word records per slot). A separate 4 KiB tail follows both reservation
+extents; it stores bounded regions, immutable shared entries and unpublished frame
+staging. A separate 4 KiB scratch page holds a copied table observation. Both
+ancillary pages and any additional metadata page-table pages from rounding are
+charged by `KernelSpace::plan`; they add no resident slots or reservation capacity.
+Native writable aliases are revoked at handoff.
+
+Unpublished staging is an unordered set of ticket/mapping pairs; removing a pair
+moves the last pair into its place. Publication still selects the exact ticket or
+mapping, and rollback releases every remaining ticket through its allocation
+generation. A complete table audit caches only operation-local scalar bounds and
+private bank offsets while its readonly loans live; every accessed index and PTE
+classification remains checked.
+
+While loading one contiguous region, source policy retains a copied leaf-table
+ticket only until its 2 MiB prefix changes or the operation returns. No ancestor
+can be removed during that operation. Each leaf publication still authenticates
+its table and child identities and exact empty entry; this is not a repeated
+native walk from the root.
+
+A private `MappingAuthority` permits named synchronous physical effects. Native
+admission authenticates the manager bank set, root and allocation generations,
+slot epoch, table role, exact expected PTE and current CR3 before opening the
+transient window. Clear and derived-address invalidation complete before source
+releases a frame. Snapshot publication uses only the fixed extension anchor;
+sealing only removes write permission, with invalidation. Unexpected failure after
+a visible effect is kernel fail-stop. The compiler checks provenance, whole-owner
+loan exclusion and consuming obligations; private source policy algorithms remain
+trusted and are not mathematically proven by these checks.
+
+The loader callback runs with all manager loans and windows closed. Its reply is
+copied by one authenticated bounded fill. The retained read-only ELF parser pin
+is effect-closed and ends before manager mutation; a copied layout manifest binds
+to its admitted source identity, while MemoryManager computes available quota.
+Native copy pins permit only the exact image-map, argument-map or snapshot-fill
+wrapper. Image and argument copies target a building resident; snapshot image
+copies additionally authenticate the sealed snapshot epoch, directory generation,
+extent and matching future owner. A chunk pin permits only filling its current
+unsealed snapshot. Ordinary manager operations reject live copy pins, including
+snapshot retirement; parser pins reject every manager scope and activation.
+These purposes remain private native scope state, not source tokens or receipts.
+No mutable snapshot span escapes. Audits classify one copied table using lexical
+bank loans and four bounded cursor frames; observations normalize admitted physical
+addresses to frame indices without moving allocation or traversal policy native.
 
 ## Export
 

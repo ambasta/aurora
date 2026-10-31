@@ -303,6 +303,37 @@ export namespace compiler_x86 {
         const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
         return row.value_parameter_count();
     }
+    // Facts about literal-return bodies are derived from admitted executable IR,
+    // never an annotation. This intentionally recognizes no arithmetic, calls,
+    // field reads or parameter-dependent expressions.
+    auto literal_u64_result_operand(const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions, i64 callable) -> i64 {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        const compiler_ir_instructions::BodyRow body = instructions.body_at(callable);
+        if (row.borrowed_root_count() != 0 || parameter_count(metadata, callable) != 0 || type_kind(metadata,
+            result_type(metadata, callable)) != 7 || body.count() != 2) {
+            return -1;
+        }
+        if (has_receiver(metadata, callable)) {
+            const compiler_ir_metadata::ReceiverShape receiver = row.first_receiver();
+            const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::flag_masks();
+            if ((receiver.attributes() & masks.receiver_mutable()) != 0u64) {
+                return -1;
+            }
+        }
+        const compiler_ir_instructions::CodeRow first = instructions.code_at(body.begin());
+        const compiler_ir_instructions::CodeRow last = instructions.code_at(body.begin() + 1);
+        const compiler_ir_instructions::RawInstructionRow value = instructions.instruction_at(first.id());
+        const compiler_ir_instructions::RawInstructionRow returned = instructions.instruction_at(last.id());
+        if (value.form() != 5 || returned.form() != 43) {
+            return -1;
+        }
+        const compiler_ir_instructions::RawOperandRow literal = instructions.operand_at(value.operand_begin());
+        if (literal.role() != 11) {
+            return -1;
+        }
+        return value.operand_begin();
+    }
     auto class_storage(const compiler_ir_metadata::MetadataStore& metadata, i64 class_id) -> i64 {
         const compiler_ir_metadata::ClassResultRow row = metadata.result_at(class_id);
         return row.canonical_storage();

@@ -560,6 +560,13 @@ export namespace compiler_ir_verification {
                     first_error(VerificationErrorFirst::constructor_resource_field_initialized_more_than_once))) {
                     return false;
                 }
+                const compiler_ir_metadata::CallableRow constructor = m.callable_at(w.callable());
+                const compiler_ir_metadata::ReceiverShape receiver = constructor.first_receiver();
+                if (compiler_ir_metadata::mapping_bank_class(m, compiler_ir_metadata::find_class(m, receiver.name()))
+                    && transfer_value(s, input.site(), 0) != ordinal) {
+                    return w.fail(first_error(
+                        VerificationErrorFirst::resource_field_initialization_owner_nominal_type_mismatch));
+                }
                 target.set_site(input.site());
                 target.set_disposition(ByteDisposition::live);
                 input.set_disposition(ByteDisposition::consumed);

@@ -1,0 +1,91 @@
+module kernel_process_production;
+import kernel.boot_volume;
+import kernel.elf;
+import kernel.frames;
+import kernel.memory_map;
+import kernel.process_events;
+import kernel.process_memory;
+import kernel.process_space;
+
+// Production-only entry selection matching production-process-entry.S.
+// Thin wrappers call the same kernel policy modules as kernel-process.au;
+// fixture run-list and serial-export entries remain in that fixture root.
+// Hosted copied-state memory queries live in kernel-process-memory.au.
+auto process_map_admit(builtin::span<const u8> map, u64 stride, u64 version) -> kernel::MapVerdict {
+    return kernel::map_admit(map, stride, version);
+}
+
+auto process_volume_grant(builtin::span<const u8> map, u64 stride, u64 arena, u64 volume,
+    u64 bytes) -> kernel::GrantVerdict {
+    return kernel::volume_grant(map, stride, arena, volume, bytes);
+}
+
+auto process_frame_range(builtin::span<const u8> map, u64 stride, u64 index, u64 arena, u64 volume,
+    u64 bytes) -> kernel::FrameRange {
+    const kernel::FrameRange range = kernel::frame_range(map, stride, index, arena, volume, bytes);
+    return range;
+}
+
+auto process_volume_admit(builtin::span<const u8> volume) -> kernel::VolumeVerdict {
+    return kernel::volume_admit(volume);
+}
+
+// Index + 1 of the entry, zero when absent.
+auto process_volume_find(builtin::span<const u8> volume, builtin::span<const u8> path) -> u64 {
+    const i64 index = kernel::volume_find(volume, path);
+    if (index < 0) {
+        return 0u64;
+    }
+    return u64(index) + 1u64;
+}
+
+auto process_volume_entry(builtin::span<const u8> volume, u64 index) -> kernel::VolumeEntry {
+    if (index > 4096u64) {
+        const kernel::VolumeEntry absent = kernel::VolumeEntry(0u64, 0u64, 0u64);
+        return absent;
+    }
+    const kernel::VolumeEntry entry = kernel::volume_entry(volume, i64(index));
+    return entry;
+}
+
+// Programs (kernel/uefi/process.md#programs): ELF admission against the
+// process layout, the layout against the kernel's shared slots, the regions
+// to map and the entry point.
+auto process_elf_admit(builtin::span<const u8> image) -> kernel::ElfVerdict {
+    return kernel::elf_admit(image, kernel::image_floor(), kernel::image_limit());
+}
+
+auto process_layout(builtin::span<const u8> image, u64 reserved_first, u64 reserved_end,
+    u64 arguments) -> kernel::LayoutVerdict {
+    return kernel::process_layout(image, reserved_first, reserved_end, arguments);
+}
+
+auto process_region(builtin::span<const u8> image, u64 index, u64 arguments) -> kernel::ProcessRegion {
+    if (index > 16u64) {
+        const kernel::ProcessRegion none = kernel::region(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+        return none;
+    }
+    const kernel::ProcessRegion region = kernel::process_region(image, i64(index), arguments);
+    return region;
+}
+
+auto process_elf_entry(builtin::span<const u8> image) -> u64 {
+    if (kernel::elf_admit(image, kernel::image_floor(), kernel::image_limit()) != kernel::ElfVerdict::valid) {
+        return 0u64;
+    }
+    return kernel::elf_entry(image);
+}
+
+// Entries from a running process: the copied frame's class and a kernel call.
+auto process_trap(kernel::ProcessTrap trap) -> kernel::TrapClass {
+    return kernel::process_trap(trap);
+}
+
+auto process_call(u64 operation, u64 first, u64 second, u64 third, u64 fourth) -> kernel::KernelCall {
+    const kernel::KernelCall call = kernel::process_call(operation, first, second, third, fourth);
+    return call;
+}
+
+auto process_memory_load_charge(builtin::span<const u8> image, u64 arguments, u64 slots) -> u64 {
+    return kernel::memory_load_charge(image, arguments, slots);
+}
