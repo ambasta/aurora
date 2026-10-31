@@ -28,24 +28,6 @@ auto process_frame_range(builtin::span<const u8> map, u64 stride, u64 index, u64
     return range;
 }
 
-// Operation 1 initialize free, 2 initialize kernel, 3 allocate, 4 release.
-auto aurora_kernel_frame_transition(u64 operation, u64 record, u64 owner, u64 generation, u64 link) -> u64 {
-    kernel::FrameOperation selected = kernel::FrameOperation::none;
-    if (operation == 1u64) {
-        selected = kernel::FrameOperation::initialize_free;
-    }
-    if (operation == 2u64) {
-        selected = kernel::FrameOperation::initialize_kernel;
-    }
-    if (operation == 3u64) {
-        selected = kernel::FrameOperation::allocate;
-    }
-    if (operation == 4u64) {
-        selected = kernel::FrameOperation::release;
-    }
-    return kernel::frame_transition(selected, record, owner, generation, link);
-}
-
 auto process_volume_admit(builtin::span<const u8> volume) -> kernel::VolumeVerdict {
     return kernel::volume_admit(volume);
 }
@@ -127,44 +109,13 @@ auto process_run(builtin::span<const u8> runs, u64 index) -> kernel::RunEntry {
     return entry;
 }
 
-// The memory service (kernel/uefi/process.md#memory): map, remap and unmap
-// decisions over the copied state and record, the record of a base or of a
-// committed fault in the supervisor's sorted records, and a loaded process's
-// quota.
-auto process_memory_map(kernel::MemoryState state, u64 bytes) -> kernel::MemoryDecision {
-    const kernel::MemoryDecision decision = kernel::memory_map(state, bytes);
-    return decision;
-}
-
-auto process_memory_remap(kernel::MemoryState state, kernel::MemoryRecord record, u64 bytes,
-    u64 target) -> kernel::MemoryDecision {
-    const kernel::MemoryDecision decision = kernel::memory_remap(state, record, bytes, target);
-    return decision;
-}
-
-auto process_memory_unmap(kernel::MemoryState state, kernel::MemoryRecord record, u64 bytes) -> kernel::MemoryDecision {
-    const kernel::MemoryDecision decision = kernel::memory_unmap(state, record, bytes);
-    return decision;
-}
-
-auto process_memory_find(builtin::span<const u8> records, u64 count, u64 base) -> u64 {
-    return kernel::memory_find(records, count, base);
-}
-
-auto process_memory_fault(builtin::span<const u8> records, u64 count, u64 address, u64 error) -> u64 {
-    return kernel::memory_fault(records, count, address, error);
-}
-
-auto process_memory_budget(builtin::span<const u8> image, u64 arguments, u64 slots, u64 requested,
-    u64 free) -> kernel::MemoryBudget {
-    const kernel::MemoryBudget budget = kernel::memory_budget(image, arguments, slots, requested, free);
-    return budget;
-}
-
 // One byte of an exported overlay path as text.
 auto process_path_text(u64 value) -> u64 {
     if (value > 255u64) {
         return 0u64;
     }
     return kernel::path_text(u8(value));
+}
+auto process_memory_load_charge(builtin::span<const u8> image, u64 arguments, u64 slots) -> u64 {
+    return kernel::memory_load_charge(image, arguments, slots);
 }

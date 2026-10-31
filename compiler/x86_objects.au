@@ -1691,7 +1691,15 @@ export namespace compiler_x86 {
             if (arguments == 3) {
                 emit_mov_rr(w, o, Register::rax, Register::rdx);
             }
-            if (arguments == 4) {
+            if (arguments > 3) {
+                // Explicit scalars were staged left-to-right. Descriptor words
+                // already occupy RDI/RSI; at most four scalars use the rest.
+                if (arguments == 6) {
+                    emit_pop(w, o, Register::r9);
+                }
+                if (arguments >= 5) {
+                    emit_pop(w, o, Register::r8);
+                }
                 emit_pop(w, o, Register::rcx);
                 emit_pop(w, o, Register::rdx);
             }

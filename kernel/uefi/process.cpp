@@ -65,7 +65,7 @@ constexpr auto least(U64 a, U64 b) -> U64 {
 // Each table is far larger than the kernel stack; one boot owns one of each.
 constinit frames::Ranges ranges;
 constinit aurora::uefi::KernelSpace space;
-constinit frames::Table table;
+constinit aurora::uefi::MemoryManager table;
 constinit ProcessSpace::Shared shared;
 // The probe's owner; owners below frames::first_owner are kernel uses.
 constexpr U64 probe_owner = frames::first_owner;
@@ -301,7 +301,7 @@ public:
 };
 constinit Running running;
 constinit Outcome outcome;
-constinit U64 owned_arena = 0, kernel_root = 0;
+constinit U64 owned_arena = 0, kernel_root = 0, physical_bits = 0, process_volume_bytes = 0;
 constinit bool draining = false;
 constinit aurora::uefi::ProcessOutput output_sink = nullptr;
 constinit void *output_context = nullptr;
@@ -491,7 +491,7 @@ auto install_architecture(U64 arena) -> void {
 auto capture_shared(U64 arena) -> void {
     const auto *top = reinterpret_cast<const volatile U64 *>(kernel_root);
     for (U64 slot = 256; slot < 512; ++slot)
-        shared.upper[slot - 256] = top[slot];
+        shared.upper[slot - 256] = top[slot] & ~ProcessSpace::hardware_bits;
     // Every slot the arena spans is reserved; only those holding mapped
     // arena pages have a page table to share.
     const U64 first = arena & ~(ProcessSpace::slot_bytes - 1);
@@ -515,6 +515,8 @@ auto capture_shared(U64 arena) -> void {
     }
     if (!shared.slots)
         fail("shared kernel slots");
+    table.attach(space, shared, physical_bits, kernel_root);
+    table.attach_boot_volume(space.volume(process_volume_bytes));
 }
 
 #ifndef AURORA_PRODUCTION
@@ -642,40 +644,10 @@ auto charge_tick(U64 vector, U64 error, U64 rip, U64 cs, const volatile U64 *fra
     return 0;
 }
 
-// Every resident's unallocated quota stays reserved, including mappings that
-// have never been touched. Physical free frames alone would overcommit them.
-auto available_frames() -> U64 {
-    U64 available = table.free();
-    for (const auto &resident : residents) {
-        if (!resident.space)
-            continue;
-        const auto &held = *resident.space;
-        if (held.held() > held.quota() || held.quota() - held.held() > available)
-            fail("resident quota accounting");
-        available -= held.quota() - held.held();
-    }
-    return available;
-}
-
-// Complete lifecycle audit, not a per-call whole-RAM scan. The table checks its
-// per-owner counters against every frame; the aggregate must equal precisely
-// the resident owners. Each root's own walk checks all its mappings.
+// The source manager owns aggregate resident/snapshot accounting and performs
+// the physical walks under its one authority scope. Native retains no quota sum.
 auto audit_residents() -> bool {
-    U64 allocated = 0;
-    if (snapshot) {
-        if (!snapshot->verify() || snapshot->held() != table.allocated(snapshot->owner()))
-            return false;
-        allocated = snapshot->held();
-    }
-    for (auto &resident : residents) {
-        if (!resident.space)
-            continue;
-        if (!resident.space->verify() || resident.space->held() > table.allocated() - allocated)
-            return false;
-        allocated += resident.space->held();
-    }
-    const auto audit = table.audit();
-    return audit.consistent && audit.allocated == allocated;
+    return table.audit_residents();
 }
 // The kernel's copy of a call's path, read from the process before any
 // decision sees it.
@@ -1202,12 +1174,11 @@ auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
         return kernel_call(words);
     // A first touch of a mapping's absent page commits a zeroed, already
     // charged frame (process.md#memory).
-    const auto committed = *kind == process::TrapClass::page_fault
-                               ? process::memory_fault(running.space->records(), trap.cr2, error)
-                               : process::MemoryLookup{};
-    if (committed.malformed)
+    const auto committed =
+        *kind == process::TrapClass::page_fault ? running.space->fault(trap.cr2, error) : ProcessSpace::Fault::refused;
+    if (committed == ProcessSpace::Fault::broken)
         fail("Aurora memory fault decision");
-    if (committed.index) {
+    if (committed == ProcessSpace::Fault::admitted) {
 #ifdef AURORA_PROCESS_FIXTURE
         if (frame_finish_fault) {
             Serial::text("AURORA_FRAME_REQUIRE_PROBE: context=process");
@@ -1276,8 +1247,9 @@ auto end_record(U64 run) -> void {
 // arena slot's entry.
 auto walk_cases(ProcessSpace &process_space, U64 code, U64 block, U64 run) -> void {
     const auto code_leaf = process_space.entry(code, 1), block_leaf = process_space.entry(block, 1),
-               after_leaf = process_space.entry(block + frames::page, 1), slot = process_space.entry(shared.slot[0], 2);
-    if (!code_leaf || !block_leaf || !after_leaf || !slot)
+               after_leaf = process_space.entry(block + frames::page, 1), slot = process_space.entry(shared.slot[0], 2),
+               code_parent = process_space.entry(code, 2);
+    if (!code_leaf || !block_leaf || !after_leaf || !slot || !code_parent)
         fail("walk probe entries");
     const auto value = [&](const ProcessSpace::Slot &at) {
         auto *words = space.open(at.table);
@@ -1293,7 +1265,13 @@ auto walk_cases(ProcessSpace &process_space, U64 code, U64 block, U64 run) -> vo
         reinterpret_cast<volatile U64 *>(words)[at.slot] = word;
         space.close();
     };
-    const auto code_word = value(*code_leaf), block_word = value(*block_leaf), slot_word = value(*slot);
+    const auto code_word = value(*code_leaf), block_word = value(*block_leaf), slot_word = value(*slot),
+               parent_word = value(*code_parent);
+    std::uint32_t a, b, c, d;
+    asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0x80000008U), "c"(0));
+    const U64 physical_bits = a & 255;
+    if (physical_bits < 36 || physical_bits > 52)
+        fail("walk probe physical width");
     class Edit final {
     public:
         ProcessSpace::Slot at;
@@ -1304,6 +1282,15 @@ auto walk_cases(ProcessSpace &process_space, U64 code, U64 block, U64 run) -> vo
         {*code_leaf, code_word, (block_word & KernelSpace::address_mask) | (code_word & ~KernelSpace::address_mask)},
         {*after_leaf, value(*after_leaf), block_word},
         {*slot, slot_word, slot_word | 4},
+        {*code_leaf, code_word, code_word | (U64{1} << 8)},       // global user mapping
+        {*code_leaf, code_word, code_word | (U64{1} << 62)},      // reserved flag
+        {*code_parent, parent_word, parent_word | (U64{1} << 7)}, // huge-page bit
+        {*code_leaf, code_word, code_word | (U64{1} << physical_bits)},
+        {*code_leaf, code_word, 0}, // missing owned leaf
+        {*code_leaf, code_word, (parent_word & KernelSpace::address_mask) | (code_word & ~KernelSpace::address_mask)},
+        {*code_parent,
+         parent_word,
+         (code_word & KernelSpace::address_mask) | (parent_word & ~KernelSpace::address_mask)},
     };
     U64 rejected = 0;
     for (const auto &edit : edits) {
@@ -1311,7 +1298,7 @@ auto walk_cases(ProcessSpace &process_space, U64 code, U64 block, U64 run) -> vo
         rejected += !process_space.verify();
         set(edit.at, edit.before);
     }
-    if (rejected != 4 || !process_space.verify())
+    if (rejected != std::size(edits) || !process_space.verify())
         fail("process walk edit admitted");
     Serial::text("AURORA_PROCESS_WALK_OK:");
     field("run", run);
@@ -1332,6 +1319,42 @@ auto refuse(U64 run, std::string_view reason) -> void {
     Serial::text("\r\n");
 }
 
+// The existing pure parser returns bounded copied layout facts only. This
+// local manifest remains bound to its immutable boot input or snapshot epoch;
+// physical copying authenticates that source again after the parser pin ends.
+class ImageManifest final {
+public:
+    std::array<process::ProcessRegion, ProcessSpace::max_regions> regions{};
+    std::optional<process::ElfVerdict> elf;
+    std::optional<process::LayoutVerdict> layout;
+    U64 count = 0, entry = 0, charge = 0, snapshot_epoch = 0;
+    bool complete = false;
+};
+auto parse_image_manifest(std::span<const std::byte> image, U64 argument_bytes, U64 snapshot_epoch) -> ImageManifest {
+    ImageManifest result;
+    result.snapshot_epoch = snapshot_epoch;
+    result.elf = process::elf_admit(image);
+    if (result.elf != process::ElfVerdict::valid)
+        return result;
+    result.layout = process::layout(image, shared.reserved_first, shared.reserved_end, argument_bytes);
+    if (result.layout != process::LayoutVerdict::valid)
+        return result;
+    for (;;) {
+        const auto region = process::region(image, result.count, argument_bytes);
+        if (!region)
+            return result;
+        if (static_cast<process::RegionKind>(region->kind) == process::RegionKind::none)
+            break;
+        if (result.count == result.regions.size())
+            return result;
+        result.regions[result.count++] = *region;
+    }
+    result.entry = process::elf_entry(image);
+    result.charge = process::memory_load_charge(image, argument_bytes, shared.slots);
+    result.complete = result.count != 0 && result.charge != 0;
+    return result;
+}
+
 // Map a complete immutable admitted source. A transient loader snapshot, if
 // present, is released before this root becomes an auditable resident.
 auto load_image(std::span<const std::byte> view,
@@ -1345,68 +1368,77 @@ auto load_image(std::span<const std::byte> view,
                 U64 service = 0,
                 bool grant_block = false,
                 U64 companion = 0,
-                bool grant_mounted = false) -> bool {
+                bool grant_mounted = false,
+                U64 snapshot_epoch = 0) -> bool {
     auto &resident = residents[slot];
     if (resident.space || resident.started)
         fail("resident slot already owned");
     static_cast<void>(view);
-    const auto image = std::optional<std::span<const std::byte>>{source};
-    const auto admitted = process::elf_admit(*image);
-    if (!admitted)
+    ImageManifest manifest;
+    if (snapshot_epoch) {
+        if (!source.empty() || !snapshot || snapshot->epoch() != snapshot_epoch)
+            fail("loader snapshot identity");
+        auto input = table.snapshot_read(snapshot_epoch);
+        manifest = parse_image_manifest(input.bytes(), arguments.size(), snapshot_epoch);
+    } else {
+        auto input = table.boot_source(source);
+        manifest = parse_image_manifest(source, arguments.size(), 0);
+    }
+    // All parser pins end before diagnostics or manager mutations.
+    if (!manifest.elf)
         fail("Aurora ELF admission");
-    if (*admitted != process::ElfVerdict::valid) {
-        refuse(run, name(elf_names, static_cast<U64>(*admitted)));
+    if (*manifest.elf != process::ElfVerdict::valid) {
+        refuse(run, name(elf_names, static_cast<U64>(*manifest.elf)));
         return false;
     }
-    const auto layout = process::layout(*image, shared.reserved_first, shared.reserved_end, arguments.size());
-    if (!layout)
+    if (!manifest.layout)
         fail("Aurora process layout");
-    if (*layout != process::LayoutVerdict::valid) {
-        refuse(run, name(layout_names, static_cast<U64>(*layout)));
+    if (*manifest.layout != process::LayoutVerdict::valid) {
+        refuse(run, name(layout_names, static_cast<U64>(*manifest.layout)));
         return false;
     }
-    // The load and the memory service are charged against frames free now.
-    const auto budget = process::memory_budget(*image, arguments.size(), shared.slots, entry.quota, available_frames());
-    if (!budget)
-        fail("Aurora memory budget");
-    if (budget->verdict != static_cast<U64>(process::BudgetVerdict::valid)) {
+    if (!manifest.complete || manifest.snapshot_epoch != snapshot_epoch)
+        fail("Aurora process manifest");
+    const U64 epoch = table.prepare_load(slot, frames::first_owner + run, entry.quota, manifest.charge);
+    if (!epoch) {
         refuse(run, "quota");
         return false;
     }
-    auto &process_space = resident.space.emplace(space,
-                                                 table,
-                                                 ranges,
-                                                 space.mappings(ranges.frames()),
-                                                 shared,
-                                                 space.process_records(slot),
-                                                 frames::first_owner + run);
-    if (!process_space.begin())
-        fail("process root");
-    U64 regions = 0, stack_top = 0, block = 0;
-    for (;; ++regions) {
-        const auto region = process::region(*image, regions, arguments.size());
-        if (!region)
-            fail("Aurora process region");
-        const auto kind = static_cast<process::RegionKind>(region->kind);
-        if (kind == process::RegionKind::none)
-            break;
+    auto &process_space = resident.space.emplace(table, slot, epoch);
+    U64 stack_top = 0, block = 0;
+    for (U64 index = 0; index < manifest.count; ++index) {
+        const auto &region = manifest.regions[index];
+        const auto kind = static_cast<process::RegionKind>(region.kind);
         if (kind == process::RegionKind::stack)
-            stack_top = region->first + region->pages * frames::page;
+            stack_top = region.first + region.pages * frames::page;
         if (kind == process::RegionKind::arguments)
-            block = region->first;
-        if (!process_space.map(*region,
-                               kind == process::RegionKind::segment     ? *image
-                               : kind == process::RegionKind::arguments ? arguments
-                                                                        : std::span<const std::byte>{}))
+            block = region.first;
+        bool mapped = false;
+        if (!region.bytes) {
+            mapped = process_space.map(region, 0);
+        } else if (kind == process::RegionKind::segment) {
+            if (snapshot_epoch) {
+                auto input = table.snapshot_source(snapshot_epoch);
+                mapped = process_space.map(region, 1);
+            } else {
+                auto input = table.boot_source(source);
+                mapped = process_space.map(region, 1);
+            }
+        } else if (kind == process::RegionKind::arguments) {
+            auto input = table.arguments_source(arguments);
+            mapped = process_space.map(region, 2);
+        }
+        if (!mapped)
             fail("process mapping");
     }
-    const auto entry_point = process::elf_entry(*image);
-    if (snapshot) {
-        if (snapshot->owner() != process_space.owner() || !snapshot->release())
+    const U64 entry_point = manifest.entry, regions = manifest.count;
+    if (snapshot_epoch) {
+        if (!snapshot || snapshot->epoch() != snapshot_epoch || snapshot->owner() != process_space.owner() ||
+            !snapshot->release())
             fail("loader snapshot release");
         snapshot.reset();
     }
-    if (!process_space.budget(*budget) || !stack_top || !block || !process_space.executable(entry_point, 1) ||
+    if (!process_space.finish_load() || !stack_top || !block || !process_space.executable(entry_point, 1) ||
         !process_space.verify())
         fail("process load walk");
 #ifndef AURORA_PRODUCTION
@@ -1420,7 +1452,7 @@ auto load_image(std::span<const std::byte> view,
     field("regions", regions);
     field("pages", process_space.leaves());
     field("tables", process_space.tables());
-    field("quota", budget->quota - budget->charged);
+    field("quota", process_space.quota() - process_space.charged());
     if (preemptible) {
         field("owner", process_space.owner());
         field("root", process_space.root());
@@ -1648,7 +1680,8 @@ auto retire_resident(std::size_t slot) -> bool {
 auto deliver_before_enter(std::size_t slot) -> void {
     if (!(running.service && endpoint.delivery) && !(slot == 1 && endpoint.completion))
         return;
-    asm volatile("mov %0, %%cr3" : : "r"(running.space->root()) : "memory");
+    const U64 admitted_root = table.activation_root(slot, running.space->epoch());
+    asm volatile("mov %0, %%cr3" : : "r"(admitted_root) : "memory");
     if (running.service && endpoint.delivery) {
         const auto target = user_bytes(endpoint.window, Endpoint::window_bytes, true);
         if (!target)
@@ -1704,7 +1737,10 @@ auto run_resident(std::size_t slot) -> bool {
         field("ticks", resident.budget.used());
         Serial::text("\r\n");
     }
-    const auto result = resident.started ? process_resume(resident.continuation.data(), resident.space->root())
+    const U64 admitted_root = table.activation_root(slot, resident.space->epoch());
+    if (resident.initial[4] != admitted_root)
+        fail("resident root generation");
+    const auto result = resident.started ? process_resume(resident.continuation.data(), admitted_root)
                                          : process_enter(resident.initial.data());
     if (result != 1 || root() != kernel_root)
         fail("process exit");
@@ -1898,7 +1934,8 @@ auto advance_client_request() -> ClientProgress {
             fail("file write continuation");
         auto &client_space = *residents[1].space;
         const auto address = endpoint.call.base + endpoint.written;
-        asm volatile("mov %0, %%cr3" : : "r"(client_space.root()) : "memory");
+        const U64 admitted_root = table.activation_root(1, client_space.epoch());
+        asm volatile("mov %0, %%cr3" : : "r"(admitted_root) : "memory");
         if (client_space.access(address, remaining, false) != ProcessSpace::Access::granted)
             fail("parked write source");
         message_header(22, endpoint.call.value, 0, remaining);
@@ -3327,21 +3364,19 @@ auto initialize_process(U64 arena, const Bytes &h, U64 selected, bool timer_read
         fail("physical address width unavailable");
     asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0x80000008U), "c"(0));
     const auto width = a & 255;
+    physical_bits = width;
     const auto &last = ranges.range(ranges.count() - 1);
     if (width < 32 || width > 52 || (last.first_page + last.pages) * frames::page > (U64{1} << width) ||
         volume + volume_pages * frames::page > (U64{1} << width))
         fail("frame inventory beyond the physical width");
-    const auto record_pages = KernelSpace::process_pages * (selected ? KernelSpace::process_slots : 1);
+    const auto record_pages = KernelSpace::process_pages * KernelSpace::process_slots;
     const auto plan = KernelSpace::plan(ranges.frames(), volume_pages, record_pages);
     const PageTables tables{arena + Handoff::tables_offset, static_cast<std::size_t>(h.get(96))};
     if (!plan || !space.bind(arena + Handoff::tables_offset, tables.window_slot()) ||
         !space.build(ranges, *plan, volume))
         fail("kernel space");
-    const auto mappings = space.mappings(ranges.frames());
-    for (auto &mapping : mappings)
-        mapping = 0;
-    if (mappings.empty() || !space.handoff_records(table, ranges))
-        fail("frame table");
+    if (!space.handoff_manager(table, ranges))
+        fail("memory manager bank set");
     if (!space.verify(table, ranges, h.get(96)))
         fail("kernel space walk");
     Serial::text("AURORA_PROCESS_FRAMES:");
@@ -3351,6 +3386,25 @@ auto initialize_process(U64 arena, const Bytes &h, U64 selected, bool timer_read
     field("metadata", plan->metadata);
     field("free", table.free());
     Serial::text("\r\n");
+    const auto banks = KernelSpace::bank_layout(*plan, ranges.frames());
+    if (!banks)
+        fail("memory manager backing layout");
+    Serial::text("AURORA_MEMORY_BANK_SET:");
+    field("allocation_word", banks->word_offsets[0]);
+    field("allocation_words", banks->word_counts[0]);
+    field("mapping_word", banks->word_offsets[1]);
+    field("mapping_words", banks->word_counts[1]);
+    field("reservations_word", banks->word_offsets[2]);
+    field("reservations_words", banks->word_counts[2]);
+    field("scratch_word", banks->word_offsets[3]);
+    field("scratch_words", banks->word_counts[3]);
+    field("tail_word", banks->tail_offset);
+    field("tail_words", banks->tail_words);
+    field("metadata_words", banks->metadata_words);
+    field("tail_pages", plan->reservation_tail);
+    field("scratch_pages", plan->scratch);
+    Serial::text("\r\n");
+    process_volume_bytes = bytes;
     const auto view = space.volume(bytes);
     const auto verdict = process::volume_admit(view);
     if (verdict != process::VolumeVerdict::valid) {
@@ -3387,6 +3441,19 @@ auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
         Serial::text("\r\n");
         static_cast<void>(table.finish());
         fail("frame require returned");
+    }
+    if (selected >= 45 && selected <= 49) {
+        install_architecture(arena);
+        capture_shared(arena);
+        process_kernel_root = kernel_root;
+        Serial::text("AURORA_MAPPING_AUTHORITY_PROBE:");
+        field("case", selected);
+        field("root", root());
+        field("kernel", kernel_root);
+        field("closed", space.closed());
+        Serial::text("\r\n");
+        aurora::uefi::MappingAuthority::fixture_admission(selected);
+        fail("mapping authority probe returned");
     }
 #endif
     if (selected)
@@ -3459,14 +3526,11 @@ auto load_committed(std::span<const std::byte> volume,
     const U64 id = opened.get(16), size = opened.get(24);
     RunStatus status = RunStatus::malformed;
     if (size && size <= aurora::uefi::ImageSnapshot::limit) {
-        const U64 cost = aurora::uefi::ImageSnapshot::cost(size);
-        if (cost > available_frames()) {
+        const U64 epoch = table.begin_snapshot(frames::first_owner + client, size);
+        if (!epoch) {
             status = RunStatus::quota;
         } else {
-            snapshot.emplace(space, table, ranges, space.mappings(ranges.frames()), frames::first_owner + client, size);
-            if (!snapshot->begin())
-                fail("loader snapshot allocation");
-            auto target = snapshot->writable();
+            snapshot.emplace(table, epoch);
             U64 offset = 0;
             while (offset < size) {
                 if (!loader_call(client, 19, id, offset)) {
@@ -3475,12 +3539,12 @@ auto load_committed(std::span<const std::byte> volume,
                 }
                 const Bytes reply{endpoint.bytes};
                 const U64 count = reply.get(8);
-                if (reply.get(0) || !count || count > size - offset) {
+                if (reply.get(0) || !count || count > size - offset || count > endpoint.bytes.size() - 64) {
                     status = RunStatus::unavailable;
                     break;
                 }
-                for (U64 at = 0; at < count; ++at)
-                    target[offset + at] = endpoint.bytes[64 + at];
+                if (!snapshot->fill(offset, std::span<const std::byte>{endpoint.bytes}.subspan(64, count)))
+                    fail("loader snapshot fill");
                 offset += count;
             }
             if (offset == size && !snapshot->seal())
@@ -3499,7 +3563,8 @@ auto load_committed(std::span<const std::byte> volume,
         return status;
     process::RunEntry entry{};
     entry.ticks = 128;
-    if (!load_image(volume, snapshot->bytes(), arguments, entry, client, 1, true, true)) {
+    const U64 epoch = snapshot->epoch();
+    if (!load_image(volume, {}, arguments, entry, client, 1, true, true, 0, false, 0, false, epoch)) {
         discard_snapshot();
         return load_refusal;
     }
@@ -3576,7 +3641,7 @@ auto enter_runtime(U64 arena, const Bytes &handoff) -> bool {
     } else {
         if (!runtime_detached || arena != owned_arena || root() != kernel_root || !space.attach(ranges))
             fail("process runtime reattach");
-        if (!space.resume_records(table, ranges, handoff.get(96)))
+        if (!space.resume_manager(table, ranges, handoff.get(96)))
             fail("frame metadata reattachment");
         runtime_detached = false;
         if (!space.verify(table, ranges, handoff.get(96)) || !audit_residents())
@@ -4042,8 +4107,7 @@ auto service_bootstrap_finish(const void *binding, U64 generation, U64 value) ->
 // share the same supervisor metadata extension captured at process creation.
 namespace aurora::words {
 auto accessible() -> bool {
-    return Timer::irq_off() && space.attached() &&
-           (root() == kernel_root || (running.space && root() == running.space->root()));
+    return Timer::irq_off() && space.attached() && (root() == kernel_root || table.accessible_root(root()));
 }
 [[noreturn]] auto fail() -> void {
     ::fail("frame metadata authority");
@@ -4069,4 +4133,105 @@ __au_runtime_owned_words_set(const void *binding, U64 epoch, U64 index, U64 valu
 __attribute__((visibility("hidden"))) auto __au_runtime_owned_words_finish(const void *binding, U64 epoch) -> U64 {
     return aurora::words::Binding::finish(binding, epoch);
 }
+}
+
+// Exact synchronous MappingAuthority effect boundary, admitted by the source ABI.
+extern "C" {
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_observe_table(const void *token, U64 epoch, U64 ticket)
+    -> U64 {
+    return aurora::uefi::MappingAuthority::observe_table(token, epoch, ticket);
+}
+__attribute__((visibility("hidden"))) auto
+__au_runtime_mapping_observe_next_present(const void *token, U64 epoch, U64 ticket, U64 first) -> U64 {
+    return aurora::uefi::MappingAuthority::observe_next_present(token, epoch, ticket, first);
+}
+__attribute__((visibility("hidden"))) auto
+__au_runtime_mapping_publish_empty_entry(const void *token, U64 epoch, U64 ticket, U64 slot, U64 value, U64 child)
+    -> U64 {
+    return aurora::uefi::MappingAuthority::publish_empty_entry(token, epoch, ticket, slot, value, child);
+}
+__attribute__((visibility("hidden"))) auto
+__au_runtime_mapping_clear_expected_entry(const void *token, U64 epoch, U64 ticket, U64 slot, U64 expected, U64 child)
+    -> U64 {
+    return aurora::uefi::MappingAuthority::clear_expected_entry(token, epoch, ticket, slot, expected, child);
+}
+__attribute__((visibility("hidden"))) auto
+__au_runtime_mapping_scrub_unpublished_frame(const void *token, U64 epoch, U64 ticket) -> U64 {
+    return aurora::uefi::MappingAuthority::scrub_unpublished_frame(token, epoch, ticket);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_downgrade_snapshot_entry(
+    const void *token, U64 epoch, U64 ticket, U64 slot, U64 expected, U64 child) -> U64 {
+    return aurora::uefi::MappingAuthority::downgrade_snapshot_entry(token, epoch, ticket, slot, expected, child);
+}
+__attribute__((visibility("hidden"))) auto
+__au_runtime_mapping_snapshot_anchor_publish(const void *token, U64 epoch, U64 ticket) -> U64 {
+    return aurora::uefi::MappingAuthority::snapshot_anchor_publish(token, epoch, ticket);
+}
+__attribute__((visibility("hidden"))) auto
+__au_runtime_mapping_snapshot_anchor_clear(const void *token, U64 epoch, U64 ticket) -> U64 {
+    return aurora::uefi::MappingAuthority::snapshot_anchor_clear(token, epoch, ticket);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_frame_address(const void *token, U64 epoch, U64 index)
+    -> U64 {
+    return aurora::uefi::MappingAuthority::frame_address(token, epoch, index);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_frame_index(const void *token, U64 epoch, U64 physical)
+    -> U64 {
+    return aurora::uefi::MappingAuthority::frame_index(token, epoch, physical);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_shared_slots(const void *token, U64 epoch) -> U64 {
+    return aurora::uefi::MappingAuthority::shared_slots(token, epoch);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_shared_slot(const void *token, U64 epoch, U64 index)
+    -> U64 {
+    return aurora::uefi::MappingAuthority::shared_slot(token, epoch, index);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_shared_value(const void *token, U64 epoch, U64 index)
+    -> U64 {
+    return aurora::uefi::MappingAuthority::shared_value(token, epoch, index);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_shared_upper(const void *token, U64 epoch, U64 slot)
+    -> U64 {
+    return aurora::uefi::MappingAuthority::shared_upper(token, epoch, slot);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_reserved_first(const void *token, U64 epoch) -> U64 {
+    return aurora::uefi::MappingAuthority::reserved_first(token, epoch);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_reserved_end(const void *token, U64 epoch) -> U64 {
+    return aurora::uefi::MappingAuthority::reserved_end(token, epoch);
+}
+__attribute__((visibility("hidden"))) auto
+__au_runtime_mapping_initialize_shared_upper(const void *token, U64 epoch, U64 ticket) -> U64 {
+    return aurora::uefi::MappingAuthority::initialize_shared_upper(token, epoch, ticket);
+}
+__attribute__((visibility("hidden"))) auto
+__au_runtime_mapping_publish_shared_entry(const void *token, U64 epoch, U64 ticket, U64 slot, U64 shared) -> U64 {
+    return aurora::uefi::MappingAuthority::publish_shared_entry(token, epoch, ticket, slot, shared);
+}
+__attribute__((visibility("hidden"))) auto
+__au_runtime_mapping_copy_source_frame(const void *token, U64 epoch, U64 ticket, U64 destination, U64 source, U64 count)
+    -> U64 {
+    return aurora::uefi::MappingAuthority::copy_source_frame(token, epoch, ticket, destination, source, count);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_fill_snapshot_chunk(
+    const void *token, U64 epoch, U64 snapshot_epoch, U64 destination, U64 source, U64 count) -> U64 {
+    return aurora::uefi::MappingAuthority::fill_snapshot_chunk(
+        token, epoch, snapshot_epoch, destination, source, count);
+}
+__attribute__((visibility("hidden"))) auto
+__au_runtime_mapping_clear_shared_entry(const void *token, U64 epoch, U64 ticket, U64 slot, U64 shared) -> U64 {
+    return aurora::uefi::MappingAuthority::clear_shared_entry(token, epoch, ticket, slot, shared);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_revoke_root(const void *token, U64 epoch, U64 ticket)
+    -> U64 {
+    return aurora::uefi::MappingAuthority::revoke_root(token, epoch, ticket);
+}
+__attribute__((visibility("hidden"))) auto __au_runtime_mapping_finish(const void *token, U64 epoch) -> U64 {
+    return aurora::uefi::MappingAuthority::finish(token, epoch);
+}
+}
+
+extern "C" __attribute__((visibility("hidden"))) auto
+__au_runtime_mapping_observe_snapshot_anchor(const void *token, U64 epoch, U64 ticket) -> U64 {
+    return aurora::uefi::MappingAuthority::observe_snapshot_anchor(token, epoch, ticket);
 }

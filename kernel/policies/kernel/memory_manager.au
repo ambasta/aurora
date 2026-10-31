@@ -1,0 +1,2246 @@
+export module kernel.memory_manager;
+import kernel.frame_allocator;
+import kernel.frames;
+import kernel.process_space;
+import kernel.process_memory;
+
+// One retained owner for allocation, page-table descriptors, both fixed
+// reservation catalogs and the loader snapshot. Hardware effects are synchronous
+// and authenticated against this exact bank set; scalar tickets are not authority.
+export namespace kernel {
+    class MemoryResult {
+    public:
+        u64 outcome;
+        u64 value;
+        MemoryResult(u64 decision, u64 result) : outcome(decision), value(result) {
+        }
+    };
+    class MemoryEntry {
+    public:
+        u64 table;
+        u64 slot;
+        bool valid;
+        MemoryEntry(u64 physical, u64 position, bool admitted) : table(physical), slot(position), valid(admitted) {
+        }
+    };
+    class MemoryCursor {
+    public:
+        u64 ticket;
+        u64 prefix;
+        u64 next;
+        u64 end;
+        u64 parent;
+        u64 level;
+        MemoryCursor(u64 frame, u64 first, u64 position, u64 limit, u64 link, u64 depth) : ticket(frame), prefix(first),
+            next(position), end(limit), parent(link), level(depth) {
+        }
+    };
+    class MemoryWalk {
+    public:
+        bool valid;
+        u64 tables;
+        u64 leaves;
+        u64 heap;
+        u64 heap_tables;
+        u64 shared;
+        MemoryWalk(bool admitted, u64 table_count, u64 leaf_count, u64 heap_count, u64 heap_table_count,
+            u64 shared_count) : valid(admitted), tables(table_count), leaves(leaf_count), heap(heap_count),
+            heap_tables(heap_table_count), shared(shared_count) {
+        }
+    };
+    class MemoryManager {
+        builtin::OwnedWords words;
+        builtin::OwnedWords mapping_words;
+        builtin::OwnedWords reservation_words;
+        builtin::OwnedWords scratch_words;
+        builtin::MappingAuthority authority;
+        u64 head;
+        u64 free_count;
+        u64 allocated_count;
+        u64 reserved_count;
+        u64 owner0;
+        u64 count0;
+        u64 owner1;
+        u64 count1;
+        bool initialized;
+        bool poison;
+        u64 slot0_owner;
+        u64 slot0_epoch;
+        u64 slot0_phase;
+        u64 slot0_root_ticket;
+        u64 slot0_tables;
+        u64 slot0_leaves;
+        u64 slot0_heap;
+        u64 slot0_heap_tables;
+        u64 slot0_next;
+        u64 slot0_charged;
+        u64 slot0_quota;
+        u64 slot0_count;
+        u64 slot0_region_count;
+        u64 slot1_owner;
+        u64 slot1_epoch;
+        u64 slot1_phase;
+        u64 slot1_root_ticket;
+        u64 slot1_tables;
+        u64 slot1_leaves;
+        u64 slot1_heap;
+        u64 slot1_heap_tables;
+        u64 slot1_next;
+        u64 slot1_charged;
+        u64 slot1_quota;
+        u64 slot1_count;
+        u64 slot1_region_count;
+        u64 snapshot_owner;
+        u64 snapshot_epoch;
+        u64 snapshot_phase;
+        u64 snapshot_directory_ticket;
+        u64 snapshot_bytes;
+        u64 snapshot_held;
+        u64 shared_slots;
+        u64 shared_slot0;
+        u64 shared_slot1;
+        u64 shared_entry0;
+        u64 shared_entry1;
+        u64 shared_reserved_first;
+        u64 shared_reserved_end;
+        u64 staged_count;
+        u64 active_slot;
+        u64 operation;
+
+        auto owner_slot(u64 owner) const -> u64 {
+            if (owner0 == owner) {
+                return 0u64;
+            }
+            if (owner1 == owner) {
+                return 1u64;
+            }
+            return 2u64;
+        }
+        auto held_by(u64 slot) const -> u64 {
+            if (slot == 0u64) {
+                return count0;
+            }
+            if (slot == 1u64) {
+                return count1;
+            }
+            return 0u64;
+        }
+    public:
+        MemoryManager(builtin::OwnedWords input, builtin::OwnedWords mapping, builtin::OwnedWords reservations,
+            builtin::OwnedWords scratch, builtin::MappingAuthority effects) : words(move(input)),
+            mapping_words(move(mapping)), reservation_words(move(reservations)), scratch_words(move(scratch)),
+            authority(move(effects)), head(0u64), free_count(0u64), allocated_count(0u64), reserved_count(0u64),
+            owner0(0u64), count0(0u64), owner1(0u64), count1(0u64), initialized(false), poison(false),
+            slot0_owner(0u64), slot0_epoch(0u64), slot0_phase(0u64), slot0_root_ticket(0u64), slot0_tables(0u64),
+            slot0_leaves(0u64), slot0_heap(0u64), slot0_heap_tables(0u64), slot0_next(0u64), slot0_charged(0u64),
+            slot0_quota(0u64), slot0_count(0u64), slot0_region_count(0u64), slot1_owner(0u64), slot1_epoch(0u64),
+            slot1_phase(0u64), slot1_root_ticket(0u64), slot1_tables(0u64), slot1_leaves(0u64), slot1_heap(0u64),
+            slot1_heap_tables(0u64), slot1_next(0u64), slot1_charged(0u64), slot1_quota(0u64), slot1_count(0u64),
+            slot1_region_count(0u64), snapshot_owner(0u64), snapshot_epoch(0u64), snapshot_phase(0u64),
+            snapshot_directory_ticket(0u64), snapshot_bytes(0u64), snapshot_held(0u64), shared_slots(0u64),
+            shared_slot0(0u64), shared_slot1(0u64), shared_entry0(0u64), shared_entry1(0u64),
+            shared_reserved_first(0u64), shared_reserved_end(0u64), staged_count(0u64), active_slot(0u64),
+            operation(0u64) {
+        }
+        // Called only during unpublished boot admission. Every refusal occurs
+        // before the first write; the fixed backing cannot fail after admission.
+        auto initialize_frames(u64 tables, u64 metadata) -> bool {
+            const u64 size = words.size();
+            if (initialized || poison || size == 0u64 || size > 4294967295u64 || tables >= size || metadata >= size
+                - tables) {
+                return false;
+            }
+            u64 index = 0u64;
+            while (index < size) {
+                if (words.at(index) != 0u64) {
+                    return false;
+                }
+                index = index + 1u64;
+            }
+            const u64 reserved = tables + metadata;
+            index = 0u64;
+            while (index < reserved) {
+                u64 owner = 2u64;
+                if (index < tables) {
+                    owner = 1u64;
+                }
+                const u64 next = frame_transition(FrameOperation::initialize_kernel, 0u64, owner, 0u64, 0u64);
+                builtin::require(next == frame_record(frame_kernel(), 0u64, owner));
+                builtin::require(words.set(index, next));
+                index = index + 1u64;
+            }
+            u64 next_head = 0u64;
+            index = size;
+            while (index > reserved) {
+                const u64 next = frame_transition(FrameOperation::initialize_free, 0u64, 0u64, 0u64, next_head);
+                builtin::require(next == frame_record(frame_free(), 0u64, next_head));
+                builtin::require(words.set(index - 1u64, next));
+                next_head = index;
+                index = index - 1u64;
+            }
+            reserved_count = reserved;
+            head = next_head;
+            free_count = size - reserved;
+            initialized = true;
+            return true;
+        }
+        auto allocate(u64 owner) -> FrameAllocation {
+            const FrameAllocation refused = FrameAllocation(0u64, 0u64, false);
+            if (!initialized || poison || head == 0u64) {
+                return refused;
+            }
+            u64 slot = owner_slot(owner);
+            if (slot == 2u64) {
+                if (count0 == 0u64) {
+                    slot = 0u64;
+                } else {
+                    if (count1 == 0u64) {
+                        slot = 1u64;
+                    }
+                }
+            }
+            if (slot == 2u64) {
+                return refused;
+            }
+            const u64 size = words.size();
+            const u64 index = head - 1u64;
+            if (index >= size) {
+                poison = true;
+                return refused;
+            }
+            const u64 old = words.at(index);
+            const u64 next_head = old >> 32;
+            if ((old & 15u64) != frame_free() || next_head > size) {
+                poison = true;
+                return refused;
+            }
+            const u64 next = frame_transition(FrameOperation::allocate, old, owner, 0u64, 0u64);
+            if ((next & 15u64) == 0u64) {
+                return refused;
+            }
+            const u64 current = (old >> 4) & generation_limit();
+            const u64 held = held_by(slot);
+            if (next != frame_record(frame_allocated(), current, owner) || free_count == 0u64 || allocated_count >= size
+                || held >= size || held > allocated_count) {
+                poison = true;
+                return refused;
+            }
+            // All denial and arithmetic checks precede this single record store.
+            const u64 next_free = free_count - 1u64;
+            const u64 next_allocated = allocated_count + 1u64;
+            const u64 next_held = held + 1u64;
+            builtin::require(words.set(index, next));
+            head = next_head;
+            free_count = next_free;
+            allocated_count = next_allocated;
+            if (slot == 0u64) {
+                owner0 = owner;
+                count0 = next_held;
+            } else {
+                owner1 = owner;
+                count1 = next_held;
+            }
+            const FrameAllocation result = FrameAllocation(index, current, true);
+            return result;
+        }
+        auto release(u64 index, u64 generation, u64 owner) -> u64 {
+            if (!initialized || poison) {
+                return 64u64;
+            }
+            const u64 size = words.size();
+            if (index >= size) {
+                return 65u64;
+            }
+            const u64 old = words.at(index);
+            const u64 next = frame_transition(FrameOperation::release, old, owner, generation, head);
+            if ((next & 15u64) == 0u64) {
+                return next >> 4;
+            }
+            const u64 slot = owner_slot(owner);
+            const u64 held = held_by(slot);
+            const u64 kind = next & 15u64;
+            const bool reusable = kind == frame_free();
+            if ((!reusable && kind != frame_retired()) || (reusable && (next >> 32) != head) || (!reusable && (next
+                >> 32) != 0u64) || slot == 2u64 || held == 0u64 || allocated_count == 0u64 || held > allocated_count
+                || (reusable && free_count >= size)) {
+                poison = true;
+                return 64u64;
+            }
+            const u64 next_allocated = allocated_count - 1u64;
+            const u64 next_held = held - 1u64;
+            u64 next_free = free_count;
+            if (reusable) {
+                next_free = free_count + 1u64;
+            }
+            builtin::require(words.set(index, next));
+            allocated_count = next_allocated;
+            if (slot == 0u64) {
+                count0 = next_held;
+                if (next_held == 0u64) {
+                    owner0 = 0u64;
+                }
+            } else {
+                count1 = next_held;
+                if (next_held == 0u64) {
+                    owner1 = 0u64;
+                }
+            }
+            if (reusable) {
+                head = index + 1u64;
+                free_count = next_free;
+            }
+            return 0u64;
+        }
+        auto record(u64 index) const -> u64 {
+            if (index >= words.size()) {
+                return 0u64;
+            }
+            return words.at(index);
+        }
+        auto frames() const -> u64 {
+            return words.size();
+        }
+        auto reserved() const -> u64 {
+            return reserved_count;
+        }
+        auto free() const -> u64 {
+            return free_count;
+        }
+        auto allocated() const -> u64 {
+            return allocated_count;
+        }
+        auto owner_allocated(u64 owner) const -> u64 {
+            const u64 slot = owner_slot(owner);
+            return held_by(slot);
+        }
+        auto poisoned() const -> bool {
+            return poison;
+        }
+        auto audit() const -> FrameAudit {
+            FrameAudit result = FrameAudit(false, 0u64, 0u64, 0u64, 0u64);
+            if (!initialized || poison) {
+                return result;
+            }
+            const u64 free_state = frame_free();
+            const u64 allocated_state = frame_allocated();
+            const u64 kernel_state = frame_kernel();
+            const u64 retired_state = frame_retired();
+            u64 counted0 = 0u64;
+            u64 counted1 = 0u64;
+            u64 index = 0u64;
+            const builtin::span<const u64> records = borrow_words(words);
+            const u64 size = u64(records.size());
+            while (index < size) {
+                const u64 value = records.at(i64(index));
+                const u64 kind = value & 15u64;
+                const u64 holder = value >> 32;
+                if ((kind == kernel_state) != (index < reserved_count)) {
+                    return result;
+                }
+                if (kind == free_state) {
+                    // record_valid accepts every free encoding. Its remaining
+                    // link constraint is this checked extent; do not repeat
+                    // nonfree classification and source calls for each free word.
+                    result.free = result.free + 1u64;
+                    if (holder > size) {
+                        return result;
+                    }
+                } else {
+                    if (kind == allocated_state) {
+                        result.allocated = result.allocated + 1u64;
+                        const u64 slot = owner_slot(holder);
+                        if (slot == 2u64) {
+                            return result;
+                        }
+                        if (slot == 0u64) {
+                            counted0 = counted0 + 1u64;
+                        } else {
+                            counted1 = counted1 + 1u64;
+                        }
+                    }
+                    if (kind == kernel_state) {
+                        result.kernel = result.kernel + 1u64;
+                    }
+                    if (kind == retired_state) {
+                        result.retired = result.retired + 1u64;
+                    }
+                    if (!record_valid(value)) {
+                        return result;
+                    }
+                }
+                index = index + 1u64;
+            }
+            if (counted0 != count0 || counted1 != count1 || ((count0 == 0u64) != (owner0 == 0u64)) || ((count1 == 0u64)
+                != (owner1 == 0u64))) {
+                return result;
+            }
+            u64 walked = 0u64;
+            u64 link = head;
+            while (link != 0u64) {
+                if (walked > result.free || link > size) {
+                    return result;
+                }
+                const u64 value = records.at(i64(link - 1u64));
+                if ((value & 15u64) != free_state) {
+                    return result;
+                }
+                link = value >> 32;
+                walked = walked + 1u64;
+            }
+            result.consistent = walked == result.free && result.free == free_count && result.allocated
+                == allocated_count && result.kernel == reserved_count;
+            return result;
+        }
+    private:
+        // Literal layout facts are emitted independently from policy algorithms.
+        // Admission recomputes the partition and verifies disjoint physical banks.
+        auto layout_slot_count() const -> u64 {
+            return 2u64;
+        }
+        auto layout_record_count() const -> u64 {
+            return 16384u64;
+        }
+        auto layout_record_stride() const -> u64 {
+            return 3u64;
+        }
+        auto layout_region_count() const -> u64 {
+            return 10u64;
+        }
+        auto layout_region_stride() const -> u64 {
+            return 7u64;
+        }
+        auto layout_shared_count() const -> u64 {
+            return 256u64;
+        }
+        auto layout_stage_count() const -> u64 {
+            return 19u64;
+        }
+        auto layout_stage_stride() const -> u64 {
+            return 2u64;
+        }
+        auto layout_tail_words() const -> u64 {
+            return 512u64;
+        }
+        auto layout_scratch_words() const -> u64 {
+            return 512u64;
+        }
+        auto record_bank_words() const -> u64 {
+            return layout_slot_count() * layout_record_count() * layout_record_stride();
+        }
+        auto reservation_extent() const -> u64 {
+            return record_bank_words() + layout_tail_words();
+        }
+        auto record_word(u64 slot, u64 index) const -> u64 {
+            builtin::require(slot < layout_slot_count() && index < layout_record_count());
+            return (slot * layout_record_count() + index) * layout_record_stride();
+        }
+        auto region_word(u64 slot, u64 index) const -> u64 {
+            builtin::require(slot < layout_slot_count() && index < layout_region_count());
+            return record_bank_words() + (slot * layout_region_count() + index) * layout_region_stride();
+        }
+        auto shared_word(u64 index) const -> u64 {
+            builtin::require(index < layout_shared_count());
+            return record_bank_words() + layout_slot_count() * layout_region_count() * layout_region_stride() + index;
+        }
+        auto staged_word(u64 index, u64 field) const -> u64 {
+            builtin::require(index < layout_stage_count() && field < layout_stage_stride());
+            return record_bank_words() + layout_slot_count() * layout_region_count() * layout_region_stride()
+                + layout_shared_count() + index * layout_stage_stride() + field;
+        }
+        auto require_slot(u64 slot, u64 epoch) const -> bool {
+            return slot < 2u64 && get_epoch(slot) == epoch && epoch != 0u64 && get_phase(slot) != 0u64;
+        }
+        auto get_owner(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_owner;
+            }
+            return slot1_owner;
+        }
+        auto set_owner(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_owner = value;
+            } else {
+                slot1_owner = value;
+            }
+            return true;
+        }
+        auto get_epoch(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_epoch;
+            }
+            return slot1_epoch;
+        }
+        auto set_epoch(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_epoch = value;
+            } else {
+                slot1_epoch = value;
+            }
+            return true;
+        }
+        auto get_phase(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_phase;
+            }
+            return slot1_phase;
+        }
+        auto set_phase(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_phase = value;
+            } else {
+                slot1_phase = value;
+            }
+            return true;
+        }
+        auto get_root_ticket(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_root_ticket;
+            }
+            return slot1_root_ticket;
+        }
+        auto set_root_ticket(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_root_ticket = value;
+            } else {
+                slot1_root_ticket = value;
+            }
+            return true;
+        }
+        auto get_tables(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_tables;
+            }
+            return slot1_tables;
+        }
+        auto set_tables(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_tables = value;
+            } else {
+                slot1_tables = value;
+            }
+            return true;
+        }
+        auto get_leaves(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_leaves;
+            }
+            return slot1_leaves;
+        }
+        auto set_leaves(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_leaves = value;
+            } else {
+                slot1_leaves = value;
+            }
+            return true;
+        }
+        auto get_heap(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_heap;
+            }
+            return slot1_heap;
+        }
+        auto set_heap(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_heap = value;
+            } else {
+                slot1_heap = value;
+            }
+            return true;
+        }
+        auto get_heap_tables(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_heap_tables;
+            }
+            return slot1_heap_tables;
+        }
+        auto set_heap_tables(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_heap_tables = value;
+            } else {
+                slot1_heap_tables = value;
+            }
+            return true;
+        }
+        auto get_next(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_next;
+            }
+            return slot1_next;
+        }
+        auto set_next(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_next = value;
+            } else {
+                slot1_next = value;
+            }
+            return true;
+        }
+        auto get_charged(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_charged;
+            }
+            return slot1_charged;
+        }
+        auto set_charged(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_charged = value;
+            } else {
+                slot1_charged = value;
+            }
+            return true;
+        }
+        auto get_quota(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_quota;
+            }
+            return slot1_quota;
+        }
+        auto set_quota(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_quota = value;
+            } else {
+                slot1_quota = value;
+            }
+            return true;
+        }
+        auto get_count(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_count;
+            }
+            return slot1_count;
+        }
+        auto set_count(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_count = value;
+            } else {
+                slot1_count = value;
+            }
+            return true;
+        }
+        auto get_region_count(u64 slot) const -> u64 {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                return slot0_region_count;
+            }
+            return slot1_region_count;
+        }
+        auto set_region_count(u64 slot, u64 value) -> bool {
+            builtin::require(slot < 2u64);
+            if (slot == 0u64) {
+                slot0_region_count = value;
+            } else {
+                slot1_region_count = value;
+            }
+            return true;
+        }
+        auto state(u64 slot) const -> MemoryState {
+            const MemoryState value = MemoryState{
+                .next = get_next(slot),
+                .charged = get_charged(slot),
+                .quota = get_quota(slot),
+                .count = get_count(slot)
+            };
+            return value;
+        }
+        auto record_at(u64 slot, u64 index) const -> MemoryRecord {
+            builtin::require(slot < 2u64 && index < 16384u64);
+            const u64 at = record_word(slot, index);
+            const MemoryRecord value = MemoryRecord{
+                .first = reservation_words.at(at),
+                .reserved = reservation_words.at(at + 1u64),
+                .pages = reservation_words.at(at + 2u64)
+            };
+            return value;
+        }
+        auto set_record(u64 slot, u64 index, MemoryRecord value) -> bool {
+            builtin::require(slot < 2u64 && index < 16384u64);
+            const u64 at = record_word(slot, index);
+            builtin::require(reservation_words.set(at, value.first));
+            builtin::require(reservation_words.set(at + 1u64, value.reserved));
+            builtin::require(reservation_words.set(at + 2u64, value.pages));
+            return true;
+        }
+        auto region_at(u64 slot, u64 index) const -> ProcessRegion {
+            builtin::require(slot < 2u64 && index < 10u64);
+            const u64 at = region_word(slot, index);
+            const ProcessRegion value = ProcessRegion{
+                .kind = reservation_words.at(at),
+                .first = reservation_words.at(at + 1u64),
+                .pages = reservation_words.at(at + 2u64),
+                .flags = reservation_words.at(at + 3u64),
+                .vaddr = reservation_words.at(at + 4u64),
+                .offset = reservation_words.at(at + 5u64),
+                .bytes = reservation_words.at(at + 6u64)
+            };
+            return value;
+        }
+        auto set_region(u64 slot, u64 index, ProcessRegion value) -> bool {
+            builtin::require(slot < 2u64 && index < 10u64);
+            const u64 at = region_word(slot, index);
+            builtin::require(reservation_words.set(at, value.kind));
+            builtin::require(reservation_words.set(at + 1u64, value.first));
+            builtin::require(reservation_words.set(at + 2u64, value.pages));
+            builtin::require(reservation_words.set(at + 3u64, value.flags));
+            builtin::require(reservation_words.set(at + 4u64, value.vaddr));
+            builtin::require(reservation_words.set(at + 5u64, value.offset));
+            builtin::require(reservation_words.set(at + 6u64, value.bytes));
+            return true;
+        }
+        auto below(u64 slot, u64 address) const -> u64 {
+            u64 low = 0u64;
+            u64 high = get_count(slot);
+            builtin::require(high <= 16384u64);
+            while (low < high) {
+                const u64 middle = low + (high - low) / 2u64;
+                const MemoryRecord value = record_at(slot, middle);
+                if (value.first <= address) {
+                    low = middle + 1u64;
+                } else {
+                    high = middle;
+                }
+            }
+            return low;
+        }
+        auto mapping_of(u64 slot, u64 address) const -> u64 {
+            const u64 found = below(slot, address);
+            if (found != 0u64) {
+                const MemoryRecord value = record_at(slot, found - 1u64);
+                if (address - value.first < value.pages * 4096u64) {
+                    return found;
+                }
+            }
+            return 0u64;
+        }
+        auto find_record(u64 slot, u64 base) const -> u64 {
+            const u64 found = below(slot, base);
+            if (found != 0u64) {
+                const MemoryRecord record = record_at(slot, found - 1u64);
+                if (record.first == base) {
+                    return found;
+                }
+            }
+            return 0u64;
+        }
+        auto region_of(u64 slot, u64 address) const -> u64 {
+            u64 index = 0u64;
+            while (index < get_region_count(slot)) {
+                const ProcessRegion value = region_at(slot, index);
+                if (address >= value.first && address - value.first < value.pages * 4096u64) {
+                    return index + 1u64;
+                }
+                index = index + 1u64;
+            }
+            return 0u64;
+        }
+        auto remove_record(u64 slot, u64 index) -> bool {
+            const u64 count = get_count(slot);
+            builtin::require(index < count);
+            u64 at = index;
+            while (at + 1u64 < count) {
+                set_record(slot, at, record_at(slot, at + 1u64));
+                at = at + 1u64;
+            }
+            const MemoryRecord empty = MemoryRecord{
+                .first = 0u64,
+                .reserved = 0u64,
+                .pages = 0u64
+            };
+            set_record(slot, count - 1u64, empty);
+            set_count(slot, count - 1u64);
+            return true;
+        }
+        auto held(u64 slot) const -> u64 {
+            return get_tables(slot) + get_leaves(slot) + get_heap(slot);
+        }
+        auto accounted(u64 slot) const -> bool {
+            return !poison && held(slot) <= get_charged(slot) && get_charged(slot) <= get_quota(slot);
+        }
+        auto enter(u64 slot, bool audit_only) -> bool {
+            builtin::require(initialized && !poison && operation == 0u64 && staged_count == 0u64 && slot < 4u64);
+            active_slot = slot;
+            operation = 1u64;
+            if (audit_only) {
+                operation = 2u64;
+            }
+            return true;
+        }
+        auto leave() -> bool {
+            builtin::require(operation != 0u64 && staged_count == 0u64);
+            operation = 0u64;
+            active_slot = 3u64;
+            return true;
+        }
+        auto ticket(u64 index) const -> u64 {
+            const u64 value = words.at(index);
+            builtin::require((value & 15u64) == frame_allocated());
+            return index | (((value >> 4) & generation_limit()) << 32);
+        }
+        auto owned_index(u64 index, u64 owner, u64 mapping) const -> bool {
+            if (index >= words.size()) {
+                return false;
+            }
+            const u64 allocation = words.at(index);
+            u64 mask = 18446744073709551615u64;
+            if ((mapping & 15u64) >= 9u64 && (mapping & 15u64) <= 12u64) {
+                mask = 18446744073709535247u64;
+            }
+            return (allocation & 15u64) == frame_allocated() && (allocation >> 32) == owner && (mapping_words.at(index)
+                & mask) == mapping;
+        }
+        auto stage_frame(u64 owner, u64 mapping) -> u64 {
+            builtin::require(staged_count < 19u64);
+            const FrameAllocation made = allocate(owner);
+            if (!made.valid) {
+                return 18446744073709551615u64;
+            }
+            builtin::require(mapping_words.at(made.index) == 0u64);
+            const u64 identity = made.index | (made.generation << 32);
+            const u64 at = staged_word(staged_count, 0u64);
+            builtin::require(reservation_words.set(at, identity));
+            builtin::require(reservation_words.set(at + 1u64, mapping));
+            staged_count = staged_count + 1u64;
+            builtin::require(authority.scrub_unpublished_frame(identity));
+            return identity;
+        }
+        auto install_mapping(u64 identity) -> bool {
+            u64 index = 0u64;
+            while (index < staged_count && reservation_words.at(staged_word(index, 0u64)) != identity) {
+                index = index + 1u64;
+            }
+            builtin::require(index < staged_count && mapping_words.at(identity & 4294967295u64) == 0u64);
+            builtin::require(mapping_words.set(identity & 4294967295u64, reservation_words.at(staged_word(index,
+                1u64))));
+            return true;
+        }
+        auto unstage(u64 identity) -> bool {
+            u64 index = 0u64;
+            while (index < staged_count && reservation_words.at(staged_word(index, 0u64)) != identity) {
+                index = index + 1u64;
+            }
+            builtin::require(index < staged_count);
+            while (index + 1u64 < staged_count) {
+                builtin::require(reservation_words.set(staged_word(index, 0u64), reservation_words.at(staged_word(index
+                    + 1u64, 0u64))));
+                builtin::require(reservation_words.set(staged_word(index, 1u64), reservation_words.at(staged_word(index
+                    + 1u64, 1u64))));
+                index = index + 1u64;
+            }
+            staged_count = staged_count - 1u64;
+            builtin::require(reservation_words.set(staged_word(staged_count, 0u64), 0u64));
+            builtin::require(reservation_words.set(staged_word(staged_count, 1u64), 0u64));
+            return true;
+        }
+        auto drop_frame(u64 identity, u64 owner) -> bool {
+            const u64 index = identity & 4294967295u64;
+            builtin::require((words.at(index) & 15u64) == frame_allocated() && words.at(index) >> 32 == owner
+                && ticket(index) == identity);
+            builtin::require(mapping_words.set(index, 0u64));
+            builtin::require(release(index, identity >> 32, owner) == 0u64);
+            return true;
+        }
+        auto rollback_staged(u64 owner) -> bool {
+            while (staged_count != 0u64) {
+                const u64 identity = reservation_words.at(staged_word(staged_count - 1u64, 0u64));
+                unstage(identity);
+                drop_frame(identity, owner);
+            }
+            return true;
+        }
+        auto read_entry(u64 identity, u64 slot) -> u64 {
+            builtin::require(slot < 512u64);
+            const u64 found = authority.observe_next_present(identity, slot);
+            builtin::require(found <= 512u64 && found >= slot);
+            if (found == slot) {
+                return scratch_words.at(0u64);
+            }
+            return 0u64;
+        }
+        auto count_entry(u64 identity, bool up) -> bool {
+            const u64 index = identity & 4294967295u64;
+            const u64 mapping = mapping_words.at(index);
+            const u64 kind = mapping & 15u64;
+            if (kind == 12u64 || kind == 4u64 || kind == 5u64) {
+                return true;
+            }
+            builtin::require(kind >= 9u64 && kind <= 11u64);
+            const u64 count = (mapping >> 4) & 1023u64;
+            builtin::require(count <= 512u64);
+            u64 next = 0u64;
+            if (up) {
+                builtin::require(count < 512u64);
+                next = count + 1u64;
+            } else {
+                builtin::require(count != 0u64);
+                next = count - 1u64;
+            }
+            builtin::require(mapping_words.set(index, (mapping & 18446744073709535247u64) | (next << 4)));
+            return true;
+        }
+        auto publish(u64 parent, u64 slot, u64 child, u64 flags) -> bool {
+            install_mapping(child);
+            const u64 address = authority.frame_address(child & 4294967295u64);
+            builtin::require(address != 18446744073709551615u64);
+            builtin::require(authority.publish_empty_entry(parent, slot, address | flags, child));
+            count_entry(parent, true);
+            unstage(child);
+            return true;
+        }
+        auto clear(u64 parent, u64 slot, u64 value, u64 child) -> bool {
+            builtin::require(authority.clear_expected_entry(parent, slot, value, child));
+            count_entry(parent, false);
+            return true;
+        }
+        auto level_shift(u64 level) const -> i64 {
+            builtin::require(level >= 1u64 && level <= 4u64);
+            return i64(12u64 + 9u64 * (level - 1u64));
+        }
+        auto heap_address(u64 address) const -> bool {
+            return address >= memory_base() && address < memory_limit();
+        }
+        auto shared_index(u64 address) const -> u64 {
+            if (shared_slots > 0u64 && shared_slot0 == address) {
+                return 1u64;
+            }
+            if (shared_slots > 1u64 && shared_slot1 == address) {
+                return 2u64;
+            }
+            return 0u64;
+        }
+        auto child_ticket(u64 slot, u64 physical, u64 mapping) -> u64 {
+            const u64 index = authority.frame_index(physical);
+            builtin::require(index != 18446744073709551615u64 && owned_index(index, get_owner(slot), mapping));
+            return ticket(index);
+        }
+        auto staged_mapping(u64 mapping) const -> u64 {
+            u64 index = 0u64;
+            while (index < staged_count) {
+                if (reservation_words.at(staged_word(index, 1u64)) == mapping) {
+                    return reservation_words.at(staged_word(index, 0u64));
+                }
+                index = index + 1u64;
+            }
+            return 18446744073709551615u64;
+        }
+        auto table_for(u64 slot, u64 address, u64 target, bool make) -> u64 {
+            u64 current = get_root_ticket(slot);
+            u64 level = 4u64;
+            while (level > target) {
+                const u64 position = (address >> level_shift(level)) & 511u64;
+                const u64 prefix = address & (18446744073709551615u64 ^ ((1u64 << level_shift(level)) - 1u64));
+                const u64 value = read_entry(current, position);
+                if (value == 0u64) {
+                    if (!make) {
+                        return 18446744073709551615u64;
+                    }
+                    const u64 mapping = prefix | (8u64 + level - 1u64);
+                    u64 made = staged_mapping(mapping);
+                    if (made == 18446744073709551615u64) {
+                        made = stage_frame(get_owner(slot), mapping);
+                    }
+                    builtin::require(made != 18446744073709551615u64);
+                    publish(current, position, made, 7u64);
+                    set_tables(slot, get_tables(slot) + 1u64);
+                    if (heap_address(prefix)) {
+                        set_heap_tables(slot, get_heap_tables(slot) + 1u64);
+                    }
+                    current = made;
+                } else {
+                    builtin::require((value & 18442240474082185119u64) == 7u64);
+                    current = child_ticket(slot, value & 4503599627366400u64, prefix | (8u64 + level - 1u64));
+                }
+                level = level - 1u64;
+            }
+            return current;
+        }
+        auto available() const -> u64 {
+            u64 result = free_count;
+            u64 slot = 0u64;
+            while (slot < 2u64) {
+                if (get_phase(slot) != 0u64) {
+                    const u64 used = held(slot);
+                    builtin::require(used <= get_quota(slot) && get_quota(slot) - used <= result);
+                    result = result - (get_quota(slot) - used);
+                }
+                slot = slot + 1u64;
+            }
+            return result;
+        }
+    public:
+        auto initialize(u64 tables, u64 metadata) -> bool {
+            if (initialized || mapping_words.size() != words.size() || reservation_words.size() != reservation_extent()
+                || scratch_words.size() != layout_scratch_words()) {
+                return false;
+            }
+            u64 index = 0u64;
+            while (index < mapping_words.size()) {
+                if (mapping_words.at(index) != 0u64) {
+                    return false;
+                }
+                index = index + 1u64;
+            }
+            index = 0u64;
+            while (index < reservation_words.size()) {
+                if (reservation_words.at(index) != 0u64) {
+                    return false;
+                }
+                index = index + 1u64;
+            }
+            index = 0u64;
+            while (index < scratch_words.size()) {
+                if (scratch_words.at(index) != 0u64) {
+                    return false;
+                }
+                index = index + 1u64;
+            }
+            active_slot = 3u64;
+            return initialize_frames(tables, metadata);
+        }
+        auto attach_shared() -> bool {
+            if (!initialized || shared_slots != 0u64 || operation != 0u64) {
+                return false;
+            }
+            enter(3u64, false);
+            shared_slots = authority.shared_slots();
+            builtin::require(shared_slots > 0u64 && shared_slots <= 2u64);
+            shared_slot0 = authority.shared_slot(0u64);
+            shared_entry0 = authority.shared_value(0u64);
+            if (shared_slots == 2u64) {
+                shared_slot1 = authority.shared_slot(1u64);
+                shared_entry1 = authority.shared_value(1u64);
+            }
+            shared_reserved_first = authority.reserved_first();
+            shared_reserved_end = authority.reserved_end();
+            builtin::require(shared_reserved_first < shared_reserved_end);
+            u64 index = 0u64;
+            while (index < 256u64) {
+                const u64 value = authority.shared_upper(index + 256u64);
+                builtin::require(reservation_words.set(shared_word(index), value));
+                index = index + 1u64;
+            }
+            leave();
+            return true;
+        }
+        auto prepare_load(u64 slot, u64 owner, u64 requested, u64 charge) -> u64 {
+            if (slot >= 2u64 || get_phase(slot) != 0u64 || get_epoch(slot) == 18446744073709551615u64 || owner < 16u64
+                || owner > 4294967295u64 || shared_slots == 0u64 || charge < 1u64 + 2u64 * shared_slots || (slot != 0u64
+                && slot0_phase != 0u64 && slot0_owner == owner) || (slot != 1u64 && slot1_phase != 0u64 && slot1_owner
+                == owner) || (owner_slot(owner) == 2u64 && count0 != 0u64 && count1 != 0u64)) {
+                return 0u64;
+            }
+            const MemoryBudget granted = memory_budget_from_charge(charge, requested, available());
+            if (granted.verdict != BudgetVerdict::valid) {
+                return 0u64;
+            }
+            enter(slot, false);
+            set_epoch(slot, get_epoch(slot) + 1u64);
+            set_owner(slot, owner);
+            set_phase(slot, 1u64);
+            set_next(slot, memory_base());
+            set_quota(slot, granted.quota);
+            set_charged(slot, granted.charged);
+            const u64 root = stage_frame(owner, 12u64);
+            builtin::require(root != 18446744073709551615u64);
+            set_root_ticket(slot, root);
+            install_mapping(root);
+            builtin::require(authority.initialize_shared_upper(root));
+            unstage(root);
+            set_tables(slot, 1u64);
+            u64 index = 0u64;
+            while (index < shared_slots) {
+                u64 address = shared_slot0;
+                if (index == 1u64) {
+                    address = shared_slot1;
+                }
+                const u64 directory = table_for(slot, address, 2u64, true);
+                builtin::require(authority.publish_shared_entry(directory, (address >> 21) & 511u64, index));
+                count_entry(directory, true);
+                index = index + 1u64;
+            }
+            builtin::require(accounted(slot));
+            leave();
+            return get_epoch(slot);
+        }
+        auto map_region(u64 slot, u64 epoch, ProcessRegion region, u64 source_kind) -> bool {
+            if (!require_slot(slot, epoch) || get_phase(slot) != 1u64 || get_region_count(slot) >= 10u64 || region.pages
+                == 0u64 || region.pages > 17179869184u64 || region.first % 4096u64 != 0u64 || region.first
+                >= 140737488355328u64 || region.pages * 4096u64 > 140737488355328u64 - region.first || (region.flags
+                != leaf_read() && region.flags != leaf_write() && region.flags != leaf_execute()) || region.kind == 0u64
+                || region.kind > 3u64 || (region.bytes == 0u64 && source_kind != 0u64) || (region.bytes != 0u64
+                && ((region.kind == 1u64 && source_kind != 1u64) || (region.kind == 3u64 && source_kind != 2u64)
+                || region.kind == 2u64))) {
+                return false;
+            }
+            const u64 end = region.first + region.pages * 4096u64;
+            if (!accounted(slot) || memory_charge(region.first, region.pages) > get_charged(slot) - held(slot)) {
+                return false;
+            }
+            if (region.vaddr < region.first || region.vaddr > end || region.bytes > end - region.vaddr || (region.first
+                < shared_reserved_end && shared_reserved_first < end) || (region.first < memory_limit() && memory_base()
+                < end)) {
+                return false;
+            }
+            u64 index = 0u64;
+            while (index < get_region_count(slot)) {
+                const ProcessRegion old = region_at(slot, index);
+                if (region.first < old.first + old.pages * 4096u64 && old.first < end) {
+                    return false;
+                }
+                index = index + 1u64;
+            }
+            enter(slot, false);
+            set_region(slot, get_region_count(slot), region);
+            set_region_count(slot, get_region_count(slot) + 1u64);
+            u64 page = region.first;
+            while (page < end) {
+                const u64 made = stage_frame(get_owner(slot), page | 1u64);
+                builtin::require(made != 18446744073709551615u64);
+                u64 first = page;
+                if (region.vaddr > first) {
+                    first = region.vaddr;
+                }
+                u64 last = page + 4096u64;
+                if (region.vaddr + region.bytes < last) {
+                    last = region.vaddr + region.bytes;
+                }
+                if (first < last) {
+                    builtin::require(authority.copy_source_frame(made, first - page, region.offset + first
+                        - region.vaddr, last - first));
+                }
+                const u64 leaf = table_for(slot, page, 1u64, true);
+                publish(leaf, (page >> 12) & 511u64, made, region.flags);
+                set_leaves(slot, get_leaves(slot) + 1u64);
+                page = page + 4096u64;
+            }
+            builtin::require(accounted(slot));
+            leave();
+            return true;
+        }
+        auto space_value(u64 slot, u64 epoch, u64 selector) const -> u64 {
+            builtin::require(require_slot(slot, epoch));
+            if (selector == 0u64) {
+                return get_owner(slot);
+            }
+            if (selector == 1u64) {
+                // Native transport translates the authenticated root ticket.
+                return get_root_ticket(slot);
+            }
+            if (selector == 2u64) {
+                return get_tables(slot);
+            }
+            if (selector == 3u64) {
+                return get_leaves(slot);
+            }
+            if (selector == 4u64) {
+                return get_heap(slot) + get_heap_tables(slot);
+            }
+            if (selector == 5u64) {
+                return get_charged(slot);
+            }
+            if (selector == 6u64) {
+                return get_quota(slot);
+            }
+            builtin::require(selector == 7u64);
+            return held(slot);
+        }
+        auto space_contains(u64 slot, u64 epoch, u64 address, u64 length) const -> bool {
+            if (!require_slot(slot, epoch)) {
+                return false;
+            }
+            const u64 found = region_of(slot, address);
+            if (found == 0u64) {
+                return false;
+            }
+            const ProcessRegion region = region_at(slot, found - 1u64);
+            return length <= region.first + region.pages * 4096u64 - address;
+        }
+        auto space_executable(u64 slot, u64 epoch, u64 address, u64 length) const -> bool {
+            if (!space_contains(slot, epoch, address, length)) {
+                return false;
+            }
+            const ProcessRegion region = region_at(slot, region_of(slot, address) - 1u64);
+            return region.flags == leaf_execute();
+        }
+        auto map_memory(u64 slot, u64 epoch, u64 bytes) -> MemoryResult {
+            builtin::require(require_slot(slot, epoch) && get_phase(slot) == 2u64 && accounted(slot));
+            const MemoryDecision decided = memory_map(state(slot), bytes);
+            if (decided.verdict == MemoryVerdict::length) {
+                const MemoryResult refused = MemoryResult(1u64, 0u64);
+                return refused;
+            }
+            builtin::require(decided.verdict != MemoryVerdict::malformed);
+            if (decided.verdict != MemoryVerdict::mapped) {
+                const MemoryResult exhausted = MemoryResult(0u64, 18446744073709551610u64);
+                return exhausted;
+            }
+            enter(slot, false);
+            const MemoryRecord value = MemoryRecord{
+                .first = decided.first,
+                .reserved = decided.reserved,
+                .pages = decided.pages
+            };
+            set_record(slot, get_count(slot), value);
+            set_count(slot, get_count(slot) + 1u64);
+            set_next(slot, decided.next);
+            set_charged(slot, decided.charged);
+            builtin::require(accounted(slot));
+            leave();
+            const MemoryResult result = MemoryResult(0u64, decided.first);
+            return result;
+        }
+        auto fault_access(u64 slot, u64 epoch, u64 address, u64 error) const -> u64 {
+            if (!require_slot(slot, epoch) || !accounted(slot)) {
+                return 2u64;
+            }
+            if ((error | 2u64) != 6u64 || !heap_address(address) || mapping_of(slot, address) == 0u64) {
+                return 0u64;
+            }
+            return 1u64;
+        }
+    private:
+        auto commit_block(u64 slot, u64 address) -> bool {
+            const u64 page = address & 18446744073709547520u64;
+            const u64 found = mapping_of(slot, page);
+            if (!heap_address(page) || found == 0u64) {
+                return false;
+            }
+            const MemoryRecord record = record_at(slot, found - 1u64);
+            const u64 block = page & 18446744073709486080u64;
+            u64 first = block;
+            if (record.first > first) {
+                first = record.first;
+            }
+            u64 end = block + 65536u64;
+            if (record.first + record.pages * 4096u64 < end) {
+                end = record.first + record.pages * 4096u64;
+            }
+            u64 current = get_root_ticket(slot);
+            u64 level = 4u64;
+            bool missing = false;
+            while (level > 1u64) {
+                const u64 prefix = page & (18446744073709551615u64 ^ ((1u64 << level_shift(level)) - 1u64));
+                u64 value = 0u64;
+                if (!missing) {
+                    value = read_entry(current, (page >> level_shift(level)) & 511u64);
+                }
+                if (value == 0u64) {
+                    missing = true;
+                    if (stage_frame(get_owner(slot), prefix | (8u64 + level - 1u64)) == 18446744073709551615u64) {
+                        rollback_staged(get_owner(slot));
+                        return false;
+                    }
+                } else {
+                    builtin::require((value & 18442240474082185119u64) == 7u64);
+                    current = child_ticket(slot, value & 4503599627366400u64, prefix | (8u64 + level - 1u64));
+                }
+                level = level - 1u64;
+            }
+            bool fault_absent = missing;
+            u64 at = first;
+            while (at < end) {
+                u64 value = 0u64;
+                if (!missing) {
+                    value = read_entry(current, (at >> 12) & 511u64);
+                }
+                if (at == page && value == 0u64) {
+                    fault_absent = true;
+                }
+                if (value == 0u64) {
+                    if (stage_frame(get_owner(slot), at | 1u64) == 18446744073709551615u64) {
+                        rollback_staged(get_owner(slot));
+                        return false;
+                    }
+                } else {
+                    builtin::require((value & 18442240474082185119u64) == leaf_write());
+                    const u64 existing = child_ticket(slot, value & 4503599627366400u64, at | 1u64);
+                    builtin::require(existing != 18446744073709551615u64);
+                }
+                at = at + 4096u64;
+            }
+            if (!fault_absent) {
+                rollback_staged(get_owner(slot));
+                return false;
+            }
+            // Publication starts only after every missing table and data frame
+            // is staged. No recoverable refusal is possible after this point.
+            const u64 leaf = table_for(slot, page, 1u64, true);
+            at = first;
+            while (at < end) {
+                const u64 made = staged_mapping(at | 1u64);
+                if (made != 18446744073709551615u64) {
+                    publish(leaf, (at >> 12) & 511u64, made, leaf_write());
+                    set_heap(slot, get_heap(slot) + 1u64);
+                }
+                at = at + 4096u64;
+            }
+            builtin::require(staged_count == 0u64 && accounted(slot));
+            return true;
+        }
+    public:
+        auto commit_fault_block(u64 slot, u64 epoch, u64 address) -> bool {
+            if (!require_slot(slot, epoch) || get_phase(slot) != 2u64) {
+                return false;
+            }
+            enter(slot, false);
+            const bool committed = commit_block(slot, address);
+            leave();
+            return committed;
+        }
+        auto space_entry(u64 slot, u64 epoch, u64 address, u64 level) -> MemoryEntry {
+            const MemoryEntry refused = MemoryEntry(0u64, 0u64, false);
+            if (!require_slot(slot, epoch) || address >= 140737488355328u64 || level < 1u64 || level > 4u64) {
+                return refused;
+            }
+            enter(slot, true);
+            const u64 table = table_for(slot, address, level, false);
+            if (table == 18446744073709551615u64) {
+                leave();
+                return refused;
+            }
+            const u64 physical = authority.frame_address(table & 4294967295u64);
+            const MemoryEntry result = MemoryEntry(physical, (address >> level_shift(level)) & 511u64, true);
+            leave();
+            return result;
+        }
+        auto validate_access(u64 slot, u64 epoch, u64 address, u64 length, bool write) -> u64 {
+            if (!require_slot(slot, epoch) || get_phase(slot) != 2u64 || !accounted(slot)) {
+                return 2u64;
+            }
+            const u64 region_found = region_of(slot, address);
+            if (region_found != 0u64) {
+                const ProcessRegion region = region_at(slot, region_found - 1u64);
+                if (length <= region.first + region.pages * 4096u64 - address && (!write || region.flags
+                    == leaf_write())) {
+                    return 0u64;
+                }
+                return 1u64;
+            }
+            const u64 found = mapping_of(slot, address);
+            if (!heap_address(address) || found == 0u64) {
+                return 1u64;
+            }
+            const MemoryRecord record = record_at(slot, found - 1u64);
+            if (length > record.first + record.pages * 4096u64 - address) {
+                return 1u64;
+            }
+            enter(slot, false);
+            u64 page = address & 18446744073709547520u64;
+            while (page < address + length) {
+                const u64 leaf = table_for(slot, page, 1u64, false);
+                u64 value = 0u64;
+                if (leaf != 18446744073709551615u64) {
+                    value = read_entry(leaf, (page >> 12) & 511u64);
+                }
+                if (value == 0u64) {
+                    builtin::require(commit_block(slot, page));
+                }
+                page = page + 4096u64;
+            }
+            builtin::require(accounted(slot));
+            leave();
+            return 0u64;
+        }
+    private:
+        auto scan_table(u64 slot, u64 identity, u64 prefix, u64 level) -> MemoryWalk {
+            const MemoryWalk refused = MemoryWalk(false, 0u64, 0u64, 0u64, 0u64, 0u64);
+            if (!authority.observe_table(identity)) {
+                return refused;
+            }
+            MemoryWalk result = MemoryWalk(true, 0u64, 0u64, 0u64, 0u64, 0u64);
+            const u64 owner = get_owner(slot);
+            const builtin::span<const u64> observed = borrow_words(scratch_words);
+            const builtin::span<const u64> allocations = borrow_words(words);
+            const builtin::span<const u64> mappings = borrow_words(mapping_words);
+            const builtin::span<const u64> metadata = borrow_words(reservation_words);
+            const u64 self = identity & 4294967295u64;
+            if (self >= u64(allocations.size()) || (allocations.at(i64(self)) & 15u64) != frame_allocated()
+                || allocations.at(i64(self)) >> 32 != owner || ((allocations.at(i64(self)) >> 4) & generation_limit())
+                != identity >> 32 || (mappings.at(i64(self)) & 18446744073709535247u64) != (prefix | (8u64 + level))) {
+                return refused;
+            }
+            u64 present = 0u64;
+            u64 position = 0u64;
+            while (position < 512u64) {
+                const u64 value = observed.at(i64(position)) & 18446744073709551519u64;
+                const u64 address = prefix | (position << level_shift(level));
+                if (level == 4u64 && position >= 256u64) {
+                    if (value != (metadata.at(i64(shared_word(position - 256u64))) & 18446744073709551519u64)) {
+                        return refused;
+                    }
+                } else {
+                    if (value != 0u64) {
+                        present = present + 1u64;
+                        const u64 shared = shared_index(address);
+                        if (level == 2u64 && shared != 0u64) {
+                            u64 expected = shared_entry0;
+                            if (shared == 2u64) {
+                                expected = shared_entry1;
+                            }
+                            if (value != (expected & 18446744073709551519u64)) {
+                                return refused;
+                            }
+                            result.shared = result.shared + 1u64;
+                        } else {
+                            // observe_table normalizes only physical inventory
+                            // addresses to frame indices; flags remain exact.
+                            const u64 index = (value & 4503599627366400u64) >> 12;
+                            if (index >= u64(allocations.size()) || (allocations.at(i64(index)) & 15u64)
+                                != frame_allocated() || allocations.at(i64(index)) >> 32 != owner) {
+                                return refused;
+                            }
+                            const u64 mapping = mappings.at(i64(index));
+                            const u64 flags = value & 18442240474082185215u64;
+                            if (level > 1u64) {
+                                if (flags != 7u64 || (mapping & 18446744073709535247u64) != (address | (8u64 + level
+                                    - 1u64)) || ((mapping >> 4) & 1023u64) > 512u64) {
+                                    return refused;
+                                }
+                                result.tables = result.tables + 1u64;
+                                if (heap_address(address)) {
+                                    result.heap_tables = result.heap_tables + 1u64;
+                                }
+                            } else {
+                                if (mapping != (address | 1u64)) {
+                                    return refused;
+                                }
+                                if (heap_address(address)) {
+                                    u64 low = 0u64;
+                                    u64 high = get_count(slot);
+                                    while (low < high) {
+                                        const u64 middle = low + (high - low) / 2u64;
+                                        const u64 first = metadata.at(i64(record_word(slot, middle)));
+                                        if (first <= address) {
+                                            low = middle + 1u64;
+                                        } else {
+                                            high = middle;
+                                        }
+                                    }
+                                    if (low == 0u64 || flags != leaf_write()) {
+                                        return refused;
+                                    }
+                                    const u64 record = record_word(slot, low - 1u64);
+                                    if (address - metadata.at(i64(record)) >= metadata.at(i64(record + 2u64))
+                                        * 4096u64) {
+                                        return refused;
+                                    }
+                                    result.heap = result.heap + 1u64;
+                                } else {
+                                    u64 region = 0u64;
+                                    bool found = false;
+                                    while (region < get_region_count(slot) && !found) {
+                                        const u64 record = region_word(slot, region);
+                                        const u64 first = metadata.at(i64(record + 1u64));
+                                        const u64 pages = metadata.at(i64(record + 2u64));
+                                        if (address >= first && address - first < pages * 4096u64) {
+                                            if (flags != metadata.at(i64(record + 3u64))) {
+                                                return refused;
+                                            }
+                                            found = true;
+                                        }
+                                        region = region + 1u64;
+                                    }
+                                    if (!found) {
+                                        return refused;
+                                    }
+                                    result.leaves = result.leaves + 1u64;
+                                }
+                            }
+                        }
+                    }
+                }
+                position = position + 1u64;
+            }
+            if (level != 4u64 && ((mappings.at(i64(self)) >> 4) & 1023u64) != present) {
+                return refused;
+            }
+            return result;
+        }
+        auto records_valid(u64 slot) const -> bool {
+            const builtin::span<const u64> records = borrow_words(reservation_words);
+            const u64 count = get_count(slot);
+            const u64 next = get_next(slot);
+            u64 index = 0u64;
+            u64 previous = memory_base();
+            while (index < count) {
+                const u64 at = record_word(slot, index);
+                const u64 first = records.at(i64(at));
+                const u64 reserved = records.at(i64(at + 1u64));
+                const u64 pages = records.at(i64(at + 2u64));
+                if (pages == 0u64 || pages > reserved || reserved > 17179869184u64 || (reserved & (reserved - 1u64))
+                    != 0u64 || first < previous || first % 4096u64 != 0u64 || first >= next || reserved * 4096u64 > next
+                    - first) {
+                    return false;
+                }
+                previous = first + reserved * 4096u64;
+                index = index + 1u64;
+            }
+            return true;
+        }
+        auto verify_inner(u64 slot) -> bool {
+            if (get_phase(slot) == 0u64 || !accounted(slot) || get_count(slot) > 16384u64 || get_next(slot)
+                < memory_base() || get_next(slot) > memory_limit()) {
+                return false;
+            }
+            if (!records_valid(slot)) {
+                return false;
+            }
+            u64 index = 0u64;
+            MemoryCursor cursor0 = MemoryCursor(get_root_ticket(slot), 0u64, 0u64, 256u64, 0u64, 4u64);
+            MemoryCursor cursor1 = MemoryCursor(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+            MemoryCursor cursor2 = MemoryCursor(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+            MemoryCursor cursor3 = MemoryCursor(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+            MemoryWalk walked = MemoryWalk(true, 1u64, 0u64, 0u64, 0u64, 0u64);
+            u64 depth = 0u64;
+            bool fresh = true;
+            bool complete = false;
+            while (!complete) {
+                MemoryCursor at = cursor0;
+                if (depth == 1u64) {
+                    at.ticket = cursor1.ticket;
+                    at.prefix = cursor1.prefix;
+                    at.next = cursor1.next;
+                    at.end = cursor1.end;
+                    at.parent = cursor1.parent;
+                    at.level = cursor1.level;
+                }
+                if (depth == 2u64) {
+                    at.ticket = cursor2.ticket;
+                    at.prefix = cursor2.prefix;
+                    at.next = cursor2.next;
+                    at.end = cursor2.end;
+                    at.parent = cursor2.parent;
+                    at.level = cursor2.level;
+                }
+                if (depth == 3u64) {
+                    at.ticket = cursor3.ticket;
+                    at.prefix = cursor3.prefix;
+                    at.next = cursor3.next;
+                    at.end = cursor3.end;
+                    at.parent = cursor3.parent;
+                    at.level = cursor3.level;
+                }
+                if (fresh) {
+                    const MemoryWalk counted = scan_table(slot, at.ticket, at.prefix, at.level);
+                    if (!counted.valid) {
+                        return false;
+                    }
+                    walked.tables = walked.tables + counted.tables;
+                    walked.leaves = walked.leaves + counted.leaves;
+                    walked.heap = walked.heap + counted.heap;
+                    walked.heap_tables = walked.heap_tables + counted.heap_tables;
+                    walked.shared = walked.shared + counted.shared;
+                }
+                fresh = false;
+                u64 next = 512u64;
+                u64 value = 0u64;
+                if (at.level > 1u64 && at.next < at.end) {
+                    next = authority.observe_next_present(at.ticket, at.next);
+                    if (next < at.end) {
+                        value = scratch_words.at(0u64);
+                        while (at.level == 2u64 && next < at.end && shared_index(at.prefix | (next
+                            << level_shift(at.level))) != 0u64) {
+                            next = authority.observe_next_present(at.ticket, next + 1u64);
+                            if (next < at.end) {
+                                value = scratch_words.at(0u64);
+                            }
+                        }
+                    }
+                }
+                if (next < at.end) {
+                    if (depth >= 3u64) {
+                        return false;
+                    }
+                    at.next = next + 1u64;
+                    if (depth == 0u64) {
+                        cursor0.ticket = at.ticket;
+                        cursor0.prefix = at.prefix;
+                        cursor0.next = at.next;
+                        cursor0.end = at.end;
+                        cursor0.parent = at.parent;
+                        cursor0.level = at.level;
+                    }
+                    if (depth == 1u64) {
+                        cursor1.ticket = at.ticket;
+                        cursor1.prefix = at.prefix;
+                        cursor1.next = at.next;
+                        cursor1.end = at.end;
+                        cursor1.parent = at.parent;
+                        cursor1.level = at.level;
+                    }
+                    if (depth == 2u64) {
+                        cursor2.ticket = at.ticket;
+                        cursor2.prefix = at.prefix;
+                        cursor2.next = at.next;
+                        cursor2.end = at.end;
+                        cursor2.parent = at.parent;
+                        cursor2.level = at.level;
+                    }
+                    const u64 prefix = at.prefix | (next << level_shift(at.level));
+                    const u64 child = child_ticket(slot, value & 4503599627366400u64, prefix | (8u64 + at.level
+                        - 1u64));
+                    const MemoryCursor below = MemoryCursor(child, prefix, 0u64, 512u64, next, at.level - 1u64);
+                    depth = depth + 1u64;
+                    if (depth == 1u64) {
+                        cursor1.ticket = below.ticket;
+                        cursor1.prefix = below.prefix;
+                        cursor1.next = below.next;
+                        cursor1.end = below.end;
+                        cursor1.parent = below.parent;
+                        cursor1.level = below.level;
+                    }
+                    if (depth == 2u64) {
+                        cursor2.ticket = below.ticket;
+                        cursor2.prefix = below.prefix;
+                        cursor2.next = below.next;
+                        cursor2.end = below.end;
+                        cursor2.parent = below.parent;
+                        cursor2.level = below.level;
+                    }
+                    if (depth == 3u64) {
+                        cursor3.ticket = below.ticket;
+                        cursor3.prefix = below.prefix;
+                        cursor3.next = below.next;
+                        cursor3.end = below.end;
+                        cursor3.parent = below.parent;
+                        cursor3.level = below.level;
+                    }
+                    fresh = true;
+                } else {
+                    if (depth == 0u64) {
+                        complete = true;
+                    } else {
+                        depth = depth - 1u64;
+                    }
+                }
+            }
+            u64 pages = 0u64;
+            index = 0u64;
+            while (index < get_region_count(slot)) {
+                const ProcessRegion region = region_at(slot, index);
+                pages = pages + region.pages;
+                index = index + 1u64;
+            }
+            u64 snapshot_frames = 0u64;
+            if (snapshot_phase != 0u64 && snapshot_owner == get_owner(slot)) {
+                snapshot_frames = snapshot_held;
+            }
+            return walked.tables == get_tables(slot) && walked.leaves == get_leaves(slot) && walked.leaves == pages
+                && walked.heap == get_heap(slot) && walked.heap_tables == get_heap_tables(slot) && walked.shared
+                == shared_slots && owner_allocated(get_owner(slot)) == held(slot) + snapshot_frames;
+        }
+    public:
+        auto verify_space(u64 slot, u64 epoch) -> bool {
+            if (!require_slot(slot, epoch)) {
+                return false;
+            }
+            enter(slot, true);
+            const bool valid = verify_inner(slot);
+            leave();
+            return valid;
+        }
+        auto finish_load(u64 slot, u64 epoch) -> bool {
+            if (!require_slot(slot, epoch) || get_phase(slot) != 1u64 || (snapshot_phase != 0u64 && snapshot_owner
+                == get_owner(slot))) {
+                return false;
+            }
+            enter(slot, true);
+            const bool valid = verify_inner(slot);
+            if (valid) {
+                set_phase(slot, 2u64);
+            }
+            leave();
+            return valid;
+        }
+    private:
+        auto sweep(u64 slot, u64 first, u64 end, bool all, u64 move_first) -> bool {
+            builtin::require(first < end && end <= 140737488355328u64 && first % 4096u64 == 0u64 && end % 4096u64
+                == 0u64);
+            u64 root_end = ((end - 1u64) >> 39) + 1u64;
+            if (root_end > 256u64) {
+                root_end = 256u64;
+            }
+            MemoryCursor cursor0 = MemoryCursor(get_root_ticket(slot), 0u64, first >> 39, root_end, 0u64, 4u64);
+            MemoryCursor cursor1 = MemoryCursor(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+            MemoryCursor cursor2 = MemoryCursor(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+            MemoryCursor cursor3 = MemoryCursor(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+            u64 depth = 0u64;
+            bool complete = false;
+            while (!complete) {
+                MemoryCursor at = cursor0;
+                if (depth == 1u64) {
+                    at.ticket = cursor1.ticket;
+                    at.prefix = cursor1.prefix;
+                    at.next = cursor1.next;
+                    at.end = cursor1.end;
+                    at.parent = cursor1.parent;
+                    at.level = cursor1.level;
+                }
+                if (depth == 2u64) {
+                    at.ticket = cursor2.ticket;
+                    at.prefix = cursor2.prefix;
+                    at.next = cursor2.next;
+                    at.end = cursor2.end;
+                    at.parent = cursor2.parent;
+                    at.level = cursor2.level;
+                }
+                if (depth == 3u64) {
+                    at.ticket = cursor3.ticket;
+                    at.prefix = cursor3.prefix;
+                    at.next = cursor3.next;
+                    at.end = cursor3.end;
+                    at.parent = cursor3.parent;
+                    at.level = cursor3.level;
+                }
+                u64 next = 512u64;
+                u64 value = 0u64;
+                if (at.next < at.end) {
+                    next = authority.observe_next_present(at.ticket, at.next);
+                    if (next < at.end) {
+                        value = scratch_words.at(0u64);
+                    }
+                }
+                if (next < at.end) {
+                    at.next = next + 1u64;
+                    if (depth == 0u64) {
+                        cursor0.ticket = at.ticket;
+                        cursor0.prefix = at.prefix;
+                        cursor0.next = at.next;
+                        cursor0.end = at.end;
+                        cursor0.parent = at.parent;
+                        cursor0.level = at.level;
+                    }
+                    if (depth == 1u64) {
+                        cursor1.ticket = at.ticket;
+                        cursor1.prefix = at.prefix;
+                        cursor1.next = at.next;
+                        cursor1.end = at.end;
+                        cursor1.parent = at.parent;
+                        cursor1.level = at.level;
+                    }
+                    if (depth == 2u64) {
+                        cursor2.ticket = at.ticket;
+                        cursor2.prefix = at.prefix;
+                        cursor2.next = at.next;
+                        cursor2.end = at.end;
+                        cursor2.parent = at.parent;
+                        cursor2.level = at.level;
+                    }
+                    if (depth == 3u64) {
+                        cursor3.ticket = at.ticket;
+                        cursor3.prefix = at.prefix;
+                        cursor3.next = at.next;
+                        cursor3.end = at.end;
+                        cursor3.parent = at.parent;
+                        cursor3.level = at.level;
+                    }
+                    const u64 address = at.prefix | (next << level_shift(at.level));
+                    const u64 shared = shared_index(address);
+                    if (at.level == 2u64 && shared != 0u64) {
+                        if (all) {
+                            builtin::require(authority.clear_shared_entry(at.ticket, next, shared - 1u64));
+                            count_entry(at.ticket, false);
+                        }
+                    } else {
+                        if (at.level == 1u64) {
+                            const u64 child = child_ticket(slot, value & 4503599627366400u64, address | 1u64);
+                            // The exact clear and required invalidation complete
+                            // before changing its descriptor or releasing it.
+                            clear(at.ticket, next, value, child);
+                            if (move_first != 0u64) {
+                                builtin::require((value & 18442240474082185119u64) == leaf_write());
+                                const u64 target = move_first + address - first;
+                                builtin::require(staged_count == 0u64);
+                                builtin::require(mapping_words.set(child & 4294967295u64, 0u64));
+                                builtin::require(reservation_words.set(staged_word(0u64, 0u64), child));
+                                builtin::require(reservation_words.set(staged_word(0u64, 1u64), target | 1u64));
+                                staged_count = 1u64;
+                                const u64 leaf = table_for(slot, target, 1u64, true);
+                                publish(leaf, (target >> 12) & 511u64, child, leaf_write());
+                            } else {
+                                drop_frame(child, get_owner(slot));
+                                if (heap_address(address)) {
+                                    builtin::require(get_heap(slot) != 0u64);
+                                    set_heap(slot, get_heap(slot) - 1u64);
+                                } else {
+                                    builtin::require(get_leaves(slot) != 0u64);
+                                    set_leaves(slot, get_leaves(slot) - 1u64);
+                                }
+                            }
+                        } else {
+                            builtin::require(depth < 3u64 && (value & 18442240474082185119u64) == 7u64);
+                            const u64 child = child_ticket(slot, value & 4503599627366400u64, address | (8u64 + at.level
+                                - 1u64));
+                            u64 low = address;
+                            if (first > low) {
+                                low = first;
+                            }
+                            const u64 from = (low - address) >> level_shift(at.level - 1u64);
+                            u64 to = ((end - 1u64 - address) >> level_shift(at.level - 1u64)) + 1u64;
+                            if (to > 512u64) {
+                                to = 512u64;
+                            }
+                            const MemoryCursor below = MemoryCursor(child, address, from, to, next, at.level - 1u64);
+                            depth = depth + 1u64;
+                            if (depth == 1u64) {
+                                cursor1.ticket = below.ticket;
+                                cursor1.prefix = below.prefix;
+                                cursor1.next = below.next;
+                                cursor1.end = below.end;
+                                cursor1.parent = below.parent;
+                                cursor1.level = below.level;
+                            }
+                            if (depth == 2u64) {
+                                cursor2.ticket = below.ticket;
+                                cursor2.prefix = below.prefix;
+                                cursor2.next = below.next;
+                                cursor2.end = below.end;
+                                cursor2.parent = below.parent;
+                                cursor2.level = below.level;
+                            }
+                            if (depth == 3u64) {
+                                cursor3.ticket = below.ticket;
+                                cursor3.prefix = below.prefix;
+                                cursor3.next = below.next;
+                                cursor3.end = below.end;
+                                cursor3.parent = below.parent;
+                                cursor3.level = below.level;
+                            }
+                        }
+                    }
+                } else {
+                    if (depth == 0u64) {
+                        complete = true;
+                    } else {
+                        depth = depth - 1u64;
+                        const u64 count = (mapping_words.at(at.ticket & 4294967295u64) >> 4) & 1023u64;
+                        builtin::require(count <= 512u64 && (!all || count == 0u64));
+                        if (count == 0u64) {
+                            MemoryCursor parent = cursor0;
+                            if (depth == 1u64) {
+                                parent.ticket = cursor1.ticket;
+                                parent.prefix = cursor1.prefix;
+                                parent.next = cursor1.next;
+                                parent.end = cursor1.end;
+                                parent.parent = cursor1.parent;
+                                parent.level = cursor1.level;
+                            }
+                            if (depth == 2u64) {
+                                parent.ticket = cursor2.ticket;
+                                parent.prefix = cursor2.prefix;
+                                parent.next = cursor2.next;
+                                parent.end = cursor2.end;
+                                parent.parent = cursor2.parent;
+                                parent.level = cursor2.level;
+                            }
+                            const u64 expected = read_entry(parent.ticket, at.parent);
+                            // Clear parent first even for an inactive root. No
+                            // surviving parent may name a reclaimed table.
+                            clear(parent.ticket, at.parent, expected, at.ticket);
+                            drop_frame(at.ticket, get_owner(slot));
+                            builtin::require(get_tables(slot) != 0u64);
+                            set_tables(slot, get_tables(slot) - 1u64);
+                            if (heap_address(at.prefix)) {
+                                builtin::require(get_heap_tables(slot) != 0u64);
+                                set_heap_tables(slot, get_heap_tables(slot) - 1u64);
+                            }
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+    public:
+        auto remap_memory(u64 slot, u64 epoch, u64 base, u64 bytes, u64 target) -> MemoryResult {
+            builtin::require(require_slot(slot, epoch) && get_phase(slot) == 2u64 && accounted(slot));
+            const MemoryResult refused = MemoryResult(1u64, 0u64);
+            const u64 found = find_record(slot, base);
+            if (found == 0u64) {
+                return refused;
+            }
+            const MemoryRecord record = record_at(slot, found - 1u64);
+            const MemoryDecision decided = memory_remap(state(slot), record, bytes, target);
+            if (decided.verdict == MemoryVerdict::length) {
+                return refused;
+            }
+            builtin::require(decided.verdict != MemoryVerdict::malformed);
+            if (decided.verdict != MemoryVerdict::resized && decided.verdict != MemoryVerdict::moved) {
+                const MemoryResult exhausted = MemoryResult(0u64, 18446744073709551610u64);
+                return exhausted;
+            }
+            enter(slot, false);
+            const u64 end = record.first + record.pages * 4096u64;
+            const MemoryRecord replacement = MemoryRecord{
+                .first = decided.first,
+                .reserved = decided.reserved,
+                .pages = decided.pages
+            };
+            if (decided.verdict == MemoryVerdict::resized) {
+                const u64 kept_end = record.first + decided.pages * 4096u64;
+                if (kept_end < end) {
+                    sweep(slot, kept_end, end, false, 0u64);
+                }
+                set_record(slot, found - 1u64, replacement);
+            } else {
+                // memory_remap admitted the destination table charge alongside
+                // the old range; resident unused quotas remain reserved.
+                sweep(slot, record.first, end, false, decided.first);
+                remove_record(slot, found - 1u64);
+                set_record(slot, get_count(slot), replacement);
+                set_count(slot, get_count(slot) + 1u64);
+                set_next(slot, decided.next);
+            }
+            set_charged(slot, decided.charged);
+            builtin::require(accounted(slot));
+            leave();
+            const MemoryResult result = MemoryResult(0u64, decided.first);
+            return result;
+        }
+        auto unmap_memory(u64 slot, u64 epoch, u64 base, u64 bytes) -> MemoryResult {
+            builtin::require(require_slot(slot, epoch) && get_phase(slot) == 2u64 && accounted(slot));
+            const MemoryResult refused = MemoryResult(1u64, 0u64);
+            const u64 found = find_record(slot, base);
+            if (found == 0u64) {
+                return refused;
+            }
+            const MemoryRecord record = record_at(slot, found - 1u64);
+            const MemoryDecision decided = memory_unmap(state(slot), record, bytes);
+            if (decided.verdict == MemoryVerdict::length) {
+                return refused;
+            }
+            builtin::require(decided.verdict == MemoryVerdict::unmapped);
+            enter(slot, false);
+            sweep(slot, record.first, record.first + record.pages * 4096u64, false, 0u64);
+            remove_record(slot, found - 1u64);
+            set_charged(slot, decided.charged);
+            builtin::require(accounted(slot));
+            leave();
+            const MemoryResult result = MemoryResult(0u64, 0u64);
+            return result;
+        }
+        auto retire_space(u64 slot, u64 epoch) -> u64 {
+            if (!require_slot(slot, epoch)) {
+                return 18446744073709551615u64;
+            }
+            enter(slot, false);
+            const u64 old_phase = get_phase(slot);
+            set_phase(slot, 3u64);
+            if (!authority.revoke_root(get_root_ticket(slot))) {
+                set_phase(slot, old_phase);
+                leave();
+                return 18446744073709551615u64;
+            }
+            const u64 released = held(slot);
+            sweep(slot, 0u64, 140737488355328u64, true, 0u64);
+            builtin::require(get_tables(slot) == 1u64 && get_leaves(slot) == 0u64 && get_heap(slot) == 0u64
+                && get_heap_tables(slot) == 0u64);
+            drop_frame(get_root_ticket(slot), get_owner(slot));
+            set_root_ticket(slot, 0u64);
+            set_tables(slot, 0u64);
+            set_next(slot, 0u64);
+            set_charged(slot, 0u64);
+            set_quota(slot, 0u64);
+            set_count(slot, 0u64);
+            set_region_count(slot, 0u64);
+            set_owner(slot, 0u64);
+            set_phase(slot, 0u64);
+            leave();
+            return released;
+        }
+    private:
+        auto snapshot_cost(u64 bytes) const -> u64 {
+            const u64 pages = (bytes + 4095u64) / 4096u64;
+            return pages + (pages + 511u64) / 512u64 + 1u64;
+        }
+        auto snapshot_ticket(u64 physical, u64 mapping) -> u64 {
+            const u64 index = authority.frame_index(physical);
+            builtin::require(index != 18446744073709551615u64 && owned_index(index, snapshot_owner, mapping));
+            return ticket(index);
+        }
+        auto scan_snapshot(u64 identity, u64 first, u64 pages, bool directory) -> u64 {
+            if (!authority.observe_table(identity)) {
+                return 18446744073709551615u64;
+            }
+            const builtin::span<const u64> observed = borrow_words(scratch_words);
+            const builtin::span<const u64> allocations = borrow_words(words);
+            const builtin::span<const u64> mappings = borrow_words(mapping_words);
+            const u64 self = identity & 4294967295u64;
+            u64 expected_self = (18446673707112857600u64 + first * 4096u64) | 4u64;
+            if (directory) {
+                expected_self = 18446673707112857605u64;
+            }
+            if (self >= u64(allocations.size()) || (allocations.at(i64(self)) & 15u64) != frame_allocated()
+                || allocations.at(i64(self)) >> 32 != snapshot_owner || ((allocations.at(i64(self)) >> 4)
+                & generation_limit()) != identity >> 32 || mappings.at(i64(self)) != expected_self) {
+                return 18446744073709551615u64;
+            }
+            u64 seen = 0u64;
+            u64 position = 0u64;
+            while (position < 512u64) {
+                const u64 value = observed.at(i64(position)) & 18446744073709551519u64;
+                u64 bound = pages;
+                if (directory) {
+                    bound = (pages + 511u64) / 512u64;
+                }
+                if (position >= bound) {
+                    if (value != 0u64) {
+                        return 18446744073709551615u64;
+                    }
+                } else {
+                    const u64 index = (value & 4503599627366400u64) >> 12;
+                    u64 expected_mapping = (18446673707112857600u64 + (first + position) * 4096u64) | 3u64;
+                    u64 expected_flags = 9223372036854775811u64;
+                    if (snapshot_phase == 2u64) {
+                        expected_flags = 9223372036854775809u64;
+                    }
+                    if (directory) {
+                        expected_mapping = (18446673707112857600u64 + position * 2097152u64) | 4u64;
+                        expected_flags = 3u64;
+                    }
+                    if (value == 0u64 || index >= u64(allocations.size()) || (allocations.at(i64(index)) & 15u64)
+                        != frame_allocated() || allocations.at(i64(index)) >> 32 != snapshot_owner
+                        || mappings.at(i64(index)) != expected_mapping || (value & 18442240474082185215u64)
+                        != expected_flags) {
+                        return 18446744073709551615u64;
+                    }
+                    seen = seen + 1u64;
+                }
+                position = position + 1u64;
+            }
+            return seen;
+        }
+        auto verify_snapshot_inner() -> bool {
+            if (snapshot_phase == 0u64 || snapshot_phase > 2u64 || snapshot_bytes == 0u64 || snapshot_bytes
+                > 67108864u64 || !authority.observe_snapshot_anchor(snapshot_directory_ticket)) {
+                return false;
+            }
+            const u64 pages = (snapshot_bytes + 4095u64) / 4096u64;
+            const u64 tables = (pages + 511u64) / 512u64;
+            if (scan_snapshot(snapshot_directory_ticket, 0u64, pages, true) != tables) {
+                return false;
+            }
+            u64 seen = 1u64 + tables;
+            u64 index = 0u64;
+            while (index < tables) {
+                const u64 value = read_entry(snapshot_directory_ticket, index);
+                const u64 table = snapshot_ticket(value & 4503599627366400u64, (18446673707112857600u64 + index
+                    * 2097152u64) | 4u64);
+                u64 count = pages - index * 512u64;
+                if (count > 512u64) {
+                    count = 512u64;
+                }
+                const u64 found = scan_snapshot(table, index * 512u64, count, false);
+                if (found != count) {
+                    return false;
+                }
+                seen = seen + found;
+                index = index + 1u64;
+            }
+            return seen == snapshot_held && seen == snapshot_cost(snapshot_bytes);
+        }
+    public:
+        auto begin_snapshot(u64 owner, u64 bytes) -> u64 {
+            if (snapshot_phase != 0u64 || snapshot_epoch == 18446744073709551615u64 || bytes == 0u64 || bytes
+                > 67108864u64 || owner < 16u64 || owner > 4294967295u64 || snapshot_cost(bytes) > available()
+                || (owner_slot(owner) == 2u64 && count0 != 0u64 && count1 != 0u64) || (slot0_phase != 0u64
+                && slot0_owner == owner) || (slot1_phase != 0u64 && slot1_owner == owner)) {
+                return 0u64;
+            }
+            enter(2u64, false);
+            snapshot_epoch = snapshot_epoch + 1u64;
+            snapshot_owner = owner;
+            snapshot_phase = 1u64;
+            snapshot_bytes = bytes;
+            const u64 directory = stage_frame(owner, 18446673707112857605u64);
+            builtin::require(directory != 18446744073709551615u64);
+            snapshot_directory_ticket = directory;
+            install_mapping(directory);
+            unstage(directory);
+            snapshot_held = 1u64;
+            const u64 pages = (bytes + 4095u64) / 4096u64;
+            u64 page = 0u64;
+            while (page < pages) {
+                const u64 index = page / 512u64;
+                const u64 table = stage_frame(owner, (18446673707112857600u64 + index * 2097152u64) | 4u64);
+                builtin::require(table != 18446744073709551615u64);
+                publish(directory, index, table, 3u64);
+                snapshot_held = snapshot_held + 1u64;
+                u64 position = 0u64;
+                while (position < 512u64 && page < pages) {
+                    const u64 data = stage_frame(owner, (18446673707112857600u64 + page * 4096u64) | 3u64);
+                    builtin::require(data != 18446744073709551615u64);
+                    publish(table, position, data, 9223372036854775811u64);
+                    snapshot_held = snapshot_held + 1u64;
+                    page = page + 1u64;
+                    position = position + 1u64;
+                }
+            }
+            builtin::require(authority.snapshot_anchor_publish(directory));
+            builtin::require(verify_snapshot_inner());
+            leave();
+            return snapshot_epoch;
+        }
+        auto fill_snapshot(u64 epoch, u64 offset, u64 count) -> bool {
+            if (snapshot_phase != 1u64 || snapshot_epoch != epoch || count == 0u64 || offset > snapshot_bytes || count
+                > snapshot_bytes - offset) {
+                return false;
+            }
+            enter(2u64, false);
+            builtin::require(authority.fill_snapshot_chunk(epoch, offset, 0u64, count));
+            leave();
+            return true;
+        }
+        auto verify_snapshot(u64 epoch) -> bool {
+            if (snapshot_phase == 0u64 || snapshot_epoch != epoch) {
+                return false;
+            }
+            enter(2u64, true);
+            const bool valid = verify_snapshot_inner();
+            leave();
+            return valid;
+        }
+        auto seal_snapshot(u64 epoch) -> bool {
+            if (snapshot_phase != 1u64 || snapshot_epoch != epoch) {
+                return false;
+            }
+            enter(2u64, false);
+            if (!verify_snapshot_inner()) {
+                leave();
+                return false;
+            }
+            const u64 pages = (snapshot_bytes + 4095u64) / 4096u64;
+            u64 page = 0u64;
+            while (page < pages) {
+                const u64 parent = read_entry(snapshot_directory_ticket, page / 512u64);
+                const u64 table = snapshot_ticket(parent & 4503599627366400u64, (18446673707112857600u64 + (page
+                    / 512u64) * 2097152u64) | 4u64);
+                const u64 value = read_entry(table, page % 512u64);
+                const u64 child = snapshot_ticket(value & 4503599627366400u64, (18446673707112857600u64 + page
+                    * 4096u64) | 3u64);
+                builtin::require(authority.downgrade_snapshot_entry(table, page % 512u64, value, child));
+                page = page + 1u64;
+            }
+            snapshot_phase = 2u64;
+            builtin::require(verify_snapshot_inner());
+            leave();
+            return true;
+        }
+        auto discard_snapshot(u64 epoch) -> bool {
+            if (snapshot_phase == 0u64 || snapshot_epoch != epoch) {
+                return false;
+            }
+            enter(2u64, false);
+            snapshot_phase = 3u64;
+            builtin::require(authority.snapshot_anchor_clear(snapshot_directory_ticket));
+            u64 index = authority.observe_next_present(snapshot_directory_ticket, 0u64);
+            while (index < 512u64) {
+                const u64 value = scratch_words.at(0u64);
+                const u64 table = snapshot_ticket(value & 4503599627366400u64, (18446673707112857600u64 + index
+                    * 2097152u64) | 4u64);
+                u64 position = authority.observe_next_present(table, 0u64);
+                while (position < 512u64) {
+                    const u64 leaf = scratch_words.at(0u64);
+                    const u64 child = snapshot_ticket(leaf & 4503599627366400u64, (18446673707112857600u64 + (index
+                        * 512u64 + position) * 4096u64) | 3u64);
+                    clear(table, position, leaf, child);
+                    drop_frame(child, snapshot_owner);
+                    builtin::require(snapshot_held != 0u64);
+                    snapshot_held = snapshot_held - 1u64;
+                    position = authority.observe_next_present(table, position + 1u64);
+                }
+                clear(snapshot_directory_ticket, index, value, table);
+                drop_frame(table, snapshot_owner);
+                builtin::require(snapshot_held != 0u64);
+                snapshot_held = snapshot_held - 1u64;
+                index = authority.observe_next_present(snapshot_directory_ticket, index + 1u64);
+            }
+            builtin::require(snapshot_held == 1u64);
+            drop_frame(snapshot_directory_ticket, snapshot_owner);
+            snapshot_directory_ticket = 0u64;
+            snapshot_held = 0u64;
+            snapshot_owner = 0u64;
+            snapshot_bytes = 0u64;
+            snapshot_phase = 0u64;
+            leave();
+            return true;
+        }
+        auto snapshot_value(u64 epoch, u64 selector) const -> u64 {
+            builtin::require(snapshot_phase != 0u64 && epoch == snapshot_epoch);
+            if (selector == 0u64) {
+                return snapshot_owner;
+            }
+            if (selector == 1u64) {
+                return snapshot_bytes;
+            }
+            if (selector == 2u64) {
+                return snapshot_held;
+            }
+            builtin::require(selector == 3u64);
+            if (snapshot_phase == 2u64) {
+                return 1u64;
+            }
+            return 0u64;
+        }
+        auto audit_residents() -> bool {
+            enter(3u64, true);
+            u64 expected = 0u64;
+            if (snapshot_phase != 0u64) {
+                active_slot = 2u64;
+                if (!verify_snapshot_inner()) {
+                    leave();
+                    return false;
+                }
+                expected = snapshot_held;
+            }
+            u64 slot = 0u64;
+            while (slot < 2u64) {
+                if (get_phase(slot) != 0u64) {
+                    active_slot = slot;
+                    if (expected > allocated_count || !verify_inner(slot) || held(slot) > allocated_count - expected) {
+                        leave();
+                        return false;
+                    }
+                    expected = expected + held(slot);
+                }
+                slot = slot + 1u64;
+            }
+            const FrameAudit checked = audit();
+            leave();
+            return checked.consistent && checked.allocated == expected;
+        }
+        auto finish() && -> bool {
+            const FrameAudit checked = audit();
+            builtin::require(checked.consistent && checked.allocated == 0u64 && slot0_phase == 0u64 && slot1_phase
+                == 0u64 && snapshot_phase == 0u64 && operation == 0u64 && staged_count == 0u64);
+            const bool allocation_done = words.finish();
+            const bool mappings_done = mapping_words.finish();
+            const bool reservations_done = reservation_words.finish();
+            const bool scratch_done = scratch_words.finish();
+            const bool effects_done = authority.finish();
+            return allocation_done && mappings_done && reservations_done && scratch_done && effects_done;
+        }
+    };
+}

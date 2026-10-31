@@ -318,6 +318,33 @@ export namespace compiler_lowering {
         session.append_work(field);
         return session.good();
     }
+    // One atomic native issuer: four exact direct banks and their authority.
+    // This does not admit arbitrary combinations of retained owners.
+    auto mapping_bank_class(compiler_resolver::Session& session, i64 nominal) -> bool {
+        const i64 count = field_total(session, nominal);
+        if (count < 5) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < count && session.good()) {
+            const i64 type = field_type(session, nominal, at);
+            if (at < 5) {
+                i64 expected = 3;
+                if (at == 4) {
+                    expected = 4;
+                }
+                if (!field_resource(session, type) || tm(session, type, 1) != expected) {
+                    return false;
+                }
+            } else {
+                if (owning_field(session, type)) {
+                    return false;
+                }
+            }
+            at = at + 1;
+        }
+        return session.good();
+    }
     auto finish_logical_class(compiler_resolver::Session& session, compiler_resolver::WorkRow frame,
         compiler_resolver::WorkRow pending) -> bool {
         const i64 nominal = frame.word(0);
@@ -325,18 +352,23 @@ export namespace compiler_lowering {
         const i64 count = field_total(session, nominal);
         i64 retained_fields = 0;
         i64 byte_fields = 0;
+        bool authority_field = false;
         i64 field_index = 0;
         while (field_index < count && session.good()) {
             const i64 field = field_type(session, nominal, field_index);
             if (field_resource(session, field)) {
                 retained_fields = retained_fields + 1;
+                if (tm(session, field, 1) == 4) {
+                    authority_field = true;
+                }
             }
             if (owner_storage(session, field)) {
                 byte_fields = byte_fields + 1;
             }
             field_index = field_index + 1;
         }
-        if (retained_fields > 1 || (retained_fields != 0 && byte_fields != 0)) {
+        if (((retained_fields > 1 || authority_field) && !mapping_bank_class(session, nominal)) || (retained_fields != 0
+            && byte_fields != 0)) {
             return fail(session, LoweringError::class_field_requires_concrete_type, source);
         }
         const i64 leaves = frame.word(3);
@@ -1339,7 +1371,7 @@ export namespace compiler_lowering {
         while (at < count && session.good()) {
             const i64 type = parameter_type(session, symbol, at);
             if (tk(session, type) == compiler_resolver::ResolvedTypeKind::service_resource && !(retained_constructor
-                && at == 0 && count == 1 && field_resource(session, type) && !parameter_borrowed(session, symbol, at)
+                && field_resource(session, type) && !parameter_borrowed(session, symbol, at)
                 && !parameter_const(session, symbol, at))) {
                 return fail(session, LoweringError::resource_argument_type, source);
             }
@@ -1508,12 +1540,29 @@ export namespace compiler_lowering {
             resource_constructor = owning_type(session, receiver_type);
         }
         if (retained_constructor) {
-            if (count != 1) {
-                return fail(session, LoweringError::resource_argument_type, source);
-            }
-            const i64 input = parameter_type(session, symbol, 0);
-            if (!field_resource(session, input)) {
-                return fail(session, LoweringError::resource_argument_type, source);
+            if (mapping_bank_class(session, receiver)) {
+                if (count != 5 && count != 6) {
+                    return fail(session, LoweringError::resource_argument_type, source);
+                }
+                i64 grant = 0;
+                while (grant < 5 && session.good()) {
+                    if (parameter_type(session, symbol, grant) != field_type(session, receiver, grant)) {
+                        return fail(session, LoweringError::resource_argument_type, source);
+                    }
+                    grant = grant + 1;
+                }
+                if (count == 6) {
+                    const i64 config = parameter_type(session, symbol, 5);
+                    if (parameter_borrowed(session, symbol, 5) || owning_type(session, config)
+                        || compiler_resolver::resource_kind(tk(session, config))) {
+                        return fail(session, LoweringError::resource_argument_type, source);
+                    }
+                }
+            } else {
+                const i64 input = parameter_type(session, symbol, 0);
+                if (count != 1 || !field_resource(session, input)) {
+                    return fail(session, LoweringError::resource_argument_type, source);
+                }
             }
         }
         if ((resource || resource_constructor) && !console_region && !retained_constructor) {

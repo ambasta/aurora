@@ -46,13 +46,5 @@ process_entry __au_runtime_process_trap, @process_trap@
 process_result_entry __au_runtime_process_call, @process_call@
 process_entry __au_runtime_process_runs_admit, @process_runs_admit@
 process_result_entry __au_runtime_process_run, @process_run@
-process_result_entry __au_runtime_process_memory_map, @process_memory_map@
-process_result_entry __au_runtime_process_memory_remap, @process_memory_remap@
-process_result_entry __au_runtime_process_memory_unmap, @process_memory_unmap@
-process_entry __au_runtime_process_memory_find, @process_memory_find@
-process_entry __au_runtime_process_memory_fault, @process_memory_fault@
-process_result_entry __au_runtime_process_memory_budget, @process_memory_budget@
+process_entry __au_runtime_process_memory_load_charge, @process_memory_load_charge@
 process_entry __au_runtime_process_path_text, @process_path_text@
-# The scalar frame transition keeps the existing SysV scalar-symbol seam.
-.global aurora_kernel_frame_transition
-.hidden aurora_kernel_frame_transition

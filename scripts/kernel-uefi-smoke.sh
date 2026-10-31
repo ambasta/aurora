@@ -159,5 +159,19 @@ elif [[ "$mode" == acpi* ]]; then
 else
     python3 tests/kernel-uefi-smoke.py "$status" "$log" "$mode"
 fi
+if [[ "$mode" == process-frame-require-kernel ]]; then
+    # Preserve the original source-require boot, then exercise native admission
+    # on fresh cold boots within this registered row's unchanged outer cap.
+    mapfile -t authority_probes < <(python3 -B - <<'PYPROBES'
+import sys
+sys.path.insert(0, 'scripts')
+from kernel_profiles import MAPPING_AUTHORITY_PROBES
+print("\n".join(MAPPING_AUTHORITY_PROBES))
+PYPROBES
+)
+    for probe in "${authority_probes[@]}"; do
+        ./scripts/kernel-uefi-smoke.sh --run-only "$image_dir" "$probe"
+    done
+fi
 echo "PASS: actual OVMF UEFI gate ($mode)"
 if [[ -n "$scratch" ]]; then rm -rf "$scratch"; fi

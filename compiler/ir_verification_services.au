@@ -305,6 +305,16 @@ export namespace compiler_ir_verification {
             first_error(VerificationErrorFirst::resource_field_does_not_hold_live_ownership))) {
             return false;
         }
+        if (kind == 4 && effect != 2) {
+            i64 bank = 0;
+            while (bank < 4) {
+                const FactRow backing = w.fact_find(FactKind::resident_field, 0, bank);
+                if (!present(backing) || backing.disposition() != ByteDisposition::live) {
+                    return w.fail(second_error(VerificationErrorSecond::service_resource_provenance_mismatch));
+                }
+                bank = bank + 1;
+            }
+        }
         AccessMode mode = AccessMode::read;
         if (effect != 0) {
             mode = AccessMode::write;
@@ -314,7 +324,13 @@ export namespace compiler_ir_verification {
                 return false;
             }
         } else {
-            if (!owner_writable(w, s, 0, ordinal, mode)) {
+            i64 affected = ordinal;
+            if (kind == 4) {
+                // Authority effects may write scratch and inspect sibling banks.
+                // A loan of ANY descendant pins this complete retained owner.
+                affected = -2;
+            }
+            if (!owner_writable(w, s, 0, affected, mode)) {
                 return false;
             }
         }
@@ -326,13 +342,16 @@ export namespace compiler_ir_verification {
                 return false;
             }
         }
-        if (compiler_catalog::resource_method_parameters(kind, method) == 2) {
+        i64 arguments = compiler_catalog::resource_method_parameters(kind, method);
+        if (arguments > 1) {
             const i64 argument_kind = compiler_ir_metadata::catalogue_kind(compiler_catalog::resource_method_parameter(
                 kind, method));
-            if (!transfer_pop_kind(w, argument_kind,
-                second_error(VerificationErrorSecond::service_scalar_argument_mismatch)) || !transfer_pop_kind(w,
-                argument_kind, second_error(VerificationErrorSecond::service_scalar_argument_mismatch))) {
-                return false;
+            while (arguments > 0) {
+                if (!transfer_pop_kind(w, argument_kind,
+                    second_error(VerificationErrorSecond::service_scalar_argument_mismatch))) {
+                    return false;
+                }
+                arguments = arguments - 1;
             }
         }
         const i64 result_type = compiler_catalog::resource_method_result(kind, method);
@@ -348,6 +367,16 @@ export namespace compiler_ir_verification {
             }
         }
         if (effect == 2) {
+            if (kind == 4) {
+                i64 bank = 0;
+                while (bank < 4) {
+                    const FactRow consumed = w.fact_find(FactKind::resident_field, 0, bank);
+                    if (!present(consumed) || consumed.disposition() != ByteDisposition::consumed) {
+                        return w.fail(second_error(VerificationErrorSecond::service_resource_provenance_mismatch));
+                    }
+                    bank = bank + 1;
+                }
+            }
             if (!compiler_ir_metadata::consuming_receiver(m.callable_at(w.callable()))) {
                 return w.fail(second_error(VerificationErrorSecond::service_resource_provenance_mismatch));
             }

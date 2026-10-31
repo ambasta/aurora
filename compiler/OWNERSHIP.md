@@ -32,7 +32,7 @@ resource field in a concrete owning class. Its origin is a trusted native owned
 input, not a ByteRegion allocation or a lexical service issuer. An empty physical
 slot still has a live finalization obligation. Lexical ExecutionLease fields use
 the separate contract below; ServiceBootstrapLease remains field-ineligible. Copied scalar/class fields may accompany the slot; multiple
-retained resources, byte-owner mixing and nested owning classes are not admitted.
+retained resources remain restricted to the atomic mapping bank set below; byte-owner mixing and nested owning classes are not admitted.
 
 A complete-constructor entry receives fresh stable destination storage and one
 exact owned ResidentSlot input. Its empty-body initializer moves that input into
@@ -150,6 +150,37 @@ scope are allowed; unknown effects, callbacks and call cycles reject. This is
 not a frontend assertion or a general effect system. The source FrameAllocator
 uses this view for its complete audit; native mapping authority and physical
 page-table verification remain separate.
+
+## Atomic mapping banks and synchronous authority
+
+`builtin::MappingAuthority` is a nonmintable native-owned resource. Its only
+admitted owner layout starts with four private `OwnedWords` fields followed by
+one private authority field. Other retained-resource combinations remain closed.
+The complete empty-body constructor takes these five grants in exactly field
+order, with at most one additional copied configuration argument. Independent IR
+tracks each input's field origin, rejects same-type bank swaps and partial or
+repeated transfer, and requires consuming all four banks before the authority.
+Native admission authenticates one issuer, exact field offsets, backing extents
+and nonoverlap before the constructor runs; constructor execution does not
+activate a physical effect scope.
+
+Named authority operations are synchronous whole-owner mutations, including
+hardware observations and inventory queries. They may fill only the admitted
+scratch grant and cannot run while any descendant word view or readonly copy
+lives. The existing closed-call analysis excludes them transitively. Effects
+carry at most four copied u64 values beside the two native descriptor words;
+indices, packed allocation generations and slot values are request data, never
+standalone authority. There is no public request receipt, opcode dispatcher,
+raw address conversion, mutable span or general native callback facility.
+
+Compiler facts describe the exact root, fields, constructor and native entries.
+The compiler does not prove arbitrary MemoryManager policy algorithms correct,
+infer physical bank extents from source arithmetic, or authorize a scalar token.
+Native effects authenticate the live bank set, operation/root/epoch and hardware
+invariants before dereference. A normal return means the named physical work and
+window closure completed; source commits its private logical transition before
+returning from the manager operation. The independent resource checks establish
+provenance, loan exclusion and explicit consumption obligations.
 
 ## Always-on checked requirement
 
@@ -1031,3 +1062,22 @@ shape, zero entries at other positions, and final receiver authority. Every
 span record remains 56 bytes. Packed methods use R10 for receiver and R11 for
 arguments; class/span results additionally use RAX for their hidden destination.
 These private entry points are never exported as scalar C-callable boundaries.
+
+### Fixed memory-manager bank layout facts
+
+ABI sidecars include `literal_results` only for retained zero-argument `u64`
+functions whose independently admitted executable body is exactly an unsigned
+constant followed by return. A receiver, if present, must be const. Facts carry
+the actual callable/source name, receiver identity and value; AIR has no separate
+layout assertion that can manufacture this evidence. Other bodies receive no fact.
+
+MemoryManager's private `layout_*` literal methods define its two slots, record
+and region counts/strides, shared-entry count, bounded staging count/stride, tail
+and scratch extents. Native bridge admission checks those emitted values and
+recomputes the reservation partition: 98304 record words, 140 region words, 256
+shared words and 38 staging words, within a 512-word tail; total reservation
+extent 98816 words. The scratch grant is a separate 512-word page. Exact root
+field offsets remain ordinary emitted record-layout facts. Native BankLayout
+checks inventory-dependent allocation/mapping extents, rounding and physical
+nonoverlap. These checks do not prove the arithmetic or behavior of arbitrary
+source policy helpers: those remain private trusted kernel algorithms.

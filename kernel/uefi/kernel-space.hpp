@@ -29,9 +29,16 @@ public:
     // (process_pages, process::memory_records of them), none otherwise.
     static constexpr U64 process_slots = 2;
     static constexpr U64 process_pages = process::memory_records * sizeof(process::MemoryRecord) / frames::page;
+    static constexpr U64 reservation_tail_pages = 1, observation_pages = 1, words_per_page = frames::page / sizeof(U64);
     class Plan final {
     public:
         U64 metadata = 0, metadata_tables = 0, volume = 0, volume_tables = 0, tables = 0, records = 0, process = 0;
+        U64 reservation_tail = 0, scratch = 0;
+    };
+    class BankLayout final {
+    public:
+        std::array<U64, 4> word_offsets{}, word_counts{};
+        U64 tail_offset = 0, tail_words = 0, metadata_words = 0;
     };
     [[nodiscard]] static auto plan(U64 frames, U64 volume_pages, U64 process) -> std::optional<Plan> {
         Plan result;
@@ -40,7 +47,11 @@ public:
             return std::nullopt;
         result.records = (frames * 8 + frames::page - 1) / frames::page;
         result.process = process;
-        result.metadata = 2 * result.records + process;
+        // Process ownership retains one page of region/shared/staging metadata
+        // after the fixed reservation records, plus a disjoint observation page.
+        result.reservation_tail = process ? reservation_tail_pages : 0;
+        result.scratch = process ? observation_pages : 0;
+        result.metadata = 2 * result.records + process + result.reservation_tail + result.scratch;
         result.metadata_tables = (result.metadata + 511) / 512;
         result.volume = volume_pages;
         result.volume_tables = (volume_pages + 511) / 512;
@@ -50,13 +61,42 @@ public:
         return result;
     }
 
+    // Runtime backing extents depend on the admitted inventory. Compiler facts
+    // authenticate root fields; this checked plan authenticates their backing.
+    [[nodiscard]] static auto bank_layout(const Plan &value, U64 frame_count) -> std::optional<BankLayout> {
+        const auto expected = plan(frame_count, value.volume, value.process);
+        if (!expected || expected->metadata != value.metadata || expected->metadata_tables != value.metadata_tables ||
+            expected->volume_tables != value.volume_tables || expected->tables != value.tables ||
+            expected->records != value.records || expected->reservation_tail != value.reservation_tail ||
+            expected->scratch != value.scratch)
+            return std::nullopt;
+        BankLayout result;
+        result.word_offsets = {0,
+                               value.records * words_per_page,
+                               2 * value.records * words_per_page,
+                               (2 * value.records + value.process + value.reservation_tail) * words_per_page};
+        result.word_counts = {frame_count,
+                              frame_count,
+                              (value.process + value.reservation_tail) * words_per_page,
+                              value.scratch * words_per_page};
+        result.tail_offset = (2 * value.records + value.process) * words_per_page;
+        result.tail_words = value.reservation_tail * words_per_page;
+        result.metadata_words = value.metadata * words_per_page;
+        for (std::size_t index = 0; index < result.word_offsets.size(); ++index)
+            if (result.word_offsets[index] > result.metadata_words ||
+                result.word_counts[index] > result.metadata_words - result.word_offsets[index] ||
+                (index && result.word_offsets[index - 1] + result.word_counts[index - 1] > result.word_offsets[index]))
+                return std::nullopt;
+        return result;
+    }
+
 private:
     U64 root_ = 0;
     volatile U64 *window_ = nullptr;
     std::array<U64, 512> root_snapshot_{};
     Plan plan_{};
     U64 volume_physical_ = 0;
-    bool built_ = false, detached_ = false, records_handed_ = false;
+    bool built_ = false, detached_ = false, banks_handed_ = false;
     U64 saved_extension_ = 0;
 
     [[nodiscard]] static auto table(U64 address) -> volatile U64 * {
@@ -107,7 +147,7 @@ public:
     // metadata and volume pages. Frame indices 0.. are the planned tables, then
     // the metadata pages; the volume is the loader's separate grant.
     [[nodiscard]] auto build(const frames::Ranges &ranges, const Plan &plan, U64 volume) -> bool {
-        if (!root_ || built_ || plan.tables + plan.metadata >= ranges.frames() || volume % frames::page)
+        if (!root_ || built_ || !bank_layout(plan, ranges.frames()) || volume % frames::page)
             return false;
         plan_ = plan;
         volume_physical_ = volume;
@@ -141,43 +181,60 @@ public:
         built_ = true;
         return true;
     }
-    // The records bank has one owner. No mutable span escapes after handoff;
-    // mapping words and process records are separate still-native banks.
-    [[nodiscard]] auto handoff_records(frames::Table &owner, const frames::Ranges &ranges) -> bool {
-        if (!built_ || detached_ || records_handed_ || !ranges.frames() ||
-            ranges.frames() > plan_.records * frames::page / sizeof(U64))
+    // One atomic issuer receives allocation, mapping, both resident reservation
+    // banks and their private tail, and a disjoint table-observation page. Native
+    // mutable aliases are scoped to this one-shot inactive constructor handoff.
+    template <class Owner> [[nodiscard]] auto handoff_manager(Owner &owner, const frames::Ranges &ranges) -> bool {
+        if (!built_ || detached_ || banks_handed_ || !ranges.frames() ||
+            ranges.frames() > plan_.records * frames::page / sizeof(U64) ||
+            plan_.process != process_slots * process_pages)
             return false;
-        auto records = std::span<U64>{reinterpret_cast<U64 *>(metadata_base), ranges.frames()};
-        for (auto &record : records)
-            record = 0;
-        records_handed_ = true;
-        return owner.bind(records, ranges, plan_.tables, plan_.metadata);
+        const auto layout = bank_layout(plan_, ranges.frames());
+        if (!layout)
+            return false;
+        const auto bank = [&](std::size_t index) {
+            return std::span<U64>{reinterpret_cast<U64 *>(metadata_base + layout->word_offsets[index] * sizeof(U64)),
+                                  layout->word_counts[index]};
+        };
+        const auto allocation = bank(0), mapping = bank(1), reservations = bank(2), scratch = bank(3);
+        for (auto span : {allocation, mapping, reservations, scratch})
+            for (auto &word : span)
+                word = 0;
+        banks_handed_ = true;
+        return owner.bind(allocation, mapping, reservations, scratch, ranges, plan_.tables, plan_.metadata);
+    }
+    template <class Owner>
+    [[nodiscard]] auto resume_manager(Owner &owner, const frames::Ranges &ranges, U64 used) const -> bool {
+        if (!banks_handed_ || plan_.process != process_slots * process_pages || !verify_mapping(ranges, used))
+            return false;
+        const auto layout = bank_layout(plan_, ranges.frames());
+        if (!layout)
+            return false;
+        std::array<words::Binding::Backing, 4> banks{};
+        for (std::size_t index = 0; index < banks.size(); ++index)
+            banks[index] = {reinterpret_cast<const U64 *>(metadata_base + layout->word_offsets[index] * sizeof(U64)),
+                            layout->word_counts[index]};
+        owner.resume_set(banks);
+        return true;
+    }
+    // Hardware authority binds the same boot-admitted extents as the source
+    // issuer, not merely another disjoint bank set with matching lengths.
+    [[nodiscard]] auto owns_banks(std::span<const words::Binding::Backing> banks, U64 frame_count) const -> bool {
+        if (!built_ || detached_ || !banks_handed_ || banks.size() != 4 ||
+            plan_.process != process_slots * process_pages)
+            return false;
+        const auto layout = bank_layout(plan_, frame_count);
+        if (!layout)
+            return false;
+        for (std::size_t index = 0; index < banks.size(); ++index)
+            if (banks[index].words !=
+                    reinterpret_cast<const U64 *>(metadata_base + layout->word_offsets[index] * sizeof(U64)) ||
+                banks[index].count != layout->word_counts[index])
+                return false;
+        return true;
     }
     [[nodiscard]] auto attached() const -> bool {
         return built_ && !detached_;
-    }
-    // Reachability comes from the existing physical plan. The source allocator
-    // is still suspended while this mapping-only check runs.
-    [[nodiscard]] auto resume_records(frames::Table &owner, const frames::Ranges &ranges, U64 used) const -> bool {
-        if (!records_handed_ || !verify_mapping(ranges, used))
-            return false;
-        owner.resume(reinterpret_cast<const U64 *>(metadata_base), ranges.frames());
-        return true;
-    }
-    // The mapping words: what each frame holds in a process (process-space.hpp).
-    [[nodiscard]] auto mappings(U64 frames) const -> std::span<U64> {
-        if (!built_ || frames * 8 > plan_.records * frames::page)
-            return {};
-        return {reinterpret_cast<U64 *>(metadata_base + plan_.records * frames::page), frames};
-    }
-    // Each resident slot owns a disjoint memory-record area. Slot reuse follows
-    // the old owner's complete release; no two processes can name one area.
-    [[nodiscard]] auto process_records(U64 slot = 0) const -> std::span<process::MemoryRecord> {
-        if (!built_ || slot >= plan_.process / process_pages)
-            return {};
-        return {reinterpret_cast<process::MemoryRecord *>(metadata_base +
-                                                          (2 * plan_.records + slot * process_pages) * frames::page),
-                process::memory_records};
     }
     [[nodiscard]] auto volume(U64 bytes) const -> std::span<const std::byte> {
         if (!built_ || bytes > plan_.volume * frames::page)
@@ -282,7 +339,8 @@ public:
                 return false;
         return true;
     }
-    [[nodiscard]] auto verify(const frames::Table &frames, const frames::Ranges &ranges, U64 used) const -> bool {
+    template <class Owner>
+    [[nodiscard]] auto verify(const Owner &frames, const frames::Ranges &ranges, U64 used) const -> bool {
         if (!verify_mapping(ranges, used))
             return false;
         const auto kernel = [&](U64 index, U64 owner) {

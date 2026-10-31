@@ -1,0 +1,156 @@
+case lifecycle
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  verify slot=0 ok=1
+  map slot=0 outcome=1 value=0
+  map slot=0 outcome=0 value=70368744177664
+  commit slot=0 ok=1
+  verify slot=0 ok=1
+  remap slot=0 outcome=0 value=70368744177664
+  verify slot=0 ok=1
+  remap slot=0 outcome=0 value=70368744247296
+  verify slot=0 ok=1
+  unmap slot=0 outcome=1 value=0
+  unmap slot=0 outcome=0 value=0
+  verify slot=0 ok=1
+  audit ok=1
+  retire slot=0 released=5
+  audit ok=1
+  end ok=1
+case resident-quota
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  prepare slot=1 accepted=0 epoch=0
+  prepare slot=1 accepted=1 epoch=1
+  region slot=1 ok=1
+  live slot=1 ok=1
+  map slot=1 outcome=0 value=70368744177664
+  commit slot=1 ok=1
+  snapshot accepted=0 epoch=0
+  verify slot=0 ok=1
+  verify slot=1 ok=1
+  audit ok=1
+  unmap slot=1 outcome=0 value=0
+  retire slot=1 released=5
+  retire slot=0 released=5
+  audit ok=1
+  end ok=1
+case slot-reuse
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  retire slot=0 released=5
+  prepare slot=0 accepted=1 epoch=2
+  region slot=0 ok=1
+  live slot=0 ok=1
+  stale slot=0 verify=0
+  verify slot=0 ok=1
+  audit ok=1
+  retire slot=0 released=5
+  end ok=1
+case exact-walk
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  corrupt kind=missing slot=0 verify=0
+  corrupt kind=extra slot=0 verify=0
+  corrupt kind=alias slot=0 verify=0
+  corrupt kind=flags slot=0 verify=0
+  corrupt kind=count slot=0 verify=0
+  corrupt kind=owner slot=0 verify=0
+  corrupt kind=generation slot=0 verify=0
+  verify slot=0 ok=1
+  audit ok=1
+  retire slot=0 released=5
+  end ok=1
+case snapshot
+  snapshot accepted=1 epoch=1
+  fill offset=0 count=32 ok=1
+  fill offset=8190 count=2 ok=1
+  fill offset=8191 count=2 ok=0
+  snapshot-verify ok=1
+  seal ok=1
+  snapshot-verify ok=1
+  fill offset=0 count=1 ok=0
+  seal ok=0
+  discard ok=1
+  snapshot accepted=0 epoch=1
+  snapshot accepted=1 epoch=2
+  discard ok=1
+  audit ok=1
+  end ok=1
+case snapshot-future-owner
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  snapshot accepted=1 epoch=1
+  fill offset=0 count=32 ok=1
+  seal ok=1
+  prepare slot=1 accepted=1 epoch=1
+  region slot=1 ok=1
+  live slot=1 ok=0
+  snapshot-verify ok=1
+  verify slot=1 ok=1
+  audit ok=1
+  discard ok=1
+  live slot=1 ok=1
+  verify slot=1 ok=1
+  audit ok=1
+  retire slot=1 released=5
+  retire slot=0 released=5
+  end ok=1
+case partial-load-drain
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  audit ok=1
+  retire slot=0 released=5
+  audit ok=1
+  prepare slot=0 accepted=1 epoch=2
+  region slot=0 ok=1
+  live slot=0 ok=1
+  map slot=0 outcome=1 value=0
+  map slot=0 outcome=0 value=18446744073709551610
+  verify slot=0 ok=1
+  audit ok=1
+  retire slot=0 released=5
+  end ok=1
+case publication-fail-stop
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  map slot=0 outcome=0 value=70368744177664
+  fail-commit slot=0 boundaries=19 stopped=19
+  verify slot=0 ok=1
+  audit ok=1
+  unmap slot=0 outcome=0 value=0
+  retire slot=0 released=5
+  end ok=1
+case reservation-capacity
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  reserve-limit slot=0 mapped=16384 exhausted=1
+  verify slot=0 ok=1
+  audit ok=1
+  retire slot=0 released=5
+  end ok=1
+case staged-rollback-generation-boundary
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  generation-boundary free=53 audit=1
+  map slot=0 outcome=0 value=70368744177664
+  commit slot=0 ok=1
+  unmap slot=0 outcome=0 value=0
+  map slot=0 outcome=0 value=70368744247296
+  commit slot=0 ok=1
+  unmap slot=0 outcome=0 value=0
+  map slot=0 outcome=0 value=70368744316928
+  commit-rollback slot=0 refused=1 unchanged=1 audit=1
+  verify slot=0 ok=1
+  audit ok=1
+  unmap slot=0 outcome=0 value=0
+  retire slot=0 released=5
+  end ok=1

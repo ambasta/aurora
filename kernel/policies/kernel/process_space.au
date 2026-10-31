@@ -4,8 +4,9 @@ import kernel.elf;
 // A process's address space (kernel/uefi/process.md#address-space): the fixed
 // layout and the regions of an admitted image, its eagerly committed stack and
 // its argument block. Each region is a copied record of virtual pages and their
-// exact leaf flags; the supervisor allocates, fills and maps the frames and
-// checks its page tables against these records.
+// exact leaf flags. MemoryManager owns frame allocation, mapping transitions and
+// complete table classification; native code performs its authenticated effects.
+// The bounded read-only image parser returns copied layout facts before mutation.
 export namespace kernel {
     enum class LayoutVerdict {
         valid,

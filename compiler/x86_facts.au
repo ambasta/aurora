@@ -4,6 +4,7 @@ import aurora.compiler.x86_object_storage;
 import aurora.compiler.x86_helpers;
 import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_instruction_storage;
 
 // Sidecars read the exact source-owned metadata and emission facts. Name views
 // are scalar identities, so sorting and JSON escaping need no borrowed spans
@@ -1151,7 +1152,70 @@ export namespace compiler_x86 {
         fact_emit_type(workspace, metadata, result);
         return workspace.text("}}");
     }
-    auto emit_abi_facts(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata) -> EmitStatus {
+    // Facts about literal-return bodies are derived from admitted executable IR,
+    // never an annotation. This intentionally recognizes no arithmetic, calls,
+    // field reads or parameter-dependent expressions.
+    auto fact_literal_result(const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions, i64 callable) -> i64 {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        const compiler_ir_instructions::BodyRow body = instructions.body_at(callable);
+        if (row.borrowed_root_count() != 0 || parameter_count(metadata, callable) != 0 || type_kind(metadata,
+            result_type(metadata, callable)) != 7 || body.count() != 2) {
+            return -1;
+        }
+        if (has_receiver(metadata, callable)) {
+            const compiler_ir_metadata::ReceiverShape receiver = row.first_receiver();
+            const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::flag_masks();
+            if ((receiver.attributes() & masks.receiver_mutable()) != 0u64) {
+                return -1;
+            }
+        }
+        const compiler_ir_instructions::CodeRow first = instructions.code_at(body.begin());
+        const compiler_ir_instructions::CodeRow last = instructions.code_at(body.begin() + 1);
+        const compiler_ir_instructions::RawInstructionRow value = instructions.instruction_at(first.id());
+        const compiler_ir_instructions::RawInstructionRow returned = instructions.instruction_at(last.id());
+        if (value.form() != 5 || returned.form() != 43) {
+            return -1;
+        }
+        const compiler_ir_instructions::RawOperandRow literal = instructions.operand_at(value.operand_begin());
+        if (literal.role() != 11) {
+            return -1;
+        }
+        return value.operand_begin();
+    }
+    auto fact_emit_literal_results(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions) -> bool {
+        i64 at = 0;
+        bool first = true;
+        while (at < workspace.retained_count() && workspace.ok()) {
+            const i64 callable = workspace.retained_at(at);
+            const i64 declaration = fact_function_declaration(workspace, metadata, callable);
+            const i64 operand = fact_literal_result(metadata, instructions, callable);
+            if (declaration >= 0 && operand >= 0) {
+                if (!first) {
+                    workspace.byte(',');
+                }
+                first = false;
+                fact_json_name(workspace, metadata, 0, callable);
+                workspace.text(":{\"source_name\":");
+                fact_json_name(workspace, metadata, 6, declaration);
+                workspace.text(",\"receiver\":");
+                if (has_receiver(metadata, callable)) {
+                    fact_json_name(workspace, metadata, 3, receiver_class(metadata, callable));
+                } else {
+                    workspace.text("null");
+                }
+                workspace.text(",\"value\":");
+                const compiler_ir_instructions::RawOperandRow literal = instructions.operand_at(operand);
+                workspace.unsigned_number(literal.unsigned_value());
+                workspace.byte('}');
+            }
+            at = at + 1;
+        }
+        return workspace.ok();
+    }
+    auto emit_abi_facts(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions) -> EmitStatus {
         if (!workspace.begin_abi() || !fact_abi_names_valid(workspace, metadata)) {
             return workspace.status();
         }
@@ -1185,11 +1249,14 @@ export namespace compiler_x86 {
             }
             at = at + 1;
         }
+        workspace.text("},\"literal_results\":{");
+        fact_emit_literal_results(workspace, metadata, instructions);
         workspace.text("}}\n");
         workspace.finish_abi();
         return workspace.status();
     }
     auto emitter_facts(compiler_x86::EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions,
         compiler_x86::Artifact artifact) -> compiler_x86::EmitStatus {
         if (artifact == compiler_x86::Artifact::stack) {
             if (workspace.begin_stack() && compiler_x86::emit_stack_facts(workspace, metadata)) {
@@ -1198,7 +1265,7 @@ export namespace compiler_x86 {
             return workspace.status();
         }
         if (artifact == compiler_x86::Artifact::abi) {
-            return compiler_x86::emit_abi_facts(workspace, metadata);
+            return compiler_x86::emit_abi_facts(workspace, metadata, instructions);
         }
         workspace.fail();
         return workspace.status();
