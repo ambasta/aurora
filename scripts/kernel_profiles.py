@@ -340,6 +340,19 @@ MAPPING_AUTHORITY_PROBES = (
     "process-authority-reentrant",
     "process-authority-if",
     "process-authority-detached",
+    "process-authority-wrong-root",
+    "process-authority-parser-mutation",
+    "process-authority-parser-activation",
+    "process-authority-table-generation",
+    "process-authority-child-generation",
+    "process-authority-sealed-fill",
+    "process-authority-snapshot-epoch",
+    "process-authority-unsealed-source",
+    "process-authority-source-retire",
+    "process-authority-snapshot-substitution",
+    "process-authority-parser-copy",
+    "process-authority-arguments-substitution",
+    "process-authority-copy-reentry",
 )
 for number, mode in enumerate(MAPPING_AUTHORITY_PROBES, 45):
     PROCESS_CASES[mode] = (number, ())

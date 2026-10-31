@@ -98,6 +98,9 @@ private:
     U64 volume_physical_ = 0;
     bool built_ = false, detached_ = false, banks_handed_ = false;
     U64 saved_extension_ = 0;
+#ifdef AURORA_PROCESS_FIXTURE
+    U64 fixture_opens_ = 0;
+#endif
 
     [[nodiscard]] static auto table(U64 address) -> volatile U64 * {
         return reinterpret_cast<volatile U64 *>(address);
@@ -245,6 +248,9 @@ public:
     [[nodiscard]] auto open(U64 physical) -> std::uint64_t * {
         if (!built_ || window_[0] || physical % frames::page)
             return nullptr;
+#ifdef AURORA_PROCESS_FIXTURE
+        ++fixture_opens_;
+#endif
         window_[0] = physical | data_flags;
         invalidate(window_base);
         return reinterpret_cast<std::uint64_t *>(window_base);
@@ -252,6 +258,11 @@ public:
     [[nodiscard]] auto closed() const -> bool {
         return built_ && !detached_ && window_ && window_[0] == 0;
     }
+#ifdef AURORA_PROCESS_FIXTURE
+    [[nodiscard]] auto fixture_opens() const -> U64 {
+        return fixture_opens_;
+    }
+#endif
     auto close() -> void {
         window_[0] = 0;
         invalidate(window_base);

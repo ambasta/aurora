@@ -232,6 +232,13 @@ The loader callback runs with all manager loans and windows closed. Its reply is
 copied by one authenticated bounded fill. The retained read-only ELF parser pin
 is effect-closed and ends before manager mutation; a copied layout manifest binds
 to its admitted source identity, while MemoryManager computes available quota.
+Native copy pins permit only the exact image-map, argument-map or snapshot-fill
+wrapper. Image and argument copies target a building resident; snapshot image
+copies additionally authenticate the sealed snapshot epoch, directory generation,
+extent and matching future owner. A chunk pin permits only filling its current
+unsealed snapshot. Ordinary manager operations reject live copy pins, including
+snapshot retirement; parser pins reject every manager scope and activation.
+These purposes remain private native scope state, not source tokens or receipts.
 No mutable snapshot span escapes. Audits classify one copied table using lexical
 bank loans and four bounded cursor frames; observations normalize admitted physical
 addresses to frame indices without moving allocation or traversal policy native.

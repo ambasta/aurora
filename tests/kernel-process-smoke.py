@@ -653,9 +653,14 @@ def validate(
         frames(text)
         probes = re.findall(r"AURORA_MAPPING_AUTHORITY_PROBE: case=(\d+) root=(\d+) kernel=(\d+) closed=1", text)
         need(len(probes) == 1 and int(probes[0][0]) == PROCESS_CASES[mode][0], "One real authority rejection probe")
+        probe = int(probes[0][0])
         current, kernel = map(int, probes[0][1:])
-        need(current == kernel and current > 0 and current % 4096 == 0, "Real closed kernel-root authority context")
+        need(current > 0 and kernel > 0 and current % 4096 == 0 and kernel % 4096 == 0, "Real aligned authority roots")
+        need(current != kernel if probe == 50 else current == kernel, "Exact authority probe root context")
         after = text[text.index("AURORA_MAPPING_AUTHORITY_PROBE:") :]
+        if probe >= 50:
+            receipts = re.findall(r"AURORA_MAPPING_AUTHORITY_REJECT: case=(\d+) closed=(\d+) opens=(\d+)", after)
+            need(receipts == [(str(probe), "1", "0")], "Closed window and zero opens after exact hostile boundary")
         need(
             status == 35 and after.count("AURORA_PROCESS_FAIL: frame metadata authority") == 1,
             "Native authority must reject before accessing backing or opening a window",

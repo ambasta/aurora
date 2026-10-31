@@ -519,6 +519,25 @@ auto capture_shared(U64 arena) -> void {
     table.attach_boot_volume(space.volume(process_volume_bytes));
 }
 
+#ifdef AURORA_PROCESS_FIXTURE
+constinit U64 authority_probe_pending = 0, authority_probe_armed = 0, authority_probe_opens = 0;
+// Arm at the forbidden native entry, after legitimate source traversal has
+// closed its windows. These observations do not authorize any effect.
+auto arm_authority_probe(U64 probe) -> void {
+    if (authority_probe_armed || !space.closed())
+        fail("mapping authority probe setup");
+    authority_probe_pending = 0;
+    authority_probe_armed = probe;
+    authority_probe_opens = space.fixture_opens();
+    Serial::text("AURORA_MAPPING_AUTHORITY_PROBE:");
+    field("case", probe);
+    field("root", root());
+    field("kernel", kernel_root);
+    field("closed", space.closed());
+    Serial::text("\r\n");
+}
+#endif
+
 #ifndef AURORA_PRODUCTION
 // Base64 records of one print, read under the process root (process.md#output).
 auto print_stream(U64 stream, U64 buffer, U64 length) -> void {
@@ -3197,6 +3216,114 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 }
 #endif
 
+#ifdef AURORA_PROCESS_FIXTURE
+// Fatal admission cases share the ordinary lifecycle programs and source
+// lifecycle. Only effect operands, never source banks or phase fields, are
+// corrupted by the one-shot adapters below.
+[[noreturn]] auto authority_lifetime_probe(std::span<const std::byte> view, U64 probe) -> void {
+    if (probe == 50 || probe == 52 || probe == 53 || probe == 54) {
+        const auto runs = process::volume_lookup(view, bytes_of("runs/7"));
+        if (!runs || process::runs_admit(*runs) != process::RunsVerdict::valid)
+            fail("mapping authority probe runs");
+        const U64 count = probe == 50 ? 2 : 1;
+        for (U64 slot = 0; slot < count; ++slot) {
+            const auto entry = process::run(*runs, slot);
+            if (!entry || !entry->found || !load_one(view, *runs, *entry, slot + 1, slot, true))
+                fail("mapping authority probe load");
+        }
+    }
+    if (probe == 50 || probe == 54) {
+        const U64 slot = probe == 50 ? 1 : 0;
+        auto &resident = *residents[slot].space;
+        constexpr U64 bytes = 16 * frames::page;
+        const auto reservation = resident.map_memory(bytes);
+        if (reservation.outcome != ProcessSpace::Outcome::resume || !resident.commit(reservation.value))
+            fail("mapping authority probe commit");
+        if (probe == 50) {
+            const U64 admitted_root = table.activation_root(0, residents[0].space->epoch());
+            asm volatile("mov %0, %%cr3" : : "r"(admitted_root) : "memory");
+        }
+        authority_probe_pending = probe;
+        static_cast<void>(resident.unmap_memory(reservation.value, bytes));
+        __builtin_trap();
+    }
+    if (probe == 53) {
+        authority_probe_pending = probe;
+        static_cast<void>(residents[0].space->verify());
+        __builtin_trap();
+    }
+    constexpr std::array<std::byte, 16> chunk{};
+    const U64 epoch = table.begin_snapshot(frames::first_owner + 2, frames::page);
+    if (!epoch || !table.fill_snapshot(epoch, 0, chunk))
+        fail("mapping authority probe snapshot");
+    if (probe != 57 && !table.seal_snapshot(epoch))
+        fail("mapping authority probe seal");
+    if (probe == 51 || probe == 52) {
+        auto pin = table.snapshot_read(epoch);
+        if (pin.bytes().size() != frames::page)
+            fail("mapping authority probe parser pin");
+        arm_authority_probe(probe);
+        if (probe == 51)
+            static_cast<void>(table.discard_snapshot(epoch));
+        else
+            static_cast<void>(table.activation_root(0, residents[0].space->epoch()));
+        __builtin_trap();
+    }
+    if (probe == 55) {
+        arm_authority_probe(probe);
+        static_cast<void>(table.fill_snapshot(epoch, 0, chunk));
+        __builtin_trap();
+    }
+    if (probe == 56) {
+        if (!table.discard_snapshot(epoch))
+            fail("mapping authority probe discard");
+        const U64 next = table.begin_snapshot(frames::first_owner + 2, frames::page);
+        if (next != epoch + 1 || !table.fill_snapshot(next, 0, chunk) || !table.seal_snapshot(next))
+            fail("mapping authority probe reuse");
+    }
+    if (probe == 56 || probe == 57) {
+        arm_authority_probe(probe);
+        auto pin = table.snapshot_source(epoch);
+        __builtin_trap();
+    }
+    if (probe == 58) {
+        auto pin = table.snapshot_source(epoch);
+        arm_authority_probe(probe);
+        static_cast<void>(table.discard_snapshot(epoch));
+        __builtin_trap();
+    }
+    if (probe >= 59 && probe <= 62) {
+        // A copied region is only input policy data, never effect authority.
+        // Use a valid building target so each refusal tests the pin boundary.
+        const U64 owner = frames::first_owner + (probe == 59 ? 1 : 2);
+        const U64 target_epoch = table.prepare_load(0, owner, 128, 32);
+        if (!target_epoch)
+            fail("mapping authority probe target");
+        const process::ProcessRegion region{1, 0x400000, 1, process::leaf_read, 0x400000, 0, chunk.size()};
+        if (probe == 60) {
+            auto pin = table.snapshot_read(epoch);
+            arm_authority_probe(probe);
+            static_cast<void>(table.map_region(0, target_epoch, region, 1));
+            __builtin_trap();
+        }
+        if (probe == 61) {
+            auto pin = table.arguments_source(chunk);
+            arm_authority_probe(probe);
+            static_cast<void>(table.map_region(0, target_epoch, region, 1));
+            __builtin_trap();
+        }
+        auto pin = table.snapshot_source(epoch);
+        if (probe == 59)
+            arm_authority_probe(probe);
+        else
+            authority_probe_pending = probe;
+        static_cast<void>(table.map_region(0, target_epoch, region, 1));
+        __builtin_trap();
+    }
+    fail("mapping authority probe selection");
+}
+#endif
+
 // The row's run list, runs/<case> in the volume, run in order.
 [[noreturn]] auto run_list(U64 arena, std::span<const std::byte> view, U64 selected) -> void {
     U64 run_case = selected;
@@ -3454,6 +3581,12 @@ auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
         Serial::text("\r\n");
         aurora::uefi::MappingAuthority::fixture_admission(selected);
         fail("mapping authority probe returned");
+    }
+    if (selected >= 50 && selected <= 62) {
+        install_architecture(arena);
+        capture_shared(arena);
+        process_kernel_root = kernel_root;
+        authority_lifetime_probe(view, selected);
     }
 #endif
     if (selected)
@@ -4110,6 +4243,15 @@ auto accessible() -> bool {
     return Timer::irq_off() && space.attached() && (root() == kernel_root || table.accessible_root(root()));
 }
 [[noreturn]] auto fail() -> void {
+#ifdef AURORA_PROCESS_FIXTURE
+    if (authority_probe_armed) {
+        Serial::text("AURORA_MAPPING_AUTHORITY_REJECT:");
+        field("case", authority_probe_armed);
+        field("closed", space.closed());
+        field("opens", space.fixture_opens() - authority_probe_opens);
+        Serial::text("\r\n");
+    }
+#endif
     ::fail("frame metadata authority");
 }
 } // namespace aurora::words
@@ -4139,6 +4281,13 @@ __attribute__((visibility("hidden"))) auto __au_runtime_owned_words_finish(const
 extern "C" {
 __attribute__((visibility("hidden"))) auto __au_runtime_mapping_observe_table(const void *token, U64 epoch, U64 ticket)
     -> U64 {
+#ifdef AURORA_PROCESS_FIXTURE
+    if (authority_probe_pending == 53) {
+        arm_authority_probe(53);
+        static_cast<void>(aurora::uefi::MappingAuthority::observe_table(token, epoch, ticket ^ (U64{1} << 32)));
+        __builtin_trap();
+    }
+#endif
     return aurora::uefi::MappingAuthority::observe_table(token, epoch, ticket);
 }
 __attribute__((visibility("hidden"))) auto
@@ -4153,6 +4302,15 @@ __au_runtime_mapping_publish_empty_entry(const void *token, U64 epoch, U64 ticke
 __attribute__((visibility("hidden"))) auto
 __au_runtime_mapping_clear_expected_entry(const void *token, U64 epoch, U64 ticket, U64 slot, U64 expected, U64 child)
     -> U64 {
+#ifdef AURORA_PROCESS_FIXTURE
+    if (authority_probe_pending == 50 || authority_probe_pending == 54) {
+        const U64 probe = authority_probe_pending;
+        arm_authority_probe(probe);
+        static_cast<void>(aurora::uefi::MappingAuthority::clear_expected_entry(
+            token, epoch, ticket, slot, expected, probe == 54 ? child ^ (U64{1} << 32) : child));
+        __builtin_trap();
+    }
+#endif
     return aurora::uefi::MappingAuthority::clear_expected_entry(token, epoch, ticket, slot, expected, child);
 }
 __attribute__((visibility("hidden"))) auto
@@ -4211,6 +4369,15 @@ __au_runtime_mapping_publish_shared_entry(const void *token, U64 epoch, U64 tick
 __attribute__((visibility("hidden"))) auto
 __au_runtime_mapping_copy_source_frame(const void *token, U64 epoch, U64 ticket, U64 destination, U64 source, U64 count)
     -> U64 {
+#ifdef AURORA_PROCESS_FIXTURE
+    if (authority_probe_pending == 62) {
+        // Simulated native reentry at a real copy boundary. No callback is
+        // retained or introduced into the production authority interface.
+        arm_authority_probe(62);
+        static_cast<void>(table.audit_residents());
+        __builtin_trap();
+    }
+#endif
     return aurora::uefi::MappingAuthority::copy_source_frame(token, epoch, ticket, destination, source, count);
 }
 __attribute__((visibility("hidden"))) auto __au_runtime_mapping_fill_snapshot_chunk(

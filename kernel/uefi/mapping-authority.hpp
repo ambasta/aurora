@@ -31,6 +31,16 @@ public:
     static constexpr U64 invalid = ~U64{0}, count_mask = U64{1023} << 4;
 
 private:
+    friend class MemoryManager;
+    // Chosen only by the exact native manager wrapper, never supplied by source
+    // code or transported as a capability/receipt across the effect ABI.
+    enum class ScopePurpose {
+        ordinary,
+        map_image,
+        map_arguments,
+        fill_snapshot_chunk
+    };
+    ScopePurpose scope_purpose_ = ScopePurpose::ordinary;
     words::Binding *binding_ = nullptr;
     KernelSpace *space_ = nullptr;
     const frames::Ranges *ranges_ = nullptr;
@@ -267,6 +277,33 @@ private:
                 (KernelSpace::table_view(0)[2] & ~KernelSpace::hardware_bits) ==
                     (*directory | KernelSpace::table_flags));
     }
+    auto validate_purpose(ScopePurpose purpose, Domain domain, U64 epoch, bool beginning, words::Access access) const
+        -> void {
+        if (purpose == ScopePurpose::ordinary) {
+            require(source_kind_ == SourceKind::none);
+            return;
+        }
+        require(!beginning && access == words::Access::write && current_root() == kernel_root_ && epoch);
+        if (purpose == ScopePurpose::fill_snapshot_chunk) {
+            require(domain == Domain::snapshot && source_kind_ == SourceKind::chunk && source_epoch_ == epoch &&
+                    scalar(snapshot_offset + 8) == epoch && scalar(snapshot_offset + 16) == 1);
+            return;
+        }
+        require(domain == Domain::slot0 || domain == Domain::slot1);
+        const auto at = offset(static_cast<U64>(domain));
+        require(scalar(at + 8) == epoch && scalar(at + 16) == 1 && scalar(at) >= frames::first_owner);
+        if (purpose == ScopePurpose::map_arguments) {
+            require(source_kind_ == SourceKind::arguments);
+            return;
+        }
+        require(purpose == ScopePurpose::map_image &&
+                (source_kind_ == SourceKind::boot || source_kind_ == SourceKind::snapshot));
+        if (source_kind_ == SourceKind::snapshot) {
+            require(scalar(snapshot_offset) == scalar(at) && scalar(snapshot_offset + 24) == source_ticket_ &&
+                    scalar(snapshot_offset + 32) == source_bytes_);
+            validate_snapshot_identity(source_epoch_);
+        }
+    }
     auto validate_snapshot_source(U64 first, U64 count) const -> void {
         require(source_kind_ == SourceKind::snapshot && scalar(snapshot_offset + 8) == source_epoch_ &&
                 scalar(snapshot_offset + 16) == 2 && scalar(snapshot_offset + 24) == source_ticket_ &&
@@ -491,16 +528,17 @@ public:
         return *physical;
     }
     class Scope final {
+        friend class MemoryManager;
         MappingAuthority &authority_;
         words::Binding::Scope words_;
-
-    public:
+        const ScopePurpose purpose_;
         Scope(MappingAuthority &authority,
               Domain domain,
               U64 epoch,
-              bool beginning = false,
-              words::Access access = words::Access::write)
-            : authority_(authority), words_(bound(authority), access) {
+              bool beginning,
+              words::Access access,
+              ScopePurpose purpose)
+            : authority_(authority), words_(bound(authority), access), purpose_(purpose) {
             require(!authority.scoped_ && !authority.parser_pinned_ && authority.space_->closed() && interrupts_off() &&
                     authority.accessible_root(current_root()) && authority.scalar(operation_offset) == 0 &&
                     static_cast<U64>(domain) <= 3);
@@ -510,16 +548,34 @@ public:
                     authority.scalar(at + 8) == epoch &&
                     (beginning ? authority.scalar(at + 16) == 0 && epoch != invalid : authority.scalar(at + 16) != 0));
             }
+            authority.validate_purpose(purpose, domain, epoch, beginning, access);
             authority.domain_ = domain;
             authority.expected_epoch_ = epoch;
             authority.beginning_ = beginning;
+            authority.scope_purpose_ = purpose;
             authority.scoped_ = true;
+        }
+
+    public:
+        Scope(MappingAuthority &authority,
+              Domain domain,
+              U64 epoch,
+              bool beginning = false,
+              words::Access access = words::Access::write)
+            : Scope(authority, domain, epoch, beginning, access, ScopePurpose::ordinary) {
         }
         Scope(const Scope &) = delete;
         ~Scope() {
             require(authority_.scoped_ && authority_.space_->closed() && authority_.scalar(operation_offset) == 0 &&
-                    interrupts_off() && authority_.accessible_root(current_root()));
+                    interrupts_off() && authority_.accessible_root(current_root()) &&
+                    authority_.scope_purpose_ == purpose_);
+            // Source calls cannot close or replace the native input pin. Check
+            // the same permitted lifetime again before returning to its owner.
+            if (purpose_ != ScopePurpose::ordinary)
+                authority_.validate_purpose(
+                    purpose_, authority_.domain_, authority_.expected_epoch_, false, words::Access::write);
             authority_.scoped_ = false;
+            authority_.scope_purpose_ = ScopePurpose::ordinary;
         }
     };
 #ifdef AURORA_PROCESS_FIXTURE
@@ -671,6 +727,8 @@ public:
     [[nodiscard]] static auto
     copy_source_frame(const void *token, U64 epoch, U64 ticket, U64 destination, U64 source, U64 count) -> bool {
         auto &self = admitted(token, epoch);
+        require(self.scope_purpose_ == ScopePurpose::map_image || self.scope_purpose_ == ScopePurpose::map_arguments);
+        self.validate_purpose(self.scope_purpose_, self.domain_, self.expected_epoch_, false, words::Access::write);
         self.mutation();
         const auto frame = self.frame(ticket);
         static_cast<void>(self.staged(ticket));
@@ -690,6 +748,8 @@ public:
     fill_snapshot_chunk(const void *token, U64 epoch, U64 snapshot_epoch, U64 destination, U64 source, U64 count)
         -> bool {
         auto &self = admitted(token, epoch);
+        require(self.scope_purpose_ == ScopePurpose::fill_snapshot_chunk);
+        self.validate_purpose(self.scope_purpose_, self.domain_, self.expected_epoch_, false, words::Access::write);
         self.mutation();
         require(self.selected() == 2 && self.source_kind_ == SourceKind::chunk &&
                 snapshot_epoch == self.source_epoch_ && self.scalar(snapshot_offset + 8) == snapshot_epoch &&

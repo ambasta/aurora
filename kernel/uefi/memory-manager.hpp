@@ -326,12 +326,23 @@ public:
         };
         static_assert(sizeof(Arguments) == 80);
         const Arguments args{slot, epoch, region, source_kind};
-        MappingAuthority::Scope scope(authority_, domain(slot), epoch);
+        require(source_kind <= 2);
+        const auto purpose = source_kind == 1   ? MappingAuthority::ScopePurpose::map_image
+                             : source_kind == 2 ? MappingAuthority::ScopePurpose::map_arguments
+                                                : MappingAuthority::ScopePurpose::ordinary;
+        MappingAuthority::Scope scope(authority_, domain(slot), epoch, false, words::Access::write, purpose);
         return __au_runtime_manager_map_region(storage_.data(), reinterpret_cast<const U64 *>(&args));
     }
     [[nodiscard]] auto fill_snapshot(U64 epoch, U64 offset, std::span<const std::byte> bytes) -> bool {
         auto input = authority_.loader_chunk_source(bytes, epoch);
-        return call<__au_runtime_manager_snapshot_fill>({epoch, offset, bytes.size()}, Domain::snapshot, epoch);
+        const auto args = arguments({epoch, offset, bytes.size()});
+        MappingAuthority::Scope scope(authority_,
+                                      Domain::snapshot,
+                                      epoch,
+                                      false,
+                                      words::Access::write,
+                                      MappingAuthority::ScopePurpose::fill_snapshot_chunk);
+        return __au_runtime_manager_snapshot_fill(storage_.data(), args.data());
     }
 };
 static_assert(sizeof(ManagerResult) == 16 && sizeof(ManagerEntry) == 24);
