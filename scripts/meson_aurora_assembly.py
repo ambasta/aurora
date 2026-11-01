@@ -30,6 +30,68 @@ def dependencies(source, roots):
     return sorted(paths)
 
 
+def execution_effect_signatures(facts):
+    """Admit compiler-owned private retained-effect shapes, not a method inventory."""
+    prefix = "__au_runtime_execution_authority_"
+    signatures = {}
+    descriptor = ["const_pointer", "u64", "const_pointer"]
+    for caller, fact in facts["functions"].items():
+        calls = fact["calls"]
+        services = fact.get("service_abi", {}).get("calls", {})
+        for symbol in calls.keys() | services.keys():
+            service = services.get(symbol, {})
+            if not isinstance(service, dict):
+                raise ValueError(f"Invalid service call facts for {caller}->{symbol}")
+            native = service.get("native_signature")
+            if not symbol.startswith(prefix) and "native_signature" not in service:
+                continue
+            where = f"private execution effect {caller}->{symbol}"
+            if not re.fullmatch(prefix + r"[A-Za-z_][A-Za-z_0-9]*", symbol) or symbol not in calls:
+                raise ValueError(f"{where}: signature without a private call")
+            if not isinstance(native, dict) or set(native) != {"parameters", "result"}:
+                raise ValueError(f"{where}: missing or invalid native signature")
+            parameters = native["parameters"]
+            result = native["result"]
+            observation = parameters == descriptor + ["execution_observation_pointer", "u64"] and result == "void"
+            scalar = parameters in (descriptor, descriptor + ["u64"]) and result == "u64"
+            if not (observation or scalar):
+                raise ValueError(f"{where}: unsupported retained-effect shape")
+            if (
+                set(service) != {"sysv_arguments", "result_max", "native_signature"}
+                or type(service["sysv_arguments"]) is not int
+                or service["sysv_arguments"] != len(parameters)
+                or type(service["result_max"]) is not int
+                or service["result_max"] != ((1 << 64) - 1 if observation else 1)
+            ):
+                raise ValueError(f"{where}: native signature contradicts call facts")
+            if symbol in signatures and signatures[symbol] != native:
+                raise ValueError(f"{where}: conflicting native signatures")
+            signatures[symbol] = native
+    return signatures
+
+
+def render_execution_effects(facts):
+    signatures = execution_effect_signatures(facts)
+    if not signatures:
+        raise ValueError("No private execution effects in compiler facts")
+    types = {
+        "const_pointer": "const void *",
+        "u64": "std::uint64_t",
+        "execution_observation_pointer": "aurora::lifecycle::Observation *",
+    }
+    lines = [
+        "// Generated from the companion compiler call facts; private native ABI only.",
+        "#pragma once",
+        "#include <cstdint>",
+        "namespace aurora::lifecycle { class Observation; }",
+    ]
+    for symbol, signature in sorted(signatures.items()):
+        parameters = ", ".join(types[value] for value in signature["parameters"])
+        result = "void" if signature["result"] == "void" else "std::uint64_t"
+        lines.append(f'extern "C" {result} {symbol}({parameters}) __attribute__((visibility("hidden")));')
+    return "\n".join(lines) + "\n"
+
+
 def validate_uart_policy_abi(facts):
     """Check every byte of the fixed native UART record against compiler facts."""
     from bootstrap_frontend import abi_declaration, normalize_function_abi
@@ -986,6 +1048,7 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--depfile", required=True, type=Path)
     parser.add_argument("--stack-facts", type=Path)
+    parser.add_argument("--execution-effects", type=Path)
     parser.add_argument("--abi-facts", type=Path)
     parser.add_argument("--bridge", type=Path, action="append", default=[])
     parser.add_argument("--referenced-reflection-only", action="store_true")
@@ -995,6 +1058,8 @@ def main():
     args = parser.parse_args()
     if args.bridge and not args.abi_facts:
         parser.error("--bridge requires --abi-facts")
+    if args.execution_effects and not args.stack_facts:
+        parser.error("--execution-effects requires --stack-facts")
     inputs = dependencies(args.source, args.module_root)
     inputs += [bridge.absolute() for bridge in args.bridge]
     inputs += [Path(__file__).with_name("bootstrap_frontend.py"), Path(__file__).with_name("frontend_bridge.py")]
@@ -1029,6 +1094,7 @@ def main():
         elif args.bridge and not args.emit_object:
             with temporary.open("a") as output:
                 output.write("\n" + render_bridge("\n".join(bridge.read_text() for bridge in args.bridge), facts))
+    effects = render_execution_effects(json.loads(pending_facts.read_text())) if args.execution_effects else None
     # A successful command must produce the complete declared pair before any
     # previously admitted assembly/facts/dependencies are replaced.
     temporary.stat()
@@ -1039,6 +1105,8 @@ def main():
         pending_abi.replace(args.abi_facts)
     args.depfile.write_text(escaped(args.output) + ": " + " ".join(map(escaped, inputs)) + "\n")
     temporary.replace(args.output)
+    if args.execution_effects:
+        args.execution_effects.write_text(effects)
 
 
 if __name__ == "__main__":

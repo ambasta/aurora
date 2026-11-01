@@ -42,6 +42,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kernel_elf import SHF_EXECINSTR, Elf, image_policy  # noqa: E402
+from meson_aurora_assembly import execution_effect_signatures  # noqa: E402
 
 CPU_FRAME = 48
 BRANCHES = frozenset(
@@ -111,39 +112,26 @@ def direct_target(args):
     return int(match[1], 16) if match else None
 
 
-def execution_authority_calls(path, name, fact):
-    """Admit the emitted private field-effect ABI, not a source-selected pointer."""
-    prefix = "__au_runtime_execution_authority_"
-    expected = {
-        prefix + method: {"sysv_arguments": 5, "result_max": (1 << 64) - 1}
-        for method in ("prepare", "activate", "complete", "force")
-    }
-    expected[prefix + "retire"] = {"sysv_arguments": 4, "result_max": 1}
-    expected[prefix + "invalidate_service"] = {"sysv_arguments": 4, "result_max": 1}
-    expected[prefix + "finish"] = {"sysv_arguments": 3, "result_max": 1}
-    calls = fact["calls"]
-    signatures = fact.get("service_abi", {}).get("calls", {})
-    for callee in calls.keys() | signatures.keys():
-        if not callee.startswith(prefix):
-            continue
-        need(callee in expected, f"{path}: unknown execution authority effect {name}->{callee}")
-        need(callee in calls, f"{path}: execution authority signature without call {name}->{callee}")
-        need(
-            signatures.get(callee) == expected[callee],
-            f"{path}: execution authority signature mismatch {name}->{callee}",
-        )
-
-
 def compiler_facts(paths):
     """Compiler frames, call edges, signatures and separate GCC alias relations."""
     frames, edges, signatures, aliases, sources = {}, {}, {}, {}, set()
+    execution_signatures = {}
     for path in map(Path, paths):
         if path.name.endswith(".stack.json"):
             document = json.loads(path.read_text())
             need(document.get("version") in (1, 2), f"{path}: unknown Aurora stack-fact version")
+            try:
+                private_signatures = execution_effect_signatures(document)
+            except ValueError as error:
+                raise CheckError(f"{path}: {error}") from error
+            for symbol, signature in private_signatures.items():
+                need(
+                    symbol not in execution_signatures or execution_signatures[symbol] == signature,
+                    f"{path}: conflicting private execution signature for {symbol}",
+                )
+                execution_signatures[symbol] = signature
             for name, fact in document["functions"].items():
                 sources.add(name)
-                execution_authority_calls(path, name, fact)
                 local = fact["local_bytes"]
                 need(type(local) is int and local >= 8, f"{path}: invalid frame for {name}")
                 frames[name] = max(local, frames.get(name, 0))

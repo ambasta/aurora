@@ -1,5 +1,6 @@
 export module aurora.compiler.x86_facts;
 import aurora.compiler.x86_storage;
+import aurora.compiler.builtin_catalog;
 import aurora.compiler.x86_object_storage;
 import aurora.compiler.x86_helpers;
 import aurora.compiler.ir_metadata;
@@ -568,6 +569,49 @@ export namespace compiler_x86 {
         }
         return false;
     }
+    auto fact_execution_signature(EmitWorkspace& workspace, i64 symbol, i64 arguments, i64 maximum,
+        bool all_runtime) -> bool {
+        const NameRow name = workspace.runtime_name(symbol);
+        const i64 method = name.execution_method();
+        if (method == -2) {
+            return true;
+        }
+        if (!all_runtime || method < 0 || arguments != compiler_catalog::execution_native_arguments(method)) {
+            return workspace.fail();
+        }
+        const bool output = compiler_catalog::execution_native_output(method);
+        if ((output && maximum != -2) || (!output && maximum != 1)) {
+            return workspace.fail();
+        }
+        workspace.text(",\"native_signature\":{\"parameters\":[");
+        i64 at = 0;
+        while (at < arguments) {
+            if (at > 0) {
+                workspace.byte(',');
+            }
+            const i64 parameter = compiler_catalog::execution_native_parameter(method, at);
+            if (parameter == 0) {
+                workspace.text("\"const_pointer\"");
+            } else {
+                if (parameter == 1) {
+                    workspace.text("\"u64\"");
+                } else {
+                    if (parameter != 2) {
+                        return workspace.fail();
+                    }
+                    workspace.text("\"execution_observation_pointer\"");
+                }
+            }
+            at = at + 1;
+        }
+        workspace.text("],\"result\":");
+        if (output) {
+            workspace.text("\"void\"");
+        } else {
+            workspace.text("\"u64\"");
+        }
+        return workspace.byte('}');
+    }
     auto fact_emit_calls(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 function,
         bool service) -> bool {
         const i64 base = workspace.function_count();
@@ -582,6 +626,8 @@ export namespace compiler_x86 {
             i64 live = row.live();
             i64 arguments = row.arguments();
             i64 maximum = row.maximum();
+            i64 service_symbol = row.symbol();
+            bool all_runtime = row.kind() == 2;
             i64 end = at + 1;
             bool same = true;
             // Adjacent equal names form one native map entry. Only this caller's
@@ -592,12 +638,17 @@ export namespace compiler_x86 {
                 same = other.function() == function && fact_name_compare(workspace, metadata, row.kind(), row.symbol(),
                     other.kind(), other.symbol()) == 0;
                 if (same) {
+                    all_runtime = all_runtime && other.kind() == 2;
                     if (other.live() > live) {
                         live = other.live();
                     }
                     if (other.arguments() >= 0) {
+                        if (arguments >= 0 && (arguments != other.arguments() || maximum != other.maximum())) {
+                            return workspace.fail();
+                        }
                         arguments = other.arguments();
                         maximum = other.maximum();
+                        service_symbol = other.symbol();
                     }
                     end = end + 1;
                 }
@@ -617,6 +668,9 @@ export namespace compiler_x86 {
                         workspace.text("18446744073709551615");
                     } else {
                         workspace.number(maximum);
+                    }
+                    if (!fact_execution_signature(workspace, service_symbol, arguments, maximum, all_runtime)) {
+                        return false;
                     }
                     workspace.byte('}');
                 } else {

@@ -56,7 +56,7 @@ kernel_copy = find_program('cp', native: true)
 image_check = files('../scripts/kernel_image_check.py')
 stack_check = files('../scripts/kernel_stack_check.py')
 image_policy = files('image-policy.py')
-check_dependencies = files('../scripts/kernel_elf.py')
+check_dependencies = files('../scripts/kernel_elf.py', '../scripts/meson_aurora_assembly.py')
 # The writer, the HostFiles cases' tree it copies (--host-files-tree) and the
 # compiler's module staging (--module).
 volume_writer = files('../scripts/kernel_volume.py', '../tests/host_files.py')
@@ -75,6 +75,7 @@ foreach profile_id : profile_data['profiles'].split('|')
   profile_flags = flag_text == '' ? [] : flag_text.split('|')
   compiler_files = get_option('kernel_compiler') == '' ? [] : files(get_option('kernel_compiler'))
   objects = {}
+  execution_effect_headers = []
   bios_console = platform == 'bios' and mode == 'console'
   uefi_console = platform == 'uefi' and mode == 'device-fixture'
   # Closed objects (the protected supervisor, the scratchpad and the packed test
@@ -160,15 +161,24 @@ foreach profile_id : profile_data['profiles'].split('|')
                     '--bridge', kernel_source / extra_bridge])
         objects += {stem: extra_language}
       else
+        extra_outputs = [stem + '.s', stem + '.stack.json', stem + '.abi.json']
+        extra_effect_args = []
+        if stem == 'execution-lifecycle'
+          extra_outputs += ['execution-authority-effects.hpp']
+          extra_effect_args = ['--execution-effects', '@OUTPUT3@']
+        endif
         extra_language = custom_target(prefix + '-' + stem + '-assembly',
           input: files('../' + profile_data[extra_key + '.source']),
-          output: [stem + '.s', stem + '.stack.json', stem + '.abi.json'],
+          output: extra_outputs,
           build_subdir: output_subdir, depfile: stem + '.d',
           depend_files: compiler_files + files('../' + extra_bridge, '../scripts/bootstrap_frontend.py'),
           command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
                     '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
                     '--depfile', '@DEPFILE@'] + extra_roots + ['--local-symbols', '--referenced-reflection-only',
-                    '--bridge', kernel_source / extra_bridge])
+                    '--bridge', kernel_source / extra_bridge] + extra_effect_args)
+        if stem == 'execution-lifecycle'
+          execution_effect_headers = [extra_language[3]]
+        endif
         objects += {stem: custom_target(prefix + '-' + stem + '-object',
           input: extra_language[0], output: stem + '.o', build_subdir: object_subdir,
           command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
@@ -344,7 +354,12 @@ foreach profile_id : profile_data['profiles'].split('|')
     if platform == 'bios' or name == 'runtime'
       flags += ['-I' + include_dir]
     endif
-    native = static_library(prefix + '-' + name, [source, generated_headers],
+    native_headers = generated_headers
+    if name == 'process'
+      native_headers += execution_effect_headers
+      flags += ['-I' + include_dir]
+    endif
+    native = static_library(prefix + '-' + name, [source, native_headers],
       native: true, pic: false, install: false, build_by_default: false, implicit_include_directories: false,
       override_options: profile_options, build_subdir: output_subdir / 'native', cpp_args: flags)
     sidecars = [name + '.o', name + '.su', name + '.source.json', name + '.ci']

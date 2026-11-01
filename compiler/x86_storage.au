@@ -111,8 +111,9 @@ export namespace compiler_x86 {
     class NameRow {
         i64 beginValue;
         i64 countValue;
+        i64 executionMethodValue;
     public:
-        NameRow(i64 begin, i64 count) : beginValue(begin), countValue(count) {
+        NameRow(i64 begin, i64 count, i64 method) : beginValue(begin), countValue(count), executionMethodValue(method) {
         }
         auto begin() const -> i64 {
             return beginValue;
@@ -120,9 +121,12 @@ export namespace compiler_x86 {
         auto count() const -> i64 {
             return countValue;
         }
+        auto execution_method() const -> i64 {
+            return executionMethodValue;
+        }
     };
     auto NameRow_pool(builtin::ByteRegion region) -> builtin::OwnedValues<NameRow> {
-        const NameRow fill = NameRow(0, 0);
+        const NameRow fill = NameRow(0, 0, -1);
         builtin::OwnedValues<NameRow> result = region.try_allocate(0, fill);
         return move(result);
     }
@@ -169,10 +173,13 @@ export namespace compiler_x86 {
             return -1;
         }
         result = result + function_count * 1024;
-        if (call_count > (9223372036854775807 - result) / 128) {
+        // Name bytes are charged to assembly above. Each call contributes at
+        // most 101 fixed JSON bytes, plus 128 for the native signature.
+        const i64 call_bytes = 101 + 128;
+        if (call_count > (9223372036854775807 - result) / call_bytes) {
             return -1;
         }
-        return result + call_count * 128;
+        return result + call_count * call_bytes;
     }
     class EmitWorkspace {
         builtin::OwnedBytes output;
@@ -1494,9 +1501,30 @@ export namespace compiler_x86 {
             }
             return ok();
         }
-        auto record_call(i64 kind, i64 symbol) -> bool {
+        auto record_call(i64 kind, i64 symbol, i64 execution_method) -> bool {
             if (!ok() || currentFunction < 0) {
                 return fail();
+            }
+            if (kind == 2) {
+                if (symbol < 0 || symbol >= runtimeSize || execution_method < -2 || execution_method == -1) {
+                    return fail();
+                }
+                const NameRow name = runtimeNames.at(symbol);
+                // -1 is unclaimed; -2 is an ordinary runtime call. A canonical
+                // symbol cannot change its claim, even across different callers.
+                if (name.execution_method() != -1 && name.execution_method() != execution_method) {
+                    return fail();
+                }
+                if (name.execution_method() == -1) {
+                    const NameRow claimed = NameRow(name.begin(), name.count(), execution_method);
+                    if (!runtimeNames.set(symbol, claimed)) {
+                        return fail();
+                    }
+                }
+            } else {
+                if (execution_method != -2) {
+                    return fail();
+                }
             }
             i64 at = callBegin;
             while (at < callSize) {
@@ -1602,7 +1630,7 @@ export namespace compiler_x86 {
                 return -1;
             }
             if (runtimeSize == runtimeNames.size()) {
-                const NameRow fill = NameRow(0, 0);
+                const NameRow fill = NameRow(0, 0, -1);
                 if (!runtimeNames.try_resize(64, fill)) {
                     allocation_failure();
                     return -1;
@@ -1612,7 +1640,7 @@ export namespace compiler_x86 {
             if (first < 0) {
                 return -1;
             }
-            const NameRow value = NameRow(first, name.size());
+            const NameRow value = NameRow(first, name.size(), -1);
             runtimeNames.set(runtimeSize, value);
             const i64 result = runtimeSize;
             runtimeSize = runtimeSize + 1;
@@ -1623,7 +1651,7 @@ export namespace compiler_x86 {
             if (symbol < 0) {
                 return false;
             }
-            record_call(2, symbol);
+            record_call(2, symbol, -2);
             begin_line();
             text("call ");
             text(name);
@@ -1639,6 +1667,9 @@ export namespace compiler_x86 {
             while (at < callSize) {
                 const CallFact old = calls.at(at);
                 if (old.function() == currentFunction && old.kind() == 2 && old.symbol() == runtime_name) {
+                    if (old.arguments() >= 0 && (old.arguments() != arguments || old.maximum() != maximum)) {
+                        return fail();
+                    }
                     const CallFact value = CallFact(currentFunction, 2, runtime_name, old.live(), arguments, maximum);
                     return calls.set(at, value);
                 }
@@ -1735,7 +1766,7 @@ export namespace compiler_x86 {
             if (artifact == Artifact::stack) {
                 // Admitted ASCII symbols have disjoint assembly occurrences;
                 // a service call can print twice. Fixed JSON/numeric overhead
-                // is <=652/function, <=101/call and 29 wrapper bytes.
+                // is <=652/function, <=229/call and 29 wrapper bytes.
                 artifactLimit = stack_byte_bound(assemblySize, functionSize, callSize);
                 if (objectMode) {
                     // Object symbols are deduplicated, so code size cannot bound
@@ -2386,11 +2417,13 @@ export namespace compiler_x86 {
         object.object_call_symbol(callable);
         return emit_object_status(w, object);
     }
-    auto emit_direct_runtime(EmitWorkspace& w, ObjectWorkspace& object, i64 symbol) -> bool {
+    auto emit_typed_runtime(EmitWorkspace& w, ObjectWorkspace& object, i64 symbol, i64 method) -> bool {
         if (!emit_object_status(w, object) || symbol < 0 || symbol >= w.runtime_count()) {
             return w.fail();
         }
-        w.record_call(2, symbol);
+        if (!w.record_call(2, symbol, method)) {
+            return false;
+        }
         const NameRow name = w.runtime_name(symbol);
         if (object.object_mode()) {
             if (!object.has_runtime_symbol(symbol)) {
@@ -2414,6 +2447,14 @@ export namespace compiler_x86 {
             at = at + 1;
         }
         return w.end_line();
+    }
+    auto emit_direct_runtime(EmitWorkspace& w, ObjectWorkspace& object, i64 symbol) -> bool {
+        return emit_typed_runtime(w, object, symbol, -2);
+    }
+    auto emit_execution_call_runtime(EmitWorkspace& w, ObjectWorkspace& object, i64 symbol, i64 method) -> bool {
+        emit_prepare_call(w, object);
+        emit_typed_runtime(w, object, symbol, method);
+        return emit_finish_call(w, object);
     }
     auto emit_call_runtime(EmitWorkspace& w, ObjectWorkspace& object, i64 symbol) -> bool {
         emit_prepare_call(w, object);

@@ -11,12 +11,14 @@ unchanged siblings and failed requests, plus odd/even saved scalar stacks.
 from __future__ import annotations
 
 import argparse
+import json
 from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
 
 from unsigned_oracle import require
@@ -186,6 +188,41 @@ def boundary(fixture, driver, cxx, directory, mode, handwritten):
     return f"PASS owning class ABI {mode} handwritten-target={handwritten}: {output.strip()}"
 
 
+def execution_effect_widths(fixture, cxx, directory):
+    # Reuse emitted facts from the real admitted AIR case, not a native signature table.
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from meson_aurora_assembly import render_execution_effects
+
+    source = AIR.parent / "execution-authority.air"
+    text = source.read_text().replace("; RUN: verify", "; RUN: stack-facts", 1)
+    case = text.splitlines()[0].removeprefix("; CASE: ")
+    emitted = directory / "execution-effects.air"
+    emitted.write_text(text)
+    facts = json.loads(command([fixture, "--output", emitted, case]))
+    (directory / "execution-authority-effects.hpp").write_text(render_execution_effects(facts))
+    result = subprocess.run(
+        [
+            *cxx,
+            "-std=c++20",
+            "-fsyntax-only",
+            "-I",
+            str(directory),
+            str(ROOT / "tests/compiler/execution_effect_signature_reject.cpp"),
+        ],
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    diagnostic = result.stderr.decode(errors="replace")
+    require(result.returncode != 0, "wrong native execution widths must fail compilation")
+    for effect in ("retire", "finish", "activate", "force"):
+        require(
+            re.search(r"error: conflicting declaration[^\n]*__au_runtime_execution_authority_" + effect, diagnostic),
+            f"native execution {effect} width rejected: {diagnostic}",
+        )
+    print("PASS private execution effect native return/parameter widths", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("fixture", type=Path)
@@ -200,6 +237,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="aurora-owning-abi-") as temporary:
         directory = args.work_dir or Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
+        execution_effect_widths(fixture, cxx, directory)
         with ThreadPoolExecutor(max_workers=len(os.sched_getaffinity(0))) as pool:
             for line in pool.map(lambda job: boundary(fixture, driver, cxx, directory, *job), jobs):
                 print(line, flush=True)

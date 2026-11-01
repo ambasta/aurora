@@ -834,12 +834,12 @@ export namespace compiler_x86 {
             // Kernel operation 1, exit; the kernel never returns from it.
             emit_mov_imm(w, o, 1, Register::rax);
             const i64 marker = w.intern_runtime("__au_kernel_service_call");
-            w.record_call(2, marker);
+            w.record_call(2, marker, -2);
             emit_interrupt(w, o, 131);
         } else {
             emit_mov_imm(w, o, 231, Register::rax);
             const i64 marker = w.intern_runtime("__au_linux_system_call");
-            w.record_call(2, marker);
+            w.record_call(2, marker, -2);
             emit_system_call(w, o);
         }
         emit_trap_instruction(w, o);

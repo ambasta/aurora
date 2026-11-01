@@ -605,7 +605,7 @@ export namespace compiler_x86 {
     }
     auto direct_target(EmitWorkspace& workspace, ObjectWorkspace& o,
         const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
-        workspace.record_call(0, callable);
+        workspace.record_call(0, callable, -2);
         if (o.object_mode()) {
             if (!o.has_object_symbol(callable)) {
                 o.begin_object_external(0, callable);
@@ -628,7 +628,7 @@ export namespace compiler_x86 {
         i64 query, i64 scope) -> bool {
         emit_prepare_call(workspace, o);
         const i64 identity = scope * 2 + query;
-        workspace.record_call(1, identity);
+        workspace.record_call(1, identity, -2);
         if (o.object_mode()) {
             if (o.object_symbol_index(4, identity) < 0) {
                 o.begin_object_external(4, identity);

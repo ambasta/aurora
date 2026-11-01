@@ -880,6 +880,12 @@ field, because native authentication reads the exact root's canonical state.
 Private symbols use prefix `__au_runtime_execution_authority_`. Binding and epoch
 are in RDI/RSI, canonical field address in RDX, copied observation destination in
 RCX and slot in R8. `retire` and `invalidate_service` instead put their slot in RCX; `finish` has only the
-first three arguments. The emitted call facts record these argument counts.
+first three arguments. The same lowering shape emits private native signatures
+with full-width `u64` scalar returns (canonical 0/1), or `void` with a copied
+observation output pointer. The lifecycle artifact generates native declarations
+from those facts, so hosted and production definitions reject narrow C++ bool,
+integer or parameter widths at compilation. Runtime canonical-value checks remain.
+Canonical runtime symbols cannot mix ordinary calls and private effect identities;
+duplicate call facts must agree, including across native stack-check inputs.
 This is a fixed synchronous boundary, not general asynchronous ownership,
 scheduling, arbitrary callbacks or a source pointer escape.

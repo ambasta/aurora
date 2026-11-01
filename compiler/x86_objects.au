@@ -241,7 +241,7 @@ export namespace compiler_x86 {
     auto host_system_call(EmitWorkspace& workspace, ObjectWorkspace& object, i64 number) -> bool {
         emit_mov_imm(workspace, object, number, Register::rax);
         const i64 marker = workspace.intern_runtime("__au_linux_system_call");
-        workspace.record_call(2, marker);
+        workspace.record_call(2, marker, -2);
         return emit_system_call(workspace, object);
     }
     // Kernel operation NUMBER through the Aurora kernel's INT 0x83 gate: RAX
@@ -249,7 +249,7 @@ export namespace compiler_x86 {
     auto host_kernel_call(EmitWorkspace& workspace, ObjectWorkspace& object, i64 number) -> bool {
         emit_mov_imm(workspace, object, number, Register::rax);
         const i64 marker = workspace.intern_runtime("__au_kernel_service_call");
-        workspace.record_call(2, marker);
+        workspace.record_call(2, marker, -2);
         return emit_interrupt(workspace, object, 131);
     }
     // The bindings' HostFiles primitives (operations 9..31). The grant at the
@@ -330,7 +330,7 @@ export namespace compiler_x86 {
             emit_mov_rr(workspace, object, Register::r9, Register::rax);
             emit_alu_imm(workspace, object, AluOp::add, 7, Register::rax);
             const i64 marker = workspace.intern_runtime("__au_kernel_service_call");
-            workspace.record_call(2, marker);
+            workspace.record_call(2, marker, -2);
             return emit_interrupt(workspace, object, 131);
         }
         if (operation == 9 || operation == 11) {
@@ -693,7 +693,7 @@ export namespace compiler_x86 {
         // protected scalar Serve grant. Its fact marker keeps isolated private
         // operations out of protected images as well as actual exchanges.
         const i64 marker = w.intern_runtime("__au_kernel_service_call");
-        w.record_call(2, marker);
+        w.record_call(2, marker, -2);
         const i64 offset = operand_value(store, instruction, 0);
         const i64 operation = operand_value(store, instruction, 1);
         const i64 result = operand_value(store, instruction, 2);
@@ -787,7 +787,7 @@ export namespace compiler_x86 {
             return w.fail();
         }
         const i64 marker = w.intern_runtime("__au_kernel_service_call");
-        w.record_call(2, marker);
+        w.record_call(2, marker, -2);
         const i64 offset = operand_value(store, instruction, 0);
         const i64 operation = operand_value(store, instruction, 1);
         const i64 grant = w.pack_address(0, offset);
@@ -878,7 +878,7 @@ export namespace compiler_x86 {
             return emit_block_operation(w, o, store, instruction);
         }
         const i64 marker = w.intern_runtime("__au_kernel_service_call");
-        w.record_call(2, marker);
+        w.record_call(2, marker, -2);
         const i64 offset = operand_value(store, instruction, 0);
         const i64 grant = w.pack_address(0, offset);
         const i64 generation = w.pack_address(0, offset - 8);
@@ -1691,6 +1691,9 @@ export namespace compiler_x86 {
         const i64 resource = operand_value(s, instruction, 4);
         const i64 type = compiler_catalog::resource_method_result(resource, method);
         const i64 symbol = resource_runtime_symbol(w, resource, method);
+        if (resource == 5 && compiler_catalog::execution_native_arguments(method) < 0) {
+            return w.fail();
+        }
         const i64 first = bytes_owner_address(w, o, m, root, field, 0);
         const i64 second = w.advance_address(first, 8);
         emit_load(w, o, first, Register::rdi, false);
@@ -1705,6 +1708,10 @@ export namespace compiler_x86 {
             clear_bytes(w, o, 0, fields * 8, output);
             if (retained) {
                 if (resource == 5) {
+                    if (!compiler_catalog::execution_native_output(method)
+                        || !compiler_catalog::execution_native_slot(method)) {
+                        return w.fail();
+                    }
                     // The only explicit scalar is the slot selector. It does
                     // not replace the authenticated canonical field identity.
                     emit_mov_rr(w, o, Register::rax, Register::r8);
@@ -1713,7 +1720,11 @@ export namespace compiler_x86 {
             } else {
                 emit_lea(w, o, output, Register::rdx);
             }
-            emit_call_runtime(w, o, symbol);
+            if (resource == 5) {
+                emit_execution_call_runtime(w, o, symbol, method);
+            } else {
+                emit_call_runtime(w, o, symbol);
+            }
             i64 at = 0;
             while (at < fields) {
                 const i64 member = compiler_catalog::field_type(type, at);
@@ -1726,12 +1737,12 @@ export namespace compiler_x86 {
                 at = at + 1;
             }
             if (resource == 5) {
-                return w.record_service(symbol, 5, -2);
+                return w.record_service(symbol, compiler_catalog::execution_native_arguments(method), -2);
             }
             return w.ok();
         }
         i64 arguments = 3;
-        if (resource == 5 && compiler_catalog::resource_method_parameters(resource, method) == 1) {
+        if (resource == 5 && compiler_catalog::execution_native_slot(method)) {
             emit_mov_rr(w, o, Register::rax, Register::rcx);
             arguments = 4;
         }
@@ -1753,7 +1764,15 @@ export namespace compiler_x86 {
                 emit_pop(w, o, Register::rdx);
             }
         }
-        emit_call_runtime(w, o, symbol);
+        if (resource == 5) {
+            if (compiler_catalog::execution_native_output(method)
+                || arguments != compiler_catalog::execution_native_arguments(method)) {
+                return w.fail();
+            }
+            emit_execution_call_runtime(w, o, symbol, method);
+        } else {
+            emit_call_runtime(w, o, symbol);
+        }
         if (compiler_catalog::resource_method_effect(resource, method) == 2) {
             // Native terminal cleanup has settled on every normal return,
             // including a failure-valued result. Preserve RAX while clearing.
