@@ -1,0 +1,118 @@
+export module kernel.committed_load;
+
+export namespace kernel {
+    enum class LoadAction { open, reserve, read, fill, seal, discard_close, close, load, discard_done, done };
+    enum class LoadResult { loaded, missing, malformed, quota, unavailable };
+    class LoadRequest {
+    public:
+        LoadAction action;
+        u64 id;
+        u64 size;
+        u64 offset;
+        u64 count;
+        LoadResult result;
+        LoadRequest(LoadAction action_input, u64 id_input, u64 size_input, u64 offset_input, u64 count_input,
+            LoadResult result_input) : action(action_input), id(id_input), size(size_input), offset(offset_input),
+            count(count_input), result(result_input) {
+        }
+    };
+
+    // One synchronous acquisition, not a snapshot owner or endpoint authority.
+    // Each observation is accepted only after its physical effect has returned;
+    // no source loan or byte view survives that effect.
+    class CommittedLoad {
+        LoadAction action;
+        u64 id;
+        u64 size;
+        u64 offset;
+        u64 count;
+        LoadResult result;
+    public:
+        CommittedLoad() : action(LoadAction::open), id(0u64), size(0u64), offset(0u64), count(0u64),
+            result(LoadResult::malformed) {
+        }
+        auto next() const -> LoadRequest {
+            const LoadRequest request = LoadRequest(action, id, size, offset, count, result);
+            return request;
+        }
+        auto accept(LoadAction completed, bool ok, u64 status, u64 value, u64 bytes) -> bool {
+            if (completed != action || action == LoadAction::done) {
+                return false;
+            }
+            if (action == LoadAction::open) {
+                if (!ok || status != 0u64) {
+                    result = LoadResult::unavailable;
+                    if (ok && status == 2u64) { result = LoadResult::missing; }
+                    action = LoadAction::done;
+                } else {
+                    id = value;
+                    size = bytes;
+                    action = LoadAction::close;
+                    if (size != 0u64 && size <= 67108864u64) { action = LoadAction::reserve; }
+                }
+                return true;
+            }
+            if (action == LoadAction::reserve) {
+                action = LoadAction::read;
+                if (!ok) { result = LoadResult::quota; action = LoadAction::close; }
+                return true;
+            }
+            if (action == LoadAction::read) {
+                if (!ok || status != 0u64 || bytes == 0u64 || bytes > size - offset || bytes > 65472u64) {
+                    result = LoadResult::unavailable;
+                    action = LoadAction::discard_close;
+                } else {
+                    count = bytes;
+                    action = LoadAction::fill;
+                }
+                return true;
+            }
+            if (action == LoadAction::fill) {
+                if (!ok) { return false; }
+                offset = offset + count;
+                count = 0u64;
+                action = LoadAction::read;
+                if (offset == size) { action = LoadAction::seal; }
+                return true;
+            }
+            if (action == LoadAction::seal) {
+                if (!ok) { return false; }
+                result = LoadResult::loaded;
+                action = LoadAction::close;
+                return true;
+            }
+            if (action == LoadAction::discard_close) {
+                if (!ok) { return false; }
+                action = LoadAction::close;
+                return true;
+            }
+            if (action == LoadAction::close) {
+                action = LoadAction::done;
+                if (!ok || status != 0u64) {
+                    result = LoadResult::unavailable;
+                } else {
+                    if (result == LoadResult::loaded) { action = LoadAction::load; }
+                }
+                return true;
+            }
+            if (action == LoadAction::load) {
+                if (ok) {
+                    action = LoadAction::done;
+                    return true;
+                }
+                if (status == 1u64) { result = LoadResult::missing; }
+                if (status == 2u64) { result = LoadResult::malformed; }
+                if (status == 3u64) { result = LoadResult::quota; }
+                if (status < 1u64 || status > 3u64) { return false; }
+                action = LoadAction::discard_done;
+                return true;
+            }
+            if (action == LoadAction::discard_done) {
+                if (!ok) { return false; }
+                action = LoadAction::done;
+                return true;
+            }
+            return false;
+        }
+    };
+}

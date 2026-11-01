@@ -9,6 +9,7 @@
 #include "../round-robin-transport.hpp"
 #include "process-space.hpp"
 #include "image-snapshot.hpp"
+#include "../committed-load.hpp"
 #ifdef AURORA_UEFI_NVME
 #include "nvme.hpp"
 #endif
@@ -4471,61 +4472,101 @@ auto load_committed(std::span<const std::byte> volume,
                     U64 client,
                     std::span<const std::byte> path,
                     std::span<const std::byte> arguments) -> RunStatus {
+    using aurora::load::Action;
+    using aurora::load::Result;
     reset_loader(128);
     loading_image = true;
     endpoint.caller_cancelled = false;
-    if (!loader_call(client, 18, 0, 0, path))
-        return RunStatus::unavailable;
-    const Bytes opened{endpoint.bytes};
-    if (opened.get(0))
-        return opened.get(0) == 2 ? RunStatus::missing : RunStatus::unavailable;
-    const U64 id = opened.get(16), size = opened.get(24);
-    RunStatus status = RunStatus::malformed;
-    if (size && size <= aurora::uefi::ImageSnapshot::limit) {
-        const U64 epoch = table.begin_snapshot(frames::first_owner + client, size);
-        if (!epoch) {
-            status = RunStatus::quota;
-        } else {
-            snapshot.emplace(table, epoch);
-            U64 offset = 0;
-            while (offset < size) {
-                if (!loader_call(client, 19, id, offset)) {
-                    status = RunStatus::unavailable;
-                    break;
-                }
+    aurora::load::Operation<EndpointPlatform> operation;
+    for (;;) {
+        const auto request = operation.next();
+        bool ok = true;
+        U64 status = 0, value = 0, count = 0;
+        switch (request.action) {
+        case Action::open:
+            ok = loader_call(client, 18, 0, 0, path);
+            if (ok) {
                 const Bytes reply{endpoint.bytes};
-                const U64 count = reply.get(8);
-                if (reply.get(0) || !count || count > size - offset || count > endpoint.bytes.size() - 64) {
-                    status = RunStatus::unavailable;
-                    break;
-                }
-                if (!snapshot->fill(offset, std::span<const std::byte>{endpoint.bytes}.subspan(64, count)))
-                    fail("loader snapshot fill");
-                offset += count;
+                status = reply.get(0);
+                value = reply.get(16);
+                count = reply.get(24);
             }
-            if (offset == size && !snapshot->seal())
-                fail("loader snapshot seal");
-            if (offset != size) {
-                discard_snapshot();
-            }
+            break;
+        case Action::reserve: {
+            const U64 epoch = table.begin_snapshot(frames::first_owner + client, request.size);
+            ok = epoch != 0;
+            if (ok)
+                snapshot.emplace(table, epoch);
+            break;
         }
+        case Action::read:
+            ok = loader_call(client, 19, request.id, request.offset);
+            if (ok) {
+                const Bytes reply{endpoint.bytes};
+                status = reply.get(0);
+                count = reply.get(8);
+            }
+            break;
+        case Action::fill:
+            // A copied source request is not byte or snapshot authority. Recheck
+            // the current reply and exact manager-owned epoch at the copy edge.
+            if (!snapshot || Bytes{endpoint.bytes}.get(0) || Bytes{endpoint.bytes}.get(8) != request.count ||
+                request.count > endpoint.bytes.size() - 64 ||
+                !snapshot->fill(request.offset, std::span<const std::byte>{endpoint.bytes}.subspan(64, request.count)))
+                fail("loader snapshot fill");
+            break;
+        case Action::seal:
+            if (!snapshot || !snapshot->seal())
+                fail("loader snapshot seal");
+            break;
+        case Action::discard_close:
+        case Action::discard_done:
+            // Service terminal invalidation may already have discarded it.
+            discard_snapshot();
+            break;
+        case Action::close:
+            ok = loader_call(client, 20, request.id);
+            if (ok) {
+                status = Bytes{endpoint.bytes}.get(0);
+                if (!status)
+                    loading_image = false;
+            }
+            break;
+        case Action::load: {
+            if (!snapshot)
+                fail("loader snapshot identity");
+            process::RunEntry entry{};
+            entry.ticks = 128;
+            ok = load_image(volume, {}, arguments, entry, client, 1, true, true, 0, false, 0, false, snapshot->epoch());
+            if (!ok) {
+                status = load_refusal == RunStatus::missing ? static_cast<U64>(Result::missing)
+                         : load_refusal == RunStatus::quota ? static_cast<U64>(Result::quota)
+                                                            : static_cast<U64>(Result::malformed);
+            }
+            break;
+        }
+        case Action::done:
+            switch (request.result) {
+            case Result::loaded:
+                return RunStatus::exited; // Loaded, not yet executed.
+            case Result::missing:
+                return RunStatus::missing;
+            case Result::malformed:
+                return RunStatus::malformed;
+            case Result::quota:
+                return RunStatus::quota;
+            case Result::unavailable:
+                return RunStatus::unavailable;
+            }
+            fail("loader result");
+        default:
+            fail("loader action");
+        }
+        if (!operation.accept(request.action, ok, status, value, count))
+            fail("loader observation");
     }
-    if (!loader_call(client, 20, id))
-        return RunStatus::unavailable;
-    if (Bytes{endpoint.bytes}.get(0))
-        return RunStatus::unavailable;
-    loading_image = false;
-    if (!snapshot)
-        return status;
-    process::RunEntry entry{};
-    entry.ticks = 128;
-    const U64 epoch = snapshot->epoch();
-    if (!load_image(volume, {}, arguments, entry, client, 1, true, true, 0, false, 0, false, epoch)) {
-        discard_snapshot();
-        return load_refusal;
-    }
-    return RunStatus::exited; // Loaded, not yet executed.
 }
+
 class ExecutionTransport final : public ExecutionEffects {
     static inline std::span<const std::byte> volume_, path_, arguments_;
 

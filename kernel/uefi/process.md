@@ -517,6 +517,24 @@ full-span ELF/layout/quota policies admit it unchanged. Mapping the process
 copies fresh pages, then unmaps, scrubs and releases the snapshot before the
 process's own frame-equality walk. Loader RPCs share a cumulative budget.
 
+`kernel.committed_load::CommittedLoad` owns this synchronous acquisition's
+file ID, size, read offset, next action and terminal classification. The native
+loop supplies authenticated effect observations; it has no offset or phase mirror.
+Read-count admission precedes filling, and only a complete fill permits sealing.
+Every successful open owes close, including malformed-size and quota refusals;
+close failure overrides their result. Read failure discards before attempting close,
+while close loss leaves cleanup to the existing service-loss boundary. A service
+terminal may already have discarded the snapshot, so discard remains idempotent.
+Successful executable mapping consumes the snapshot through the memory manager.
+
+The local opaque operation is noncopyable. Its short, effect-free source loans
+never span RPC, copy or mapping effects. Copied requests are not snapshot or
+endpoint authority: native fill rechecks the actual reply and manager-owned epoch.
+The operation does not duplicate MM seal state or endpoint identity/ordinals.
+Action matching rejects wrong-phase receipts; this synchronous contract is not
+an asynchronous replay-token protocol. Bootstrap and fixture export paths retain
+their separate existing orchestration.
+
 The console yields with no live protected grant. After the command, all clients
 and snapshots are gone, the server is parked, timer/interrupts are quiet, and
 full audits precede restoring the exact original root/window entries. Reattach
