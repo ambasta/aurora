@@ -247,6 +247,11 @@ explicitly native shell/graph, guard/identity and operational-semantics fixtures
 .lake/build/bin/source-binding-probe [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...
 ```
 
+For the snapshot workload, optional `--snapshot-examples` before `--ir`
+executes seven concrete actual-source/IR value controls, including admission,
+refusal and offset-beyond-bytes short-circuiting. These named workload fixtures
+are outside checker/proof logic and do not certify the large concrete inputs.
+
 Complete-graph native acceptance is not a concrete kernel theorem. Initial
 concrete header reductions did not complete in the first probe; tiny kernel
 fixtures use small explicit bounds without weakening generic theorems or the

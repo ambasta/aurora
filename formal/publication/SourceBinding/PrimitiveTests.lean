@@ -70,7 +70,7 @@ def checks : List (String × Bool) := [
     .cut 4 (some (.word 7)) [.word 100,.boolean true] (some (.word 2)) (some (.word 9)) (some (.word 77))),
   ("actual field ordinal accepted", accepts (fieldProgram 43) fieldExpr),
   ("same-typed field ordinal swap rejected", !(accepts (fieldProgram 42) fieldExpr)),
-  ("primitive does not claim OR lowering", !(accepts program (.or (.boolLit true) underflow))),
+  ("arithmetic-only program cannot match an OR expression", !(accepts program (.or (.boolLit true) underflow))),
   ("missing push rejects", !(accepts (fun pc => if pc = 1 then some .label else program pc) expression)),
   ("wrong binary rejects", !(accepts (fun pc => if pc = 3 then some (.binary (.compare .eq)) else program pc) expression)),
   ("IR underflow trap", run (fun pc => if pc = 0 then some (.constant .word (.word 1)) else program pc) 4 base == .trapped .underflow),

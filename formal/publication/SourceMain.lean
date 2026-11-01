@@ -1,5 +1,6 @@
 import SourceBinding
 import SourceBinding.SemanticBinding
+import SourceBinding.SnapshotExamples
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -16,11 +17,15 @@ def showName (name : Name) : String :=
   String.intercalate "." (name.map String.fromUTF8!)
 
 def main (args : List String) : IO UInt32 := do
+  let (examples, args) := match args with
+    | "--snapshot-examples" :: rest => (true,rest)
+    | _ => (false,args)
   let (irPath, arguments) := match args with
     | "--ir" :: path :: rest => (some path,rest)
     | _ => (none,args)
   let root :: module :: classPath :: member :: paths := arguments |
-    throw (IO.userError "usage: source-binding-probe [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+    throw (IO.userError "usage: source-binding-probe [--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+  if examples && irPath.isNone then throw (IO.userError "snapshot examples require --ir")
   if paths.isEmpty then throw (IO.userError "no source files")
   let start ← IO.monoMsNow
   let mut total := 0
@@ -48,6 +53,7 @@ def main (args : List String) : IO UInt32 := do
     let publication ← readSource path 16777216
     let some safe := bindSafeSemantics files rootName selectedModule selectedPath member.toUTF8 publication |
       throw (IO.userError "source/publication guard semantics rejected")
+    if examples then runSnapshotExamples safe
     let semantic := safe.semantic
     IO.println s!"SOURCE-IR-GUARD callable={semantic.ir.id} fields={declared.length} publication_bytes={publication.size} entry=0 expression_end={semantic.endExpr} continuation={semantic.endExpr + 4}"
     IO.println "SAFE GUARD: checked short-circuit range certificate; first-exit includes binding and false-return. Tail instructions/effects unproved."
