@@ -6,7 +6,7 @@ case "$(lean --version)" in
   'Lean (version 4.24.0, '*'commit 797c613eb9b6d4ec95db23e3e00af9ac6657f24b, Release)') ;;
   *) echo 'Wrong Lean toolchain' >&2; exit 1 ;;
 esac
-lake build SourceBinding SourceBinding.Tests source-binding-probe
+lake build SourceBinding SourceBinding.Tests SourceBinding.CallProjectionTests source-binding-probe
 lake env lean SourceBinding/RuntimeTests.lean
 lake env lean SourceBinding/MethodTests.lean
 lake env lean SourceBinding/IdentityTests.lean
@@ -18,6 +18,13 @@ lake env lean SourceBinding/StatefulTests.lean
 lake env lean SourceBinding/BodySyntaxTests.lean
 lake env lean SourceBinding/EffectCodeTests.lean
 lake env lean SourceBinding/BodyProofTests.lean
+lake env lean SourceBinding/ArgumentValueTests.lean
+lake env lean SourceBinding/CallTests.lean
+lake env lean SourceBinding/CallMachineTests.lean
+lake env lean SourceBinding/CallProjectionTests.lean
+lake env lean SourceBinding/CallFootprintTests.lean
+lake env lean SourceBinding/RequestBounds.lean
+lake env lean SourceBinding/RequestShape.lean
 output=$(mktemp)
 trap 'rm -f "$output"' EXIT
 lake env lean SourceBinding/Audit.lean | tee "$output"
@@ -41,7 +48,7 @@ for line in open(sys.argv[1]):
         count += 1
     else:
         sys.exit(f'Unexpected audit output: {line}')
-if count != 82:
-    sys.exit(f'Expected eighty-two theorem audits, got {count}')
+if count != 215:
+    sys.exit(f'Expected 215 theorem audits, got {count}')
 print(f'Checked {count} source-binding theorem dependency reports.')
 PY

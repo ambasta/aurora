@@ -11,3 +11,13 @@ import SourceBinding.IRIdentity
 import SourceBinding.MethodSyntax
 import SourceBinding.SemanticBinding
 import SourceBinding.BodyBinding
+import SourceBinding.ArgumentValues
+import SourceBinding.CallLeafBinding
+import SourceBinding.CallArgumentValues
+import SourceBinding.CallMachine
+import SourceBinding.CallEnvironment
+import SourceBinding.CallArgumentProof
+import SourceBinding.CallBinding
+import SourceBinding.CallFootprint
+import SourceBinding.CallGuardPrefix
+import SourceBinding.RequestPolicy

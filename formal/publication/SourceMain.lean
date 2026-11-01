@@ -2,6 +2,7 @@ import SourceBinding
 import SourceBinding.SemanticBinding
 import SourceBinding.SnapshotExamples
 import SourceBinding.BodyExamples
+import SourceBinding.CallExamples
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -18,6 +19,10 @@ def showName (name : Name) : String :=
   String.intercalate "." (name.map String.fromUTF8!)
 
 def main (args : List String) : IO UInt32 := do
+  let (callMode, callExamples, args) := match args with
+    | "--calls" :: rest => (true,false,rest)
+    | "--call-examples" :: rest => (true,true,rest)
+    | _ => (false,false,args)
   let (bodyMode, bodyExamples, args) := match args with
     | "--body" :: rest => (true,false,rest)
     | "--body-examples" :: rest => (true,true,rest)
@@ -29,7 +34,9 @@ def main (args : List String) : IO UInt32 := do
     | "--ir" :: path :: rest => (some path,rest)
     | _ => (none,args)
   let root :: module :: classPath :: member :: paths := arguments |
-    throw (IO.userError "usage: source-binding-probe [--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+    throw (IO.userError "usage: source-binding-probe [--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+  if callMode && (bodyMode || examples) then throw (IO.userError "call/body/snapshot modes are distinct")
+  if callMode && irPath.isNone then throw (IO.userError "call mode requires --ir")
   if bodyMode && examples then throw (IO.userError "body and snapshot modes are distinct")
   if bodyMode && irPath.isNone then throw (IO.userError "body mode requires --ir")
   if examples && irPath.isNone then throw (IO.userError "snapshot examples require --ir")
@@ -47,6 +54,16 @@ def main (args : List String) : IO UInt32 := do
   let rootName := (root.splitOn ".").map String.toUTF8
   let selectedModule := (module.splitOn ".").map String.toUTF8
   let selectedPath := (classPath.splitOn "::").map String.toUTF8
+  if callMode then
+    let some path := irPath | throw (IO.userError "call mode requires --ir")
+    let publication ← readSource path 16777216
+    let some checked := bindCalls files rootName selectedModule selectedPath member.toUTF8 publication |
+      throw (IO.userError "source/publication call semantics rejected")
+    if callExamples then runCallExamples checked
+    IO.println s!"SOURCE-IR-CALLS callable={checked.family.shape.ir.id} entry=0 stop={checked.family.shape.stop} complete=true publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input receipt only. Generic finite source/IR trace correspondence with SAME external responses; no concrete kernel acceptance, producer/backend/native API fidelity, external framing or environmental liveness."
+    return 0
   if bodyMode then
     let some path := irPath | throw (IO.userError "body mode requires --ir")
     let publication ← readSource path 16777216
