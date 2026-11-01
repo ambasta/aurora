@@ -147,6 +147,13 @@ inductive Step : State Agent → Q.Event → State Agent → Prop where
       (closing : s.phase = .closing) (found : s.entries i = some e)
       (kind : Closable e.kind) :
       Step s .internal (enqueue s (.close i))
+  /- The responsible use owner can finish its own published descriptor without
+     closing the backing root. Owner binding is part of the honest-endpoint
+     action contract, not a proof of a real sender-authentication mechanism. -/
+  | requestUseClose (s : State Agent) (i : Nat) (e : Entry Agent) (owner : Agent)
+      (found : s.entries i = some e) (use : e.kind = .use owner)
+      (published : e.published = true) :
+      Step s .internal (enqueue s (.close i))
   | close (s : State Agent) (i : Nat) (e : Entry Agent)
       (packet : Packet.close i ∈ s.packets) (found : s.entries i = some e)
       (kind : Closable e.kind) :

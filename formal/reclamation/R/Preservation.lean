@@ -323,6 +323,7 @@ theorem step_preserves_local (hq : Q.Invariant (project s)) (h : LocalInvariant 
     exact local_enqueue h True.intro
   | beginClose active => exact local_control h s.generation .closing
   | requestClose i e closing found kind => exact local_enqueue h True.intro
+  | requestUseClose i e owner found use published => exact local_enqueue h True.intro
   | close i e packet found kind =>
     apply local_put h found (new := { e with closed := true }) rfl rfl
     · exact fun hs => hs

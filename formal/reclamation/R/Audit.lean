@@ -28,3 +28,7 @@ import R
 #print axioms Aurora.R.Witness.close_before_initial_publication
 #print axioms Aurora.R.Witness.initial_publication_guard_rejected
 #print axioms Aurora.R.Witness.successful_reuse_with_duplicate_loss
+#print axioms Aurora.R.Witness.active_completion_reaches
+#print axioms Aurora.R.Witness.active_completion_and_fresh_use
+#print axioms Aurora.R.Witness.close_preserves_other_ticket
+#print axioms Aurora.R.Witness.stale_duplicate_close_isolated
