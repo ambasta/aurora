@@ -61,7 +61,9 @@ def main():
         else:
             with assembly.open("a") as output:
                 output.write("\n" + render_bridge("\n".join(bridge.read_text() for bridge in args.bridge), facts))
-    effects = render_execution_effects(json.loads(stack.read_text())) if args.execution_effects else None
+    pending_effects = args.execution_effects.with_suffix(".pending.hpp") if args.execution_effects else None
+    if pending_effects:
+        pending_effects.write_text(render_execution_effects(json.loads(stack.read_text())))
     extra = [str(path) for path in args.assemble_with]
     listing = ["-L"] if args.bridge or args.keep_local_labels else []
     defsyms = [part for definition in args.defsym for part in ("--defsym", definition)]
@@ -79,8 +81,8 @@ def main():
             localized = args.object.with_suffix(".reflection")
             localized.write_text("".join(name + "\n" for name in names))
             subprocess.run(["objcopy", f"--localize-symbols={localized}", str(args.object)], check=True)
-    if args.execution_effects:
-        args.execution_effects.write_text(effects)
+    if pending_effects:
+        pending_effects.replace(args.execution_effects)
     # Reuse image dependency discovery, which includes meson_aurora_assembly.py
     # itself and directories, so helper changes, added/removed imports and both
     # production bridge templates invalidate the fixture.

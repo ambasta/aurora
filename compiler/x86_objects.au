@@ -1765,8 +1765,8 @@ export namespace compiler_x86 {
             }
         }
         if (resource == 5) {
-            if (compiler_catalog::execution_native_output(method)
-                || arguments != compiler_catalog::execution_native_arguments(method)) {
+            if (compiler_catalog::execution_native_output(method) || arguments
+                != compiler_catalog::execution_native_arguments(method)) {
                 return w.fail();
             }
             emit_execution_call_runtime(w, o, symbol, method);

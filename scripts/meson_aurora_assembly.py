@@ -32,6 +32,10 @@ def dependencies(source, roots):
 
 def execution_effect_signatures(facts):
     """Admit compiler-owned private retained-effect shapes, not a method inventory."""
+    if not isinstance(facts, dict) or type(facts.get("version")) is not int or facts["version"] not in (1, 2):
+        raise ValueError("Unsupported compiler stack-fact version")
+    if not isinstance(facts.get("functions"), dict):
+        raise ValueError("Missing compiler function facts")
     prefix = "__au_runtime_execution_authority_"
     signatures = {}
     descriptor = ["const_pointer", "u64", "const_pointer"]
@@ -1094,7 +1098,9 @@ def main():
         elif args.bridge and not args.emit_object:
             with temporary.open("a") as output:
                 output.write("\n" + render_bridge("\n".join(bridge.read_text() for bridge in args.bridge), facts))
-    effects = render_execution_effects(json.loads(pending_facts.read_text())) if args.execution_effects else None
+    pending_effects = args.execution_effects.with_suffix(".pending.hpp") if args.execution_effects else None
+    if pending_effects:
+        pending_effects.write_text(render_execution_effects(json.loads(pending_facts.read_text())))
     # A successful command must produce the complete declared pair before any
     # previously admitted assembly/facts/dependencies are replaced.
     temporary.stat()
@@ -1105,8 +1111,8 @@ def main():
         pending_abi.replace(args.abi_facts)
     args.depfile.write_text(escaped(args.output) + ": " + " ".join(map(escaped, inputs)) + "\n")
     temporary.replace(args.output)
-    if args.execution_effects:
-        args.execution_effects.write_text(effects)
+    if pending_effects:
+        pending_effects.replace(args.execution_effects)
 
 
 if __name__ == "__main__":
