@@ -93,4 +93,29 @@ theorem ExprCode.effect_simulates {program : EffectProgram} {slots : Nat → Nat
         subst error
         exact ⟨state,rfl,receiver,arguments⟩
 
+theorem ExprCode.effect_value {program : EffectProgram} {slots : Nat → Nat} {kind : GuardType}
+    {expression : GuardExpr kind} {start stop : Nat}
+    (code : ExprCode (pureView program) slots expression start stop)
+    (source : SourceState) (base : Machine) (context : ContextRelated source base slots)
+    (accumulator : Option Value) (stack : List Value) (value : Value)
+    (evaluated : evalGuard source expression = .value value) :
+    EffectRuns program (frameState base start accumulator stack) []
+      (.next (frameState base stop (some value) stack)) := by
+  obtain ⟨result,run,related⟩ := code.effect_simulates source base context accumulator stack
+  rw [evaluated] at related
+  exact related ▸ run
+
+theorem ExprCode.effect_fault {program : EffectProgram} {slots : Nat → Nat} {kind : GuardType}
+    {expression : GuardExpr kind} {start stop : Nat}
+    (code : ExprCode (pureView program) slots expression start stop)
+    (source : SourceState) (base : Machine) (context : ContextRelated source base slots)
+    (accumulator : Option Value) (stack : List Value) (fault : Fault)
+    (evaluated : evalGuard source expression = .trap fault) :
+    ∃ final, EffectRuns program (frameState base start accumulator stack) [] (.trap (.scalar fault) final) ∧
+      final.receiver = source.fields := by
+  obtain ⟨result,run,related⟩ := code.effect_simulates source base context accumulator stack
+  rw [evaluated] at related
+  obtain ⟨final,equal,receiver,_⟩ := related
+  exact ⟨final,equal ▸ run,receiver.trans (funext context.fields)⟩
+
 end Aurora.SourceBinding
