@@ -8,9 +8,10 @@ targeted compatibility evidence. Previous snapshots do not qualify a new tree.
 
 ## Build and run
 
-Use the supported pinned development container. Advanced native use needs GCC
-16.2.0 or newer, GNU binutils 2.47 or newer and the exact pinned Meson 1.12.1 and
-Ninja 1.13.2, with Python 3.10+ on a GNU/Linux x86-64 host.
+Use native GNU/Linux x86-64 with the exact pinned dependencies in
+[local development](local-development.md): GCC 16.2.0, GNU binutils 2.47,
+Meson 1.12.1 and Ninja 1.13.2, with Python 3.10+. The pinned development container
+is a fallback for unavailable dependencies, not an extra native acceptance gate.
 Select matching real `gcc` and `g++` on PATH: a stack-guard
 runner invokes bare `gcc`. Keep one stable build directory per toolchain/configuration:
 
@@ -119,7 +120,7 @@ The configuration driver accepts `--kernel bios|uefi --profile NAME
 graph. `compile_commands.json` covers each native C++ profile. Qualification
 workflows that require a final normal guest boot still boot the separate normal
 image and retain fresh logs. Registration and source routing do not establish
-final-source pinned-container GCC 16 merge or affected guest qualification.
+final-source pinned-tool GCC 16 merge or affected guest qualification.
 
 Kernel flags remain fixed to the admitted freestanding GCC profile. Global
 `cpp_args`, `CXXFLAGS` or `CPPFLAGS` are rejected in image-enabled configurations rather than silently adding

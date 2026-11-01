@@ -17,6 +17,7 @@
 // Other modes compare stdout with the golden file beside the cases.
 #include "../kernel/execution-session.hpp"
 #include "../kernel/execution-lifecycle.hpp"
+#include "execution-authority-effects.hpp"
 #include "../kernel/service-bootstrap.hpp"
 #include "../kernel/resident-owner.hpp"
 #include "../kernel/retained-budget.hpp"

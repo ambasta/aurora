@@ -9,12 +9,12 @@
 ; CHECK: __au_runtime_execution_authority_retire
 ; CHECK: __au_runtime_execution_authority_finish
 ; RUN: stack-facts
-; CHECK-JSON: functions.execution_prepare.service_abi.calls {"__au_runtime_execution_authority_prepare":{"sysv_arguments":5,"result_max":18446744073709551615}}
-; CHECK-JSON: functions.execution_activate.service_abi.calls {"__au_runtime_execution_authority_activate":{"sysv_arguments":5,"result_max":18446744073709551615}}
-; CHECK-JSON: functions.execution_complete.service_abi.calls {"__au_runtime_execution_authority_complete":{"sysv_arguments":5,"result_max":18446744073709551615}}
-; CHECK-JSON: functions.execution_force.service_abi.calls {"__au_runtime_execution_authority_force":{"sysv_arguments":5,"result_max":18446744073709551615}}
-; CHECK-JSON: functions.execution_retire.service_abi.calls {"__au_runtime_execution_authority_retire":{"sysv_arguments":4,"result_max":1}}
-; CHECK-JSON: functions.execution_finish.service_abi.calls {"__au_runtime_execution_authority_finish":{"sysv_arguments":3,"result_max":1}}
+; CHECK-JSON: functions.execution_prepare.service_abi.calls {"__au_runtime_execution_authority_prepare":{"sysv_arguments":5,"result_max":18446744073709551615,"native_signature":{"parameters":["const_pointer","u64","const_pointer","execution_observation_pointer","u64"],"result":"void"}}}
+; CHECK-JSON: functions.execution_activate.service_abi.calls {"__au_runtime_execution_authority_activate":{"sysv_arguments":5,"result_max":18446744073709551615,"native_signature":{"parameters":["const_pointer","u64","const_pointer","execution_observation_pointer","u64"],"result":"void"}}}
+; CHECK-JSON: functions.execution_complete.service_abi.calls {"__au_runtime_execution_authority_complete":{"sysv_arguments":5,"result_max":18446744073709551615,"native_signature":{"parameters":["const_pointer","u64","const_pointer","execution_observation_pointer","u64"],"result":"void"}}}
+; CHECK-JSON: functions.execution_force.service_abi.calls {"__au_runtime_execution_authority_force":{"sysv_arguments":5,"result_max":18446744073709551615,"native_signature":{"parameters":["const_pointer","u64","const_pointer","execution_observation_pointer","u64"],"result":"void"}}}
+; CHECK-JSON: functions.execution_retire.service_abi.calls {"__au_runtime_execution_authority_retire":{"sysv_arguments":4,"result_max":1,"native_signature":{"parameters":["const_pointer","u64","const_pointer","u64"],"result":"u64"}}}
+; CHECK-JSON: functions.execution_finish.service_abi.calls {"__au_runtime_execution_authority_finish":{"sysv_arguments":3,"result_max":1,"native_signature":{"parameters":["const_pointer","u64","const_pointer"],"result":"u64"}}}
 layout ExecutionOwner []
 fields ExecutionOwner [((26 __au_execution_authority) 0 0 false)]
 storage ExecutionOwner [] [0] 16 16 16
@@ -266,7 +266,7 @@ end
 ; RUN: emit
 ; CHECK: __au_runtime_execution_authority_invalidate_service
 ; RUN: stack-facts
-; CHECK-JSON: functions.invalidate_then_retire.service_abi.calls.__au_runtime_execution_authority_invalidate_service {"sysv_arguments":4,"result_max":1}
+; CHECK-JSON: functions.invalidate_then_retire.service_abi.calls.__au_runtime_execution_authority_invalidate_service {"sysv_arguments":4,"result_max":1,"native_signature":{"parameters":["const_pointer","u64","const_pointer","u64"],"result":"u64"}}
 layout InvalidationOwner []
 fields InvalidationOwner [((26 __au_execution_authority) 0 0 false)]
 storage InvalidationOwner [] [0] 16 16 16

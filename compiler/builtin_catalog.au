@@ -894,6 +894,39 @@ export namespace compiler_catalog {
         }
         return 1;
     }
+    // Private retained ExecutionAuthority lowering: root, epoch, canonical field,
+    // then an observation output (if any) and the source slot argument.
+    auto execution_native_output(i64 method) -> bool {
+        return resource_method_result(5, method) == 60;
+    }
+    auto execution_native_slot(i64 method) -> bool {
+        return resource_method_parameters(5, method) == 1;
+    }
+    auto execution_native_arguments(i64 method) -> i64 {
+        if (method < 0 || method >= resource_method_count(5)) {
+            return -1;
+        }
+        i64 count = 3;
+        if (execution_native_output(method)) {
+            count = count + 1;
+        }
+        if (execution_native_slot(method)) {
+            count = count + 1;
+        }
+        return count;
+    }
+    auto execution_native_parameter(i64 method, i64 index) -> i64 {
+        if (index < 0 || index >= execution_native_arguments(method)) {
+            return -1;
+        }
+        if (index == 0 || index == 2) {
+            return 0;
+        }
+        if (index == 3 && execution_native_output(method)) {
+            return 2;
+        }
+        return 1;
+    }
     auto operation_admitted(i64 operation) -> bool {
         return (operation >= 0 && operation < 47) || operation == 51;
     }

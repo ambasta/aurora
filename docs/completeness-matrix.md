@@ -29,6 +29,11 @@ cleanup only afterward. Final-source compiler, native, stack and guest
 qualification remain required. This fixed two-slot contract does not broaden
 scheduling, asynchronous ownership, SMP, general memory-safety or hardware claims.
 
+Private ExecutionAuthority native declarations are generated from the lifecycle
+compiler artifact's physical call signatures and compile-check native definitions.
+This removes a duplicate seven-effect signature table, not a runtime ownership
+boundary or a public FFI. Qualification remains revision-specific.
+
 Native copied-record consumers retain one consolidated artifact-build ABI
 admission over compiler facts; removing those consumers remains future work.
 

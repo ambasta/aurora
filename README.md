@@ -26,11 +26,11 @@ hardware and general terminal/window services remain unqualified.
 
 ## Try it
 
-The public dependency image pinned in `ci/image` is the supported reproducible
-development environment, with the exact tools and firmware. With Docker or
-Podman installed, start from the repository root.
-
-Enter the pinned shell with `./scripts/container.sh bash`. The compiler builds
+Native x86-64 Linux builds with the exact tools and firmware in
+[local development](docs/local-development.md) are the primary route. If those
+dependencies are unavailable, the public image pinned in `ci/image` is a fallback:
+with Docker or Podman installed, enter `./scripts/container.sh bash`.
+Start from the repository root. The compiler builds
 from source with GCC alone: without `-Dbootstrap_compiler`, a small C++
 interpreter runs the compiler's sources to make the first compiler. The merge
 loop configures the two current Meson graphs with a cached compiler
@@ -44,11 +44,10 @@ make test
 make run-uefi
 ```
 
-Native x86-64 Linux setup is an advanced route requiring the exact pinned tool
-versions and firmware in [local development](docs/local-development.md). Other
-native tool versions are unsupported; a different GCC 16 patch version is not the
-pinned GCC 16.2.0. The wrapper handles Podman user namespaces so an owned checkout
-stays writable. Keep builds and guests in separate output directories when running
+Qualification uses the exact pinned tool versions and firmware; a different
+GCC 16 patch version is not the pinned GCC 16.2.0. Successful native qualification
+does not require a second container build. The fallback wrapper handles Podman
+user namespaces so an owned checkout stays writable. Keep builds and guests in separate output directories when running
 independent work in parallel.
 
 Default `make` builds one Meson compiler and the normal image graph, atomically
@@ -77,9 +76,8 @@ make run
 make run-uefi
 ```
 
-The supported pinned development container supplies the required UEFI firmware.
-Advanced native runs must match its exact pinned tools and firmware, as described
-in the developer guide. Both commands run
+Native and fallback container runs use the same pinned tools and UEFI firmware,
+as described in the developer guide. Both commands run
 headless, validate serial output and exit. Images are disposable emulator inputs; do not
 write them to a physical disk or replace your bootloader.
 

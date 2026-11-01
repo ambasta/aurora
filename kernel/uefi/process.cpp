@@ -4,6 +4,7 @@
 #include "../retained-budget.hpp"
 #include "../retained-service.hpp"
 #include "../execution-lifecycle.hpp"
+#include "execution-authority-effects.hpp"
 #include "../round-robin-transport.hpp"
 #include "process-space.hpp"
 #include "image-snapshot.hpp"

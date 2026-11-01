@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import subprocess
 
-from meson_aurora_assembly import compose_object_bridge, dependencies, render_bridge
+from meson_aurora_assembly import compose_object_bridge, dependencies, render_bridge, render_execution_effects
 
 
 def escaped(path):
@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--local-symbols", action="store_true")
     parser.add_argument("--referenced-reflection-only", action="store_true")
     parser.add_argument("--emit-object", action="store_true")
+    parser.add_argument("--execution-effects", type=Path)
     parser.add_argument("--object", required=True, type=Path)
     parser.add_argument("--depfile", required=True, type=Path)
     args = parser.parse_args()
@@ -49,6 +50,9 @@ def main():
     abi = args.object.with_suffix(".abi.json")
     if args.bridge:
         command += ["--abi-facts", str(abi)]
+    stack = args.object.with_suffix(".stack.json")
+    if args.execution_effects:
+        command += ["--stack-facts", str(stack)]
     subprocess.run(command + [str(args.source), "-o", str(assembly)], check=True)
     if args.bridge:
         facts = json.loads(abi.read_text())
@@ -57,6 +61,9 @@ def main():
         else:
             with assembly.open("a") as output:
                 output.write("\n" + render_bridge("\n".join(bridge.read_text() for bridge in args.bridge), facts))
+    pending_effects = args.execution_effects.with_suffix(".pending.hpp") if args.execution_effects else None
+    if pending_effects:
+        pending_effects.write_text(render_execution_effects(json.loads(stack.read_text())))
     extra = [str(path) for path in args.assemble_with]
     listing = ["-L"] if args.bridge or args.keep_local_labels else []
     defsyms = [part for definition in args.defsym for part in ("--defsym", definition)]
@@ -74,6 +81,8 @@ def main():
             localized = args.object.with_suffix(".reflection")
             localized.write_text("".join(name + "\n" for name in names))
             subprocess.run(["objcopy", f"--localize-symbols={localized}", str(args.object)], check=True)
+    if pending_effects:
+        pending_effects.replace(args.execution_effects)
     # Reuse image dependency discovery, which includes meson_aurora_assembly.py
     # itself and directories, so helper changes, added/removed imports and both
     # production bridge templates invalidate the fixture.

@@ -1790,6 +1790,32 @@ class OwnedBytesCases(Suite):
                     return 42;
                 }
                 if(!w.begin()) {return -17;}
+                if(flag==7) {
+                    if(!w.begin_function(0,0,0)) {return -36;}
+                    const i64 symbol=w.intern_runtime("__au_runtime_execution_authority_prepare");
+                    i64 first=0;
+                    if(n==0||n==4) {first=-2;}
+                    if(!w.record_call(2,symbol,first)) {return -37;}
+                    if(n>=5) {
+                        if(!w.record_service(symbol,5,-2)) {return -38;}
+                        i64 arguments=5;
+                        i64 maximum=-2;
+                        if(n==5) {arguments=4;}
+                        if(n==6) {maximum=1;}
+                        const bool accepted=w.record_service(symbol,arguments,maximum);
+                        if(accepted!=(n==7)) {return -39;}
+                    } else {
+                        if(!w.finish_function()||!w.begin_function(0,1,1)) {return -40;}
+                        const i64 again=w.intern_runtime("__au_runtime_execution_authority_prepare");
+                        i64 second=0;
+                        if(n==1||n==4) {second=-2;}
+                        if(n==2) {second=1;}
+                        const bool accepted=w.record_call(2,again,second);
+                        if(accepted!=(n==3||n==4)) {return -41;}
+                    }
+                    if(n!=3&&n!=4&&n!=7&&w.status()!=compiler_x86::EmitStatus::invalid) {return -42;}
+                    return 42;
+                }
                 if(flag==3) {
                     const compiler_x86::EmitChunk incomplete=w.chunk(compiler_x86::Artifact::assembly,0);
                     if(incomplete.size()!=-1) {return -18;}
@@ -1834,6 +1860,18 @@ class OwnedBytesCases(Suite):
             self.run(executable, 0, malformed_address, 6, 42, 8, 8)
         for completed in (0, 4):
             self.run(executable, 0, 0, 5, 42, completed, completed, fail_after=completed)
+
+        def check_signature_claim(result):
+            require(result.returncode == 0, f"execution signature workspace failed: {result.stderr!r}")
+            observed = [int(part) for part in result.stdout.split()]
+            require(observed[0] == 42, f"execution signature claim: {observed}")
+            require(observed[1] == observed[2], "execution signature workspace releases allocations")
+            require(sorted(observed[4:]) == list(range(1, observed[1] + 1)), "signature workspace cleanup")
+            with self.lock:
+                self.native += 1
+
+        for case in range(8):
+            self._invoke(executable, [16384, case, 7], check_signature_claim)
 
     def cases(self):
         self.typed_cases()
