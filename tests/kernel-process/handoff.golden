@@ -19,7 +19,10 @@ ram-volume-size rejected
 ram-volume-empty rejected
 nvme-no-bar rejected
 nvme-wrong-bar rejected
+nvme-payload-above-former-cap accepted
+nvme-payload-capacity accepted
 nvme-payload-overflow rejected
+nvme-payload-file-overflow rejected
 legacy-version rejected
 legacy-header rejected
 wrong-header rejected

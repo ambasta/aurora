@@ -67,7 +67,8 @@ rendered on the firmware (GOP) framebuffer by the graphical terminal, under a
 closed v10 handoff carrying the runtime, framebuffer and boot volume. Explicit
 NVMe storage adds a separately admitted composition, not another production image.
 Framebuffer qualification remains QEMU/OVMF-only (no physical display qualification). The shared 2 MiB arena now reserves
-512 KiB for the kernel, with relocated IDT and guarded main stack; low owners,
+996 KiB for the kernel, derived from the remaining upper interval before the
+tail-anchored IDT and guarded main stack; low owners,
 user-image caps and the 15,360-byte stack admission cap do not change. Existing
 fixture compositions remain [separate](kernel-fixture-consolidation.md#still-separate). Each image
 build runs one compiler-fact stack check and one image/W^X/symbol-policy check

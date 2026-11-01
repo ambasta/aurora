@@ -176,7 +176,7 @@ template <class Layout> auto inspect_layout(Checks &check) -> void {
 
     // Real table construction proves all selected roots fit their own 16 pages,
     // including a 1-GiB crossing, the full payload window and the explicit APIC leaf.
-    for (const auto arena : {0x300000ULL, 0x3f0000ULL, 0x3ff00000ULL}) {
+    for (const auto arena : {0x300000ULL, 0x3f0000ULL, 0x3ff00000ULL, static_cast<unsigned long long>(last_arena)}) {
         for (std::size_t domain = 0; domain < domains; ++domain) {
             std::array<std::uint64_t, 16 * 512> storage{};
             Tables tables{storage, arena + roots[domain]};
@@ -214,6 +214,9 @@ template <class Layout> auto inspect_layout(Checks &check) -> void {
             check(tables.used() <= 13);
             for (std::uint64_t offset = 0; offset < B::arena_bytes; offset += 4096)
                 check(tables.entry(arena + offset) == expected(arena + offset));
+            check(tables.entry(arena + B::kernel_stack_bottom - B::page_size) == 0);
+            check(tables.entry(arena + B::kernel_stack_top) == 0);
+            check(tables.entry(arena + B::arena_bytes) == 0);
             check(tables.entry(code) == expected(code));
             for (std::size_t page = 0; page < 4; ++page)
                 check(tables.entry(stacks[domain] + page * 4096) == expected(stacks[domain] + page * 4096));

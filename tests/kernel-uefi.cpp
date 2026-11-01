@@ -88,6 +88,14 @@ auto main() -> int {
     put(h, 96, 1);
     put(h, 104, base + Handoff::payload_offset);
     check(Handoff::valid(h, base));
+    // The upper reservation fills the owned arena up to the guarded trailer.
+    check(Handoff::stack_top + 4096 == Handoff::arena_bytes);
+    check(Handoff::payload_offset + Handoff::payload_limit == Handoff::idt_offset);
+    put(h, 80, 0x81000); // A payload beyond the former independent 512-KiB cap.
+    check(Handoff::valid(h, base));
+    check(expected_flags(Handoff::payload_offset + 0x80000, Bytes{h}) == (3 | PageTables::nx));
+    check(expected_flags(Handoff::payload_offset + 0x81000, Bytes{h}) == 0);
+    check(expected_flags(Handoff::idt_offset - 4096, Bytes{h}) == 0);
     put(h, 80, Handoff::payload_limit);
     check(Handoff::valid(h, base));
     put(h, 80, Handoff::payload_limit + 4096);
@@ -140,6 +148,9 @@ auto main() -> int {
     check(tables.entry(payload + 4096) == ((payload + 4096) | 1 | PageTables::nx));
     check(tables.entry(payload + Handoff::payload_limit - 4096) ==
           ((payload + Handoff::payload_limit - 4096) | 3 | PageTables::nx));
+    check(tables.entry(base + Handoff::idt_offset) == ((base + Handoff::idt_offset) | 3 | PageTables::nx));
+    check(tables.entry(base + Handoff::stack_bottom) == ((base + Handoff::stack_bottom) | 3 | PageTables::nx));
+    check(tables.entry(base + Handoff::stack_top - 4096) == ((base + Handoff::stack_top - 4096) | 3 | PageTables::nx));
     // The old payload/IDT/stack region is now wholly absent, not a writable alias.
     for (auto offset = Handoff::transition_offset + 4096; offset < Handoff::pool_offset; offset += 4096)
         check(tables.entry(base + offset) == 0);

@@ -74,15 +74,17 @@ page-aligned arena are fixed and non-overlapping:
   unused bank pages stay absent
 - Sixteen runtime stack frames at 0xc0000..0xd0000, supervisor RW/NX
 - Framebuffer record at 0xe0000..0xe1000, read-only/NX when present
-- Independent payload at 0x100000..0x180000, at most 512 KiB, with separate
+- Independent payload at 0x100000..0x1f9000, at most 996 KiB, with separate
   RX/R-NX/RW-NX sections; only the actual linked memory extent is mapped
-- Owned IDT at 0x180000, supervisor RW/NX
-- Lower guard at 0x181000, stack at 0x182000..0x186000, supervisor RW/NX,
-  and upper guard at 0x186000
+- Owned IDT at 0x1f9000, supervisor RW/NX
+- Lower guard at 0x1fa000, stack at 0x1fb000..0x1ff000, supervisor RW/NX,
+  and upper guard at 0x1ff000
 
 Optional owners are mapped only by their handoff/profile. Other pages stay
-absent, including the former payload/IDT/stack region 0x22000..0x50000 and the
-tail 0x187000..0x200000. These dimensions come from
+absent, including the former low payload/IDT/stack region 0x22000..0x50000 and
+unused payload capacity. The IDT and guarded stack occupy the arena's final
+seven pages; payload capacity is the remaining upper interval, not an
+independent image-size budget. These dimensions come from
 [the shared layout table](../bootstrap-layout-values.inc); the four-page stack
 and its 15,360-byte compiler-fact admission cap are unchanged. Kernel capacity
 is separate from the unchanged three-page protected-user-image ceiling.
