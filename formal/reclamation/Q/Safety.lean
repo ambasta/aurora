@@ -60,7 +60,8 @@ theorem acknowledged_gate_cannot_admit (h : Invariant s)
     e.possible ≠ true := by
   simp [(h.entriesOK i e found).receiptSound receipt]
 
-/-- Conservative dispatcher for exact-generation ACK packets. -/
+/-- Abstract completion-oracle dispatcher, NOT an implemented receipt verifier.
+    Its physical-completion test must be refined by a real hardware contract. -/
 def receiveAck (s : State Cpu) (ticket generation : Nat) : State Cpu :=
   match s.entries ticket with
   | none => s

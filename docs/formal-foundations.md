@@ -14,9 +14,11 @@ descriptions remain authoritative about what runs.
 Use these labels in design reviews: **definition** introduces a model;
 **assumption** restricts executions; **external theorem** has an independently
 proved statement and hypotheses; **obligation** is an Aurora result still to
-prove; **hypothesis** is a design choice not established as optimal. No Aurora
-mechanized proof is supplied by this document. Informal arguments below are
-proof plans, not verification certificates.
+prove; **hypothesis** is a design choice not established as optimal. The [first abstract Q proof](../formal/reclamation/README.md) supplies a
+kernel-checked parameterized reclamation lemma and constructive witnesses under
+named hardware semantics. It is not an implementation refinement or a proof of
+all obligations here. Other informal arguments below remain proof plans, not
+verification certificates.
 
 **Definition.** A profile is a labeled transition system `(S, I, →)` plus
 permitted observable traces, hardware/compiler semantics, a fault/adversary
@@ -126,7 +128,7 @@ distinct obligations. Epoch checks alone do not remove stale TLB entries, issued
 DMA or delegated admission authority. Timeout triggers containment/reset or
 quarantine, not an assertion of quiescence or safe reuse.
 
-**Obligation Q (first proof slice; not yet a proof).** Model one resource
+**Obligation Q (abstract first lemma mechanized; refinement remains).** Model one resource
 version with phase, a ghost issued-ticket identity set (not a required runtime
 log), a live-obligation multiset `O`, and registered admission gates `G`. A use
 ticket may cover an execution lease, live mapping or queued DMA command, not
@@ -182,6 +184,13 @@ quarantine.
 First-slice acceptance also requires exhibiting a successful trace through
 delegation, close, fence, authority retirement, use drain and Reuse, checking
 nonvacuity: safety must not be obtained merely by forbidding all reclamation.
+The standalone Lean model now proves inductive coverage and exclusion of old
+accesses in every finite future extension after reuse for arbitrary CPU types
+(including every finite cardinality), with such a successful trace. Its six
+invariant-counterexample mutants and two physical-unsafety witnesses are
+distinguished explicitly. Atomic registration/activation, sound physical
+completion and permanent replay tombstones are abstract contracts; their actual
+concurrent implementation, hardware receipts and bounded metadata remain open.
 
 **Obligation A.** Grant creation, attenuation, transfer, revocation and restart
 preserve authorization and non-aliasing across incarnations. Prove each

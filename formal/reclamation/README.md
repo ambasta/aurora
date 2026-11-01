@@ -1,11 +1,11 @@
-# First reclamation proof slice — work in progress
+# First abstract reclamation proof slice
 
 This directory is a standalone abstract model of obligation Q in
 [formal foundations](../../docs/formal-foundations.md). It is not a kernel proof,
 implementation refinement, or hardware qualification. The model received independent review. Inductive safety, future-extension safe
-reuse and a successful Closing-activation/reuse witness have been kernel-checked;
-mutant traces and final source review remain pending. This is not yet complete
-first-slice acceptance.
+reuse, a successful Closing-activation/reuse witness and negative controls are
+kernel-checked. These are results about this abstract transition system, not a
+discharge of every implementation obligation in Q.
 
 ## Model and boundary
 
@@ -13,7 +13,10 @@ There is one physical backing root. Every logical alias, mapping and CPU gate fo
 that backing uses the same registry. `Cpu` is an arbitrary type; thus any finite
 population is admitted, without fixing two CPUs as the architectural limit.
 Generations and identities are mathematical naturals, with no wraparound.
-Fresh gate *activation* identities are distinct from CPU identity.
+Fresh gate *activation* identities are distinct from CPU identity. The centralized
+registry is an abstract specification, not a required global runtime lock. Atomic
+registration/activation steps are specification linearization points; arbitrary
+CPU cardinality does not itself prove concurrent SMP execution or refinement.
 
 An entry's immutable identity/generation/tag identifies either an admission gate,
 a use/mapping, or a transfer to a CPU. The tags have distinct effects: a gate can
@@ -44,7 +47,8 @@ message authentication, or the implementation of duplicate suppression.
 admission through that activation; stopping a use excludes all later effects of
 that mapping/work; stopping a transfer means cancellation at every possible
 destination. These are different obligations despite sharing a record-update
-operator. A received acknowledgment alone is not a hardware stopping event.
+operator. A received acknowledgment alone is not a hardware stopping event. `receiveAck`
+is an abstract completion-oracle dispatcher, not an implemented receipt verifier.
 Unmapping alone, epoch advancement, timeout and loss do not satisfy this contract.
 
 Excluded: reader/writer race freedom and authority attenuation (obligation A),
@@ -53,15 +57,21 @@ semantics, device reset, bounded replay storage, persistent crash recovery,
 progress/fairness and costs. The concrete kernel's fixed CPU/process structures
 are not claimed to refine this model.
 
-## Planned acceptance
+## Checked results
 
 Inductive preservation for arbitrary identities, generations and finite traces;
 coverage of physical effects/admission/activation by live liabilities; quiescence
 implies no physical possibility; every future trace after reuse excludes old
 accesses. A successful trace must activate a transferred gate during Closing,
 fence and retire authority while uses remain, drain the uses, then reuse.
-Kernel-checked mutant traces expose premature ACKs, uncovered activation, lost
-transfer liability, aggregate duplicate subtraction and replay resurrection.
+Six kernel-checked mutant counterexamples violate the inductive invariant:
+uncovered publication, premature fence/drain ACKs, lost transfer liability,
+duplicate subtraction of another ticket and replay resurrection. They are not
+all physical-unsafety witnesses or proofs that every guard is necessary. Two
+additional witnesses establish actual old-generation physical accesses: epoch-only
+reuse, and a false drain receipt followed by the original retire, Quiesce and
+Reuse rules. The latter is an abstract analogue of unmapping without effective completion;
+there is no literal unmap instruction in this model.
 
 ## Tools and trust
 
@@ -74,7 +84,11 @@ lake env lean Q/Audit.lean
 ./verify.sh
 ```
 
-The audit is present; the verification script and negative controls are pending. The trusted boundary is the
+`./verify.sh` checks the exact toolchain, builds the proof and audits 24 exported
+theorem dependency reports. This is a separate mandatory proof gate for changes
+to this artifact; ordinary repository `make test` does not run or install Lean.
+It rejects dependencies outside the stated standard
+axioms, including admitted-result axioms. The trusted boundary is the
 pinned Lean kernel/toolchain, imported core/Std proofs and the execution platform,
 plus the explicitly stated hardware interpretation above. Exported theorem axiom
 dependencies currently report only `propext` and `Quot.sound` (some results

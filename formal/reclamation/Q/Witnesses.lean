@@ -154,10 +154,14 @@ theorem successful_reuse : Reachable s14 ∧ Step s14 (.access 1 6) s14 := by
     exact Reaches.single (.admit s13 5 ⟨1, .gate a, true, true, false⟩ a rfl rfl rfl)
   · exact .access s14 6 ⟨1, .use a, true, true, false⟩ a rfl rfl rfl
 
-/-- A delayed duplicate delivery is rejected (stutter), not fresh authority. -/
-theorem resolved_transfer_inert :
-    (s12.entries 2).map Entry.possible = some false ∧ Step s12 .internal s12 :=
-  ⟨rfl, .stutter s12⟩
+/-- The resolved ticket cannot satisfy the physical premise of `Step.activate`.
+    Packet duplicate rejection is abstracted by this permanent resolution state,
+    not proved for a concrete receiver or packet queue. -/
+theorem resolved_transfer_cannot_activate (e : Entry CPU)
+    (found : s12.entries 2 = some e) : e.possible ≠ true := by
+  change some (resolved transferB) = some e at found
+  cases Option.some.inj found
+  decide
 
 theorem old_ack_after_reuse_inert : receiveAck s12 1 0 = s12 :=
   duplicate_ack_inert (e := retired (acknowledged (stopped useA))) rfl rfl
