@@ -18,7 +18,10 @@ per-cell conservation, replay-safe returns and unchanged R/Q reclamation.
 Accounting erasure, an alias-image interpretation and a full-cover snapshot
 contract adapter are checked. Frozen footprints exclude permitted write events,
 not verified heap-byte mutation. Cross-root composition, source/ISA refinement,
-weak memory, recovery and hardware qualification remain open.
+weak memory, recovery and hardware qualification remain open. A generic
+[typed published-IR format](../compiler/IR-PUBLICATION.md) now exposes canonical
+field/layout, callable, operand and catalogue records for a future checked
+consumer. It adds no source-to-IR or native-code proof.
 
 | Destination | Status |
 |---|---|

@@ -166,3 +166,16 @@ end
 @@ -59,0 +60,2 @@
 +    Constant 17 u64
 +    RetainedFieldOperation 0 4 0 0 4
+
+; CASE: publication retains sealed resource field types and call operands
+; BASE: atomic banks and synchronous mapping authority
+; RUN: metadata
+; CHECK: aurora-published-ir 1 types fields callables operands cfg resources
+; CHECK: ir-type {{[0-9]+}} 26 {{[0-9]+ [0-9]+}} 0 0 0 0 0
+; CHECK: ir-field 0 4 {{[0-9]+}} 0 0 0 1 64
+; CHECK: ir-resource-method 4 2 3 1 4 1 7 1 {{[0-9a-f]+}}
+; CHECK: body mapping_publish 1
+; CHECK-NEXT: ir-body 1 10 0
+; CHECK: ir-code 1 8 {{[0-9 -]+}}
+; CHECK-NEXT: code mapping_publish 8 {{.*}} : RetainedFieldOperation 0 4 2 0 4
+; CHECK: ir-end 4

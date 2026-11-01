@@ -8,12 +8,17 @@
 ; CHECK: {{^retained leaf bridge root other_root$}}
 ; CHECK: code bridge {{[0-9]+}} id [[#BRIDGE:]] 
 ; CHECK: body root [[#LEAF+3]]
+; CHECK-NEXT: ir-body {{[0-9 ]+}}
+; CHECK-NEXT: ir-code {{[0-9 -]+}}
 ; CHECK-NEXT: code root 0 id [[#ROOT:]] 
 ; CHECK-SAME: {{: Call bridge$}}
 ; CHECK-RANGE: [[#ROOT]] [[#BRIDGE+1]]..
+; CHECK-NEXT: ir-code {{[0-9 -]+}}
 ; CHECK-NEXT: code root 1 id [[#ROOT+1]] 
 ; CHECK-SAME: {{: Call bridge$}}
+; CHECK-NEXT: ir-code {{[0-9 -]+}}
 ; CHECK-NEXT: code root 2 id [[#ROOT+2]] 
+; CHECK-NEXT: ir-end-body {{[0-9 ]+}}
 ; CHECK-NEXT: body other_root [[#LEAF+4]]
 ; RUN: abi-facts
 ; RUN: abi-facts

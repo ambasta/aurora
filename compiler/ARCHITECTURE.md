@@ -71,7 +71,9 @@ message and code (the metadata, instruction and verification message tables live
 in `pipeline.au`). Every store shares the Session region's existing
 loose ceiling; the separate grants the host used to derive for projection,
 metadata, instructions, each function's verification, the graph and emission are
-gone. Textual IR (`tests/tools/air.au`, test tooling) enters at the same point:
+gone. The [versioned published IR records](IR-PUBLICATION.md) expose canonical typed
+metadata and normalized bodies for future checked consumers; this is not a
+source or object-code proof. Textual IR (`tests/tools/air.au`, test tooling) enters at the same point:
 its reader fills the pending stores, admits the metadata, gathers the case's ABI
 declarations and calls `compiler_pipeline::stages`, which runs everything from
 instruction admission on and can list the published IR instead of emitting.

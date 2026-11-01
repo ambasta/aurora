@@ -1668,15 +1668,19 @@ export namespace compiler_pipeline {
         if (selected(options, listing_option())) {
             compiler_ir_listing::Listing table = compiler_ir_listing::create(region);
             compiler_ir_listing::Listing out = compiler_ir_listing::create(region);
-            bool listed = compiler_ir_listing::spellings(table) && compiler_ir_listing::declarations(out, table,
-                metadata) && compiler_ir_listing::retained(out, metadata, graph);
+            bool listed = compiler_ir_listing::canonical(out, metadata, instructions)
+                && compiler_ir_listing::spellings(table) && compiler_ir_listing::declarations(out, table, metadata)
+                && compiler_ir_listing::retained(out, metadata, graph);
             callable = 0;
+            i64 listed_bodies = 0;
             while (listed && callable < instructions.body_count()) {
                 if (compiler_ir_graph::retained(graph, callable)) {
                     listed = compiler_ir_listing::body(out, table, metadata, instructions, callable);
+                    listed_bodies = listed_bodies + 1;
                 }
                 callable = callable + 1;
             }
+            listed = listed && out.word("ir-end") && compiler_ir_listing::integer(out, listed_bodies) && out.byte('\n');
             if (!listed) {
                 result.stop(Stage::allocation);
                 return move(result);
