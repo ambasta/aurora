@@ -33,3 +33,5 @@ late_previous_reply 0 bind:1 exchange:1:0:0 begin:0 delivered:1:1 exchange:1:1:6
 maximum_incarnation 0 bind:18446744073709551615 invalidate:18446744073709551615 bind:18446744073709551615 bind:1 bind:0 view
 pending_does_not_mint 0 bind:1 exchange:1:0:0 stage:7 client_step:7 client_step:7 delivered:1:1 client_step:7 alive:1 client_step:7 view
 completion_cancel 0 bind:1 exchange:1:0:0 stage:7 client_step:7 delivered:1:1 exchange:1:1:64 consume:1:0:0 cancel:7:1 complete:7 view
+retire_staged 0 bind:1 exchange:1:0:0 stage:7 finish:8 finish:0 view finish:7 view stage:8 client_step:8 finish:8 delivered:1:1 finish:8 exchange:1:1:64 finish:8 view consume:1:0:0 finish:8 view
+retire_staged_after_reply 0 bind:1 exchange:1:0:0 stage:7 client_step:7 delivered:1:1 exchange:1:1:64 consume:1:0:0 complete:7 stage:7 finish:7 view begin:0 view

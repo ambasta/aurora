@@ -223,6 +223,8 @@ def validate_native_abi(facts, source):
                 "kernel::EndpointConsume",
                 "kernel::EndpointCancel",
                 "kernel::EndpointCompletion",
+                "kernel::LoadAction",
+                "kernel::LoadResult",
                 "kernel::FileStatus",
                 "__au_exec_status",
                 "__au_exec_prepared",
@@ -415,6 +417,28 @@ def validate_native_abi(facts, source):
             ("invalidate", ["u64"], "bool", True),
         ):
             borrowed_entry(nominal, "process_endpoint_" + name, tail, result, mutable)
+
+    if "# COMMITTED_LOAD_ABI:" in source:
+        nominal = retained_root("kernel::CommittedLoad", reservation=48)
+        enum("kernel::LoadAction", "open reserve read fill seal discard_close close load discard_done done")
+        enum("kernel::LoadResult", "loaded missing malformed quota unavailable")
+        record(
+            "kernel::LoadRequest",
+            48,
+            [
+                ("action", "kernel::LoadAction", 0),
+                ("id", "u64", 0),
+                ("size", "u64", 0),
+                ("offset", "u64", 0),
+                ("count", "u64", 0),
+                ("result", "kernel::LoadResult", 0),
+            ],
+        )
+        entry("process_load_create", [], "kernel::CommittedLoad")
+        borrowed_entry(nominal, "process_load_next", [], "kernel::LoadRequest", False)
+        borrowed_entry(
+            nominal, "process_load_accept", ["kernel::LoadAction", "bool", "u64", "u64", "u64"], "bool", True
+        )
 
     if "# WORD_VIEW_TEST_ABI:" in source:
         nominal = retained_root("kernel_word_test::WordViewFixture")

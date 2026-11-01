@@ -1,0 +1,34 @@
+# action:ok:status:value:count; observations are synchronous, not asynchronous replay tokens.
+success open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:100 fill:1:0:0:0 seal:1:0:0:0 close:1:0:0:0 load:1:0:0:0
+partial open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:40 fill:1:0:0:0 read:1:0:0:60 fill:1:0:0:0 seal:1:0:0:0 close:1:0:0:0 load:1:0:0:0
+missing open:1:2:0:0
+open_status open:1:3:0:0
+open_transport open:0:2:0:0
+empty open:1:0:7:0 close:1:0:0:0
+oversize open:1:0:7:67108865 close:1:0:0:0
+huge open:1:0:7:18446744073709551615 close:1:0:0:0
+limit open:1:0:7:67108864
+quota open:1:0:7:100 reserve:0:0:0:0 close:1:0:0:0
+read_transport open:1:0:7:100 reserve:1:0:0:0 read:0:0:0:0 discard_close:1:0:0:0 close:1:0:0:0
+read_status open:1:0:7:100 reserve:1:0:0:0 read:1:2:0:100 discard_close:1:0:0:0 close:1:0:0:0
+read_zero open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:0 discard_close:1:0:0:0 close:1:0:0:0
+read_excess open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:101 discard_close:1:0:0:0 close:1:0:0:0
+read_overflow open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:18446744073709551615 discard_close:1:0:0:0 close:1:0:0:0
+payload_limit open:1:0:7:65536 reserve:1:0:0:0 read:1:0:0:65473 discard_close:1:0:0:0 close:1:0:0:0
+payload_exact open:1:0:7:65472 reserve:1:0:0:0 read:1:0:0:65472 fill:1:0:0:0
+close_success_transport open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:100 fill:1:0:0:0 seal:1:0:0:0 close:0:0:0:0
+close_success_status open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:100 fill:1:0:0:0 seal:1:0:0:0 close:1:2:0:0
+close_quota_transport open:1:0:7:100 reserve:0:0:0:0 close:0:0:0:0
+close_quota_status open:1:0:7:100 reserve:0:0:0:0 close:1:2:0:0
+close_malformed_transport open:1:0:7:0 close:0:0:0:0
+close_malformed_status open:1:0:7:0 close:1:2:0:0
+image_missing open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:100 fill:1:0:0:0 seal:1:0:0:0 close:1:0:0:0 load:0:1:0:0 discard_done:1:0:0:0
+image_malformed open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:100 fill:1:0:0:0 seal:1:0:0:0 close:1:0:0:0 load:0:2:0:0 discard_done:1:0:0:0
+image_quota open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:100 fill:1:0:0:0 seal:1:0:0:0 close:1:0:0:0 load:0:3:0:0 discard_done:1:0:0:0
+out_of_order read:1:0:0:1 open:1:0:7:100 open:1:0:7:100 load:1:0:0:0
+duplicate_fill open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:100 fill:1:0:0:0 fill:1:0:0:0
+failed_fill open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:100 fill:0:0:0:0
+failed_seal open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:100 fill:1:0:0:0 seal:0:0:0:0
+terminal open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:100 fill:1:0:0:0 seal:1:0:0:0 close:1:0:0:0 load:1:0:0:0 load:1:0:0:0
+remaining_bound open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:40 fill:1:0:0:0 read:1:0:0:61 discard_close:1:0:0:0 close:1:0:0:0
+invalid_load_status open:1:0:7:100 reserve:1:0:0:0 read:1:0:0:100 fill:1:0:0:0 seal:1:0:0:0 close:1:0:0:0 load:0:4:0:0

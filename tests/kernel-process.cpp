@@ -23,6 +23,7 @@
 #include "../kernel/retained-budget.hpp"
 #include "../kernel/retained-service.hpp"
 #include "../kernel/retained-endpoint.hpp"
+#include "../kernel/committed-load.hpp"
 #include "../kernel/uefi/frames.hpp"
 #include "../kernel/uefi/kernel-space.hpp"
 #include "kernel-process-files.hpp"
@@ -2087,6 +2088,7 @@ auto service_incarnation_mode(const char *cases) -> int {
 }
 
 #include "kernel-process-endpoint.hpp"
+#include "kernel-process-committed-load.hpp"
 #include "kernel-process-resident.hpp"
 #include "kernel-process-execution-lifecycle.hpp"
 
@@ -2545,6 +2547,8 @@ auto main(int argc, char **argv) -> int {
         return resident_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "bootstrap")
         return bootstrap_mode(argv[2]);
+    if (argc == 3 && std::string{argv[1]} == "committed-load")
+        return committed_load_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "endpoint")
         return endpoint_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "service-incarnation")
