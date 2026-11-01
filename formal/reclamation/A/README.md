@@ -18,9 +18,9 @@ while a disjoint writer remains admitted. All effects inspect only admitted
 metadata and actual outstanding work, never a global permission oracle.
 
 The location-indexed non-gate holdings are abstract protocol authority accounting,
-not remotely queried endpoint memory or a concrete distributed map. A required
-unconditional operational-equivalence theorem will erase that accounting while
-preserving every transition. Authority return retains A0's abstract atomic boundary;
+not remotely queried endpoint memory or a concrete distributed map. A checked
+unconditional operational-equivalence theorem erases that accounting while
+preserving every transition, even from inconsistent or unreachable states. Authority return retains A0's abstract atomic boundary;
 no decentralized transport, physical completion or native alias decoder is proved.
 The intended partition theorem is exact union **and** per-cell uniqueness, not list
 length conservation. Read permissions do not count as extra exclusive claims.
