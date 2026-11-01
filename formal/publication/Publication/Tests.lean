@@ -34,3 +34,19 @@ example : frames "\n\n" { lines := 2 } = true := by decide
 example : (frame {} ⟨#[0, 10]⟩).isSome = false := by decide
 example : (frame {} ⟨#[128, 10]⟩).isSome = false := by decide
 example : (decodeEnd "ir-end 1".toUTF8 ⟨0, 9⟩).isSome = false := by decide
+
+-- D1 wire/structure checks still say nothing about executable closure semantics.
+def emptyArtifact : String :=
+  "aurora-published-ir 1 types fields callables operands cfg resources\n" ++
+  "ir-counts 0 0 0 0 0 0 0 0 0 0 0\nir-name-bytes \nir-literal-bytes \nir-end 0\n"
+def admitted (text : String) : Bool := (decodeArtifact {} text.toUTF8).isSome
+example : (fieldText "18446744073709551615".toUTF8 ⟨0, 20⟩ .unsigned).isSome = true := by decide
+example : (fieldText "18446744073709551616".toUTF8 ⟨0, 20⟩ .unsigned).isSome = false := by decide
+example : (fieldText "-9223372036854775808".toUTF8 ⟨0, 20⟩ .signed).isSome = true := by decide
+example : (fieldText "-9223372036854775809".toUTF8 ⟨0, 20⟩ .signed).isSome = false := by decide
+example : (fieldText "-0".toUTF8 ⟨0, 2⟩ .signed).isSome = false := by decide
+example : (fieldText "0080ff0a".toUTF8 ⟨0, 8⟩ .hex).map (·.value) = some (.bytes ⟨#[0, 128, 255, 10]⟩) := by decide
+example : (fieldText "FF".toUTF8 ⟨0, 2⟩ .hex).isSome = false := by decide
+example : (fieldText "0".toUTF8 ⟨0, 1⟩ .hex).isSome = false := by decide
+example : (fieldText "".toUTF8 ⟨0, 0⟩ .hex).isSome = true := by decide
+example : (fieldText "".toUTF8 ⟨1, 0⟩ .hex).isSome = false := by decide

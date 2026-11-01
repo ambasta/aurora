@@ -6,8 +6,8 @@ case "$(lean --version)" in
   'Lean (version 4.24.0, '*'commit 797c613eb9b6d4ec95db23e3e00af9ac6657f24b, Release)') ;;
   *) echo 'Wrong Lean toolchain' >&2; exit 1 ;;
 esac
-lake build Publication publication-probe
-lake env lean Publication/Tests.lean
+lake build Publication Publication.Tests publication-probe
+lake env lean Publication/RuntimeTests.lean
 output=$(mktemp)
 trap 'rm -f "$output"' EXIT
 lake env lean Publication/Audit.lean | tee "$output"
@@ -31,7 +31,7 @@ for line in open(sys.argv[1]):
         count += 1
     else:
         sys.exit(f'Unexpected audit output: {line}')
-if count != 8:
-    sys.exit(f'Expected eight theorem audits, got {count}')
+if count != 17:
+    sys.exit(f'Expected seventeen theorem audits, got {count}')
 print(f'Checked {count} theorem dependency reports.')
 PY

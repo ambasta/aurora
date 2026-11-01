@@ -8,7 +8,7 @@ def byte (input : ByteArray) (index : Nat) : Nat :=
 structure Span where
   first : Nat
   last : Nat
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 /-- Independent ASCII payload grammar, excluding the terminating LF. -/
 inductive AsciiRun (input : ByteArray) : Nat → Nat → Prop

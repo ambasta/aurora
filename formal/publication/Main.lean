@@ -18,10 +18,10 @@ def main (args : List String) : IO UInt32 := do
   let limits : Limits := {}
   let bytes ← readBounded path limits.fileBytes
   let start ← IO.monoMsNow
-  let some framing := frame limits bytes | throw (IO.userError "framing rejected")
-  let last :: _ := framing.reversed | throw (IO.userError "empty document")
-  let some ending := decodeEnd bytes last | throw (IO.userError "final ir-end payload rejected")
+  let some artifact := decodeArtifact limits bytes | throw (IO.userError "artifact structure rejected")
+  let wire := artifact.document
+  let t := tables wire.reversed.reverse
   let elapsed := (← IO.monoMsNow) - start
-  IO.println s!"FRAMING-ONLY bytes={bytes.size} lines={framing.reversed.length} trailer_bodies={ending.value} ms={elapsed}"
-  IO.println "NOT full-schema acceptance, source binding, or a concrete kernel proof."
+  IO.println s!"STRUCTURE-ONLY records={wire.reversed.length} bytes={bytes.size} retained_bodies={t.bodies.size} ms={elapsed}"
+  IO.println "NOT selected-closure typing, source binding, or a concrete kernel proof."
   return 0
