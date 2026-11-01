@@ -628,7 +628,7 @@ constinit Endpoint endpoint;
 // Only this fixed-origin boot hook can register a loader source. No public API
 // accepts a pointer/span to substitute another object for the endpoint buffer.
 auto aurora::uefi::register_loader_source(MemoryManager &manager) -> void {
-    manager.register_loader_buffer(endpoint.bytes, owned_arena, kernel_table_pages);
+    manager.register_loader_buffer(::endpoint.bytes, owned_arena, kernel_table_pages);
 }
 
 namespace {
