@@ -14,15 +14,117 @@ The decisions are Aurora (`examples/kernel-process.au` over
 and the existing `interrupt_budget`), reached through the private bridge
 `process-entry.S`. The build checks every argument record, result class and
 enum against the compiler's ABI facts (`PROCESS_POLICY_ABI` in
-`scripts/meson_aurora_assembly.py`). Trusted C++ still owns resident lifecycle,
-endpoint/transaction records and persistent-service startup/loss policy, as well
-as firmware file reads, page-table writes/walks, CR3, frame-record storage and
-free-list head, range and memory records, bounded messages, LAPIC and output. `services/service/files.au` owns filesystem tables, records and
+`scripts/meson_aurora_assembly.py`). The retained Aurora `ExecutionOwner` owns both resident lifecycles; separate
+MemoryManager, BudgetLedger and ServiceIncarnation roots retain their existing
+authority. Trusted C++ owns authenticated physical execution/trap observations,
+endpoint/transaction records, firmware reads, page-table effects, bounded messages,
+LAPIC and output. `services/service/files.au` owns filesystem tables, records and
 bytes in its own process. The former native file-store adapter and its ABI are
 now test-only references beneath `tests/`, never kernel image inputs. Assembly keeps the
 trap entry (`kernel/exceptions.S`) and the CPL 3 transition (`process-user.S`).
 Each C++ decoder rejects a result outside its closed encoding before using it.
 
+
+### Fixed source execution owner
+
+`kernel.execution_lifecycle` retains one 272-byte owner: a private 16-byte
+`ExecutionAuthority` and two flat sixteen-word slots. Source alone selects
+empty/prepared/executing/parked/retiring transitions, nonwrapping slot generation,
+first-entry/resume, terminal precedence and cleanup obligations. Every process
+composition uses it, including bootstrap, fixtures and never-started writer cleanup;
+it is not just an extension of the production ServiceOwner.
+
+Each synchronous native effect authenticates its issuer, exact stable field and
+root, slot, MM epoch/root and initial/saved-frame identities. The operation guard
+spans user execution, traps, kernel-root restoration, stopped timer accounting,
+drain and observation capture. Native does not maintain a second lifecycle ledger.
+The source selects a canonical private entry-mode field before calling one
+`activate(slot)` effect. This deliberately shares one ABI entry for first-entry
+and resume: native dispatches the selected physical mechanism only after exact
+root/field/slot authentication; it does not infer eligibility from physical
+context presence. Linked effect and stack admission cover both mechanisms.
+Its primary event and independent exhaustion evidence remain distinct. Accounting
+at the stop boundary can exhaust even after an invalid syscall or fault; source
+selects expiry for those collisions as for voluntary park/exit. Forced retirement
+uses one factual receipt (output failure, explicit intent, earlier expiry,
+endpoint cancellation and service loss), never a caller-selected reason. Source
+preserves that raw receipt while selecting terminal reason/detail separately.
+Prepared explicit cancellation releases an admitted client without entering it.
+
+External output runs with execution-owner loans closed. An ephemeral exact
+22-word frame snapshot proves the callback did not replace even a still-valid
+register/RIP/RSP value; no hash or retained lifecycle mirror is used. Pre-callback
+incarnation, MM epoch/root, saved-context identity and pending-operation observations
+must still match afterward. Existing ServiceOwner/ExecutionEffects loans remain
+under their sealed synchronous contract: no owner/root/frame pointer reaches the
+sink, parent reentry rejects before source access, and output bytes are an owned
+bounded endpoint copy. This is not general callback safety. Completion reauthenticates
+the stopped operation and permits only service RAX/RDX delivery, client RAX reply,
+or successful-output RAX writes. Initial boot-writer arguments, full trap capture
+and terminal context scrub are separate physical operations. Retirement revokes
+activation first, preserves storage-role identity through seal/abandon and MM
+verification/release/audit, scrubs contexts, finishes roles/budget, and publishes
+empty last. Any post-visible failure is fail-stop, not rollback.
+
+A prepared mounted service has an actual bootstrap-loss cleanup route: source
+revocation precedes live-role abandon; an unowned backend attempt is cleaned only
+after that owner cleanup. If unpublished bootstrap execution itself terminates,
+its consuming lease acknowledges only the same incarnation's frozen loss after
+source and physical cleanup; publication still requires a live starting owner.
+A completed load receipt distinguishes an already-retired mounted grant from an
+unowned backend attempt, avoiding duplicate abandonment. Failed loading remains
+with its load/MM owner until execution preparation publishes. The standalone recovery writer instead grants
+its role immediately before the execute loop, with no recoverable early return
+between grant and first entry. Invalid post-grant ownership or admission is
+fail-stop, not an invented abort/rollback authority. There is no actual
+never-started recovery-writer guest route claimed here.
+
+The mounted-prepared fixture (case 72) loads and grants the real mounted service,
+then supplies a synthetic zero bootstrap transport capacity before first entry.
+The existing source bootstrap plan rejects that preparation and consumes its
+lease through ordinary abandonment. It checks source retirement, exact frame
+release/audit, context scrubbing and role cleanup; the private disk must remain
+byte-identical with zero writes and flushes. This covers never-started mounted
+cleanup, not spontaneous hardware loss or never-started recovery-writer cleanup.
+
+Natural service terminals now cross a source-selected invalidation boundary
+before either address space is retired. The service-incarnation source root
+classifies normal shutdown versus loss from the selected event and physical
+facts (a checked malformed-reply operation plus caller cancellation/expiry, not
+an encoded reason); endpoint delivery is revoked and any
+unpublished loader snapshot discarded. The execution source then retires a
+bound client before the service, preserving the server's authenticated trap
+capture, and the outer consumer acknowledges the frozen incarnation cleanup.
+Client execution observations bind the existing endpoint incarnation separately
+from the native service storage-role identity. That binding is admitted against
+the already-published source service slot and reauthenticated against the live
+endpoint on every effect. The fixed two-slot cleanup is nonrecursive: only an
+original service-execution operation with a revoked service and matching client
+incarnation can admit the dependent client's force and retire effects. It adds
+neither a transferable child capability nor a native lifecycle ledger. The
+physical service-retire guard independently requires completed invalidation,
+snapshot discard and client cleanup before irreversible role/MM cleanup. A
+source-admitted shutdown starts a new caller context only after the prior client,
+snapshot and pending endpoint operation are settled. That boundary clears the
+prior caller's cancellation bit, not malformed-reply evidence; subsequent real
+shutdown expiry remains observable. Individual request messages never reset
+cancellation this way.
+
+The compiler admits the exact owner/observation/result layouts, constructor
+transfer, borrowed entries and consuming finish. Private boolean effects return
+canonical full-word zero/one values, not C++'s AL-only boolean convention.
+Image admission tracks named
+supervisor, saved-continuation, TSS.RSP0 and double-fault IST domains. Hardware-saved
+CS routes kernel-origin drain/diagnostics separately from CPL3 policy; the parked
+supervisor chain is not charged to the separate RSP0 domain. Exact RSP provenance,
+IRET frame consumption, suspended depth and actual linked effects are checked.
+A supervisor-only single-CPU trap guard bounds reentry to the hardware frame and
+stub pushes before a stack-free nonreturning emergency path; CLI/HLT is the
+fallback, with debug-exit only diagnostic. This is a finite machine-entry contract,
+not general instruction semantics or an SMP recursion guarantee. These bounded
+single-CPU mechanisms are not a scheduler, general asynchronous ownership or
+memory-safety proof. Final-source native and guest qualification is required independently of
+prior design reviews and historical receipts.
 
 ### Production command orchestration
 
@@ -71,8 +173,7 @@ no client completion or rollback promise is manufactured. Native code retains
 the endpoint identity, copied bytes and physical accounting. Loader/control and
 fixture consumers still pump the same transport primitives natively.
 
-This removes the native production command loop, not the resident scheduler,
-physical resource accounting or persistent owner policy. Native effect receipts authenticate the
+This removes the native production command loop, not general scheduling or asynchronous ownership. Native effect receipts authenticate the
 distinct issuer/lease binding and epoch, prevent reentry and duplicate physical effects, and keep
 pending I/O distinct from command decisions. The grant is revoked before return
 to the console. The retained source frame stays on the supervisor stack while
@@ -90,7 +191,18 @@ it to its original watchdog loss. These fixture selectors observe real endpoint
 state without modifying it. They use canonical lease issuance and the shared
 native effects, but do not claim that a production source command selects those
 exact cancellation boundaries. The following ordinary client verifies retained
-service progress after staged cancellation.
+service progress after staged cancellation. The one-tick RPC remains an ordinary
+watchdog case, without assuming whether expiry occurs in the client or service.
+A separate eight-tick raw-write fixture pauses at its real staged request. With
+all effect loans closed it arms the existing LAPIC for each remaining quantum,
+waits for actual expiry, charges only measured counts and drains the pending IRQ
+through the normal kernel-origin path. Identity, stopped frames, transaction and
+server allowance remain unchanged. The real service then replies before explicit
+cancellation, so source selects watchdog precedence from actual prior expiry.
+No delay constant, synthetic charge, budget renewal or increased cap is used.
+Another admitted client is cancelled before its first entry (no user execution).
+The command protocol carries explicit-after-expiry and settled/draining facts;
+source selects their results without a native hidden-cause drain turn.
 
 ## Handoff
 

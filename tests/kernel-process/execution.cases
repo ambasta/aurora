@@ -45,7 +45,7 @@ cancel_inert_service_loss point:0 prepare:service_lost:unavailable cancel:settle
 cancel_staged_request point:1 prepare:loaded:exited advance:request:unavailable:0 cancel:settled finish:cancel_requested:success
 cancel_dispatched_request point:1 prepare:loaded:exited advance:request:unavailable:0 cancel:draining request:pending request:cancel_requested finish:cancel_requested:success
 cancel_after_pending point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:draining request:pending request:cancel_requested finish:cancel_requested:success
-expiry_before_explicit_cancel point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:draining request:cancelled finish:cancelled:success
+expiry_before_explicit_cancel point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:draining_after_expiry request:explicit_after_expiry finish:cancelled:success
 cancel_owner_lost point:1 prepare:loaded:exited advance:request:unavailable:0 cancel:service_lost finish:service_lost:success
 cancel_drain_owner_lost point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:draining request:service_lost finish:service_lost:success
 cancel_retired_value point:3 prepare:loaded:exited advance:retired:exited:42 cancel:settled finish:complete:success
@@ -66,3 +66,9 @@ release_during_finish deny:release_during_finish
 # The owning operation consumes refusal and failed-close obligations as well.
 cancel_inert_quota_close_failed point:0 prepare:refused:quota cancel:settled finish:complete:failed
 output_failure_service_lost prepare:loaded:exited advance:output:unavailable:0 output:failed cancel:service_lost finish:service_lost:success
+
+# Independent expiry evidence never fabricates a transport-draining obligation.
+expired_staged_request point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:settled_after_expiry finish:cancelled:success
+expired_dispatched_request point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:draining_after_expiry request:pending request:explicit_after_expiry finish:cancelled:success
+explicit_cancel_precedes_late_expiry point:1 prepare:loaded:exited advance:request:unavailable:0 cancel:draining request:cancel_requested finish:cancel_requested:success
+expired_close_failure point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:settled_after_expiry finish:cancelled:failed

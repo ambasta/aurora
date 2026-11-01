@@ -59,3 +59,7 @@ unsettled_finish denied
 release_during_finish denied
 cancel_inert_quota_close_failed unavailable:0 prepare,cancel,finish:complete
 output_failure_service_lost unavailable:0 prepare,advance,output,cancel,finish:service_lost
+expired_staged_request watchdog:0 prepare,advance,request,cancel,finish:cancelled
+expired_dispatched_request watchdog:0 prepare,advance,request,cancel,request,request,finish:cancelled
+explicit_cancel_precedes_late_expiry cancelled:0 prepare,advance,cancel,request,finish:cancel_requested
+expired_close_failure unavailable:0 prepare,advance,request,cancel,finish:cancelled

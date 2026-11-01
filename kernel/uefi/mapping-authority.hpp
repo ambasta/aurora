@@ -488,6 +488,12 @@ public:
         return binding_ && !scoped_ && !parser_pinned_ && source_kind_ == SourceKind::none && space_->closed() &&
                scalar(operation_offset) == 0;
     }
+    // Consuming the retained manager is a supervisor-only operation. Ordinary
+    // process-root accessibility permits disjoint mapping effects, not owner
+    // consumption. This guard runs before opening a consuming words scope.
+    auto admit_finish() const -> void {
+        require(!attached() || (interrupts_off() && current_root() == kernel_root_ && idle()));
+    }
     // No source call or temporary word loan: usable inside words::accessible.
     [[nodiscard]] auto accessible_root(U64 root) const -> bool {
         if (!binding_ || !space_->closed())

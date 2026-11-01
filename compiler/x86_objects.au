@@ -1695,7 +1695,7 @@ export namespace compiler_x86 {
         const i64 second = w.advance_address(first, 8);
         emit_load(w, o, first, Register::rdi, false);
         emit_load(w, o, second, Register::rsi, false);
-        const bool retained = resource == 2;
+        const bool retained = resource == 2 || resource == 5;
         if (retained) {
             emit_lea(w, o, first, Register::rdx);
         }
@@ -1704,6 +1704,11 @@ export namespace compiler_x86 {
             const i64 output = w.pack_address(0, result);
             clear_bytes(w, o, 0, fields * 8, output);
             if (retained) {
+                if (resource == 5) {
+                    // The only explicit scalar is the slot selector. It does
+                    // not replace the authenticated canonical field identity.
+                    emit_mov_rr(w, o, Register::rax, Register::r8);
+                }
                 emit_lea(w, o, output, Register::rcx);
             } else {
                 emit_lea(w, o, output, Register::rdx);
@@ -1720,9 +1725,16 @@ export namespace compiler_x86 {
                 }
                 at = at + 1;
             }
+            if (resource == 5) {
+                return w.record_service(symbol, 5, -2);
+            }
             return w.ok();
         }
         i64 arguments = 3;
+        if (resource == 5 && compiler_catalog::resource_method_parameters(resource, method) == 1) {
+            emit_mov_rr(w, o, Register::rax, Register::rcx);
+            arguments = 4;
+        }
         if (!retained) {
             arguments = 2 + compiler_catalog::resource_method_parameters(resource, method);
             if (arguments == 3) {

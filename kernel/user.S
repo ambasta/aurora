@@ -79,10 +79,14 @@ aurora_leave_user:
     pop %rbp
     pop %rbx
     mov $1, %eax
+    # The saved supervisor stack and callee-saved registers are complete.
+    movb $0, aurora_trap_guard(%rip)
     ret
 .section .bss
 .align 8
+.type aurora_saved_kernel_rsp,@object
 aurora_saved_kernel_rsp: .skip 8
+.size aurora_saved_kernel_rsp,8
 /* Relocation-free controlled probe, copied into its only user-executable page. */
 .section .rodata.user,"a"
 .global aurora_user_payload_begin

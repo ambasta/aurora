@@ -85,18 +85,22 @@ __au_runtime_service_lose:
     leave
     ret
 .size __au_runtime_service_lose,.-__au_runtime_service_lose
-.global __au_runtime_service_normal_exit
-.hidden __au_runtime_service_normal_exit
-.type __au_runtime_service_normal_exit,@function
-__au_runtime_service_normal_exit:
+.global __au_runtime_service_observe_terminal
+.hidden __au_runtime_service_observe_terminal
+.type __au_runtime_service_observe_terminal,@function
+__au_runtime_service_observe_terminal:
     pushq %rbp
     movq %rsp,%rbp
     movq %rdi,%r10
     movq %rsi,%rdi
-    call @process_service_normal_exit@
+    movq %rdx,%rsi
+    movq %rcx,%rdx
+    movq %r8,%rcx
+    movq %r9,%r8
+    call @process_service_observe_terminal@
     leave
     ret
-.size __au_runtime_service_normal_exit,.-__au_runtime_service_normal_exit
+.size __au_runtime_service_observe_terminal,.-__au_runtime_service_observe_terminal
 .global __au_runtime_service_cleaned
 .hidden __au_runtime_service_cleaned
 .type __au_runtime_service_cleaned,@function

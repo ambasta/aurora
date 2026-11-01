@@ -544,7 +544,9 @@ namespace compiler_parser {
             133> names9 =
             "ServiceBootstrapEffects;ServiceBootstrapLease;BootstrapPreparation;BootstrapEffect;BootstrapProgress;BootstrapFinish;BootstrapResult;";
         const builtin::span<const u8> words9 = borrow_bytes(names9);
-        const array<u8, 74> names10 = "ResidentSlot;ResidentRunResult;ResidentStatus;OwnedWords;MappingAuthority;";
+        const array<u8,
+            114> names10 =
+            "ResidentSlot;ResidentRunResult;ResidentStatus;OwnedWords;MappingAuthority;ExecutionAuthority;ExecutionObservation;";
         const builtin::span<const u8> words10 = borrow_bytes(names10);
         return word_list_matches(source, token, words10) || word_list_matches(source, token, words9)
             || word_list_matches(source, token, words8) || word_list_matches(source, token, words7)
@@ -947,8 +949,8 @@ namespace compiler_parser {
                                                 "HostChunk;HostFileResult;HostDirectoryResult;HostOutputResult;";
                                             const builtin::span<const u8> host_words = borrow_bytes(host_samples);
                                             const array<u8,
-                                                67> execution_samples =
-                                                "ExecutionPrep;ExecutionStep;BootstrapPreparation;ResidentRunResult;";
+                                                88> execution_samples =
+                                                "ExecutionPrep;ExecutionStep;BootstrapPreparation;ResidentRunResult;ExecutionObservation;";
                                             const builtin::span<const u8> execution_words = borrow_bytes(
                                                 execution_samples);
                                             if (word_list_matches(source, token, execution_words)
@@ -3212,6 +3214,11 @@ namespace compiler_parser {
         const array<u8, 28> words_owner = "OwnedWords;MappingAuthority;";
         const builtin::span<const u8> words_owner_word = borrow_bytes(words_owner);
         if (word_list_matches(source, token, words_owner_word)) {
+            return AdmissionType(AdmissionKind::owner, 0, token);
+        }
+        const array<u8, 18> execution_owner = "ExecutionAuthority";
+        const builtin::span<const u8> execution_owner_word = borrow_bytes(execution_owner);
+        if (word_matches(source, token, execution_owner_word, 0, 18)) {
             return AdmissionType(AdmissionKind::owner, 0, token);
         }
         const array<u8, 12> resident_owner = "ResidentSlot";

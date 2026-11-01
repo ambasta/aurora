@@ -286,7 +286,12 @@ def runs(text, mode):
             need(int(values["run"]) == current["run"] and values["rejected"] == "11", "Walk edit admitted")
             current["walked"] = True
             continue
-        if kind not in ("AURORA_PROCESS_KERNEL_FAULT", "AURORA_PROCESS_FAIL", "AURORA_PROCESS_RUNS_OK"):
+        if kind not in (
+            "AURORA_PROCESS_KERNEL_FAULT",
+            "AURORA_PROCESS_KERNEL_FAULT_PROBE",
+            "AURORA_PROCESS_FAIL",
+            "AURORA_PROCESS_RUNS_OK",
+        ):
             need(current and int(values.get("run", 0)) == current["run"], "Record outside its run: " + kind)
         if kind == "AURORA_PROCESS_REJECTED":
             need(not current["loaded"], "Rejected after loading")
@@ -343,7 +348,8 @@ def runs(text, mode):
             elif values["reason"] == "cancelled":
                 need(
                     mode == "process-service"
-                    and expected[current["run"] - 1][4] in ("raw-cancel-initial", "raw-cancel-tail")
+                    and expected[current["run"] - 1][4]
+                    in ("raw-cancel-initial", "raw-cancel-tail", "raw-cancel-before")
                     and not streams,
                     "Unexpected explicit cancellation",
                 )
@@ -369,7 +375,7 @@ def runs(text, mode):
             completed[current["run"]] = f"{current['key']}\t{current['outcome']}"
             del live[current["run"]]
             current = None
-        elif kind == "AURORA_PROCESS_KERNEL_FAULT":
+        elif kind in ("AURORA_PROCESS_KERNEL_FAULT", "AURORA_PROCESS_KERNEL_FAULT_PROBE"):
             need(current and current["loaded"] and "outcome" not in current, "Kernel fault outside a run")
             completed[current["run"]] = f"{current['key']}\tkernel fault vector={values['vector']}"
             if isolated:
@@ -388,7 +394,8 @@ def runs(text, mode):
             need(
                 mode == "process-hostile"
                 and fatal_companion == len(expected)
-                and text.count("AURORA_PROCESS_FAIL: kernel fault") == 1
+                and text.count("AURORA_PROCESS_KERNEL_FAULT_PROBE: vector=14") == 1
+                and "AURORA_PROCESS_KERNEL_FAULT:" not in text
                 and companion is not None
                 and companion["run"] == fatal_companion
                 and not companion["ended"]
@@ -584,9 +591,12 @@ def mounted_authority(status, text, mode, image, cut, plan):
             need(
                 text.index(injected)
                 < text.index(final_fence)
-                < text.index("AURORA_PROCESS_END: run=1 reason=exit status=1")
-                < text.index(retired)
+                < text.index(f"AURORA_SERVICE_INVALIDATED: generation={service} server=1 client=2 snapshot=0")
                 < text.index("AURORA_PROCESS_END: run=2 reason=service_lost")
+                < text.index("AURORA_PROCESS_RELEASED: run=2 ")
+                < text.index("AURORA_PROCESS_END: run=1 reason=exit status=1")
+                < text.index("AURORA_PROCESS_RELEASED: run=1 ")
+                < text.index(retired)
                 < text.index(f"AURORA_FILE_SERVICE_READY: generation={restarted[0]} disk=unavailable")
                 < text.index("AURORA_PROCESS_RUN: run=4 path=bin/lifecycle ticks=16"),
                 "Owner retirement, client loss and RAM-only restart order",
@@ -620,6 +630,33 @@ def mounted_authority(status, text, mode, image, cut, plan):
     )
 
 
+def terminal_cleanup_order(text):
+    # Natural service death must invalidate delivery before either owner is
+    # released. A live client is retired first by the source execution owner.
+    for match in re.finditer(
+        r"AURORA_SERVICE_INVALIDATED: generation=(\d+) server=(\d+) client=(\d+) snapshot=([01]) companion=(\d+)\n",
+        text,
+    ):
+        generation, server, client, _, companion = map(int, match.groups())
+        need(generation > 0 and server > 0 and client != server, "Authenticated terminal owner identities")
+        tail = text[match.end() :]
+        kind = "FILE_SERVICE" if companion else "PROCESS"
+        run = companion or server
+        server_end = re.search(rf"AURORA_{kind}_END: run={run} ", tail)
+        server_release = re.search(rf"AURORA_{kind}_RELEASED: run={run} ", tail)
+        need(
+            server_end and server_release and server_end.start() < server_release.start(),
+            "Service retirement after invalidation",
+        )
+        if client:
+            client_end = re.search(rf"AURORA_PROCESS_END: run={client} reason=service_lost\n", tail)
+            client_release = re.search(rf"AURORA_PROCESS_RELEASED: run={client} ", tail)
+            need(
+                client_end and client_release and client_end.start() < client_release.start() < server_end.start(),
+                "Source client retirement precedes service retirement",
+            )
+
+
 def validate(
     status,
     text,
@@ -649,6 +686,88 @@ def validate(
     need("AURORA_UEFI_FAIL:" not in text, "Loader failure")
     ordered(text, BASE)
     volume = (image / "esp/aurora/volume").read_bytes()
+    terminal_cleanup_order(text)
+    if mode == "process-xfs-mounted-prepared-loss":
+        free = frames(text)
+        need(status == 33 and "AURORA_PROCESS_FAIL:" not in text, "Prepared mounted refusal failed")
+        need(text.count("AURORA_PROCESS_CASE_SELECTED: value=72\n") == 1, "Prepared refusal selector")
+        loaded = re.findall(r"^AURORA_PROCESS_LOADED: (.*)$", text, re.M)
+        grants = re.findall(r"^AURORA_MOUNTED_GRANTED: (.*)$", text, re.M)
+        prepared = re.findall(r"^AURORA_MOUNTED_PREPARED_REFUSAL: (.*)$", text, re.M)
+        released = re.findall(r"^AURORA_PROCESS_RELEASED: (.*)$", text, re.M)
+        cleaned = re.findall(r"^AURORA_MOUNTED_PREPARED_CLEANUP: (.*)$", text, re.M)
+        need(all(len(rows) == 1 for rows in (loaded, grants, prepared, released, cleaned)), "Unique real owner records")
+        load, grant, preparation, release, cleanup = [
+            fields(rows[0]) for rows in (loaded, grants, prepared, released, cleaned)
+        ]
+        need(
+            load["run"] == "1"
+            and int(load["pages"]) > 0
+            and int(load["tables"]) > 0
+            and load["quota"] == "32768"
+            and int(load["owner"]) > 0
+            and int(load["root"]) > 0
+            and int(load["root"]) % 4096 == 0,
+            "Actual mounted service address space",
+        )
+        need(
+            all(load[key] == grant[key] == preparation[key] for key in ("owner", "root"))
+            and all(grant[key] == preparation[key] and int(grant[key]) > 0 for key in ("generation", "service"))
+            and int(grant["sectors"]) > 0
+            and preparation["phase"] == "prepared"
+            and preparation["pending"] == "0"
+            and preparation["entered"] == "0"
+            and preparation["chunk"] == "0"
+            and int(preparation["execution"]) > 0,
+            "Granted source-prepared owner before synthetic capacity refusal",
+        )
+        need(
+            release["run"] == "1"
+            and int(release["frames"]) == int(load["pages"]) + int(load["tables"])
+            and release["memory"] == "0"
+            and release["calls"] == "0"
+            and release["commits"] == "0"
+            and cleanup["execution"] == preparation["execution"]
+            and int(cleanup["free"]) == free
+            and cleanup["phases"] == "empty"
+            and cleanup["roles"] == "empty"
+            and cleanup["scrubbed"] == cleanup["audited"] == cleanup["closed"] == "1",
+            "Source retirement and exact physical cleanup",
+        )
+        ordered(
+            text,
+            (
+                "AURORA_PROCESS_LOADED:",
+                "AURORA_MOUNTED_GRANTED:",
+                "AURORA_MOUNTED_PREPARED_REFUSAL:",
+                "AURORA_PROCESS_END: run=1 reason=service_lost\n",
+                "AURORA_PROCESS_RELEASED:",
+                f"AURORA_MOUNTED_RETIRED: generation={grant['generation']} writes=0 flushes=0 disk=unavailable\n",
+                f"AURORA_FILE_SERVICE_LOST: generation={grant['service']} transaction=0 "
+                "cause=consumer_rejected volatile_data=lost\n",
+                "AURORA_MOUNTED_PREPARED_CLEANUP:",
+                f"AURORA_PROCESS_RUNS_OK: runs=1 free={free}\n",
+            ),
+        )
+        need(
+            not any(
+                marker in text
+                for marker in (
+                    "AURORA_MOUNTED_ARMED:",
+                    "AURORA_FILE_SERVICE_READY:",
+                    "AURORA_PROCESS_RUN:",
+                    "AURORA_PROCESS_PARKED:",
+                    "AURORA_PROCESS_RESUMED:",
+                    "AURORA_STDOUT:",
+                    "AURORA_STDERR:",
+                    "AURORA_PROCESS_REFUSED:",
+                    "AURORA_RECOVERY_",
+                    "AURORA_PROCESS_KERNEL_FAULT:",
+                )
+            ),
+            "Prepared owner must never enter, publish or fall back",
+        )
+        return
     if mode in MAPPING_AUTHORITY_PROBES:
         frames(text)
         probes = re.findall(r"AURORA_MAPPING_AUTHORITY_PROBE: case=(\d+) root=(\d+) kernel=(\d+) closed=1", text)
@@ -680,6 +799,73 @@ def validate(
             "No trap fallback, continuation or successful return after authority rejection",
         )
         return
+    if mode.startswith("process-execution-authority-"):
+        frames(text)
+        case = PROCESS_CASES[mode][0]
+        probes = re.findall(
+            r"AURORA_EXECUTION_AUTHORITY_PROBE: case=(\d+) slot=(\d+) root=(\d+) kernel=(\d+) closed=1", text
+        )
+        need(len(probes) == 1 and int(probes[0][0]) == case, "One actual lifecycle boundary probe")
+        _, slot, current, kernel = map(int, probes[0])
+        need(
+            slot in (0, 1) and current == kernel and kernel > 0 and kernel % 4096 == 0,
+            "Lifecycle probe restores kernel root and closed windows",
+        )
+        reason = (
+            "execution lifecycle authority"
+            if case <= 67
+            else "stopped frame admission"
+            if case == 68
+            else "execution physical identity"
+            if case == 70
+            else "output callback frame changed"
+        )
+        after = text[text.index("AURORA_EXECUTION_AUTHORITY_PROBE:") :]
+        need(
+            status == 35 and after.count("AURORA_PROCESS_FAIL: " + reason) == 1,
+            "Actual lifecycle effect must reject before further execution",
+        )
+        need(
+            not any(
+                value in after
+                for value in (
+                    "AURORA_PROCESS_END:",
+                    "AURORA_PROCESS_RELEASED:",
+                    "AURORA_PROCESS_PARKED:",
+                    "AURORA_PROCESS_RESUMED:",
+                    "AURORA_PROCESS_RUNS_OK",
+                    "AURORA_PROCESS_OK",
+                    "AURORA_PROCESS_KERNEL_FAULT:",
+                    "AURORA_STDOUT:",
+                    "AURORA_STDERR:",
+                )
+            ),
+            "No retirement, trap fallback, output or resume after lifecycle rejection",
+        )
+        return
+    if mode == "process-nested-fault":
+        frames(text)
+        marker = "AURORA_PROCESS_NESTED_FAULT_PROBE"
+        need(status == 35 and text.count(marker) == 1, "Actual nested UD fault must stop globally")
+        after = text[text.index(marker) :]
+        need(
+            not any(
+                value in after
+                for value in (
+                    "AURORA_PROCESS_KERNEL_FAULT:",
+                    "AURORA_PROCESS_END:",
+                    "AURORA_PROCESS_RELEASED:",
+                    "AURORA_PROCESS_PARKED:",
+                    "AURORA_PROCESS_RESUMED:",
+                    "AURORA_PROCESS_OK",
+                    "AURORA_PROCESS_RUNS_OK",
+                    "AURORA_STDOUT:",
+                    "AURORA_STDERR:",
+                )
+            ),
+            "Emergency trap must not reenter dispatch, cleanup, output or resume",
+        )
+        return
     if mode in ("process-frame-require-kernel", "process-frame-require-process"):
         frames(text)
         context = "kernel" if mode.endswith("-kernel") else "process"
@@ -688,12 +874,19 @@ def validate(
         current, kernel = map(int, probes[0][1:])
         need(current > 0 and kernel > 0 and current % 4096 == 0 and kernel % 4096 == 0, "Aligned real roots")
         need((current == kernel) == (context == "kernel"), "Allocator require uses selected real CR3")
-        need(
-            status == 35 and text.count("AURORA_PROCESS_FAIL: kernel fault") == 1, "Allocator require must stop kernel"
-        )
+        need(status == 35, "Allocator require must stop kernel")
         after = text[text.index("AURORA_FRAME_REQUIRE_PROBE:") :]
         faults = re.findall(r"AURORA_PROCESS_KERNEL_FAULT: vector=(\d+) error=\d+ rip=\d+ cs=(\d+) cr2=\d+", after)
-        need(faults == [("6", "8")], "Source require traps at CPL0, not a recoverable user fault")
+        if context == "kernel":
+            need(
+                faults == [("6", "8")] and text.count("AURORA_PROCESS_FAIL: kernel fault") == 1,
+                "First-level source require traps at CPL0",
+            )
+        else:
+            need(
+                not faults and after.count("AURORA_PROCESS_FAIL: frame metadata authority") == 1,
+                "Process-root consume is denied before entering source cleanup",
+            )
         need(
             not any(
                 marker in after
@@ -904,14 +1097,20 @@ def validate(
         )
         need("AURORA_FILE_SERVICE_LOST:" not in text, "File service lost its state")
         cancelled = re.findall(
-            r"^AURORA_EXECUTION_CANCEL: client=(\d+) tail=([01]) generation=(\d+) transaction=(\d+) next=(\d+)$",
+            r"^AURORA_EXECUTION_CANCEL: client=(\d+) tail=([0134]) generation=(\d+) transaction=(\d+) next=(\d+)$",
             text.replace("\r", ""),
             re.MULTILINE,
         )
+        cancellation_points = {
+            "raw-cancel-initial": "0",
+            "raw-cancel-tail": "1",
+            "raw-cancel-expired": "3",
+            "raw-cancel-before": "4",
+        }
         expected_cancel = [
-            (str(index), str(int(row[4] == "raw-cancel-tail")))
+            (str(index), cancellation_points[row[4]])
             for index, row in enumerate(PROCESS_CASES[mode][1], 1)
-            if row[4] in ("raw-cancel-initial", "raw-cancel-tail")
+            if row[4] in cancellation_points
         ]
         need(
             [(client, tail) for client, tail, _, _, _ in cancelled] == expected_cancel
@@ -919,9 +1118,71 @@ def validate(
                 generation == "1" and int(transaction) > 0 and transaction == next_id
                 for _, _, generation, transaction, next_id in cancelled
             ),
-            "Authenticated initial/tail cancellation boundaries",
+            "Authenticated staged, prior-expiry and before-entry cancellation boundaries",
         )
         need(text.count("AURORA_EXECUTION_CANCEL:") == len(cancelled), "Malformed cancellation boundary")
+        # This row reaches a real staged request before waiting on the existing
+        # LAPIC clock. The native receipt follows measured expiry and drain;
+        # the actual reply transaction and explicit cancellation follow it.
+        normalized = text.replace("\r", "")
+        gate = list(
+            re.finditer(
+                r"^AURORA_EXECUTION_EXPIRY_GATE: client=(\d+) generation=(\d+) transaction=(\d+) next=(\d+) "
+                r"used=(\d+) staged=1$",
+                normalized,
+                re.MULTILINE,
+            )
+        )
+        drained = list(
+            re.finditer(
+                r"^AURORA_EXECUTION_EXPIRY_DRAINED: client=(\d+) generation=(\d+) transaction=(\d+) next=(\d+) "
+                r"quanta=(\d+) counts=(\d+) used=(\d+) expired=1 drained=1 closed=1$",
+                normalized,
+                re.MULTILINE,
+            )
+        )
+        expiry_rows = [
+            (index, row[0]) for index, row in enumerate(PROCESS_CASES[mode][1], 1) if row[4] == "raw-cancel-expired"
+        ]
+        need(
+            len(expiry_rows) == len(gate) == len(drained) == 1
+            and normalized.count("AURORA_EXECUTION_EXPIRY_GATE:") == 1
+            and normalized.count("AURORA_EXECUTION_EXPIRY_DRAINED:") == 1,
+            "Missing or malformed actual LAPIC expiry gate",
+        )
+        client, limit = expiry_rows[0]
+        before = tuple(map(int, gate[0].groups()))
+        after = tuple(map(int, drained[0].groups()))
+        need(
+            before[:4] == after[:4]
+            and before[0] == client
+            and before[1] == 1
+            and before[2] == before[3]
+            and before[2] > 0
+            and 0 <= before[4] < limit
+            and 1 <= after[4] <= limit
+            and before[4] + after[4] == limit
+            and (after[4] - 1) * (1 << 24) < after[5] <= after[4] * (1 << 24)
+            and after[6] == limit,
+            "Measured expiry/drain changed request identity or budget bounds",
+        )
+        cancelled_after = re.search(
+            rf"^AURORA_EXECUTION_CANCEL: client={client} tail=3 generation={before[1]} "
+            rf"transaction={before[2] + 1} next={before[3] + 1}$",
+            normalized,
+            re.MULTILINE,
+        )
+        started = re.search(rf"^AURORA_PROCESS_RUN: run={client} ", normalized, re.MULTILINE)
+        ended = re.search(
+            rf"^AURORA_PROCESS_END: run={client} reason=watchdog ticks={limit}$", normalized, re.MULTILINE
+        )
+        need(
+            started
+            and cancelled_after
+            and ended
+            and started.start() < gate[0].start() < drained[0].start() < cancelled_after.start() < ended.start(),
+            "Staged write, real timer drain, reply/cancel and source watchdog ordering",
+        )
     if mode == "process-xfs-clean":
         ready = re.findall(
             r"AURORA_FILE_SERVICE_READY: generation=(\d+) owner=\d+ block_generation=(\d+) block_sectors=(\d+)", text
@@ -942,7 +1203,12 @@ def validate(
         golden = f"{mode}-{xfs_history}" if mode == "process-xfs-clean" else mode
         compare(ROOT / f"tests/kernel-process/{golden}.golden", runs(text, mode))
         if mode == "process-hostile":
-            need(status == 35 and text.count("AURORA_PROCESS_FAIL: kernel fault") == 1, "Kernel fault continued")
+            need(
+                status == 35
+                and text.count("AURORA_PROCESS_KERNEL_FAULT_PROBE: vector=14") == 1
+                and "AURORA_PROCESS_KERNEL_FAULT:" not in text,
+                "Kernel fault continued",
+            )
         else:
             need(status == 33 and "AURORA_PROCESS_FAIL" not in text, "Process row failed")
         return

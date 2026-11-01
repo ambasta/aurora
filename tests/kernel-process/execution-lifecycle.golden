@@ -1,0 +1,93 @@
+empty state=0:0 state=0:0 finish=1
+first-exit prepare=1 state=1:1 run=6:42:1 state=0:1 finish=1 enter=0 retire=0:6:6
+park-resume prepare=1 run=2:0:1 state=3:1 run=6:0:1 finish=1 enter=0 enter=1 retire=0:6:6
+slot-reuse prepare=1 run=6:0:1 prepare=1 run=6:7:2 state=0:2 finish=1 enter=0 retire=0:6:6 enter=0 retire=0:6:6
+two-slots prepare=1 prepare=1 run=6:1:1 run=6:2:1 state=0:1 state=0:1 finish=1 enter=0 retire=1:6:6 enter=0 retire=0:6:6
+prepare-refusal prepare=0 state=0:0 prepare=1 force=12:0:1 finish=1 retire=0:14:12
+refuse-duplicate prepare=1 prepare=0 force=12:0:1 finish=1 retire=0:14:12
+empty-run run=0:0:0 state=0:0 finish=1
+service-completion prepare=1 run=3:0:1 run=0:0:1 complete=1 run=6:0:1 finish=1 enter=0 enter=1 retire=0:6:6
+client-completion prepare=1 run=4:0:1 complete=1 run=6:0:1 finish=1 enter=0 enter=1 retire=1:6:6
+output-completion prepare=1 run=5:0:1 complete=1 run=6:0:1 finish=1 enter=0 enter=1 retire=0:6:6
+completion-without-pending prepare=1 complete=0 run=6:0:1 finish=1 enter=0 retire=0:6:6
+timer-exhausted prepare=1 run=10:0:1 finish=1 enter=0 retire=0:2:10
+exchange-exhausted prepare=1 run=10:0:1 finish=1 enter=0 retire=0:3:10
+request-exhausted prepare=1 run=10:0:1 finish=1 enter=0 retire=0:4:10
+output-exhausted prepare=1 run=10:0:1 finish=1 enter=0 retire=0:5:10
+exit-exhausted prepare=1 run=10:0:1 finish=1 enter=0 retire=0:6:10
+invalid-exhausted prepare=1 run=10:0:1 finish=1 enter=0 retire=0:7:10
+fault-exhausted prepare=1 run=10:0:1 finish=1 enter=0 retire=0:8:10
+invalid-terminal prepare=1 run=7:15:1 finish=1 enter=0 retire=0:7:7
+fault-terminal prepare=1 run=8:13:1 finish=1 enter=0 retire=0:8:8
+never-started-cleanup prepare=1 force=12:0:1 finish=1 retire=0:14:12
+output-failure prepare=1 run=5:0:1 force=9:2:1 finish=1 enter=0 retire=0:14:9
+expiry-before-cancel prepare=1 run=4:0:1 force=10:0:1 finish=1 enter=0 retire=0:14:10
+explicit-cancel prepare=1 run=4:0:1 force=11:0:1 finish=1 enter=0 retire=0:14:11
+service-loss prepare=1 prepare=1 run=4:0:1 force=12:0:1 force=12:0:1 finish=1 enter=0 retire=1:14:12 retire=0:14:12
+force-refused prepare=1 force=0:0:1 state=1:1 force=12:0:1 finish=1 retire=0:14:12
+wrong-binding denied=native
+wrong-epoch denied=native
+copied-field denied=native
+cross-slot denied=native
+wrong-kind denied=native
+not-quiet denied=native
+owner-reentry denied=native
+effect-reentry denied=native
+consume-live denied=native
+canonical-other-slot denied=native
+after-finish denied=native
+reinitialize denied=native
+stale-epoch denied=source
+wrong-root denied=source
+wrong-service denied=source
+wrong-initial denied=source
+wrong-saved denied=source
+foreign-identity denied=source
+invalid-event denied=source
+invalid-exhaustion denied=source
+cancel-exhausted denied=source
+cleanup-failure denied=source
+completion-identity denied=source
+completion-event denied=source
+finish-live denied=source
+high-bit-abi prepare=1 prepare=1 run=6:18446744073709551615:1 force=12:0:1 finish=1 enter=0 retire=1:6:6 retire=0:14:12
+stale-reuse denied=source
+completion-exhausted denied=source
+completion-detail denied=source
+output-failure-exhausted denied=source
+unavailable-exhausted denied=source
+force-identity denied=source
+admission-empty can-prepare=1 can-prepare=1 finish=1
+admission-prepared prepare=1 can-prepare=0 can-prepare=1 force=12:0:1 can-prepare=1 finish=1 retire=0:14:12
+admission-parked prepare=1 run=2:0:1 can-prepare=0 run=6:0:1 can-prepare=1 prepare=1 can-prepare=0 force=12:0:2 can-prepare=1 finish=1 enter=0 enter=1 retire=1:6:6 retire=1:14:12
+forced-prior-expiry prepare=1 run=2:0:1 force=10:0:1 finish=1 enter=0 retire=0:14:10
+forced-explicit-intent prepare=1 force=11:0:1 finish=1 retire=0:14:11
+forced-output-before-cancel prepare=1 run=5:0:1 force=9:2:1 finish=1 enter=0 retire=0:14:9
+forced-unknown-mask denied=source
+forced-empty-mask denied=source
+forced-explicit-without-endpoint denied=source
+forced-prior-without-intent denied=source
+forced-service-expiry prepare=1 force=12:0:1 finish=1 retire=0:14:12
+explicit-never-started prepare=1 force=11:0:1 finish=1 retire=1:14:11
+prepared-output denied=source
+prepared-expiry denied=source
+prepared-prior denied=source
+service-output-collision denied=source
+output-with-timer denied=source
+expiry-without-request denied=source
+natural-service-no-client prepare=1 run=6:0:1 state=0:1 finish=1 enter=0 invalidate=0 retire=0:6:6
+natural-service-loader-barrier prepare=1 run=8:14:1 state=0:1 finish=1 enter=0 invalidate=0 snapshot=discarded retire=0:8:8
+natural-service-prepared-client prepare=1 prepare=1 run=6:3:1 state=0:1 state=0:1 finish=1 enter=0 invalidate=0 retire=1:14:12 retire=0:6:6
+natural-service-request-client prepare=1 prepare=1 run=4:0:1 run=8:14:1 state=0:1 state=0:1 finish=1 enter=0 enter=0 invalidate=0 retire=1:14:12 retire=0:8:8
+natural-service-output-client prepare=1 prepare=1 run=5:0:1 run=6:0:1 state=0:1 state=0:1 finish=1 enter=0 enter=0 invalidate=0 retire=1:14:12 retire=0:6:6
+natural-service-exhausted prepare=1 prepare=1 run=10:0:1 state=0:1 state=0:1 finish=1 enter=0 invalidate=0 retire=1:14:12 retire=0:6:10
+natural-service-fault-exhausted prepare=1 prepare=1 run=10:0:1 state=0:1 state=0:1 finish=1 enter=0 invalidate=0 retire=1:14:12 retire=0:8:10
+natural-cross-incarnation denied=source
+invalidate-failure denied=source
+service-cleanup-failure denied=source
+invalidate-cross-slot denied=native
+foreign-client-prepare prepare=1 prepare=0 state=0:0 run=6:0:1 finish=1 enter=0 invalidate=0 retire=0:6:6
+missing-service-prepare prepare=0 state=0:0 finish=1
+retire-noncanonical denied=source
+finish-noncanonical denied=source
+invalidate-noncanonical denied=source

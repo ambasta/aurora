@@ -467,6 +467,16 @@ def validate(status, text, mode, meta):
                     ],
                     "Wrong root rejection",
                 )
+            elif mode == "budget-forged":
+                # The authenticated CPL0 dispatcher rejects an active-origin
+                # interrupt before drain acknowledgement or timer accounting.
+                # Require the real forged site/root/frame checked above, not a
+                # user timer or an unrelated fail-stop with the same message.
+                need(last_event[:2] == (64, 0) and last_event[3] == 0, "Missing forged kernel timer origin")
+                need(
+                    tail == ["AURORA_UEFI_RUNTIME_FAIL: timer drain interrupt authority"],
+                    "Wrong forged kernel interrupt rejection",
+                )
             else:
                 need(tail == ["AURORA_UEFI_RUNTIME_FAIL: timer active origin"], "Wrong active interrupt rejection")
         else:

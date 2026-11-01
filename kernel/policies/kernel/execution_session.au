@@ -44,7 +44,7 @@ export namespace kernel {
             }
             // A pending observation preserves the request phase. Only the
             // source loop chooses another bounded service progress effect.
-            if (result == builtin::ExecRequest::cancelled) {
+            if (result == builtin::ExecRequest::cancelled || result == builtin::ExecRequest::explicit_after_expiry) {
                 if (outcome != builtin::ExecStatus::output_failed) {
                     outcome = builtin::ExecStatus::watchdog;
                     result_value = 0u64;
@@ -53,7 +53,7 @@ export namespace kernel {
                 phase = ExecutionPhase::terminal;
             }
             if (result == builtin::ExecRequest::cancel_requested) {
-                if (outcome != builtin::ExecStatus::output_failed) {
+                if (outcome != builtin::ExecStatus::output_failed && outcome != builtin::ExecStatus::watchdog) {
                     outcome = builtin::ExecStatus::cancelled;
                     result_value = 0u64;
                     disposition = builtin::ExecFinish::cancel_requested;
@@ -69,13 +69,28 @@ export namespace kernel {
             return true;
         }
         auto cancelled(builtin::ExecCancel result) -> bool {
-            if (result == builtin::ExecCancel::draining) {
+            const bool draining = result == builtin::ExecCancel::draining || result
+                == builtin::ExecCancel::draining_after_expiry;
+            const bool settled = result == builtin::ExecCancel::settled || result
+                == builtin::ExecCancel::settled_after_expiry;
+            const bool expired = result == builtin::ExecCancel::settled_after_expiry || result
+                == builtin::ExecCancel::draining_after_expiry;
+            // Native reports transport progress and independent expiry evidence.
+            // Only source chooses terminal precedence; draining is not a reason.
+            if (expired && phase != ExecutionPhase::terminal && outcome != builtin::ExecStatus::output_failed) {
+                outcome = builtin::ExecStatus::watchdog;
+                result_value = 0u64;
+                disposition = builtin::ExecFinish::cancelled;
+            }
+            if (draining) {
                 phase = ExecutionPhase::cancelling;
             }
-            if (result == builtin::ExecCancel::settled && phase != ExecutionPhase::terminal) {
-                outcome = builtin::ExecStatus::cancelled;
-                result_value = 0u64;
-                disposition = builtin::ExecFinish::cancel_requested;
+            if (settled && phase != ExecutionPhase::terminal) {
+                if (outcome != builtin::ExecStatus::output_failed && outcome != builtin::ExecStatus::watchdog) {
+                    outcome = builtin::ExecStatus::cancelled;
+                    result_value = 0u64;
+                    disposition = builtin::ExecFinish::cancel_requested;
+                }
                 phase = ExecutionPhase::terminal;
             }
             if (result == builtin::ExecCancel::service_lost) {

@@ -325,8 +325,9 @@ export namespace compiler_ir_verification {
             }
         } else {
             i64 affected = ordinal;
-            if (kind == 4) {
-                // Authority effects may write scratch and inspect sibling banks.
+            if (kind == 4 || kind == 5) {
+                // Authority effects inspect canonical sibling state. Mapping
+                // authority additionally writes scratch and inspects banks.
                 // A loan of ANY descendant pins this complete retained owner.
                 affected = -2;
             }

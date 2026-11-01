@@ -269,7 +269,8 @@ constinit bool event_handoff_attempted{};
     if ((handoff.get(Handoff::case_word) >= 12 && handoff.get(Handoff::case_word) <= 16) ||
         handoff.get(Handoff::case_word) == 41)
         initialize_nvme_recovery(arena, handoff, *admission);
-    else if (handoff.get(Handoff::case_word) >= 17 && handoff.get(Handoff::case_word) <= 40)
+    else if ((handoff.get(Handoff::case_word) >= 17 && handoff.get(Handoff::case_word) <= 40) ||
+             handoff.get(Handoff::case_word) == 72)
         initialize_nvme_mounted(arena, handoff, *admission);
     else
 #else

@@ -108,6 +108,8 @@ uefi_process_leave_user:
     pop %rbp
     pop %rbx
     mov $1, %eax
+    # The saved supervisor stack and callee-saved registers are complete.
+    movb $0, uefi_process_trap_guard(%rip)
     ret
 .size uefi_process_leave_user,.-uefi_process_leave_user
 .global uefi_process_handler
@@ -187,7 +189,9 @@ process_handler_offsets:
 .balign 8
 .global uefi_process_saved_rsp
 .hidden uefi_process_saved_rsp
+.type uefi_process_saved_rsp,@object
 uefi_process_saved_rsp: .skip 8
+.size uefi_process_saved_rsp,8
 .global uefi_process_kernel_root
 .hidden uefi_process_kernel_root
 uefi_process_kernel_root: .skip 8

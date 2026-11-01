@@ -9,7 +9,7 @@ cleanup_required open=1 admit=start ready=1 loss=1 view=retiring:1:0:fault:14 ad
 stale_bindings open=1 admit=start ready=0 ready=1 loss=0 shutdown=0 clean=0 view=ready:1:1:none:0 close=1
 ready_once open=1 ready=0 admit=start ready=1 ready=0 clean=0 view=ready:1:1:none:0 close=1
 frozen_loss open=1 admit=start ready=1 loss=1 loss=0 view=retiring:1:0:invalid_reply:19 clean=1 clean=0 view=absent:1:0:invalid_reply:19 close=1
-unexpected_zero_exit open=1 admit=start ready=1 exit=0 loss=1 view=retiring:1:0:exited:0 clean=1 close=1
+unexpected_zero_exit open=1 admit=start ready=1 exit=1 loss=0 view=retiring:1:0:exited:0 clean=1 close=1
 normal_shutdown open=1 admit=start ready=1 shutdown=1 view=stopping:1:0:none:0 admit=refused close=0 exit=1 view=retiring:1:0:shutdown:0 clean=1 view=absent:1:0:shutdown:0 close=1
 shutdown_failure open=1 admit=start ready=1 shutdown=1 loss=1 view=retiring:1:0:exited:7 exit=0 clean=1 close=1
 shutdown_intent_once open=1 admit=start ready=1 shutdown=1 shutdown=0 exit=0 exit=1 clean=1 admit=refused close=1
@@ -26,3 +26,18 @@ not_excluded denied
 reentrant denied
 reused_loss_no_restart open=1 admit=start ready=1 close=1 open=1 admit=reuse loss=1 clean=1 admit=refused view=absent:1:0:fault:14 close=1 open=1 admit=start ready=1 view=ready:2:0:none:0 close=1
 pinned_reused_loss_no_restart open=1 admit=start ready=1 close=1 open=1 admit=reuse loss=1 clean=1 admit=refused admit=refused view=absent:1:0:invalid_reply:19 close=1 open=1 admit=start ready=1 view=ready:2:1:none:0 close=1
+observed_shutdown open=1 admit=start ready=1 shutdown=1 observe=1 view=retiring:1:0:shutdown:0 clean=1 close=1
+observed_nonzero_shutdown open=1 admit=start ready=1 shutdown=1 observe=1 view=retiring:1:0:exited:7 clean=1 close=1
+observed_startup_fault open=1 admit=start observe=1 view=retiring:1:0:fault:14 clean=1 close=1
+observed_invalid_call open=1 admit=start ready=1 observe=1 view=retiring:1:0:invalid_call:19 clean=1 close=1
+observed_watchdog open=1 admit=start ready=1 observe=1 view=retiring:1:0:watchdog:64 clean=1 close=1
+observed_invalid_reply_precedes_exit open=1 admit=start ready=1 observe=1 view=retiring:1:0:invalid_reply:19 clean=1 close=1
+observed_invalid_reply_precedes_watchdog open=1 admit=start ready=1 observe=1 view=retiring:1:0:invalid_reply:19 clean=1 close=1
+observed_invalid_reply_precedes_shutdown open=1 admit=start ready=1 shutdown=1 observe=1 view=retiring:1:0:invalid_reply:19 clean=1 close=1
+observed_cross_incarnation open=1 admit=start ready=1 observe=0 view=ready:1:1:none:0 close=1
+observed_nonterminal_refused open=1 admit=start ready=1 observe=0 observe=0 view=ready:1:1:none:0 close=1
+observed_terminal_once open=1 admit=start ready=1 observe=1 observe=0 view=retiring:1:0:fault:14 clean=1 close=1
+observed_cancelled_shutdown_is_loss open=1 admit=start ready=1 shutdown=1 observe=1 view=retiring:1:0:exited:0 clean=1 close=1
+observed_cancelled_invalid_reply open=1 admit=start ready=1 shutdown=1 observe=1 view=retiring:1:0:invalid_reply:19 clean=1 close=1
+observed_cancelled_watchdog open=1 admit=start ready=1 shutdown=1 observe=1 view=retiring:1:0:watchdog:64 clean=1 close=1
+observed_maximum_terminal_facts open=1 admit=start ready=1 observe=1 view=retiring:1:0:invalid_reply:9223372036854775807 clean=1 close=1

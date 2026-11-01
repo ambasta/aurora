@@ -114,14 +114,43 @@ export namespace kernel {
             terminal_detail = detail;
             return true;
         }
-        auto normal_exit(u64 generation) -> bool {
-            if (!operation_open || generation == 0u64 || generation != incarnation || state != ServicePhase::stopping) {
+        // The authenticated execution owner supplies terminal facts; this root
+        // alone distinguishes normal shutdown from loss of an incarnation.
+        auto observe_terminal(u64 generation, u64 event, u64 detail, u64 ticks, u64 terminal_facts) -> bool {
+            if (!operation_open || generation == 0u64 || generation != incarnation || (state != ServicePhase::starting
+                && state != ServicePhase::ready && state != ServicePhase::stopping) || (event != 6u64 && event != 7u64
+                && event != 8u64 && event != 10u64)) {
                 return false;
+            }
+            // Factual schema only: bit 0 is caller cancellation/expiry;
+            // bits 1..63 are the authenticated malformed-reply operation.
+            const u64 invalid_reply = terminal_facts >> 1;
+            const bool caller_cancelled = (terminal_facts & 1u64) != 0u64;
+            ServiceReason reason = ServiceReason::exited;
+            u64 value = detail;
+            if (invalid_reply != 0u64) {
+                reason = ServiceReason::invalid_reply;
+                value = invalid_reply;
+            } else {
+                if (event == 6u64 && detail == 0u64 && state == ServicePhase::stopping && !caller_cancelled) {
+                    reason = ServiceReason::shutdown;
+                } else {
+                    if (event == 7u64) {
+                        reason = ServiceReason::invalid_call;
+                    }
+                    if (event == 8u64) {
+                        reason = ServiceReason::fault;
+                    }
+                    if (event == 10u64) {
+                        reason = ServiceReason::watchdog;
+                        value = ticks;
+                    }
+                }
             }
             state = ServicePhase::retiring;
             disk_available = false;
-            terminal_reason = ServiceReason::shutdown;
-            terminal_detail = 0u64;
+            terminal_reason = reason;
+            terminal_detail = value;
             return true;
         }
         auto cleaned(u64 generation) -> bool {

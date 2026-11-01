@@ -1040,15 +1040,61 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(U64) noexcept {
     stop("snapshot producer ownership fault");
 }
 #endif
+namespace {
+auto report_domain_exception(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -> void {
+    U64 cr2;
+    asm volatile("mov %%cr2,%0" : "=r"(cr2));
+    Serial::text("AURORA_UEFI_DOMAIN_EVENT: vector=");
+    Serial::number(vector);
+    Serial::text(" error=");
+    Serial::number(error);
+    Serial::text(" pc=");
+    Serial::number(pc);
+    Serial::text(" cpl=");
+    Serial::number(cs & 3);
+    Serial::text(" root=");
+    Serial::number(root());
+    Serial::text(" frame=");
+    Serial::number(frame);
+    Serial::text(" cr2=");
+    Serial::number(cr2);
+    Serial::text("\r\n");
+}
+[[noreturn]] auto double_fault_exception(U64 frame) -> void {
+    require(frame >= arena + L::ist_bottom && frame <= arena + L::ist_top - 176, "double fault IST authority");
+    Serial::text("AURORA_UEFI_RUNTIME_IST_OK\r\n");
+    stop("double fault");
+}
+} // namespace
+// The assembly route selects the saved hardware CS, not caller data. Keep
+// supervisor polling/drain and fatal diagnostics separate from CPL3 policy so
+// stack admission accounts their actual current-stack domain independently.
+auto kernel_dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("aurora_kernel_exception_dispatch")
+    __attribute__((visibility("hidden")));
+auto kernel_dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, [[maybe_unused]] U64 result) -> U64 {
+    require(cs == 8, "kernel exception selector");
+#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE)
+    if (program_console_interrupt(vector, error, pc, cs, frame))
+        return 0;
+#endif
+    report_domain_exception(vector, error, pc, cs, frame);
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    if (const auto interrupt = service_timer_drain_interrupt(vector, error, pc, cs, frame))
+        return *interrupt;
+#endif
+    if (vector == 8)
+        double_fault_exception(frame);
+    require(active < L::domain_count && domains[active].handle && registry.active(*domains[active].handle) &&
+                root() == domains[active].tables->root(),
+            "exception root authority");
+    stop("exception origin/stack");
+}
 auto dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("aurora_exception_dispatch")
     __attribute__((visibility("hidden")));
 auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U64 {
+    require(cs == 0x1b, "user exception selector");
 #if defined(AURORA_IPC_FIXTURE) || defined(AURORA_SNAPSHOT_FIXTURE) || defined(AURORA_PROGRAM_FIXTURE)
     if (hostile_exit_fixture(vector, pc, frame, result))
-        return 0;
-#endif
-#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE)
-    if (program_console_interrupt(vector, error, pc, cs, frame))
         return 0;
 #endif
 #ifdef AURORA_TEXT_FIXTURE
@@ -1061,23 +1107,7 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
              (active == 1 && fixture == Fixture::program_append_service_root)))
             asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
 #endif
-        U64 cr2;
-        asm volatile("mov %%cr2,%0" : "=r"(cr2));
-        Serial::text("AURORA_UEFI_DOMAIN_EVENT: vector=");
-        Serial::number(vector);
-        Serial::text(" error=");
-        Serial::number(error);
-        Serial::text(" pc=");
-        Serial::number(pc);
-        Serial::text(" cpl=");
-        Serial::number(cs & 3);
-        Serial::text(" root=");
-        Serial::number(root());
-        Serial::text(" frame=");
-        Serial::number(frame);
-        Serial::text(" cr2=");
-        Serial::number(cr2);
-        Serial::text("\r\n");
+        report_domain_exception(vector, error, pc, cs, frame);
 #ifdef AURORA_TEXT_FIXTURE
     }
 #endif
@@ -1095,11 +1125,8 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     if (const auto interrupt = service_timer_interrupt(vector, error, pc, cs, frame))
         return *interrupt;
 #endif
-    if (vector == 8) {
-        require(frame >= arena + L::ist_bottom && frame <= arena + L::ist_top - 176, "double fault IST authority");
-        Serial::text("AURORA_UEFI_RUNTIME_IST_OK\r\n");
-        stop("double fault");
-    }
+    if (vector == 8)
+        double_fault_exception(frame);
 #if defined(AURORA_RUNTIME_CONTROL_FIXTURE) || defined(AURORA_IPC_FIXTURE)
     if (fixture == Fixture::runtime_root || fixture == Fixture::ipc_root) {
         asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
@@ -1111,7 +1138,7 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     require(active < L::domain_count && domains[active].handle && registry.active(*domains[active].handle) &&
                 root() == domains[active].tables->root(),
             "exception root authority");
-    require((cs & 3) == 3 && frame >= arena + L::rsp0_bottom && frame <= arena + L::rsp0_top - 176 && frame % 8 == 0 &&
+    require(cs == 0x1b && frame >= arena + L::rsp0_bottom && frame <= arena + L::rsp0_top - 176 && frame % 8 == 0 &&
                 saved_rsp >= arena + Handoff::stack_bottom && saved_rsp <= arena + Handoff::stack_top - 56 &&
                 saved_rsp % 8 == 0,
             "exception origin/stack");

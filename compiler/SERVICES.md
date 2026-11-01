@@ -746,11 +746,16 @@ The lease methods are:
   `parked`), `status` and `value: u64`. Retired means native retirement occurred.
 - `output() -> ExecEffect`: `success` or `failed`.
 - `request() -> ExecRequest`: `ready` (0), `cancelled` (1), `service_lost` (2),
-  `pending` (3), `cancel_requested` (4). Each call advances at most one server
+  `pending` (3), `cancel_requested` (4), `explicit_after_expiry` (5). The last
+  case reports both an explicit request and independently observed prior expiry;
+  source selects watchdog precedence. Each call advances at most one server
   step. Source owns draining; no request is replayed. Resuming a pending message
   renews neither its server allowance nor the cumulative caller budget; a distinct
   second raw-write message retains its existing per-message server allowance.
-- `cancel() -> ExecCancel`: `settled`, `draining`, `service_lost`. Cancellation
+- `cancel() -> ExecCancel`: `settled`, `draining`, `service_lost`,
+  `settled_after_expiry`, `draining_after_expiry`. Settlement and expiry are
+  separate facts: expiry never fabricates a draining obligation. Source chooses
+  watchdog versus cancellation while preserving an existing output failure. Cancellation
   authenticates intent but does not consume the lease. Delivered work must drain;
   undispatched work can be withdrawn. Durable writes can remain indeterminate.
 - consuming `finish(ExecFinish) -> ExecEffect`: dispositions `complete`,
@@ -851,3 +856,30 @@ binds the active root, field and generation and rejects reentry/stale descriptor
 The complete-constructor and consuming-receiver facts distinguish fresh ownership
 entry from ordinary synchronous borrowed access. Independent IR rejects use of the
 lexical issuer instructions for this resource and requires explicit field discharge.
+
+### Fixed-slot execution authority
+
+`builtin::ExecutionAuthority` is a separate retained-native resource, not the
+production `ResidentSlot` or a lexical command lease. Resource kind5 uses RawType26
+canonical name `__au_execution_authority`, size/alignment16. Its sole private field
+transfers through the existing complete-constructor entry; it has no source mint,
+copy, return, lexical issuer, or mixed-resource composition. The native retained
+root binds the exact field and epoch, while copied sibling fields hold source
+execution policy.
+
+`prepare(slot)`, `activate(slot)`, `complete(slot)` and `force(slot)` accept one
+`u64` slot and return copied `ExecutionObservation`: eight `u64` fields named
+`event`, `detail`, `exhausted`, `epoch`, `root`, `incarnation`, `initial` and `saved`.
+`incarnation` binds the service generation even for a client, not its native storage role.
+The record is evidence, never an authority or a native lifecycle ledger.
+`retire(slot)` and `invalidate_service(slot)` return bool; the latter is a borrowed
+physical invalidation effect, not finalization. Consuming `finish()` returns bool after the native
+owner has settled its obligation. These effects exclude live loans of any sibling
+field, because native authentication reads the exact root's canonical state.
+
+Private symbols use prefix `__au_runtime_execution_authority_`. Binding and epoch
+are in RDI/RSI, canonical field address in RDX, copied observation destination in
+RCX and slot in R8. `retire` and `invalidate_service` instead put their slot in RCX; `finish` has only the
+first three arguments. The emitted call facts record these argument counts.
+This is a fixed synchronous boundary, not general asynchronous ownership,
+scheduling, arbitrary callbacks or a source pointer escape.

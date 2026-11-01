@@ -290,6 +290,7 @@ def run_process_xfs(
     mounted=False,
     mounted_small=False,
     mounted_loss=False,
+    mounted_prepared_loss=False,
     mounted_cut=None,
     mounted_reference=None,
 ):
@@ -300,6 +301,8 @@ def run_process_xfs(
     mode = (
         "process-xfs-recover-pair"
         if pair
+        else "process-xfs-mounted-prepared-loss"
+        if mounted_prepared_loss
         else "process-xfs-mounted-loss"
         if mounted_loss
         else "process-xfs-mounted-small"
@@ -353,7 +356,7 @@ def run_process_xfs(
         raw, mounted_plan = mounted_write_plan(mounted_reference)
         reference_hash.update(raw)
         (work / "mounted-plan.bin").write_bytes(raw)
-        prefix = len(mounted_plan)
+        prefix = 0 if mounted_prepared_loss else len(mounted_plan)
         if mounted_cut:
             operation, ordinal = mounted_cut.split("-")
             ordinal = int(ordinal)
@@ -549,6 +552,9 @@ def run_process_xfs(
         print(f"PASS: {mode} {recovery_state}; changed sectors {sorted(changed)}; retained {disk}", flush=True)
     elif mounted:
         need(before_hash.digest() == before, "Private mounted baseline changed")
+        if mounted_prepared_loss:
+            need(not changed and after_hash.digest() == before, "Prepared mounted refusal changed private disk")
+            need(file_hash(history) == before, "Prepared mounted refusal changed original disk")
         need(
             not mismatched_reference,
             "Mounted image differs from exact source-plan prefix: " + str(mismatched_reference),
@@ -588,6 +594,11 @@ def main():
         "--mounted-loss",
         action="store_true",
         help="inject source-owner termination after final Flush and verify RAM-only restart",
+    )
+    mounted_mode.add_argument(
+        "--mounted-prepared-loss",
+        action="store_true",
+        help="refuse bootstrap transport capacity after mounted grant, before first user entry",
     )
     mounted_mode.add_argument(
         "--mounted-small", action="store_true", help="replace the prior 777-byte result with 113 bytes"
@@ -660,6 +671,7 @@ def main():
     )
     need(bool(args.recovery_cut) == bool(args.recovery_reference), "Cut requires exact completed reference")
     need(not args.mounted_loss or args.process_xfs_mounted is not None, "Owner loss requires mounted image")
+    need(not args.mounted_prepared_loss or args.process_xfs_mounted is not None, "Prepared loss requires mounted image")
     need(not args.mounted_small or args.process_xfs_mounted is not None, "Small replacement requires mounted image")
     need(
         not args.mounted_cut or (args.process_xfs_mounted is not None and not args.mounted_small),
@@ -678,6 +690,8 @@ def main():
     mode = (
         "process-xfs-recover-pair"
         if pair
+        else "process-xfs-mounted-prepared-loss"
+        if args.mounted_prepared_loss
         else "process-xfs-mounted-loss"
         if args.mounted_loss
         else "process-xfs-mounted-small"
@@ -737,6 +751,7 @@ def main():
             mounted=args.process_xfs_mounted is not None,
             mounted_small=args.mounted_small,
             mounted_loss=args.mounted_loss,
+            mounted_prepared_loss=args.mounted_prepared_loss,
             mounted_cut=args.mounted_cut,
             mounted_reference=args.mounted_reference,
         )

@@ -27,15 +27,15 @@ boundary in [command orchestration](SERVICES.md#command-orchestration).
 
 ## Retained owners and consuming receiver entries
 
-A catalogue field policy separately admits `builtin::ResidentSlot` as one private
-resource field in a concrete owning class. Its origin is a trusted native owned
+A catalogue field policy separately admits `builtin::ResidentSlot` or
+`builtin::ExecutionAuthority` as one private resource field in a concrete owning class. Its origin is a trusted native owned
 input, not a ByteRegion allocation or a lexical service issuer. An empty physical
 slot still has a live finalization obligation. Lexical ExecutionLease fields use
 the separate contract below; ServiceBootstrapLease remains field-ineligible. Copied scalar/class fields may accompany the slot; multiple
 retained resources remain restricted to the atomic mapping bank set below; byte-owner mixing and nested owning classes are not admitted.
 
 A complete-constructor entry receives fresh stable destination storage and one
-exact owned ResidentSlot input. Its empty-body initializer moves that input into
+exact owned retained-resource input. Its empty-body initializer moves that input into
 the field exactly once. Native activation follows successful complete construction
 and emitted layout/entry admission. A root-scope borrowed-owner ABI includes the
 public complete constructor and consuming entries for that exact nominal class

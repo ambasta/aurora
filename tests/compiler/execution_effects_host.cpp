@@ -76,11 +76,17 @@ extern "C" Word __au_runtime_execution_request(Word identity, Word generation) {
     ++requests;
     if (mode == 17 && requests < 3)
         return 3;
-    return mode == 13 ? 5 : mode == 14 ? Word{1} << 32 : mode == 20 ? 4 : 0;
+    return mode == 13 ? 6 : mode == 14 ? Word{1} << 32 : mode == 20 ? 4 : mode == 25 ? 5 : 0;
 }
 extern "C" Word __au_runtime_execution_cancel(Word identity, Word generation) {
     authenticate_lease(identity, generation, 4 + requests);
-    return mode == 5 ? 3 : mode == 6 ? Word{1} << 32 : mode == 21 ? 1 : mode == 22 ? 2 : 0;
+    return mode == 5    ? 5
+           : mode == 6  ? Word{1} << 32
+           : mode == 21 ? 1
+           : mode == 22 ? 2
+           : mode == 26 ? 3
+           : mode == 27 ? 4
+                        : 0;
 }
 extern "C" Word __au_runtime_execution_finish(Word identity, Word generation, Word reason) {
     authenticate_lease(identity, generation, 5 + requests);
