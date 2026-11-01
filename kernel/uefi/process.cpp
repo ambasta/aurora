@@ -2468,8 +2468,6 @@ auto service_lost(ServiceLoss loss, U64 generation) -> void {
     endpoint.generation = 0;
     endpoint.invalid_reply_operation = 0;
     block_service = block_generation = block_sectors = 0;
-    if (generation && !endpoint_owner.invalidate(generation))
-        fail("endpoint invalidation");
     endpoint.caller.reset();
     for (auto &byte : endpoint.bytes)
         *static_cast<volatile std::byte *>(&byte) = std::byte{0};
@@ -2550,7 +2548,9 @@ auto abandon_service_observed(ServiceLoss loss) -> void {
     // No process may see a late reply or a writable staging alias after loss.
     loading_image = false;
     endpoint.caller.reset();
-    if (generation && !endpoint_owner.invalidate(generation))
+    // Startup may fail before it ever binds an endpoint. A service intent is
+    // not the older/absent endpoint's identity; revoke only actual attachment.
+    if (endpoint.generation && !endpoint_owner.invalidate(endpoint.generation))
         fail("endpoint invalidation");
     discard_snapshot();
     for (std::size_t slot : {std::size_t{1}, std::size_t{0}}) {
@@ -4110,6 +4110,43 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
     U64 count = 0;
 #ifdef AURORA_PROCESS_FIXTURE
     if (selected == 72) {
+        // Exercise the real bootstrap failure before it has bound an endpoint,
+        // first with an absent owner and again with a prior revoked receipt.
+        const auto saturated_start = [&](U64 point) {
+            const auto before = endpoint_owner.observe();
+            const auto free = table.free(), service = service_root.generation();
+            const auto server = execution_owner.generation(0), client = execution_owner.generation(1);
+            const auto saved_next = next_run;
+            next_run = 0xffffffffULL - frames::first_owner;
+            if (!service_root.open_operation() || ensure_file_service(view))
+                fail("unbound saturated bootstrap admission");
+            const auto after = endpoint_owner.observe();
+            if (before.incarnation != after.incarnation || before.phase != after.phase || before.next != after.next ||
+                before.transaction != after.transaction || before.source != after.source ||
+                before.client != after.client || endpoint.generation || endpoint.caller || residents[0].space ||
+                residents[1].space || snapshot || loading_image ||
+                service_root.phase() != aurora::service::Phase::absent || service_root.generation() != service + 1 ||
+                execution_owner.generation(0) != server || execution_owner.generation(1) != client ||
+                execution_owner.phase(0) != aurora::lifecycle::Phase::empty ||
+                execution_owner.phase(1) != aurora::lifecycle::Phase::empty ||
+                next_run != 0xffffffffULL - frames::first_owner || table.free() != free || !audit_residents() ||
+                !LifecyclePlatform::quiet())
+                fail("unbound saturated bootstrap cleanup");
+            close_service_operation();
+            next_run = saved_next;
+            Serial::text("AURORA_ENDPOINT_UNBOUND_REFUSAL:");
+            field("point", point);
+            field("service", service_root.generation());
+            field("endpoint", after.incarnation);
+            field("phase", static_cast<U64>(after.phase));
+            field("next", after.next);
+            field("transaction", after.transaction);
+            field("source", after.source);
+            field("client", after.client);
+            field("free", table.free());
+            Serial::text(" unchanged=1 closed=1\r\n");
+        };
+        saturated_start(0);
         const auto baseline = table.free();
         const auto generation = execution_owner.generation(0);
         if (!service_root.open_operation() || !runtime_storage.select(true, 3) || ensure_file_service(view))
@@ -4139,6 +4176,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
         field("execution", execution_owner.generation(0));
         field("free", table.free());
         Serial::text(" phases=empty roles=empty scrubbed=1 audited=1 closed=1\r\n");
+        saturated_start(1);
         count = 1;
     }
 #endif

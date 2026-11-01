@@ -114,8 +114,13 @@ then supplies a synthetic zero bootstrap transport capacity before first entry.
 The existing source bootstrap plan rejects that preparation and consumes its
 lease through ordinary abandonment. It checks source retirement, exact frame
 release/audit, context scrubbing and role cleanup; the private disk must remain
-byte-identical with zero writes and flushes. This covers never-started mounted
-cleanup, not spontaneous hardware loss or never-started recovery-writer cleanup.
+byte-identical with zero writes and flushes. This also brackets the real prepared refusal with run-ID-exhausted bootstrap
+attempts: one before any endpoint exists and one after its prior incarnation is
+revoked. Both preserve the complete endpoint observation, allocate no process,
+close their service operation and restore the exact frame boundary. A new service
+intent does not authorize invalidating an absent or older endpoint. This covers
+never-started mounted cleanup and failure before endpoint binding, not spontaneous
+hardware loss or never-started recovery-writer cleanup.
 
 Natural service terminals now cross a source-selected invalidation boundary
 before either address space is retired. The service-incarnation source root

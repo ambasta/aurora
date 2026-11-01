@@ -555,6 +555,34 @@ def run_process_xfs(
         if mounted_prepared_loss:
             need(not changed and after_hash.digest() == before, "Prepared mounted refusal changed private disk")
             need(file_hash(history) == before, "Prepared mounted refusal changed original disk")
+            refusals = re.findall(r"^AURORA_ENDPOINT_UNBOUND_REFUSAL: (.*)$", text, re.M)
+            need(len(refusals) == 2, "Two real unbound bootstrap refusals")
+            first, last = [oracle.fields(row) for row in refusals]
+            prepared = re.findall(r"^AURORA_MOUNTED_PREPARED_REFUSAL: (.*)$", text, re.M)
+            need(len(prepared) == 1, "Real prepared refusal between unbound attempts")
+            service = int(oracle.fields(prepared[0])["service"])
+            need(
+                first["point"] == "0"
+                and last["point"] == "1"
+                and first["endpoint"] == first["phase"] == "0"
+                and int(first["service"]) + 1 == service
+                and int(last["service"]) == service + 1
+                and int(last["endpoint"]) == service
+                and last["phase"] == "8"
+                and first["free"] == last["free"] == str(oracle.frames(text))
+                and all(row[key] == "0" for row in (first, last) for key in ("next", "transaction", "source", "client"))
+                and all(row[key] == "1" for row in (first, last) for key in ("unchanged", "closed")),
+                "Unbound bootstrap preserves absent/revoked endpoint and restores frame boundary",
+            )
+            oracle.ordered(
+                text,
+                (
+                    "AURORA_ENDPOINT_UNBOUND_REFUSAL: point=0 ",
+                    "AURORA_MOUNTED_PREPARED_REFUSAL:",
+                    "AURORA_MOUNTED_PREPARED_CLEANUP:",
+                    "AURORA_ENDPOINT_UNBOUND_REFUSAL: point=1 ",
+                ),
+            )
         need(
             not mismatched_reference,
             "Mounted image differs from exact source-plan prefix: " + str(mismatched_reference),
