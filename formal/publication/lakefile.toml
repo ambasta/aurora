@@ -6,3 +6,8 @@ name = "Publication"
 [[lean_exe]]
 name = "publication-probe"
 root = "Main"
+[[lean_lib]]
+name = "SourceBinding"
+[[lean_exe]]
+name = "source-binding-probe"
+root = "SourceMain"

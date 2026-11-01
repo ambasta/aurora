@@ -4,8 +4,9 @@ This standalone Lean project consumes the actual version-1
 [published listing](../../compiler/IR-PUBLICATION.md). The current D1 checkpoint
 checks wire syntax and the specific structural predicates below. An optional
 root selection additionally checks the `scalar-receiver-v1` instruction/type/CFG
-and call-closure profile. This is not source correspondence, a proof of complete
-Aurora verifier admission, compiler correctness or kernel safety.
+and call-closure profile. A separate D3a layer below checks bounded raw-source
+guard/IR semantic correspondence. Neither layer proves complete Aurora verifier
+admission, compiler correctness or kernel safety.
 
 ## Byte-backed chain
 
@@ -97,13 +98,13 @@ stack conventions. These are source/admission IR conventions, **not native ABI**
 
 This profile does not reproduce ownership, permissions, initialization, lifetime
 or provenance facts from the full compiler verifier. It provides neither a
-value-level IR execution semantics nor authority/no-mutation theorems. Typed
+value-level IR execution semantics nor authority/no-mutation theorems by itself. Typed
 external occurrences are collected from every complete selected body; they may
 fail or have arbitrary effects. Recursion is not unfolded, and no call termination
 claim is made. Numeric schema/form meanings were independently reviewed against
 the compiler sources; their adequacy for compiler execution remains unproved.
 
-No source declarations are parsed. Same-typed field-use swaps cannot be detected
+D1/D2 alone parse no source declarations. Same-typed field-use swaps cannot be detected
 by structural typing alone. Capture authenticity, publisher fidelity, source-to-IR
 semantics, primitive behavior, native ABI, listing-to-object binding, backend
 correctness and hardware semantics remain separate obligations. Catalogue checks
@@ -125,7 +126,7 @@ dependencies, allowing only `propext`/`Quot.sound`. Complete-document fixtures a
 production mutations are **native execution tests, not concrete kernel proofs**.
 The optional production mutation workload addresses fill/enter records only to
 alter input bytes, never to certify them. It includes the expected acceptance of
-a same-typed field-use swap, explicitly exposing the absent source-use proof.
+a same-typed field-use swap, exposing the absent source-use check in D1/D2 alone.
 Abnormal termination is a failed test, never a successful refusal.
 Attempting direct kernel reduction of complete-document acceptance was not
 viable in the first probe; it is not silently replaced by compiler-backed proof.
@@ -144,3 +145,114 @@ receipts additionally trust Lean code generation/runtime, standard byte-array
 primitives, file IO, OS and acquired file identity. Hashes record provenance,
 not semantic correspondence. Resource probes establish implementation feasibility,
 not authority safety. Huge artifact constants are not compiled into Lean proofs.
+
+## D3a: bounded source-guard semantic correspondence
+
+`SourceBinding` supplies a reusable raw-source boundary. Its independent byte
+grammar covers every byte, including trivia, with maximal words and adjacent
+two-byte punctuation. The narrow literal profile admits canonical decimal
+i64/u64/u8 spellings. Strings, character literals, block comments, non-ASCII
+bytes and other literal forms reject even in unselected code. These are profile
+restrictions, not changes to Aurora's language. Whitespace is space or ASCII
+9–13; line comments end before LF or at EOF. Scanner fuel is a resource ceiling,
+not a proved exact maximum lexeme byte length.
+
+The complete shell consumes module/import headers, namespace/class/enum and
+field declarations, ordinary/const/consuming method signatures, and constructor
+headers with initializer targets. Every field is retained in declared order,
+including fields before and after a selected method. Supported type syntax
+includes qualified names, const/reference forms and single-argument type
+applications. `SourceType` is a surface-syntax tree, **not resolved or normalized
+cv/ref semantics**. Opaque bodies and constructor argument expressions consume
+properly nested parentheses, brackets and braces over the same checked tokens;
+angle brackets are not treated as body delimiters. This does not establish their
+Aurora grammatical validity, constructor effects, initialization, local-variable
+binding or other unselected semantics.
+
+Independent binding relations reject duplicate scope names, enum cases,
+parameters and initializer targets, unknown initializer targets, predefined-name
+shadowing, and formal/field shadowing. The conservative supplied-graph check
+requires unique module identities/imports, a present root, closed imports and
+reachability of every supplied file. Tagged qualified symbol inventories permit
+namespace merging but reject namespace/terminal and terminal/terminal collisions.
+General type-name resolution, import visibility, compiler filesystem search
+precedence and capture authenticity are not proved.
+
+`CheckedSelection` combines the graph certificate with selection by externally
+supplied module, namespace/class path and member name over **the same files**.
+Selection traverses only declarations, never opaque bodies or textual header
+matches. `FieldAt` binds names to exact field-list ordinals/types. The selected body is parsed over that exact interval, with full syntax consumption
+and an independently typed pure leading rejection guard. Tail statements are
+syntax only: resource calls, local effects and whole-body typing are not proved.
+`SelectedGuard` retains the same graph-backed selection and resolves each guard
+name to its formal index or complete field-list ordinal/type.
+
+`BoundIR` checks a non-template, non-overloaded source/linkage profile against
+the actual decoded publication: derived class/method names, receiver mode,
+visibility, all formals/result, and every ordered field type. Builtin resource
+source spellings must uniquely join the published resource/native catalogue.
+This is a checked profile convention, not a compiler layout, catalogue fidelity
+or lowering proof. **Same-typed field-use swaps remain accepted by identity
+alone; the semantic layer below rejects such mismatched uses.**
+
+`SemanticBinding` composes that **same** selected raw-source guard and decoded IR
+closure with independent source evaluation and deterministic IR small-step rules.
+`ExprCode.simulates` connects each resolved field/formal use to its actual operand,
+stack use, comparison and short-circuit edge. Unsigned constants use their actual
+unsigned payload. Checked u64 subtraction has an explicit underflow fault.
+The entry certificate checks every actual parameter bind and derives the value
+relation; the leading-if certificate checks the false constant, return and closing
+label. Its continuation is exactly the boundary after that matched lowering.
+It does **not** prove the instruction there implements the next source statement.
+
+`SafeSemanticBinding.refusal_or_continuation` proves, for every admitted bounded
+scalar argument/receiver valuation, that a true rejection guard returns exactly
+`false`, while a false rejection guard reaches that continuation. The checked
+range-guard idiom derives subtraction safety from short-circuiting; initial
+offset≤bytes and the rejection result are not assumptions. `no_fault`, exact
+first-exit uniqueness and absence of divergence **before** the continuation are
+proved separately. The finite fuel witness is existential, not a uniform numeric
+resource bound. This starts at PC0 with empty accumulator/stack and all locals
+absent, not an arbitrary existing native frame. Reads are sequential and stable;
+there is no concurrent-environment/SMP snapshot theorem.
+
+`NoCallStore` covers every actual normalized prefix row, including unreachable
+ones; checked successor bounds prevent escaping above the cut. The admitted
+forms exclude calls and receiver stores. `preterminal_frame` preserves receiver
+and argument maps throughout every finite preterminal prefix trace. Return/trap
+outcomes erase machine state, so no terminal-machine preservation is asserted.
+This is a model/actual-listing statement, **not native API purity**: native input
+pinning and authority scope setup can occur before the source call.
+
+The entire selected tail remains syntax-only. In particular `enter`, resource
+`fill_snapshot_chunk` arguments/effects and `leave` have no execution proof here;
+external calls may fail or mutate the receiver. No constructor/initialization,
+producer/capture fidelity, listing-to-object, ABI, backend/ISA, hardware or
+A.Enabled/authority theorem follows. Source/IR semantics and linkage/catalogue
+conventions are explicit bounded models, not a verified Aurora compiler.
+
+The focused gate audits 65 theorem exports, allowing only `propext`/`Quot.sound`.
+Full eight-file source/current 5 MB publication acceptance and production
+mutations are **native receipts, not kernel proofs about those concrete bytes**.
+`probe-source-semantics.py` checks the same native executable on complete inputs;
+its workload-specific mutation addressing is not part of any proof or checker.
+Same-typed field/formal use, literal/comparison and real source-name mutations
+that D1/D2 accept are rejected by semantic correspondence. Unsupported arithmetic
+can already fail D2 and is labeled separately. Hashes record inputs, not proofs.
+
+Run `./verify-source-binding.sh` for the generic audit, tiny kernel fixtures and
+explicitly native shell/graph, guard/identity and operational-semantics fixtures. The native driver is:
+
+```sh
+.lake/build/bin/source-binding-probe [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...
+```
+
+For the snapshot workload, optional `--snapshot-examples` before `--ir`
+executes seven concrete actual-source/IR value controls, including admission,
+refusal and offset-beyond-bytes short-circuiting. These named workload fixtures
+are outside checker/proof logic and do not certify the large concrete inputs.
+
+Complete-graph native acceptance is not a concrete kernel theorem. Initial
+concrete header reductions did not complete in the first probe; tiny kernel
+fixtures use small explicit bounds without weakening generic theorems or the
+production profile. No `native_decide` or admitted acceptance axiom is used.
