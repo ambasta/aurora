@@ -26,9 +26,10 @@ restricted scalar type/CFG/call-closure checks sound against explicit relations.
 Production-file acceptance is native execution evidence, not a kernel theorem
 about those bytes. Same-typed field swaps remain structurally admissible; source
 correspondence, opaque physical extents, effects and backend proofs remain open.
-A separate source-binding checkpoint checks full ASCII lexical coverage and
-module/import header prefixes only; remaining declarations and source/IR
-correspondence are not yet checked.
+A separate source-binding checkpoint checks full restricted-ASCII lexical and
+declaration-shell coverage, supplied-module graph consistency and named member/field
+binding. Opaque bodies, general type/name resolution, selected typed ASTs and
+source-use/IR correspondence remain unproved.
 
 | Destination | Status |
 |---|---|

@@ -145,33 +145,54 @@ primitives, file IO, OS and acquired file identity. Hashes record provenance,
 not semantic correspondence. Resource probes establish implementation feasibility,
 not authority safety. Huge artifact constants are not compiled into Lean proofs.
 
-## Source binding: lexical/header checkpoint
+## Source binding: complete declaration-shell checkpoint
 
-`SourceBinding` starts a separate, reusable source-text boundary. Its independent
-byte grammar covers every byte, including whitespace and line comments, with
-maximal words and adjacent two-byte punctuation. Checked numeric spellings in
-this deliberately narrow profile are canonical decimal i64/u64/u8 literals.
-Strings, character literals, block comments, non-ASCII bytes and other literal
-forms reject, even inside otherwise unselected code. This is a supported subset,
-not a change to Aurora's source-language rules. CRLF and ASCII whitespace 9–13
-are admitted; line comments end before LF or at EOF.
+`SourceBinding` supplies a reusable raw-source boundary. Its independent byte
+grammar covers every byte, including trivia, with maximal words and adjacent
+two-byte punctuation. The narrow literal profile admits canonical decimal
+i64/u64/u8 spellings. Strings, character literals, block comments, non-ASCII
+bytes and other literal forms reject even in unselected code. These are profile
+restrictions, not changes to Aurora's language. Whitespace is space or ASCII
+9–13; line comments end before LF or at EOF. Scanner fuel is a resource ceiling,
+not a proved exact maximum lexeme byte length.
 
-The first declaration family binds a module header and all leading imports to
-exact token/byte spans. **Remaining declaration tokens are retained, not checked.**
-Acceptance therefore does not yet exclude a later duplicate module/member/field,
-prove graph closure or filesystem module resolution, identify a selected method,
-or establish any source-to-IR correspondence. A complete lexical/declaration
-shell and selected typed AST are the next dependency; unrelated bodies and
-constructor arguments will remain lexically balanced but semantically opaque.
-Neither their Aurora validity nor constructor/initializer effects follow from
-such a shell. Selection must come from the enclosing declaration walk, never a
-substring search or separately transcribed AST.
+The complete shell consumes module/import headers, namespace/class/enum and
+field declarations, ordinary/const/consuming method signatures, and constructor
+headers with initializer targets. Every field is retained in declared order,
+including fields before and after a selected method. Supported type syntax
+includes qualified names, const/reference forms and single-argument type
+applications. `SourceType` is a surface-syntax tree, **not resolved or normalized
+cv/ref semantics**. Opaque bodies and constructor argument expressions consume
+properly nested parentheses, brackets and braces over the same checked tokens;
+angle brackets are not treated as body delimiters. This does not establish their
+Aurora grammatical validity, constructor effects, initialization, local-variable
+binding or other unselected semantics.
 
-Run `./verify-source-binding.sh` for the generic theorem audit, tiny kernel
-fixtures and explicitly native header fixtures, and
-`.lake/build/bin/source-binding-probe SOURCE ...` for native full-file lexical
-coverage/header receipts. Complete-graph native acceptance is not a concrete
-kernel theorem and does not establish capture authenticity. Initial concrete
-header reductions did not complete in the first probe; kernel fixtures use
-small explicit bounds without changing the generic theorems or
+Independent binding relations reject duplicate scope names, enum cases,
+parameters and initializer targets, unknown initializer targets, predefined-name
+shadowing, and formal/field shadowing. The conservative supplied-graph check
+requires unique module identities/imports, a present root, closed imports and
+reachability of every supplied file. Tagged qualified symbol inventories permit
+namespace merging but reject namespace/terminal and terminal/terminal collisions.
+General type-name resolution, import visibility, compiler filesystem search
+precedence and capture authenticity are not proved.
+
+`CheckedSelection` combines the graph certificate with selection by externally
+supplied module, namespace/class path and member name over **the same files**.
+Selection traverses only declarations, never opaque bodies or textual header
+matches. `FieldAt` binds names to exact field-list ordinals/types. The selected
+body is still an exact opaque token interval: **no selected typed body AST,
+source-use/IR correspondence or same-typed-field-swap rejection exists yet**.
+A source field map alone is not that semantic relation.
+
+Run `./verify-source-binding.sh` for the generic audit, tiny kernel fixtures and
+explicitly native shell/graph fixtures. The native driver is:
+
+```sh
+.lake/build/bin/source-binding-probe ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...
+```
+
+Complete-graph native acceptance is not a concrete kernel theorem. Initial
+concrete header reductions did not complete in the first probe; tiny kernel
+fixtures use small explicit bounds without weakening generic theorems or the
 production profile. No `native_decide` or admitted acceptance axiom is used.

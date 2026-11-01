@@ -31,7 +31,7 @@ for line in open(sys.argv[1]):
         count += 1
     else:
         sys.exit(f'Unexpected audit output: {line}')
-if count != 11:
-    sys.exit(f'Expected eleven theorem audits, got {count}')
+if count != 23:
+    sys.exit(f'Expected twenty-three theorem audits, got {count}')
 print(f'Checked {count} source-binding theorem dependency reports.')
 PY

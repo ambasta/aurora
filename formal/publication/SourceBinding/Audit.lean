@@ -10,3 +10,15 @@ import SourceBinding
 #print axioms Aurora.SourceBinding.module_sound
 #print axioms Aurora.SourceBinding.imports_sound
 #print axioms Aurora.SourceBinding.header_source_coverage
+#print axioms Aurora.SourceBinding.header_source_sound
+#print axioms Aurora.SourceBinding.Balanced.prefix
+#print axioms Aurora.SourceBinding.shell_source_sound
+#print axioms Aurora.SourceBinding.ScopeBindings.unique
+#print axioms Aurora.SourceBinding.ScopeBindings.member
+#print axioms Aurora.SourceBinding.named_source_sound
+#print axioms Aurora.SourceBinding.VisitOrder.reachable
+#print axioms Aurora.SourceBinding.graph_sound
+#print axioms Aurora.SourceBinding.ClassAt.bindings
+#print axioms Aurora.SourceBinding.selected_member_sound
+#print axioms Aurora.SourceBinding.field_at_sound
+#print axioms Aurora.SourceBinding.checked_selection_sound

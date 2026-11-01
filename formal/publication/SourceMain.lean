@@ -15,15 +15,29 @@ def showName (name : Name) : String :=
   String.intercalate "." (name.map String.fromUTF8!)
 
 def main (args : List String) : IO UInt32 := do
-  if args.isEmpty then throw (IO.userError "usage: source-binding-probe SOURCE ...")
+  let root :: module :: classPath :: member :: paths := args |
+    throw (IO.userError "usage: source-binding-probe ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+  if paths.isEmpty then throw (IO.userError "no source files")
   let start ← IO.monoMsNow
   let mut total := 0
-  for path in args do
+  let mut files : List SourceFile := []
+  for path in paths do
     let bytes ← readSource path
-    let some result := headerSource bytes | throw (IO.userError s!"lexical/header profile rejected: {path}")
-    let h := result.declarations
+    let some result := namedSource bytes | throw (IO.userError s!"source shell/bindings rejected: {path}")
+    let h := result.source.header.declarations
     total := total + bytes.size
-    IO.println s!"SOURCE-HEADER module={showName h.module.name} imports={h.imports.names.map showName} bytes={bytes.size} remaining_tokens={h.imports.rest.length}"
-  IO.println s!"SOURCE-HEADER files={args.length} bytes={total} ms={(← IO.monoMsNow) - start}"
-  IO.println "NATIVE receipt only. No complete declaration shell, selected AST, graph authenticity, IR correspondence, or concrete kernel acceptance."
+    files := files ++ [⟨bytes,result⟩]
+    IO.println s!"SOURCE-SHELL module={showName h.module.name} imports={h.imports.names.map showName} bytes={bytes.size} top_declarations={result.source.shell.declarations.length}"
+  let rootName := (root.splitOn ".").map String.toUTF8
+  let some checked := checkedSelection files rootName ((module.splitOn ".").map String.toUTF8)
+    ((classPath.splitOn "::").map String.toUTF8) member.toUTF8 |
+    throw (IO.userError "graph or selected member not bound")
+  let selected := checked.selected
+  let method := selected.method.function
+  let declared := fields selected.classDecl.members
+  IO.println s!"SOURCE-MEMBER class={classPath} member={member} fields={declared.length} formals={method.formals.length} body_begin={method.body.opening.span.first} body_end={method.body.closing.span.last} body_tokens={method.body.tokens.length}"
+  for (field, index) in declared.zipIdx do
+    IO.println s!"SOURCE-FIELD ordinal={index} name={String.fromUTF8! field.name}"
+  IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+  IO.println "NATIVE receipt only. Shell/opaque-body binding, not full Aurora admission, typed method AST, IR correspondence, capture authenticity or concrete kernel acceptance."
   return 0

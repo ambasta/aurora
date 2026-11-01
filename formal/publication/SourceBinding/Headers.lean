@@ -18,6 +18,17 @@ instance (input : ByteArray) (token : Lexeme) : Decidable (Identifier input toke
 
 abbrev Name := List ByteArray
 
+/-- Finite membership uses propositional equality, not an unaudited BEq assumption. -/
+def memberDecision {α : Type} [DecidableEq α] (value : α) : (xs : List α) → Decidable (value ∈ xs)
+  | [] => isFalse (by simp)
+  | head :: tail =>
+    if equal : value = head then isTrue (List.mem_cons.mpr (Or.inl equal))
+    else match memberDecision value tail with
+      | isTrue member => isTrue (List.mem_cons.mpr (Or.inr member))
+      | isFalse absent => isFalse (fun member => (List.mem_cons.mp member).elim equal absent)
+instance (value : ByteArray) (xs : List ByteArray) : Decidable (value ∈ xs) := memberDecision value xs
+instance (value : Name) (xs : List Name) : Decidable (value ∈ xs) := memberDecision value xs
+
 /-- Name grammar consumes an explicit token prefix. The unconsumed remaining is retained. -/
 inductive Qualified (input : ByteArray) (separator : String) : List Lexeme → Name → List Lexeme → Prop
   | last : Identifier input token → (∀ next ∈ rest.head?, ¬ Is input next separator) →
@@ -140,5 +151,15 @@ theorem imports_sound (input : ByteArray) (tokens : List Lexeme) (fuel : Nat)
 theorem header_source_coverage (input : ByteArray) (result : HeaderSource input)
     (_accepted : headerSource input = some result) :
     Coverage input result.lexical.reversed input.size := result.lexical.grammar
+
+/-- Composed raw-byte/header endpoint. The unparsed remaining tokens stay visible. -/
+theorem header_source_sound (input : ByteArray) (result : HeaderSource input)
+    (_accepted : headerSource input = some result) :
+    Coverage input result.lexical.reversed input.size ∧
+    ModuleDecl input (significant result.lexical.reversed.reverse)
+      result.declarations.module.exported result.declarations.module.name result.declarations.module.rest ∧
+    Imports input result.declarations.module.rest result.declarations.imports.names
+      result.declarations.imports.rest :=
+  ⟨result.lexical.grammar, result.declarations.module.grammar, result.declarations.imports.grammar⟩
 
 end Aurora.SourceBinding
