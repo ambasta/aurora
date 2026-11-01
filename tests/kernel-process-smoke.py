@@ -656,6 +656,87 @@ def validate(
     need("AURORA_UEFI_FAIL:" not in text, "Loader failure")
     ordered(text, BASE)
     volume = (image / "esp/aurora/volume").read_bytes()
+    if mode == "process-xfs-mounted-prepared-loss":
+        free = frames(text)
+        need(status == 33 and "AURORA_PROCESS_FAIL:" not in text, "Prepared mounted refusal failed")
+        need(text.count("AURORA_PROCESS_CASE_SELECTED: value=72\n") == 1, "Prepared refusal selector")
+        loaded = re.findall(r"^AURORA_PROCESS_LOADED: (.*)$", text, re.M)
+        grants = re.findall(r"^AURORA_MOUNTED_GRANTED: (.*)$", text, re.M)
+        prepared = re.findall(r"^AURORA_MOUNTED_PREPARED_REFUSAL: (.*)$", text, re.M)
+        released = re.findall(r"^AURORA_PROCESS_RELEASED: (.*)$", text, re.M)
+        cleaned = re.findall(r"^AURORA_MOUNTED_PREPARED_CLEANUP: (.*)$", text, re.M)
+        need(all(len(rows) == 1 for rows in (loaded, grants, prepared, released, cleaned)), "Unique real owner records")
+        load, grant, preparation, release, cleanup = [
+            fields(rows[0]) for rows in (loaded, grants, prepared, released, cleaned)
+        ]
+        need(
+            load["run"] == "1"
+            and int(load["pages"]) > 0
+            and int(load["tables"]) > 0
+            and load["quota"] == "32768"
+            and int(load["owner"]) > 0
+            and int(load["root"]) > 0
+            and int(load["root"]) % 4096 == 0,
+            "Actual mounted service address space",
+        )
+        need(
+            all(load[key] == grant[key] == preparation[key] for key in ("owner", "root"))
+            and all(grant[key] == preparation[key] and int(grant[key]) > 0 for key in ("generation", "service"))
+            and int(grant["sectors"]) > 0
+            and preparation["phase"] == "prepared"
+            and preparation["pending"] == "0"
+            and preparation["entered"] == "0"
+            and preparation["chunk"] == "0"
+            and int(preparation["execution"]) > 0,
+            "Granted source-prepared owner before synthetic capacity refusal",
+        )
+        need(
+            release["run"] == "1"
+            and int(release["frames"]) == int(load["pages"]) + int(load["tables"])
+            and release["memory"] == "0"
+            and release["calls"] == "0"
+            and release["commits"] == "0"
+            and cleanup["execution"] == preparation["execution"]
+            and int(cleanup["free"]) == free
+            and cleanup["phases"] == "empty"
+            and cleanup["roles"] == "empty"
+            and cleanup["scrubbed"] == cleanup["audited"] == cleanup["closed"] == "1",
+            "Source retirement and exact physical cleanup",
+        )
+        ordered(
+            text,
+            (
+                "AURORA_PROCESS_LOADED:",
+                "AURORA_MOUNTED_GRANTED:",
+                "AURORA_MOUNTED_PREPARED_REFUSAL:",
+                "AURORA_PROCESS_END: run=1 reason=service_lost\n",
+                "AURORA_PROCESS_RELEASED:",
+                f"AURORA_MOUNTED_RETIRED: generation={grant['generation']} writes=0 flushes=0 disk=unavailable\n",
+                f"AURORA_FILE_SERVICE_LOST: generation={grant['service']} transaction=0 "
+                "cause=consumer_rejected volatile_data=lost\n",
+                "AURORA_MOUNTED_PREPARED_CLEANUP:",
+                f"AURORA_PROCESS_RUNS_OK: runs=1 free={free}\n",
+            ),
+        )
+        need(
+            not any(
+                marker in text
+                for marker in (
+                    "AURORA_MOUNTED_ARMED:",
+                    "AURORA_FILE_SERVICE_READY:",
+                    "AURORA_PROCESS_RUN:",
+                    "AURORA_PROCESS_PARKED:",
+                    "AURORA_PROCESS_RESUMED:",
+                    "AURORA_STDOUT:",
+                    "AURORA_STDERR:",
+                    "AURORA_PROCESS_REFUSED:",
+                    "AURORA_RECOVERY_",
+                    "AURORA_PROCESS_KERNEL_FAULT:",
+                )
+            ),
+            "Prepared owner must never enter, publish or fall back",
+        )
+        return
     if mode in MAPPING_AUTHORITY_PROBES:
         frames(text)
         probes = re.findall(r"AURORA_MAPPING_AUTHORITY_PROBE: case=(\d+) root=(\d+) kernel=(\d+) closed=1", text)

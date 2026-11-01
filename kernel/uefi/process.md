@@ -1133,3 +1133,11 @@ Limits:
 - CRC32C in `std.checksum` is bitwise (about 1 s per boot for the 6 MiB
   self-host volume);
 - no physical device is qualified.
+
+The mounted-prepared fixture (case 72) loads and grants the real mounted service,
+then supplies a synthetic zero bootstrap transport capacity before first entry.
+The existing source bootstrap plan rejects that preparation and consumes its
+lease through ordinary abandonment. It checks source retirement, exact frame
+release/audit, context scrubbing and role cleanup; the private disk must remain
+byte-identical with zero writes and flushes. This covers never-started mounted
+cleanup, not spontaneous hardware loss or never-started recovery-writer cleanup.

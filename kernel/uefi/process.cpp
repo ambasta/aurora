@@ -641,7 +641,7 @@ constinit U64 mounted_owner = 0, mounted_root = 0, mounted_generation = 0, mount
 constinit U64 recovery_cut_case = 0, mounted_cut_case = 0;
 constinit bool frame_finish_fault = false, nested_fault_probe = false;
 constinit U64 execution_probe_case = 0;
-constinit bool mounted_owner_termination = false;
+constinit bool mounted_owner_termination = false, mounted_prepared_refusal = false;
 #endif
 constinit bool recovery_completed = false;
 constinit std::array<std::byte, 512> block_copy{};
@@ -1884,6 +1884,10 @@ auto complete_resident_physical(std::size_t slot) -> void {
 // One entry or resumption. A timer park returns to this kernel loop before
 // another process can enter, preserving the single saved kernel continuation.
 auto activate_resident_physical(std::size_t slot) -> void {
+#ifdef AURORA_PROCESS_FIXTURE
+    if (mounted_prepared_refusal)
+        fail("mounted prepared refusal entered user");
+#endif
     using namespace aurora::lifecycle;
     const bool resume = execution_owner.canonical(slot, Field::mode) == 1;
     auto &resident = residents[slot];
@@ -2573,6 +2577,28 @@ public:
         binding.run = residents[0].state.run;
         binding.owner = residents[0].space->owner();
         binding.root = residents[0].space->root();
+#ifdef AURORA_PROCESS_FIXTURE
+        if (mounted_prepared_refusal) {
+            require(binding.mounted_entry && bound(binding) && !execution_owner.entered() &&
+                    execution_owner.phase(0) == aurora::lifecycle::Phase::prepared && execution_owner.pending(0) == 0 &&
+                    execution_owner.generation(0) != 0 && residents[0].budget.used() == 0 &&
+                    residents[0].state.mounted_generation == mounted_generation && mounted_generation &&
+                    binding.owner == mounted_owner && binding.root == mounted_root &&
+                    binding.generation == mounted_service && residents[0].state.mounted_sectors == mounted_sectors);
+            for (const auto word : residents[0].continuation)
+                require(word == 0);
+            Serial::text("AURORA_MOUNTED_PREPARED_REFUSAL:");
+            field("owner", binding.owner);
+            field("root", binding.root);
+            field("generation", mounted_generation);
+            field("service", binding.generation);
+            field("execution", execution_owner.generation(0));
+            Serial::text(" phase=prepared pending=0 entered=0 chunk=0\r\n");
+            // Malformed transport capacity, not a fabricated loss observation.
+            // The ordinary source plan rejects this and consumes its real lease.
+            return {1, binding.volume.size(), 0, binding.storage_required ? U64{1} : U64{0}};
+        }
+#endif
         return {1, binding.volume.size(), Endpoint::capacity - 64, binding.storage_required ? U64{1} : U64{0}};
     }
     static auto stage(Binding &binding, U64 operation, U64 id, U64 offset, std::span<const std::byte> payload = {})
@@ -3766,6 +3792,8 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
     }
     if (selected == 40)
         mounted_cut_case = selected;
+    if (selected == 72)
+        mounted_prepared_refusal = true;
 #endif
     char path[] = "runs/000";
     std::size_t length = 5;
@@ -3787,6 +3815,38 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
     process_kernel_root = kernel_root;
     const bool paired = selected == 7;
     U64 count = 0;
+#ifdef AURORA_PROCESS_FIXTURE
+    if (selected == 72) {
+        const auto baseline = table.free();
+        const auto generation = execution_owner.generation(0);
+        if (!service_root.open_operation() || !runtime_storage.select(true, 3) || ensure_file_service(view))
+            fail("mounted prepared refusal startup");
+        if (residents[0].space || residents[1].space || snapshot || endpoint.generation || endpoint.caller ||
+            endpoint.waiting || endpoint.replied || endpoint.delivery || endpoint.completion || loading_image ||
+            service_root.phase() != aurora::service::Phase::absent ||
+            execution_owner.phase(0) != aurora::lifecycle::Phase::empty ||
+            execution_owner.phase(1) != aurora::lifecycle::Phase::empty ||
+            execution_owner.generation(0) != generation + 1 || mounted_owner || mounted_root || mounted_generation ||
+            mounted_sectors || mounted_service || block_service || block_generation || block_sectors ||
+            recovery_owner || recovery_root || recovery_generation || recovery_sectors || !LifecyclePlatform::quiet() ||
+            table.free() != baseline || !audit_residents())
+            fail("mounted prepared refusal cleanup");
+        for (const auto &resident : residents) {
+            for (const auto word : resident.initial)
+                if (word)
+                    fail("mounted prepared initial scrub");
+            for (const auto word : resident.continuation)
+                if (word)
+                    fail("mounted prepared saved scrub");
+        }
+        close_service_operation();
+        Serial::text("AURORA_MOUNTED_PREPARED_CLEANUP:");
+        field("execution", execution_owner.generation(0));
+        field("free", table.free());
+        Serial::text(" phases=empty roles=empty scrubbed=1 audited=1 closed=1\r\n");
+        count = 1;
+    }
+#endif
     if ((selected >= 1 && selected <= 6) || selected == 43 || selected == 44 || (selected >= 63 && selected <= 71))
         count = run_independent(view, *runs);
     if (selected == 8)
