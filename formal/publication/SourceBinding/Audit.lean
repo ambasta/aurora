@@ -81,3 +81,20 @@ import SourceBinding
 #print axioms Aurora.SourceBinding.BodyBinding.terminal_correspondence
 #print axioms Aurora.SourceBinding.BodyBinding.terminates
 #print axioms Aurora.SourceBinding.bind_body_sound
+#print axioms Aurora.SourceBinding.LocalBodyCertificate.executes
+#print axioms Aurora.SourceBinding.LocalBodyCertificate.terminal_correspondence
+#print axioms Aurora.SourceBinding.LocalBodyCertificate.terminates
+#print axioms Aurora.SourceBinding.local_body_sound
+#print axioms Aurora.SourceBinding.eval_value_typed
+
+#print axioms Aurora.SourceBinding.bound_ordinary_call_sound
+#print axioms Aurora.SourceBinding.bound_resource_call_sound
+#print axioms Aurora.SourceBinding.call_method_sound
+#print axioms Aurora.SourceBinding.LabelRun.forward
+#print axioms Aurora.SourceBinding.checked_arguments_sound
+#print axioms Aurora.SourceBinding.checked_labels_sound
+#print axioms Aurora.SourceBinding.call_shape_complete
+#print axioms Aurora.SourceBinding.checked_call_leaf_complete
+#print axioms Aurora.SourceBinding.eval_call_arguments_ready
+#print axioms Aurora.SourceBinding.ReadyArguments.length
+#print axioms Aurora.SourceBinding.ReadyArguments.lookup

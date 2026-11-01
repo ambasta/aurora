@@ -11,3 +11,6 @@ import SourceBinding.IRIdentity
 import SourceBinding.MethodSyntax
 import SourceBinding.SemanticBinding
 import SourceBinding.BodyBinding
+import SourceBinding.ArgumentValues
+import SourceBinding.CallLeafBinding
+import SourceBinding.CallArgumentValues
