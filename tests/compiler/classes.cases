@@ -136,3 +136,15 @@ auto test() -> i64 {
 ${EXECUTION_SESSION_MODULE}
 @module kernel.execution_lifecycle
 ${EXECUTION_LIFECYCLE_MODULE}
+
+@case service invalidation does not discharge consuming finish
+@error
+module app; ${EXECUTION_HEAD}
+auto finish() && -> bool { return authority.invalidate_service(0u64); } };
+auto test() -> i64 { return 42; }
+@case service invalidation rejects live sibling span
+@error
+module app; ${EXECUTION_BYTE_HEAD}
+auto invalidate() -> bool { const builtin::span<const u8> view = borrow_bytes(state);
+return authority.invalidate_service(0u64); }
+${EXECUTION_FINISH} auto test() -> i64 { return 42; }

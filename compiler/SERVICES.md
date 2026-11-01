@@ -869,15 +869,17 @@ execution policy.
 
 `prepare(slot)`, `activate(slot)`, `complete(slot)` and `force(slot)` accept one
 `u64` slot and return copied `ExecutionObservation`: eight `u64` fields named
-`event`, `detail`, `exhausted`, `epoch`, `root`, `service`, `initial` and `saved`.
+`event`, `detail`, `exhausted`, `epoch`, `root`, `incarnation`, `initial` and `saved`.
+`incarnation` binds the service generation even for a client, not its native storage role.
 The record is evidence, never an authority or a native lifecycle ledger.
-`retire(slot)` returns bool; consuming `finish()` returns bool after the native
+`retire(slot)` and `invalidate_service(slot)` return bool; the latter is a borrowed
+physical invalidation effect, not finalization. Consuming `finish()` returns bool after the native
 owner has settled its obligation. These effects exclude live loans of any sibling
 field, because native authentication reads the exact root's canonical state.
 
 Private symbols use prefix `__au_runtime_execution_authority_`. Binding and epoch
 are in RDI/RSI, canonical field address in RDX, copied observation destination in
-RCX and slot in R8. `retire` instead puts its slot in RCX; `finish` has only the
+RCX and slot in R8. `retire` and `invalidate_service` instead put their slot in RCX; `finish` has only the
 first three arguments. The emitted call facts record these argument counts.
 This is a fixed synchronous boundary, not general asynchronous ownership,
 scheduling, arbitrary callbacks or a source pointer escape.

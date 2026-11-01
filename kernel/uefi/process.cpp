@@ -1672,11 +1672,15 @@ auto release_resident_physical(std::size_t slot) -> bool {
     outcome.unavailable = terminal == Event::unavailable;
     outcome.status = detail;
     outcome.operation = detail;
-    outcome.trap = execution_capture.trap;
-    outcome.vector = execution_capture.vector;
-    outcome.error = execution_capture.error;
-    outcome.rip = execution_capture.rip;
-    outcome.cr2 = execution_capture.cr2;
+    // Forced client cleanup must not consume the still-pending server's raw
+    // trap observation. Only that server's natural retirement projects it.
+    if (execution_owner.canonical(slot, Field::event) != static_cast<U64>(Event::forced)) {
+        outcome.trap = execution_capture.trap;
+        outcome.vector = execution_capture.vector;
+        outcome.error = execution_capture.error;
+        outcome.rip = execution_capture.rip;
+        outcome.cr2 = execution_capture.cr2;
+    }
     auto &resident = residents[slot];
     running = resident.state;
     running.space = nullptr;
@@ -1931,6 +1935,10 @@ auto activate_resident_physical(std::size_t slot) -> void {
         fail("timer drain");
 }
 
+auto execution_incarnation(std::size_t slot) -> U64 {
+    const auto &resident = residents[slot];
+    return slot == 1 ? (resident.state.external ? endpoint.generation : 0) : resident.state.service;
+}
 auto authenticate_execution(std::size_t slot, aurora::lifecycle::Phase phase) -> void {
     using namespace aurora::lifecycle;
     if (slot >= residents.size() || !execution_owner.busy() ||
@@ -1940,7 +1948,7 @@ auto authenticate_execution(std::size_t slot, aurora::lifecycle::Phase phase) ->
     if (!resident.space || !execution_owner.canonical(slot, Field::generation) ||
         execution_owner.canonical(slot, Field::epoch) != resident.space->epoch() ||
         execution_owner.canonical(slot, Field::root) != resident.space->root() ||
-        execution_owner.canonical(slot, Field::service) != resident.state.service ||
+        execution_owner.canonical(slot, Field::incarnation) != execution_incarnation(slot) ||
         execution_owner.canonical(slot, Field::initial) != reinterpret_cast<U64>(resident.initial.data()) ||
         execution_owner.canonical(slot, Field::saved) != reinterpret_cast<U64>(resident.continuation.data()) ||
         resident.state.space != &*resident.space || resident.state.budget != &resident.budget ||
@@ -1951,6 +1959,16 @@ auto authenticate_execution(std::size_t slot, aurora::lifecycle::Phase phase) ->
         resident.initial[4] != table.activation_root(slot, resident.space->epoch()))
         fail("execution physical identity");
 }
+auto authenticate_terminal_capture(std::size_t slot) -> void {
+    using namespace aurora::lifecycle;
+    const auto event = execution_owner.canonical(slot, Field::event);
+    if (event == static_cast<U64>(Event::forced))
+        return;
+    if (event != static_cast<U64>(execution_capture.event) ||
+        execution_owner.canonical(slot, Field::detail) != execution_capture.detail ||
+        execution_owner.canonical(slot, Field::exhausted) != execution_capture.exhausted)
+        fail("terminal physical capture changed");
+}
 auto execution_observation(std::size_t slot, aurora::lifecycle::Event event, U64 detail = 0, bool exhausted = false)
     -> aurora::lifecycle::Observation {
     const auto &resident = residents[slot];
@@ -1959,7 +1977,7 @@ auto execution_observation(std::size_t slot, aurora::lifecycle::Event event, U64
             exhausted,
             resident.space->epoch(),
             resident.space->root(),
-            resident.state.service,
+            execution_incarnation(slot),
             reinterpret_cast<U64>(resident.initial.data()),
             reinterpret_cast<U64>(resident.continuation.data())};
 }
@@ -1971,7 +1989,8 @@ auto observe_forced_execution(std::size_t slot) -> aurora::lifecycle::Observatio
     authenticate_execution(slot, phase);
     if (phase == Phase::parked)
         authenticate_stopped_frame(slot, false);
-    execution_capture = {};
+    // Preserve the last activated slot's physical capture across a source-
+    // ordered client retirement. Forced observations never overwrite it.
     // These bits capture independent physical facts, not an ordered terminal
     // decision: failed output, explicit intent, earlier expiry, cancellation,
     // service loss. Only source normalizes their precedence and final detail.
@@ -2047,6 +2066,15 @@ auto execution_authority_observe(
             resident.state.budget != &resident.budget ||
             resident.initial[4] != table.activation_root(slot, resident.space->epoch()))
             fail("execution prepare identity");
+        if (slot == 1 && resident.state.external) {
+            const auto generation = endpoint.generation;
+            const auto &server = residents[0];
+            if (!generation || service_root.phase() != aurora::service::Phase::ready ||
+                service_root.generation() != generation || !server.space || server.state.service != generation ||
+                server.state.space != &*server.space ||
+                server.initial[4] != table.activation_root(0, server.space->epoch()))
+                fail("client service incarnation admission");
+        }
         *output = execution_observation(slot, Event::prepared);
     } else if constexpr (kind == EffectKind::activate) {
 #ifdef AURORA_PROCESS_FIXTURE
@@ -2336,25 +2364,16 @@ public:
     U64 detail;
 };
 auto observe_service_loss(ServiceFailure kind) -> ServiceLoss {
+    if (service_root.phase() == aurora::service::Phase::retiring)
+        return {static_cast<ServiceFailure>(service_root.reason()), service_root.detail()};
     if (kind != ServiceFailure::observe)
         return {kind, 0};
     if (endpoint.invalid_reply_operation)
         return {ServiceFailure::invalid_reply, endpoint.invalid_reply_operation};
     if (residents[0].space)
         return {endpoint.caller_cancelled ? ServiceFailure::caller_expired : ServiceFailure::unavailable, 0};
-    // A naturally retired server leaves its authenticated running identity and
-    // terminal outcome here. A failed load has no such execution evidence.
-    if (!endpoint.generation || running.service != endpoint.generation ||
-        outcome.terminal_service != endpoint.generation || outcome.terminal_run != running.run)
-        return {ServiceFailure::unavailable, 0};
-    if (outcome.exited)
-        return {ServiceFailure::exited, outcome.status};
-    if (outcome.watchdog)
-        return {ServiceFailure::watchdog, outcome.terminal_ticks};
-    if (outcome.invalid_call)
-        return {ServiceFailure::invalid_call, outcome.operation};
-    if (!outcome.parked && !outcome.unavailable)
-        return {ServiceFailure::fault, outcome.vector};
+    // A failed load has no execution-owned terminal observation. Natural
+    // service terminals are already frozen by the source incarnation root.
     return {ServiceFailure::unavailable, 0};
 }
 auto service_lost(ServiceLoss loss, U64 generation) -> void {
@@ -2418,22 +2437,62 @@ auto discard_snapshot() -> void {
         snapshot.reset();
     }
 }
+auto invalidate_service_physical(std::size_t slot) -> void {
+    using namespace aurora::lifecycle;
+    if (slot != 0 || forced_execution || completed_output)
+        fail("service terminal boundary");
+    authenticate_execution(0, Phase::retiring);
+    authenticate_terminal_capture(0);
+    const auto generation = execution_owner.canonical(0, Field::incarnation);
+    const auto event = execution_owner.canonical(0, Field::terminal);
+    const auto detail = execution_owner.canonical(0, Field::terminal_detail);
+    if (endpoint.invalid_reply_operation > aurora::service::terminal_reply_limit)
+        fail("service terminal factual bounds");
+    const U64 terminal_facts = (endpoint.invalid_reply_operation << aurora::service::terminal_reply_shift) |
+                               (endpoint.caller_cancelled ? aurora::service::terminal_cancelled : 0);
+    if (!generation || residents[0].state.service != generation || endpoint.generation != generation ||
+        execution_owner.canonical(0, Field::event) == static_cast<U64>(Event::forced) ||
+        !service_root.observe_terminal(generation, event, detail, residents[0].budget.used(), terminal_facts))
+        fail("service terminal incarnation");
+    const bool had_snapshot = snapshot.has_value();
+    const U64 client = residents[1].space ? residents[1].state.run : 0;
+    loading_image = false;
+    endpoint.caller.reset();
+    endpoint.waiting = endpoint.replied = endpoint.delivery = endpoint.completion = false;
+    discard_snapshot();
+    // Incarnation remains bound until both slots have retired and the actual
+    // consumer acknowledges cleanup; no late reply remains deliverable.
+    Serial::text("AURORA_SERVICE_INVALIDATED:");
+    field("generation", generation);
+    field("server", residents[0].state.run);
+    field("client", client);
+    field("snapshot", had_snapshot);
+    field("companion", residents[0].state.companion);
+    Serial::text("\r\n");
+}
 auto abandon_service_observed(ServiceLoss loss) -> void {
     // The caller freezes the actual server result before forced retirement
     // replaces the shared outcome. The cause is diagnostic, never authority.
     const auto phase = service_root.phase();
     const U64 generation = phase == aurora::service::Phase::absent ? 0 : service_root.generation();
     if (generation) {
-        if ((endpoint.generation && endpoint.generation != generation) ||
-            !service_root.lose(generation, static_cast<aurora::service::Reason>(loss.kind), loss.detail))
+        if (endpoint.generation && endpoint.generation != generation)
+            fail("file service loss incarnation");
+        if (phase == aurora::service::Phase::retiring) {
+            if (residents[0].space || residents[1].space || snapshot || loading_image || endpoint.caller ||
+                endpoint.replied || endpoint.delivery || endpoint.completion ||
+                service_root.reason() == aurora::service::Reason::shutdown)
+                fail("file service pending terminal cleanup");
+        } else if (!service_root.lose(generation, static_cast<aurora::service::Reason>(loss.kind), loss.detail)) {
             fail("file service loss observation");
+        }
     } else if (endpoint.generation || residents[0].space || residents[1].space || snapshot) {
         fail("absent file service physical owner");
     }
     // No process may see a late reply or a writable staging alias after loss.
     loading_image = false;
     endpoint.caller.reset();
-    endpoint.completion = false;
+    endpoint.waiting = endpoint.replied = endpoint.delivery = endpoint.completion = false;
     discard_snapshot();
     for (std::size_t slot : {std::size_t{1}, std::size_t{0}}) {
         if (!residents[slot].space)
@@ -3074,14 +3133,24 @@ public:
 };
 
 auto begin_service_shutdown() -> void {
-    if (!residents[0].space || residents[1].space || snapshot || !service_root.begin_shutdown(endpoint.generation))
+    if (!residents[0].space || residents[1].space || snapshot || endpoint.caller || endpoint.replied ||
+        endpoint.delivery || endpoint.completion || !service_root.begin_shutdown(endpoint.generation))
         fail("file service shutdown intent");
+    // The preceding client is fully settled. This source-admitted shutdown is
+    // a new caller context, not another message of the cancelled request.
+    // Keep malformed-reply evidence; subsequent real expiry can set this bit.
+    endpoint.caller_cancelled = false;
+}
+auto service_shutdown_selected() -> bool {
+    return endpoint.generation && service_root.generation() == endpoint.generation &&
+           service_root.phase() == aurora::service::Phase::retiring &&
+           service_root.reason() == aurora::service::Reason::shutdown && service_root.detail() == 0;
 }
 auto finish_service_shutdown() -> void {
     const U64 generation = endpoint.generation;
     if (!generation || residents[0].space || residents[1].space || !outcome.exited || outcome.status ||
         outcome.terminal_service != generation || running.service != generation ||
-        outcome.terminal_run != running.run || !service_root.normal_exit(generation))
+        outcome.terminal_run != running.run || !service_shutdown_selected())
         fail("file service normal terminal observation");
     endpoint.generation = 0;
     endpoint.waiting = endpoint.replied = endpoint.delivery = endpoint.completion = false;
@@ -3311,7 +3380,8 @@ auto run_independent(std::span<const std::byte> view, std::span<const std::byte>
         }
         begin_service_shutdown();
         message_header(6, 0, 0, 0);
-        if (exchange_request(0) || residents[0].space || !outcome.exited || outcome.status) {
+        if (exchange_request(0) || residents[0].space || !outcome.exited || outcome.status ||
+            !service_shutdown_selected()) {
             abandon_service();
             fail("companion shutdown");
         }
@@ -3622,7 +3692,8 @@ auto run_external(std::span<const std::byte> view,
     }
     begin_service_shutdown();
     message_header(6, 0, 0, 0);
-    if (exchange_request(0) || residents[0].space || !outcome.exited || outcome.status) {
+    if (exchange_request(0) || residents[0].space || !outcome.exited || outcome.status ||
+        !service_shutdown_selected()) {
         abandon_service();
         if (recover) {
             close_service_operation();
@@ -4414,7 +4485,6 @@ auto resident_begin_shutdown(ResidentInput &input) -> aurora::bootstrap::Progres
     begin_service_shutdown();
     reset_loader(128);
     loading_image = true;
-    endpoint.caller_cancelled = false;
     message_header(6, 0, 0, 0);
     if (!begin_exchange(0)) {
         loading_image = false;
@@ -4436,7 +4506,7 @@ auto resident_advance_shutdown(ResidentInput &input) -> aurora::bootstrap::Progr
     if (progress == ExchangeProgress::pending)
         return Progress::pending;
     loading_image = false;
-    const bool clean = !residents[0].space && !residents[1].space && !endpoint.caller_cancelled && outcome.exited &&
+    const bool clean = service_shutdown_selected() && !residents[0].space && !residents[1].space && outcome.exited &&
                        !outcome.status && !outcome.watchdog && !outcome.invalid_call && !outcome.unavailable &&
                        !outcome.parked && outcome.terminal_service == input.shutdown_generation;
     if (!clean)
@@ -4917,9 +4987,24 @@ __au_runtime_execution_authority_retire(const void *binding, U64 epoch, const vo
     using namespace aurora::lifecycle;
     execution_owner.enter(binding, epoch, field, EffectKind::retire, slot);
     authenticate_execution(slot, Phase::retiring);
+    authenticate_terminal_capture(slot);
+    if (slot == 0 && residents[0].state.service &&
+        (service_root.phase() != aurora::service::Phase::retiring ||
+         service_root.generation() != residents[0].state.service || endpoint.generation != residents[0].state.service ||
+         residents[1].space || snapshot || loading_image || endpoint.caller || endpoint.waiting || endpoint.replied ||
+         endpoint.delivery || endpoint.completion))
+        fail("service retirement invalidation boundary");
     const bool result = release_resident_physical(slot);
     execution_owner.leave();
     return result;
+}
+__attribute__((visibility("hidden"))) bool
+__au_runtime_execution_authority_invalidate_service(const void *binding, U64 epoch, const void *field, U64 slot) {
+    using namespace aurora::lifecycle;
+    execution_owner.enter(binding, epoch, field, EffectKind::invalidate_service, slot);
+    invalidate_service_physical(slot);
+    execution_owner.leave();
+    return true;
 }
 __attribute__((visibility("hidden"))) bool
 __au_runtime_execution_authority_finish(const void *binding, U64 epoch, const void *field) {

@@ -13,7 +13,7 @@ export namespace kernel {
 
     // Two fixed flat slots. The private authority is nonmintable/noncopyable;
     // native storage and field effects authenticate this exact retained root.
-    // Each slot: phase, generation, MM epoch/root, service, initial/saved frame
+    // Each slot: phase, generation, MM epoch/root, bound incarnation, initial/saved frame
     // identity, entry mode, primary event/detail, exhaustion, pending operation,
     // selected terminal event/detail, and two reserved zero words.
     class ExecutionOwner {
@@ -21,11 +21,11 @@ export namespace kernel {
         array<u64, 32> state;
 
         auto same(i64 at, builtin::ExecutionObservation observed) const -> bool {
-            return observed.epoch == state[at + 2] && observed.root == state[at + 3] && observed.service == state[at
+            return observed.epoch == state[at + 2] && observed.root == state[at + 3] && observed.incarnation == state[at
                 + 4] && observed.initial == state[at + 5] && observed.saved == state[at + 6] && observed.exhausted
                 <= 1u64;
         }
-        auto accept(u64 slot, builtin::ExecutionObservation observed) -> LifecycleResult {
+        auto select_and_revoke(u64 slot, builtin::ExecutionObservation observed) -> LifecycleResult {
             const i64 at = i64(slot) * 16;
             builtin::require(same(at, observed));
             u64 selected = observed.event;
@@ -91,8 +91,13 @@ export namespace kernel {
             state[at + 12] = selected;
             state[at + 13] = terminal_detail;
             state[at] = 4u64;
+            return LifecycleResult(selected, terminal_detail, state[at + 1]);
+        }
+        auto retire_selected(u64 slot) -> LifecycleResult {
+            const i64 at = i64(slot) * 16;
+            builtin::require(state[at] == 4u64);
+            const LifecycleResult result = LifecycleResult(state[at + 12], state[at + 13], state[at + 1]);
             builtin::require(authority.retire(slot));
-            const LifecycleResult result = LifecycleResult(selected, terminal_detail, state[at + 1]);
             i64 word = 2;
             while (word < 16) {
                 state[at + word] = 0u64;
@@ -101,6 +106,28 @@ export namespace kernel {
             // Empty is published only after complete physical role cleanup.
             state[at] = 0u64;
             return result;
+        }
+        auto accept(u64 slot, builtin::ExecutionObservation observed) -> LifecycleResult {
+            const LifecycleResult result = select_and_revoke(slot, observed);
+            if (state[i64(slot) * 16] != 4u64) {
+                return result;
+            }
+            if (slot == 0u64 && state[4] != 0u64 && observed.event != 14u64) {
+                // Even loader-only loss must revoke replies and snapshots before
+                // physical retirement. The separate source incarnation selects
+                // loss versus normal shutdown from its own authenticated state.
+                builtin::require(authority.invalidate_service(0u64));
+                if (state[16] != 0u64) {
+                    builtin::require((state[16] == 1u64 || state[16] == 3u64) && state[20] == state[4]);
+                    const builtin::ExecutionObservation dependent = authority.force(1u64);
+                    builtin::require(dependent.event == 14u64);
+                    const LifecycleResult lost = select_and_revoke(1u64, dependent);
+                    builtin::require(lost.event == 12u64 && state[16] == 4u64);
+                    const LifecycleResult retired = retire_selected(1u64);
+                    builtin::require(retired.event == 12u64 && state[16] == 0u64);
+                }
+            }
+            return retire_selected(slot);
         }
     public:
         ExecutionOwner(builtin::ExecutionAuthority input) : authority(move(input)), state{} {
@@ -122,10 +149,15 @@ export namespace kernel {
                 == 0u64 || observed.root == 0u64 || observed.initial == 0u64 || observed.saved == 0u64) {
                 return false;
             }
+            if (slot == 1u64 && observed.incarnation != 0u64) {
+                if ((state[0] != 1u64 && state[0] != 3u64) || state[4] != observed.incarnation) {
+                    return false;
+                }
+            }
             state[at + 1] = state[at + 1] + 1u64;
             state[at + 2] = observed.epoch;
             state[at + 3] = observed.root;
-            state[at + 4] = observed.service;
+            state[at + 4] = observed.incarnation;
             state[at + 5] = observed.initial;
             state[at + 6] = observed.saved;
             state[at] = 1u64;

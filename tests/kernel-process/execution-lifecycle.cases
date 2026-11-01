@@ -51,7 +51,7 @@ cleanup-failure source:cleanup-failure
 completion-identity source:completion-identity
 completion-event source:completion-event
 finish-live source:finish-live
-high-bit-abi high-bits prepare:1 run:1:6:18446744073709551615:0 finish
+high-bit-abi high-bits prepare:0 prepare:1 run:1:6:18446744073709551615:0 force:0:14:16:0 finish
 stale-reuse source:stale-reuse
 completion-exhausted source:completion-exhausted
 completion-detail source:completion-detail
@@ -76,3 +76,17 @@ prepared-prior source:prepared-prior
 service-output-collision source:service-output-collision
 output-with-timer source:output-with-timer
 expiry-without-request source:expiry-without-request
+# Actual source client-first policy over modeled endpoint/snapshot barrier effects.
+natural-service-no-client incarnation:0:7 prepare:0 run:0:6:0:0 state:0 finish
+natural-service-loader-barrier incarnation:0:7 loader-snapshot prepare:0 run:0:8:14:0 state:0 finish
+natural-service-prepared-client incarnation:0:7 incarnation:1:7 prepare:0 prepare:1 run:0:6:3:0 state:1 state:0 finish
+natural-service-request-client incarnation:0:7 incarnation:1:7 prepare:0 prepare:1 run:1:4:0:0 run:0:8:14:0 state:1 state:0 finish
+natural-service-output-client incarnation:0:7 incarnation:1:7 prepare:0 prepare:1 run:1:5:0:0 run:0:6:0:0 state:1 state:0 finish
+natural-service-exhausted incarnation:0:7 incarnation:1:7 prepare:0 prepare:1 run:0:6:42:1 state:1 state:0 finish
+natural-service-fault-exhausted incarnation:0:7 incarnation:1:7 prepare:0 prepare:1 run:0:8:14:1 state:1 state:0 finish
+natural-cross-incarnation source:natural-cross-incarnation
+invalidate-failure source:invalidate-failure
+service-cleanup-failure source:service-cleanup-failure
+invalidate-cross-slot native:invalidate-cross-slot
+foreign-client-prepare incarnation:0:7 incarnation:1:8 prepare:0 prepare:1 state:1 run:0:6:0:0 finish
+missing-service-prepare incarnation:1:7 prepare:1 state:1 finish

@@ -2064,7 +2064,14 @@ auto service_incarnation_mode(const char *cases) -> int {
             } else if (operation == "loss" && fields.size() == 4) {
                 result << " loss=" << root.lose(number(fields[1]), fixture::reason(fields[2]), number(fields[3]));
             } else if (operation == "exit" && fields.size() == 2) {
-                result << " exit=" << root.normal_exit(number(fields[1]));
+                result << " exit=" << root.observe_terminal(number(fields[1]), 6, 0, 0, 0);
+            } else if (operation == "observe" && fields.size() == 6) {
+                result << " observe="
+                       << root.observe_terminal(number(fields[1]),
+                                                number(fields[2]),
+                                                number(fields[3]),
+                                                number(fields[4]),
+                                                number(fields[5]));
             } else if (operation == "clean" && fields.size() == 2) {
                 result << " clean=" << root.cleaned(number(fields[1]));
             } else if (operation == "disk" && fields.size() == 2) {

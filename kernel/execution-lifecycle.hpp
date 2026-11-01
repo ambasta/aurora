@@ -36,14 +36,15 @@ enum class EffectKind : U64 {
     complete,
     force,
     retire,
-    finish
+    finish,
+    invalidate_service
 };
 enum class Field : U64 {
     phase,
     generation,
     epoch,
     root,
-    service,
+    incarnation,
     initial,
     saved,
     mode,
@@ -63,7 +64,7 @@ public:
 };
 class Observation final {
 public:
-    U64 event = 0, detail = 0, exhausted = 0, epoch = 0, root = 0, service = 0, initial = 0, saved = 0;
+    U64 event = 0, detail = 0, exhausted = 0, epoch = 0, root = 0, incarnation = 0, initial = 0, saved = 0;
 };
 class Result final {
 public:
@@ -104,6 +105,23 @@ template <class Platform> class Root final {
         for (std::size_t i = 0; i < value.size(); ++i)
             value[i] = storage_[i];
         return std::bit_cast<Descriptor>(value);
+    }
+    // Only admitted effects may read canonical bytes. enter() uses this helper
+    // after authenticating the exact descriptor/root, before opening busy scope.
+    auto read(U64 slot, Field field) const -> U64 {
+        std::array<std::byte, 8> value{};
+        const auto offset = 16 + slot * 128 + static_cast<U64>(field) * 8;
+        for (std::size_t i = 0; i < value.size(); ++i)
+            value[i] = storage_[offset + i];
+        return std::bit_cast<U64>(value);
+    }
+    auto revoked_service() const -> bool {
+        const auto terminal = read(0, Field::terminal);
+        return read(0, Field::phase) == static_cast<U64>(Phase::retiring) && read(0, Field::generation) &&
+               read(0, Field::incarnation) && read(0, Field::event) >= static_cast<U64>(Event::timer) &&
+               read(0, Field::event) <= static_cast<U64>(Event::fault) && read(0, Field::exhausted) <= 1 &&
+               ((terminal >= static_cast<U64>(Event::exited) && terminal <= static_cast<U64>(Event::fault)) ||
+                terminal == static_cast<U64>(Event::expired));
     }
     auto open(EffectKind kind, U64 slot) -> void {
         require(binding_.active && !entered_ && !busy_ && !consumed_ && slot < 2 && Platform::quiet());
@@ -195,22 +213,37 @@ public:
         return result;
     }
     auto enter(const void *binding, U64 epoch, const void *field, EffectKind kind, U64 slot) -> void {
-        require(entered_ && !busy_ && !consumed_ && slot == slot_ &&
-                (kind == operation_ || (kind == EffectKind::retire &&
-                                        (operation_ == EffectKind::activate || operation_ == EffectKind::force))));
+        require(entered_ && !busy_ && !consumed_ && slot < 2);
+        const bool same_slot =
+            slot == slot_ &&
+            (kind == operation_ ||
+             (kind == EffectKind::retire && (operation_ == EffectKind::activate || operation_ == EffectKind::force)) ||
+             (kind == EffectKind::invalidate_service && operation_ == EffectKind::activate && slot == 0));
+        const bool dependent = operation_ == EffectKind::activate && slot_ == 0 && slot == 1 &&
+                               (kind == EffectKind::force || kind == EffectKind::retire);
+        require(same_slot || dependent);
         require(binding == &binding_ && binding_.active && epoch && epoch == binding_.epoch &&
                 field == storage_.data() && Platform::quiet());
         require(descriptor().binding == binding && descriptor().epoch == epoch);
+        // No source-field read occurs before exact root/field authentication.
+        // This is a finite child cleanup edge, never a nested activation loan.
+        if (dependent || kind == EffectKind::invalidate_service)
+            require(revoked_service());
+        if (dependent) {
+            require(read(1, Field::generation) && read(1, Field::incarnation) == read(0, Field::incarnation));
+            const auto phase = static_cast<Phase>(read(1, Field::phase));
+            require(kind == EffectKind::force
+                        ? phase == Phase::prepared || phase == Phase::parked
+                        : phase == Phase::retiring && read(1, Field::event) == static_cast<U64>(Event::forced) &&
+                              read(1, Field::terminal) == static_cast<U64>(Event::unavailable));
+        }
         busy_ = true;
     }
     auto canonical(U64 slot, Field field) const -> U64 {
-        require(entered_ && busy_ && !consumed_ && (slot == slot_ || operation_ == EffectKind::finish) && slot < 2 &&
-                static_cast<U64>(field) < 16);
-        std::array<std::byte, 8> value{};
-        const auto offset = 16 + slot * 128 + static_cast<U64>(field) * 8;
-        for (std::size_t i = 0; i < value.size(); ++i)
-            value[i] = storage_[offset + i];
-        return std::bit_cast<U64>(value);
+        require(entered_ && busy_ && !consumed_ && slot < 2 && static_cast<U64>(field) < 16);
+        require(slot == slot_ || operation_ == EffectKind::finish ||
+                (operation_ == EffectKind::activate && slot_ == 0 && slot == 1 && revoked_service()));
+        return read(slot, field);
     }
     auto leave() -> void {
         require(entered_ && busy_ && Platform::quiet());

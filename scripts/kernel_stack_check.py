@@ -119,6 +119,7 @@ def execution_authority_calls(path, name, fact):
         for method in ("prepare", "activate", "complete", "force")
     }
     expected[prefix + "retire"] = {"sysv_arguments": 4, "result_max": 1}
+    expected[prefix + "invalidate_service"] = {"sysv_arguments": 4, "result_max": 1}
     expected[prefix + "finish"] = {"sysv_arguments": 3, "result_max": 1}
     calls = fact["calls"]
     signatures = fact.get("service_abi", {}).get("calls", {})

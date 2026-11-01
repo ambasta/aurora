@@ -15,7 +15,9 @@ struct Platform {
 };
 using Root = lifecycle::Root<Platform>;
 Root *current = nullptr;
-std::array<lifecycle::Observation, 2> identities{};
+std::array<lifecycle::Observation, 2> identities{}, captures{};
+std::array<U64, 2> incarnations{};
+bool invalidated = false, loader_snapshot = false;
 lifecycle::Observation selected{};
 std::string fault;
 std::ostringstream effects;
@@ -25,6 +27,10 @@ bool high_bits = false;
 auto reset(Root &root) -> void {
     current = &root;
     identities = {};
+    captures = {};
+    incarnations = {};
+    invalidated = false;
+    loader_snapshot = false;
     selected = {};
     fault.clear();
     effects.str("");
@@ -68,7 +74,7 @@ auto output_storage(const void *address, const lifecycle::Observation *output) -
 auto identity(U64 slot) -> void {
     const auto &value = identities[slot];
     if (current->canonical(slot, Field::epoch) != value.epoch || current->canonical(slot, Field::root) != value.root ||
-        current->canonical(slot, Field::service) != value.service ||
+        current->canonical(slot, Field::incarnation) != value.incarnation ||
         current->canonical(slot, Field::initial) != value.initial ||
         current->canonical(slot, Field::saved) != value.saved)
         usage("lifecycle canonical identity lost observation bits");
@@ -85,7 +91,7 @@ auto observe(U64 slot) -> lifecycle::Observation {
     if (fault == "wrong-root")
         ++result.root;
     if (fault == "wrong-service")
-        ++result.service;
+        ++result.incarnation;
     if (fault == "wrong-initial")
         ++result.initial;
     if (fault == "wrong-saved")
@@ -105,11 +111,11 @@ extern "C" void __au_runtime_execution_authority_prepare(
         usage("lifecycle preparation observed a nonempty source slot");
     ++preparations;
     identities[slot] = {
-        1, 0, 0, 100 + preparations, 4096 * (slot + 1), slot + 10, 8192 + slot * 256, 16384 + slot * 256};
+        1, 0, 0, 100 + preparations, 4096 * (slot + 1), incarnations[slot], 8192 + slot * 256, 16384 + slot * 256};
     if (high_bits) {
         identities[slot].epoch |= U64{1} << 63;
         identities[slot].root |= U64{1} << 63;
-        identities[slot].service |= U64{1} << 63;
+        identities[slot].incarnation |= U64{1} << 63;
         identities[slot].initial |= U64{1} << 63;
         identities[slot].saved |= U64{1} << 63;
     }
@@ -127,6 +133,7 @@ extern "C" void __au_runtime_execution_authority_activate(
         usage("lifecycle activation was not source-selected");
     effects << " enter=" << current->canonical(slot, Field::mode);
     *output = observe(slot);
+    captures[slot] = *output;
     current->leave();
 }
 extern "C" void __au_runtime_execution_authority_force(
@@ -138,6 +145,14 @@ extern "C" void __au_runtime_execution_authority_force(
     if (phase != 1 && phase != 3)
         usage("forced lifecycle observation lacks a prepared or parked source slot");
     *output = observe(slot);
+    if (invalidated && slot == 1) {
+        output->event = 14;
+        output->detail = 16;
+        output->exhausted = 0;
+        if (fault == "natural-cross-incarnation")
+            ++output->incarnation;
+    }
+    captures[slot] = *output;
     current->leave();
 }
 extern "C" void __au_runtime_execution_authority_complete(
@@ -151,18 +166,45 @@ extern "C" void __au_runtime_execution_authority_complete(
     *output = observe(slot);
     current->leave();
 }
+// Models only physical invalidation/discard receipts. The compiled owner chooses
+// when this barrier occurs and which slot must be retired before the service.
+extern "C" bool
+__au_runtime_execution_authority_invalidate_service(const void *binding, U64 epoch, const void *address, U64 slot) {
+    enter(binding, epoch, address, Kind::invalidate_service, slot);
+    identity(slot);
+    if (slot != 0 || current->canonical(slot, Field::phase) != 4 || current->canonical(slot, Field::incarnation) == 0)
+        usage("service invalidation lacks revoked source service authority");
+    if (fault == "invalidate-cross-slot") {
+        current->leave();
+        current->enter(binding, epoch, address, Kind::invalidate_service, 1);
+    }
+    if (fault == "invalidate-failure") {
+        current->leave();
+        return false;
+    }
+    invalidated = true;
+    effects << " invalidate=" << slot;
+    if (loader_snapshot) {
+        loader_snapshot = false;
+        effects << " snapshot=discarded";
+    }
+    current->leave();
+    return true;
+}
 extern "C" bool __au_runtime_execution_authority_retire(const void *binding, U64 epoch, const void *address, U64 slot) {
     enter(binding, epoch, address, Kind::retire, slot);
     identity(slot);
     if (current->canonical(slot, Field::phase) != 4)
         usage("cleanup occurred before source activation revocation");
-    if (current->canonical(slot, Field::event) != selected.event ||
-        current->canonical(slot, Field::detail) != selected.detail ||
-        current->canonical(slot, Field::exhausted) != selected.exhausted)
+    if (current->canonical(slot, Field::event) != captures[slot].event ||
+        current->canonical(slot, Field::detail) != captures[slot].detail ||
+        current->canonical(slot, Field::exhausted) != captures[slot].exhausted)
         usage("source retirement overwrote primary physical evidence");
     effects << " retire=" << slot << ':' << current->canonical(slot, Field::event) << ':'
             << current->canonical(slot, Field::terminal);
-    const bool result = fault != "cleanup-failure";
+    const bool result = fault != "cleanup-failure" && !(fault == "service-cleanup-failure" && slot == 0);
+    if (slot == 0)
+        invalidated = false;
     current->leave();
     return result;
 }
@@ -181,7 +223,15 @@ auto denial(const std::string &name, bool source) -> void {
     if (!child) {
         Root root;
         reset(root);
-        if (!source) {
+        if (name == "natural-cross-incarnation" || name == "invalidate-failure" || name == "service-cleanup-failure" ||
+            name == "invalidate-cross-slot") {
+            incarnations = {7, 7};
+            static_cast<void>(root.prepare(0));
+            static_cast<void>(root.prepare(1));
+            selected = {6, 0, 0};
+            fault = name;
+            static_cast<void>(root.execute(0));
+        } else if (!source) {
             if (name == "after-finish" || name == "reinitialize") {
                 static_cast<void>(root.finish());
                 if (name == "after-finish")
@@ -298,6 +348,13 @@ auto lifecycle_mode(const char *path) -> int {
             if ((operation == "native" || operation == "source") && fields.size() == 2) {
                 lifecycle_fixture::denial(fields[1], operation == "source");
                 output << " denied=" << operation;
+            } else if (operation == "incarnation" && fields.size() == 3) {
+                const auto slot = number(fields[1]);
+                if (slot >= 2)
+                    usage("invalid lifecycle incarnation slot");
+                lifecycle_fixture::incarnations[slot] = number(fields[2]);
+            } else if (operation == "loader-snapshot" && fields.size() == 1) {
+                lifecycle_fixture::loader_snapshot = true;
             } else if (operation == "high-bits" && fields.size() == 1) {
                 lifecycle_fixture::high_bits = true;
             } else if (operation == "finish" && fields.size() == 1) {

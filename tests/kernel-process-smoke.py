@@ -591,9 +591,12 @@ def mounted_authority(status, text, mode, image, cut, plan):
             need(
                 text.index(injected)
                 < text.index(final_fence)
-                < text.index("AURORA_PROCESS_END: run=1 reason=exit status=1")
-                < text.index(retired)
+                < text.index(f"AURORA_SERVICE_INVALIDATED: generation={service} server=1 client=2 snapshot=0")
                 < text.index("AURORA_PROCESS_END: run=2 reason=service_lost")
+                < text.index("AURORA_PROCESS_RELEASED: run=2 ")
+                < text.index("AURORA_PROCESS_END: run=1 reason=exit status=1")
+                < text.index("AURORA_PROCESS_RELEASED: run=1 ")
+                < text.index(retired)
                 < text.index(f"AURORA_FILE_SERVICE_READY: generation={restarted[0]} disk=unavailable")
                 < text.index("AURORA_PROCESS_RUN: run=4 path=bin/lifecycle ticks=16"),
                 "Owner retirement, client loss and RAM-only restart order",
@@ -627,6 +630,33 @@ def mounted_authority(status, text, mode, image, cut, plan):
     )
 
 
+def terminal_cleanup_order(text):
+    # Natural service death must invalidate delivery before either owner is
+    # released. A live client is retired first by the source execution owner.
+    for match in re.finditer(
+        r"AURORA_SERVICE_INVALIDATED: generation=(\d+) server=(\d+) client=(\d+) snapshot=([01]) companion=(\d+)\n",
+        text,
+    ):
+        generation, server, client, _, companion = map(int, match.groups())
+        need(generation > 0 and server > 0 and client != server, "Authenticated terminal owner identities")
+        tail = text[match.end() :]
+        kind = "FILE_SERVICE" if companion else "PROCESS"
+        run = companion or server
+        server_end = re.search(rf"AURORA_{kind}_END: run={run} ", tail)
+        server_release = re.search(rf"AURORA_{kind}_RELEASED: run={run} ", tail)
+        need(
+            server_end and server_release and server_end.start() < server_release.start(),
+            "Service retirement after invalidation",
+        )
+        if client:
+            client_end = re.search(rf"AURORA_PROCESS_END: run={client} reason=service_lost\n", tail)
+            client_release = re.search(rf"AURORA_PROCESS_RELEASED: run={client} ", tail)
+            need(
+                client_end and client_release and client_end.start() < client_release.start() < server_end.start(),
+                "Source client retirement precedes service retirement",
+            )
+
+
 def validate(
     status,
     text,
@@ -656,6 +686,7 @@ def validate(
     need("AURORA_UEFI_FAIL:" not in text, "Loader failure")
     ordered(text, BASE)
     volume = (image / "esp/aurora/volume").read_bytes()
+    terminal_cleanup_order(text)
     if mode == "process-xfs-mounted-prepared-loss":
         free = frames(text)
         need(status == 33 and "AURORA_PROCESS_FAIL:" not in text, "Prepared mounted refusal failed")

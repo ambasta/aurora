@@ -28,6 +28,11 @@ enum class Reason : U64 {
     unavailable,
     shutdown
 };
+// observe_terminal factual encoding: bit 0 is authenticated caller cancellation
+// or expiry; bits 1..63 are the malformed-reply operation, never a chosen cause.
+inline constexpr U64 terminal_cancelled = 1;
+inline constexpr U64 terminal_reply_shift = 1;
+inline constexpr U64 terminal_reply_limit = ~U64{0} >> terminal_reply_shift;
 // These are private bridge entries admitted against emitted nominal/layout facts.
 // A copied ordinal or report is not authority to bind a process or an endpoint.
 extern "C" {
@@ -38,7 +43,7 @@ Action __au_runtime_service_admit(void *, U64, bool);
 bool __au_runtime_service_mark_ready(void *, U64, bool);
 bool __au_runtime_service_begin_shutdown(void *, U64);
 bool __au_runtime_service_lose(void *, U64, Reason, U64);
-bool __au_runtime_service_normal_exit(void *, U64);
+bool __au_runtime_service_observe_terminal(void *, U64, U64, U64, U64, U64);
 bool __au_runtime_service_cleaned(void *, U64);
 U64 __au_runtime_service_generation(const void *);
 Phase __au_runtime_service_phase(const void *);
@@ -116,9 +121,10 @@ public:
         leave();
         return result;
     }
-    auto normal_exit(U64 generation) -> bool {
+    auto observe_terminal(U64 generation, U64 event, U64 detail, U64 ticks, U64 terminal_facts) -> bool {
         enter(true);
-        const auto result = __au_runtime_service_normal_exit(storage_, generation);
+        const auto result =
+            __au_runtime_service_observe_terminal(storage_, generation, event, detail, ticks, terminal_facts);
         leave();
         return result;
     }

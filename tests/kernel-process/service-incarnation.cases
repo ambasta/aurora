@@ -28,3 +28,19 @@ reentrant deny:reentrant
 # Reusing an owner also consumes this operation's opportunity to select an incarnation.
 reused_loss_no_restart open admit:0:1 ready:1:1 close open admit:0:1 loss:1:fault:14 clean:1 admit:0:1 view close open admit:0:1 ready:2:0 view close
 pinned_reused_loss_no_restart open admit:0:1 ready:1:1 close open admit:1:0 loss:1:invalid_reply:19 clean:1 admit:0:1 admit:1:1 view close open admit:0:1 ready:2:1 view close
+# Authenticated terminal observations; source alone selects shutdown/loss reason.
+observed_shutdown open admit:0:1 ready:1:1 shutdown:1 observe:1:6:0:4:0 view clean:1 close
+observed_nonzero_shutdown open admit:0:1 ready:1:1 shutdown:1 observe:1:6:7:4:0 view clean:1 close
+observed_startup_fault open admit:0:1 observe:1:8:14:2:0 view clean:1 close
+observed_invalid_call open admit:0:1 ready:1:1 observe:1:7:19:3:0 view clean:1 close
+observed_watchdog open admit:0:1 ready:1:1 observe:1:10:0:64:0 view clean:1 close
+observed_invalid_reply_precedes_exit open admit:0:1 ready:1:1 observe:1:6:0:3:38 view clean:1 close
+observed_invalid_reply_precedes_watchdog open admit:0:1 ready:1:1 observe:1:10:0:64:38 view clean:1 close
+observed_invalid_reply_precedes_shutdown open admit:0:1 ready:1:1 shutdown:1 observe:1:6:0:3:38 view clean:1 close
+observed_cross_incarnation open admit:0:1 ready:1:1 observe:2:8:14:2:0 view close
+observed_nonterminal_refused open admit:0:1 ready:1:1 observe:1:2:0:2:0 observe:1:14:16:0:0 view close
+observed_terminal_once open admit:0:1 ready:1:1 observe:1:8:14:2:0 observe:1:6:0:3:38 view clean:1 close
+observed_cancelled_shutdown_is_loss open admit:0:1 ready:1:1 shutdown:1 observe:1:6:0:3:1 view clean:1 close
+observed_cancelled_invalid_reply open admit:0:1 ready:1:1 shutdown:1 observe:1:6:0:3:39 view clean:1 close
+observed_cancelled_watchdog open admit:0:1 ready:1:1 shutdown:1 observe:1:10:0:64:1 view clean:1 close
+observed_maximum_terminal_facts open admit:0:1 ready:1:1 observe:1:8:14:2:18446744073709551615 view clean:1 close

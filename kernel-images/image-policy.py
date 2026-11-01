@@ -303,7 +303,11 @@ RULES = [
             {
                 "root": "__au_runtime_execution_authority_prepare",
                 "physical": [],
-                "source_entries": ["__au_runtime_manager_space_value"],
+                "source_entries": [
+                    "__au_runtime_manager_space_value",
+                    "__au_runtime_service_phase",
+                    "__au_runtime_service_generation",
+                ],
             },
             {
                 "root": "__au_runtime_execution_authority_activate",
@@ -398,11 +402,23 @@ RULES = [
                 "root": "__au_runtime_execution_authority_retire",
                 "physical": [],
                 "source_entries": [
+                    "__au_runtime_service_phase",
+                    "__au_runtime_service_generation",
                     "__au_runtime_budget_used",
                     "__au_runtime_manager_space_value",
                     "__au_runtime_manager_verify_space",
                     "__au_runtime_manager_retire_space",
                     "__au_runtime_manager_audit_residents",
+                ],
+            },
+            {
+                "root": "__au_runtime_execution_authority_invalidate_service",
+                "physical": [],
+                "source_entries": [
+                    "__au_runtime_manager_space_value",
+                    "__au_runtime_budget_used",
+                    "__au_runtime_service_observe_terminal",
+                    "__au_runtime_manager_snapshot_discard",
                 ],
             },
             {
@@ -418,6 +434,7 @@ RULES = [
             "__au_runtime_execution_authority_force",
             "__au_runtime_execution_authority_retire",
             "__au_runtime_execution_authority_finish",
+            "__au_runtime_execution_authority_invalidate_service",
         ],
         "reachable": [
             "__au_runtime_lifecycle_construct",
@@ -519,10 +536,10 @@ RULES = [
         "profiles": ["uefi/production"],
         "reachable": ["__au_runtime_service_disk_ready"],
     },
-    # Only boot-selected fixtures currently request orderly owner shutdown.
+    # Fixture routes must retain both explicit shutdown intent and terminal observation.
     {
         "profiles": ["uefi/process-fixture"],
-        "reachable": ["__au_runtime_service_begin_shutdown", "__au_runtime_service_normal_exit"],
+        "reachable": ["__au_runtime_service_begin_shutdown", "__au_runtime_service_observe_terminal"],
     },
     # The process image's frame, map, volume, export, program, trap and run decisions stay in Aurora.
     {

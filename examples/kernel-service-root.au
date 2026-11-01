@@ -27,8 +27,9 @@ auto process_service_lose(kernel::ServiceIncarnation& service, u64 generation, k
     u64 detail) -> bool {
     return service.lose(generation, reason, detail);
 }
-auto process_service_normal_exit(kernel::ServiceIncarnation& service, u64 generation) -> bool {
-    return service.normal_exit(generation);
+auto process_service_observe_terminal(kernel::ServiceIncarnation& service, u64 generation, u64 event, u64 detail,
+    u64 ticks, u64 terminal_facts) -> bool {
+    return service.observe_terminal(generation, event, detail, ticks, terminal_facts);
 }
 auto process_service_cleaned(kernel::ServiceIncarnation& service, u64 generation) -> bool {
     return service.cleaned(generation);

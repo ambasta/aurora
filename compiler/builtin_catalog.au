@@ -451,7 +451,7 @@ export namespace compiler_catalog {
         }
         if (type == 60) {
             return use_word(session,
-                "builtin::ExecutionObservation;__au_execution_observation;event;detail;exhausted;epoch;root;service;initial;saved",
+                "builtin::ExecutionObservation;__au_execution_observation;event;detail;exhausted;epoch;root;incarnation;initial;saved",
                 part, begin, end);
         }
         if (type == 58) {
@@ -714,7 +714,7 @@ export namespace compiler_catalog {
     }
     auto resource_method_count(i64 kind) -> i64 {
         if (kind == 5) {
-            return 6;
+            return 7;
         }
         if (kind == 4) {
             return 24;
@@ -732,7 +732,8 @@ export namespace compiler_catalog {
     }
     auto resource_method_word(compiler_resolver::Session& session, i64 kind, i64 method, i64 begin, i64 end) -> i64 {
         if (kind == 5) {
-            return use_word(session, "prepare;activate;complete;force;retire;finish", method, begin, end);
+            return use_word(session, "prepare;activate;complete;force;retire;finish;invalidate_service", method, begin,
+                end);
         }
         if (kind == 4) {
             return use_word(session,
@@ -757,7 +758,7 @@ export namespace compiler_catalog {
     }
     auto resource_method_result(i64 kind, i64 method) -> i64 {
         if (kind == 5) {
-            if (method < 0 || method >= 6) {
+            if (method < 0 || method >= 7) {
                 return -1;
             }
             if (method < 4) {
@@ -876,6 +877,14 @@ export namespace compiler_catalog {
     auto resource_method_effect(i64 kind, i64 method) -> i64 {
         if (method < 0 || method >= resource_method_count(kind)) {
             return -1;
+        }
+        if (kind == 5) {
+            // The appended invalidation effect borrows; existing finish keeps
+            // its stable ordinal and remains the only consuming method.
+            if (method == 5) {
+                return 2;
+            }
+            return 1;
         }
         if ((kind == 3 && method < 2) || (method == 0 && !resource_retained(kind))) {
             return 0;
@@ -1000,6 +1009,9 @@ export namespace compiler_catalog {
             }
             if (method == 5) {
                 return catalog_byte("__au_runtime_execution_authority_finish", index);
+            }
+            if (method == 6) {
+                return catalog_byte("__au_runtime_execution_authority_invalidate_service", index);
             }
             return -1;
         }

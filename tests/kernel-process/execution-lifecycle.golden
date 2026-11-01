@@ -50,7 +50,7 @@ cleanup-failure denied=source
 completion-identity denied=source
 completion-event denied=source
 finish-live denied=source
-high-bit-abi prepare=1 run=6:18446744073709551615:1 finish=1 enter=0 retire=1:6:6
+high-bit-abi prepare=1 prepare=1 run=6:18446744073709551615:1 force=12:0:1 finish=1 enter=0 retire=1:6:6 retire=0:14:12
 stale-reuse denied=source
 completion-exhausted denied=source
 completion-detail denied=source
@@ -75,3 +75,16 @@ prepared-prior denied=source
 service-output-collision denied=source
 output-with-timer denied=source
 expiry-without-request denied=source
+natural-service-no-client prepare=1 run=6:0:1 state=0:1 finish=1 enter=0 invalidate=0 retire=0:6:6
+natural-service-loader-barrier prepare=1 run=8:14:1 state=0:1 finish=1 enter=0 invalidate=0 snapshot=discarded retire=0:8:8
+natural-service-prepared-client prepare=1 prepare=1 run=6:3:1 state=0:1 state=0:1 finish=1 enter=0 invalidate=0 retire=1:14:12 retire=0:6:6
+natural-service-request-client prepare=1 prepare=1 run=4:0:1 run=8:14:1 state=0:1 state=0:1 finish=1 enter=0 enter=0 invalidate=0 retire=1:14:12 retire=0:8:8
+natural-service-output-client prepare=1 prepare=1 run=5:0:1 run=6:0:1 state=0:1 state=0:1 finish=1 enter=0 enter=0 invalidate=0 retire=1:14:12 retire=0:6:6
+natural-service-exhausted prepare=1 prepare=1 run=10:0:1 state=0:1 state=0:1 finish=1 enter=0 invalidate=0 retire=1:14:12 retire=0:6:10
+natural-service-fault-exhausted prepare=1 prepare=1 run=10:0:1 state=0:1 state=0:1 finish=1 enter=0 invalidate=0 retire=1:14:12 retire=0:8:10
+natural-cross-incarnation denied=source
+invalidate-failure denied=source
+service-cleanup-failure denied=source
+invalidate-cross-slot denied=native
+foreign-client-prepare prepare=1 prepare=0 state=0:0 run=6:0:1 finish=1 enter=0 invalidate=0 retire=0:6:6
+missing-service-prepare prepare=0 state=0:0 finish=1

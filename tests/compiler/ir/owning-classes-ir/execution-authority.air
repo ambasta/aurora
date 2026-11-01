@@ -259,3 +259,52 @@ end
 ; EXPECT-ERROR: owned byte or root mutation with live readonly span
 @@ -23 +22,0 @@
 -    EndSpan 56
+
+; CASE: service invalidation borrows without consuming the authority
+; RUN: verify
+; EXPECT-OK
+; RUN: emit
+; CHECK: __au_runtime_execution_authority_invalidate_service
+; RUN: stack-facts
+; CHECK-JSON: functions.invalidate_then_retire.service_abi.calls.__au_runtime_execution_authority_invalidate_service {"sysv_arguments":4,"result_max":1}
+layout InvalidationOwner []
+fields InvalidationOwner [((26 __au_execution_authority) 0 0 false)]
+storage InvalidationOwner [] [0] 16 16 16
+function invalidate_then_retire
+  result bool
+  params []
+  frame 0
+  receiver InvalidationOwner true false
+    Constant 0 u64
+    RetainedFieldOperation 0 0 6 0 5
+    Constant 0 u64
+    RetainedFieldOperation 0 0 4 0 5
+    Return
+end
+function invalidate_then_finish
+  result bool
+  params []
+  frame 0
+  receiver InvalidationOwner true false true true
+    Constant 0 u64
+    RetainedFieldOperation 0 0 6 0 5
+    RetainedFieldOperation 0 0 5 0 5
+    Return
+end
+
+; CASE: service invalidation cannot substitute for consuming finish
+; BASE: service invalidation borrows without consuming the authority
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -22 +21,0 @@
+-    RetainedFieldOperation 0 0 5 0 5
+
+; CASE: service invalidation rejects a live sibling loan
+; BASE: execution effects after sibling loan scope closes
+; RUN: verify
+; EXPECT-ERROR: owned byte or root mutation with live readonly span
+@@ -11 +10,0 @@
+-    EndSpan 56
+@@ -13 +12 @@
+-    RetainedFieldOperation 0 0 4 0 5
++    RetainedFieldOperation 0 0 6 0 5

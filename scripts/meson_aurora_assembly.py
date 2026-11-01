@@ -291,7 +291,7 @@ def validate_native_abi(facts, source):
             ("mark_ready", ["u64", "bool"], "bool", True),
             ("begin_shutdown", ["u64"], "bool", True),
             ("lose", ["u64", "kernel::ServiceReason", "u64"], "bool", True),
-            ("normal_exit", ["u64"], "bool", True),
+            ("observe_terminal", ["u64"] * 5, "bool", True),
             ("cleaned", ["u64"], "bool", True),
             ("generation", [], "u64", False),
             ("phase", [], "kernel::ServicePhase", False),
@@ -537,7 +537,7 @@ def validate_native_abi(facts, source):
             64,
             [
                 (name, "u64", 0)
-                for name in ("event", "detail", "exhausted", "epoch", "root", "service", "initial", "saved")
+                for name in ("event", "detail", "exhausted", "epoch", "root", "incarnation", "initial", "saved")
             ],
         )
         record("kernel::LifecycleResult", 24, [("event", "u64", 0), ("detail", "u64", 0), ("generation", "u64", 0)])

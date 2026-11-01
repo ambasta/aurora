@@ -75,6 +75,37 @@ between grant and first entry. Invalid post-grant ownership or admission is
 fail-stop, not an invented abort/rollback authority. There is no actual
 never-started recovery-writer guest route claimed here.
 
+The mounted-prepared fixture (case 72) loads and grants the real mounted service,
+then supplies a synthetic zero bootstrap transport capacity before first entry.
+The existing source bootstrap plan rejects that preparation and consumes its
+lease through ordinary abandonment. It checks source retirement, exact frame
+release/audit, context scrubbing and role cleanup; the private disk must remain
+byte-identical with zero writes and flushes. This covers never-started mounted
+cleanup, not spontaneous hardware loss or never-started recovery-writer cleanup.
+
+Natural service terminals now cross a source-selected invalidation boundary
+before either address space is retired. The service-incarnation source root
+classifies normal shutdown versus loss from the selected event and physical
+facts (a checked malformed-reply operation plus caller cancellation/expiry, not
+an encoded reason); endpoint delivery is revoked and any
+unpublished loader snapshot discarded. The execution source then retires a
+bound client before the service, preserving the server's authenticated trap
+capture, and the outer consumer acknowledges the frozen incarnation cleanup.
+Client execution observations bind the existing endpoint incarnation separately
+from the native service storage-role identity. That binding is admitted against
+the already-published source service slot and reauthenticated against the live
+endpoint on every effect. The fixed two-slot cleanup is nonrecursive: only an
+original service-execution operation with a revoked service and matching client
+incarnation can admit the dependent client's force and retire effects. It adds
+neither a transferable child capability nor a native lifecycle ledger. The
+physical service-retire guard independently requires completed invalidation,
+snapshot discard and client cleanup before irreversible role/MM cleanup. A
+source-admitted shutdown starts a new caller context only after the prior client,
+snapshot and pending endpoint operation are settled. That boundary clears the
+prior caller's cancellation bit, not malformed-reply evidence; subsequent real
+shutdown expiry remains observable. Individual request messages never reset
+cancellation this way.
+
 The compiler admits the exact owner/observation/result layouts, constructor
 transfer, borrowed entries and consuming finish. Image admission tracks named
 supervisor, saved-continuation, TSS.RSP0 and double-fault IST domains. Hardware-saved
@@ -1133,11 +1164,3 @@ Limits:
 - CRC32C in `std.checksum` is bitwise (about 1 s per boot for the 6 MiB
   self-host volume);
 - no physical device is qualified.
-
-The mounted-prepared fixture (case 72) loads and grants the real mounted service,
-then supplies a synthetic zero bootstrap transport capacity before first entry.
-The existing source bootstrap plan rejects that preparation and consumes its
-lease through ordinary abandonment. It checks source retirement, exact frame
-release/audit, context scrubbing and role cleanup; the private disk must remain
-byte-identical with zero writes and flushes. This covers never-started mounted
-cleanup, not spontaneous hardware loss or never-started recovery-writer cleanup.
