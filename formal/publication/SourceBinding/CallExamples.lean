@@ -1,5 +1,5 @@
 import SourceBinding.CallBinding
-import SourceBinding.CallGuardPrefix
+import SourceBinding.RequestShape
 namespace Aurora.SourceBinding
 open Aurora.Publication
 
@@ -71,8 +71,8 @@ private def paired (checked : CallBinding files root module path member bytes) (
     responses. All declared optional receiver entries and abstract world are compared.
     Opaque None entries do not model native resource representation or validity. -/
 def runCallExamples (checked : CallBinding files root module path member bytes) : IO Unit := do
-  let some _guardPrefix := checkGuardedCallPrefix checked | throw (IO.userError "guard/callee footprint profile rejected")
-  IO.println "CALL-GUARD-PREFIX actual source shape and disjoint leaf writes checked; pre-external only"
+  let some _requestShape := checkRequestShape checked | throw (IO.userError "request policy shape rejected")
+  IO.println "CALL-REQUEST-POLICY actual range/argument shape and disjoint leaf writes checked; pre-external only"
   let selected := checked.family.shape.selected.selected
   unless selected.method.function.name == "fill_snapshot".toUTF8 do throw (IO.userError "call examples require fill_snapshot")
   let decls := fields selected.classDecl.members

@@ -219,6 +219,53 @@ with tempfile.TemporaryDirectory(prefix="aurora-call-controls-") as temp:
                 "source_sha256": hashlib.sha256(content).hexdigest(),
             }
         )
+    # Coherent source+IR pairs: generic call correspondence accepts, OPTIONAL
+    # reached-request profile rejects. These are not generic-checker negatives.
+    call = b"fill_snapshot_chunk(epoch, offset, 0u64, count)"
+    last_receiver = [w for w in root_codes if w[7] == b"32"][-1]
+    profile_cases = [
+        (
+            "profile-wrong-zero",
+            mutate([(operand(zero), 4, b"1")]),
+            source[:begin] + tail.replace(call, b"fill_snapshot_chunk(epoch, offset, 1u64, count)", 1),
+        ),
+        (
+            "profile-swapped-offset-count",
+            mutate(
+                [(operand(loads[1]), 3, row(operand(loads[2]))[3]), (operand(loads[2]), 3, row(operand(loads[1]))[3])]
+            ),
+            source[:begin] + tail.replace(call, b"fill_snapshot_chunk(epoch, count, 0u64, offset)", 1),
+        ),
+        (
+            "profile-overlapping-callee-write",
+            mutate([(operand(stores[0]), 3, row(operand(last_receiver))[3])]),
+            source.replace(b"active_slot = slot;", b"snapshot_bytes = slot;", 1),
+        ),
+    ]
+    for name, content, changed_source in profile_cases:
+        assert changed_source != source
+        path, source_path = temp / (name + ".ir"), temp / (name + ".au")
+        path.write_bytes(content)
+        source_path.write_bytes(changed_source)
+        changed = list(sources)
+        changed[index] = str(source_path)
+        invoke([str(structural), str(path), symbol("fill_snapshot")])
+        command = ["--ir", str(path), root, module, cls, "fill_snapshot", *changed]
+        invoke([str(probe), "--calls", *command])
+        invoke([str(probe), "--call-examples", *command], "uncaught exception: request policy shape rejected")
+        print(f"PASS {name}", file=sys.stderr, flush=True)
+        results.append(
+            {
+                "case": name,
+                "d2_accepts": True,
+                "calls_accepts": True,
+                "optional_request_profile_accepts": False,
+                "bytes": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "source_bytes": len(changed_source),
+                "source_sha256": hashlib.sha256(changed_source).hexdigest(),
+            }
+        )
 print(
     json.dumps(
         {
