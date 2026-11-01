@@ -1,4 +1,31 @@
-# A0: snapshot authority conservation
+# Disjoint backing-footprint authority — work in progress
+
+This branch generalizes the merged A0 model in place. The finite-footprint
+split/move conservation algebra, operational model and erasure into unchanged R
+compile under pinned Lean 4.24.0. **Generalized inductive preservation, safety,
+witnesses, snapshot bridge and the full A audit are still being adapted.**
+The earlier A0 description below records the completed predecessor, not claims
+that the generalized artifact has already passed its acceptance gates.
+
+## Generalized contract under construction
+
+One backing root has finite canonical-cell footprints, including disconnected
+sets. Gate-local writable inventory is subtracted into immutable request escrow;
+registered transfers and uses retain exact footprints. A permanent exact-use-ticket
+return marker prevents repeated receipts from restoring authority after reborrow.
+Freeze consumes only locally free cells and permits overlapping immutable readers
+while a disjoint writer remains admitted. All effects inspect only admitted
+metadata and actual outstanding work, never a global permission oracle.
+
+The location-indexed non-gate holdings are abstract protocol authority accounting,
+not remotely queried endpoint memory or a concrete distributed map. A required
+unconditional operational-equivalence theorem will erase that accounting while
+preserving every transition. Authority return retains A0's abstract atomic boundary;
+no decentralized transport, physical completion or native alias decoder is proved.
+The intended partition theorem is exact union **and** per-cell uniqueness, not list
+length conservation. Read permissions do not count as extra exclusive claims.
+
+## Completed predecessor: A0
 
 A0 composes a bounded authority profile with R and Q: one arbitrary allocation
 has one exclusive sequential writable stream, then shared immutable-read
