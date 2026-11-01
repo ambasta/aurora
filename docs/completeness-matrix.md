@@ -44,9 +44,11 @@ Full-source/publication acceptance is still native evidence, not concrete kernel
 acceptance. A further bounded endpoint checks complete scalar stateful `enter` and `leave`
 bodies individually, with actual parameter entry, ordered stores, current receiver
 on return/assertion failure and local termination. It reuses the scalar semantics
-and derives no-rollback/frame behavior from executed stores. Full `fill_snapshot`
-call/resource traces, general type/name resolution and borrowing, native/backend
-fidelity and the native API entry/exit protocol remain unproved.
+and derives no-rollback/frame behavior from executed stores. Complete bounded
+finite `fill_snapshot` source/publication boundary traces and first-request bounds
+are checked under a shared, parametric external relation. Native effects, backend
+fidelity, general type/name resolution and borrowing, and the native API entry/exit
+protocol remain unproved.
 
 | Destination | Status |
 |---|---|
