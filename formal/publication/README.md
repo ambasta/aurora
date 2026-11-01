@@ -394,7 +394,21 @@ disjoint guard fields across actual local callee execution, including fault
 prefixes. The fixed parameter map for the root guard is the saved caller map,
 not the enter callee's different arguments. This fact is conditional on the reached
 local prefix and says nothing about later external effects or authority validity.
-The actual admitted source has disjoint guard reads and enter writes.
+The optional `GuardedCallPrefix` checker ties this preservation result to the
+actual rejecting-guard/ordinary-callee/resource-call source prefix and lookup-
+selected callee. It derives the callee run and its argument readiness, but is
+conditional on the caller state and successful argument evaluation; it does not
+assume or prove that the root reached that call. The separate checked
+`RequestShape.first_request` corollary starts instead from an actual finite local
+execution from fresh PC0 to the first external Waiting state. It derives guard
+acceptance and actual callee return, then the exact epoch/offset/zero/count request,
+positive count, offset ≤ bytes, count ≤ bytes − offset, offset + count ≤ bytes,
+and bounded unsigned-word values. All operand evaluations use the frozen
+request.before receiver (after the ordinary callee) and saved root parameters.
+The optional checker requires the exact repeated typed range-expression operands
+and parameter argument pattern, without fixing names, ordinals or PCs. This is a
+first-request/no-prior-response result, not a bound on later external mutations,
+authority validity or a native resource effect.
 
 This remains a sequential mathematical interface model: no physical-memory,
 weak-memory, locking, DMA/GPU, distributed authority, `A.Enabled`, native pre-call

@@ -199,3 +199,24 @@ import SourceBinding
 #print axioms Aurora.SourceBinding.waiting_run_cases
 #print axioms Aurora.SourceBinding.EffectRuns.local_call_lift
 #print axioms Aurora.SourceBinding.LocalCallRuns.not_diverges
+
+#print axioms Aurora.SourceBinding.GuardedCallPrefix.preserves_guard
+
+#print axioms Aurora.SourceBinding.eval_or_false
+#print axioms Aurora.SourceBinding.eval_compare_words
+#print axioms Aurora.SourceBinding.request_range_bounds
+#print axioms Aurora.SourceBinding.eval_arguments_cons
+#print axioms Aurora.SourceBinding.eval_word_result
+#print axioms Aurora.SourceBinding.RequestArguments.values
+#print axioms Aurora.SourceBinding.ReachesRequest.step
+#print axioms Aurora.SourceBinding.ReachesRequest.waiting
+#print axioms Aurora.SourceBinding.ReachesRequest.not_returned
+#print axioms Aurora.SourceBinding.ReachesRequest.not_trapped
+#print axioms Aurora.SourceBinding.ReachesRequest.not_exhausted
+#print axioms Aurora.SourceBinding.ReachesRequest.rejection
+#print axioms Aurora.SourceBinding.ReachesRequest.ordinary
+#print axioms Aurora.SourceBinding.ReachesRequest.resource
+#print axioms Aurora.SourceBinding.GuardedCallPrefix.return_preserves_guard
+#print axioms Aurora.SourceBinding.GuardedCallPrefix.reached_guard
+#print axioms Aurora.SourceBinding.RequestShape.source_reached
+#print axioms Aurora.SourceBinding.RequestShape.first_request

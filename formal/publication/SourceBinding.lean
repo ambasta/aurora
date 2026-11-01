@@ -19,3 +19,5 @@ import SourceBinding.CallEnvironment
 import SourceBinding.CallArgumentProof
 import SourceBinding.CallBinding
 import SourceBinding.CallFootprint
+import SourceBinding.CallGuardPrefix
+import SourceBinding.RequestPolicy
