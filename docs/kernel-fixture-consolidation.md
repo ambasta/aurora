@@ -189,9 +189,10 @@ the kernel, pins the std-VGA environment. Hosted cases: `graphical-terminal-nati
 cell bounds, a foreign Console grant), `uefi-framebuffer-loader` (the firmware
 rule as data) and the compile-fail guards.
 
-Payload reservation. The shared 2 MiB arena reserves 512 KiB for the kernel at
-0x100000..0x180000, followed by the IDT, a lower guard, the unchanged 16 KiB
-stack and an upper guard. Low runtime owners do not move. Oracles read
+Payload reservation. The shared 2 MiB arena anchors the IDT, lower guard,
+unchanged 16 KiB stack and upper guard in its final seven pages. The remaining
+upper interval, 0x100000..0x1f9000, provides 996 KiB for the kernel without a
+separate image-size budget. Low runtime owners do not move. Oracles read
 `kernel/bootstrap-layout-values.inc`; see the [complete arena map](../kernel/uefi/README.md#ownership-and-wire-contract).
 Only the actual linked payload extent is mapped, and its stack still must pass
 the 15,360-byte admission cap. This deliberate capacity change does not enlarge
@@ -382,7 +383,7 @@ closed 2/3/1 policy. Snapshot/Call has four slots/four reserved pages; snapshots
 admit one page per image, and ordinary Call keeps its 2/1/1 runtime policy with
 the stricter one-page caller link/packing cap. Text keeps six slots/twelve pages.
 Every user mapping uses actual validated bytes, never reserved bank capacity.
-The shared 2 MiB arena and 512 KiB kernel payload reservation leave two domains,
+The shared 2 MiB arena and arena-derived kernel payload reservation leave two domains,
 fixed tables/stack pool and the 15,360-byte kernel stack bound unchanged.
 
 The storage primary is the existing scratchpad/namespace console. Snapshot/Call

@@ -94,6 +94,26 @@ int main() {
 #else
         need(valid(header(version)) == (version >= 1 && version <= 6));
 #endif
+        auto h = header(version);
+        if (valid(h)) {
+            put(h, 56, Handoff::payload_limit);
+            put(h, 80, Handoff::payload_limit);
+            need(valid(h));
+            const auto last = Handoff::payload_offset + Handoff::payload_limit - 4096;
+            need(expected_flags(last, Bytes{h}) == (3 | PageTables::nx));
+            need(expected_flags(Handoff::idt_offset, Bytes{h}) == (3 | PageTables::nx));
+            need(expected_flags(Handoff::stack_bottom - 4096, Bytes{h}) == 0);
+            need(expected_flags(Handoff::stack_top, Bytes{h}) == 0);
+            put(h, 80, Handoff::payload_limit + 4096);
+            need(!valid(h));
+            put(h, 80, Handoff::payload_limit);
+            put(h, 56, Handoff::payload_limit + 1);
+            need(!valid(h));
+            h = header(version);
+            // Increasing the reservation must not map slack for a short image.
+            for (const auto offset : {U64{0x180000}, U64{0x182000}, Handoff::idt_offset - 4096})
+                need(expected_flags(offset, Bytes{h}) == 0);
+        }
     }
 #ifndef AURORA_UEFI_GRAPHICAL_TERMINAL
     // A v7 header with the v6 or v3 word-120 meaning still rejects here.

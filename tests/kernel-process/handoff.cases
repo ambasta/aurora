@@ -20,7 +20,10 @@ ram-volume-size 2 144:8=0x4000001
 ram-volume-empty 2 144:8=0
 nvme-no-bar 3 160:8=0
 nvme-wrong-bar 3 160:8=0x1082000
-nvme-payload-overflow 3 80:8=0x81000
+nvme-payload-above-former-cap 3 80:8=0x81000
+nvme-payload-capacity 3 56:8=0xf9000 80:8=0xf9000
+nvme-payload-overflow 3 80:8=0xfa000
+nvme-payload-file-overflow 3 56:8=0xf9001 80:8=0xf9000
 legacy-version 2 8:4=9
 legacy-header 2 12:4=160
 wrong-header 2 12:4=152

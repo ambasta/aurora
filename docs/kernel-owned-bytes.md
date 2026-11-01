@@ -37,7 +37,7 @@ foreign and same-address-reincarnated leases across capacities. No second
 allocator, bitmap, page mapping or free list is introduced. Four fixed owner
 records each hold up to sixteen
 move-only `PageLease` objects. The region metadata has a compiled 3,072-byte cap;
-the shared layout provides a 16 KiB stack, 2 MiB arena and 512 KiB kernel payload
+the shared layout provides a 16 KiB stack, 2 MiB arena and 996 KiB kernel payload
 reservation, independently of the owned-byte quotas.
 
 The trusted caller must establish exclusive CPU backing for the exact pool range.
