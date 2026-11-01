@@ -430,49 +430,54 @@ auto timer_begin(unsigned index) -> void {
     return !timer_exhausted;
 }
 #endif
-auto service_timer_interrupt(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -> std::optional<U64> {
+// Only the kernel-origin assembly route can call this bounded drain path.
+// Its owner/frame/ISR checks are the same checks formerly inside the shared
+// dispatcher; user timer policy is not reachable from this entry.
+auto service_timer_drain_interrupt(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -> std::optional<U64> {
     if (vector != timer_vector)
         return std::nullopt;
-    if (timer_draining) {
-        require(error == 0 && cs == 8 && root() == kernel_root && active == L::domain_count && irq_off() &&
-                    timer_armed && timer_owner && timer_owner_epoch == timer_epoch && registry.ready(*timer_owner) &&
-                    frame >= arena + Handoff::stack_bottom && frame <= arena + Handoff::stack_top - 176 &&
-                    frame % 8 == 0 && pc >= reinterpret_cast<U64>(&service_drain_begin) &&
-                    pc <= reinterpret_cast<U64>(&service_drain_end),
-                "timer drain interrupt authority");
+    require(timer_draining, "timer drain interrupt authority");
+    require(error == 0 && cs == 8 && root() == kernel_root && active == L::domain_count && irq_off() && timer_armed &&
+                timer_owner && timer_owner_epoch == timer_epoch && registry.ready(*timer_owner) &&
+                frame >= arena + Handoff::stack_bottom && frame <= arena + Handoff::stack_top - 176 && frame % 8 == 0 &&
+                pc >= reinterpret_cast<U64>(&service_drain_begin) && pc <= reinterpret_cast<U64>(&service_drain_end),
+            "timer drain interrupt authority");
 #ifdef AURORA_TEXT_FIXTURE
-        if (owned_rows())
-            require(text_owner && registry.index(*text_owner) == 0 && registry.index(*timer_owner) == 0 &&
-                        text_epoch == timer_epoch,
-                    "text drain owner epoch");
+    if (owned_rows())
+        require(text_owner && registry.index(*text_owner) == 0 && registry.index(*timer_owner) == 0 &&
+                    text_epoch == timer_epoch,
+                "text drain owner epoch");
 #endif
 #ifdef AURORA_UEFI_USER_BUDGET
 #ifdef AURORA_SERVICE_FIXTURE
-        if (user_runs())
+    if (user_runs())
 #elif defined(AURORA_TEXT_FIXTURE)
-            if (!owned_rows())
+        if (!owned_rows())
 #endif
-            require(run_authority && run_authority->ready_owner(registry, *timer_owner, timer_owner_epoch),
-                    "user drain owner epoch");
+        require(run_authority && run_authority->ready_owner(registry, *timer_owner, timer_owner_epoch),
+                "user drain owner epoch");
 #endif
-        const Bytes captured{view(frame, 176)};
-        const auto saved_flags = captured.get(152), saved_stack = captured.get(160);
-        require(captured.get(168) == 0x10 && saved_stack >= arena + Handoff::stack_bottom &&
-                    saved_stack <= arena + Handoff::stack_top && saved_stack % 8 == 0 &&
-                    (saved_flags & 0x202) == 0x202 &&
-                    (saved_flags & ((3ULL << 12) | (1ULL << 14) | (1ULL << 17) | (1ULL << 8) | (1ULL << 10))) == 0 &&
-                    timer_acknowledge(),
-                "timer drain frame/ISR authority");
-        ++timer_drains;
-        Serial::text("AURORA_UEFI_TIMER_DRAIN: epoch=");
-        Serial::number(timer_owner_epoch);
-        Serial::text(" root=");
-        Serial::number(root());
-        Serial::text(" ss=");
-        Serial::number(captured.get(168));
-        Serial::text("\r\n");
-        return 0;
-    }
+    const Bytes captured{view(frame, 176)};
+    const auto saved_flags = captured.get(152), saved_stack = captured.get(160);
+    require(captured.get(168) == 0x10 && saved_stack >= arena + Handoff::stack_bottom &&
+                saved_stack <= arena + Handoff::stack_top && saved_stack % 8 == 0 && (saved_flags & 0x202) == 0x202 &&
+                (saved_flags & ((3ULL << 12) | (1ULL << 14) | (1ULL << 17) | (1ULL << 8) | (1ULL << 10))) == 0 &&
+                timer_acknowledge(),
+            "timer drain frame/ISR authority");
+    ++timer_drains;
+    Serial::text("AURORA_UEFI_TIMER_DRAIN: epoch=");
+    Serial::number(timer_owner_epoch);
+    Serial::text(" root=");
+    Serial::number(root());
+    Serial::text(" ss=");
+    Serial::number(captured.get(168));
+    Serial::text("\r\n");
+    return 0;
+}
+auto service_timer_interrupt(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -> std::optional<U64> {
+    if (vector != timer_vector)
+        return std::nullopt;
+    require(!timer_draining, "user timer cannot enter kernel drain");
 #ifdef AURORA_TEXT_FIXTURE
     if (owned_rows())
         require(text_active() && saved_rsp % 8 == 0 && saved_rsp >= arena + Handoff::stack_bottom &&

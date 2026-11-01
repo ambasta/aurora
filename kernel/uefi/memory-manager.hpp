@@ -206,8 +206,11 @@ public:
     auto resume_set(std::span<const words::Binding::Backing> banks) -> void {
         binding_.resume_set(banks);
     }
+    auto admit_finish() const -> void {
+        authority_.admit_finish();
+    }
     [[nodiscard]] auto finish() -> bool {
-        require(!authority_.attached() || authority_.idle());
+        admit_finish();
         require(frame_call<__au_runtime_manager_finish>({}, words::Access::consume) && !binding_.live());
         return true;
     }

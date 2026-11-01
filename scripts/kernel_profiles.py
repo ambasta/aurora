@@ -233,6 +233,7 @@ PROCESS_CASES = {
             (128, 0, 8192, "bin/isolation-6", "raw-cancel-initial"),
             (128, 0, 8192, "bin/isolation-6", "raw-cancel-tail"),
             (128, 0, 8192, "bin/probe", "probe file tree/shared read @1 0"),
+            (128, 0, 8192, "bin/isolation-6", "raw-cancel-before"),
         ),
     ),
     "process-service-hostile": (
@@ -333,6 +334,13 @@ PROCESS_CASES["process-xfs-mounted-loss"] = (
 # probes must stop globally; the user probe must retire only its own process.
 PROCESS_CASES["process-frame-require-kernel"] = (42, ())
 PROCESS_CASES["process-frame-require-process"] = (43, PROCESS_CASES["process-memory"][1])
+PROCESS_CASES["process-nested-fault"] = (63, PROCESS_CASES["process-memory"][1])
+EXECUTION_AUTHORITY_PROBES = tuple(f"process-execution-authority-{number}" for number in range(64, 72))
+for number, mode in enumerate(EXECUTION_AUTHORITY_PROBES, 64):
+    # Callback probes need the ordinary output-producing client, not the
+    # compiler/memory workload whose large reservations can refuse admission.
+    source_mode = "process-run" if number in (69, 71) else "process-memory"
+    PROCESS_CASES[mode] = (number, PROCESS_CASES[source_mode][1])
 # Internal cold boots of the existing kernel-require row, not a new family.
 MAPPING_AUTHORITY_PROBES = (
     "process-authority-foreign",
@@ -362,7 +370,7 @@ PROCESS_CASES["process-require-user"] = (
 )
 # The run lists of the compiler volume (\\aurora\\compiler, kernel/uefi/loader-fixture.hpp)
 # and of the self-host volume (\\aurora\\selfhost).
-COMPILER_CASES = frozenset({3, 5, 43})
+COMPILER_CASES = frozenset({3, 5, 43, 63, *range(64, 69), 70})
 SELF_HOST_CASES = frozenset({6})
 # Guest memory of the rows that need more than the UEFI default: one memory
 # case keeps 4 GiB mapped (committed on first touch, but charged in full).
@@ -372,6 +380,8 @@ SELF_HOST_CASES = frozenset({6})
 # The self-host row's compiler charges about 600 MiB at its peak.
 PROCESS_MEMORY = {
     "process-run": "256M",
+    "process-execution-authority-69": "256M",
+    "process-execution-authority-71": "256M",
     "process-hostile": "256M",
     "process-require-user": "256M",
     "process-compile": "256M",
@@ -1276,6 +1286,7 @@ def uefi_profile(profile_mode, flags):
         (process, "process-policy", "process", "process", ["kernel/policies", "library"]),
         (process, "memory-manager", "memory-manager", "memory-manager", ["kernel/policies", "library"]),
         (process, "budget-root", "budget-root", "budget-root", ["kernel/policies"]),
+        (process, "execution-lifecycle", "execution-lifecycle", "execution-lifecycle", ["kernel/policies"]),
         (process, "service-root", "service-root", "service-root", ["kernel/policies"]),
         (process, "service-bootstrap", "service-bootstrap", "service-bootstrap", ["kernel/policies"]),
         (profile_mode == "production", "resident-owner", "resident-owner", "resident-owner", ["kernel/policies"]),
@@ -1480,7 +1491,7 @@ GUEST_FAMILIES = {
     "process": "process-volume process-volume-corrupt process-volume-empty process-volume-map process-run "
     "process-hostile process-memory process-files process-compile process-lifecycle process-service "
     "process-service-hostile process-xfs process-frame-require-kernel process-frame-require-process "
-    "process-require-user",
+    "process-require-user process-nested-fault " + " ".join(EXECUTION_AUTHORITY_PROBES),
     # The release suite's row (tests/native/meson.build), minutes under TCG.
     "self-host": "process-self-host",
 }

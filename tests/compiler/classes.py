@@ -402,5 +402,11 @@ check(
     error="cycle",
 )
 
-SUITE.load(Path(__file__).with_suffix(".cases"), COUNTER=COUNTER)
+POLICIES = Path(__file__).resolve().parents[2] / "kernel/policies/kernel"
+SUITE.load(
+    Path(__file__).with_suffix(".cases"),
+    COUNTER=COUNTER,
+    EXECUTION_SESSION_MODULE=(POLICIES / "execution_session.au").read_text(),
+    EXECUTION_LIFECYCLE_MODULE=(POLICIES / "execution_lifecycle.au").read_text(),
+)
 SUITE.finish()

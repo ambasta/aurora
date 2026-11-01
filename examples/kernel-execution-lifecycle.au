@@ -1,0 +1,29 @@
+module kernel_execution_lifecycle;
+import kernel.execution_lifecycle;
+
+auto lifecycle_can_prepare(const kernel::ExecutionOwner& owner, u64 slot) -> bool {
+    return owner.can_prepare(slot);
+}
+auto lifecycle_prepare(kernel::ExecutionOwner& owner, u64 slot) -> bool {
+    return owner.prepare(slot);
+}
+auto lifecycle_execute(kernel::ExecutionOwner& owner, u64 slot) -> kernel::LifecycleResult {
+    const kernel::LifecycleResult result = owner.execute(slot);
+    return result;
+}
+auto lifecycle_force(kernel::ExecutionOwner& owner, u64 slot) -> kernel::LifecycleResult {
+    const kernel::LifecycleResult result = owner.force(slot);
+    return result;
+}
+auto lifecycle_complete(kernel::ExecutionOwner& owner, u64 slot) -> bool {
+    return owner.complete(slot);
+}
+auto lifecycle_phase(const kernel::ExecutionOwner& owner, u64 slot) -> u64 {
+    return owner.phase(slot);
+}
+auto lifecycle_generation(const kernel::ExecutionOwner& owner, u64 slot) -> u64 {
+    return owner.generation(slot);
+}
+auto lifecycle_pending(const kernel::ExecutionOwner& owner, u64 slot) -> u64 {
+    return owner.pending(slot);
+}

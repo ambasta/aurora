@@ -14,15 +14,80 @@ The decisions are Aurora (`examples/kernel-process.au` over
 and the existing `interrupt_budget`), reached through the private bridge
 `process-entry.S`. The build checks every argument record, result class and
 enum against the compiler's ABI facts (`PROCESS_POLICY_ABI` in
-`scripts/meson_aurora_assembly.py`). Trusted C++ still owns resident lifecycle,
-endpoint/transaction records and persistent-service startup/loss policy, as well
-as firmware file reads, page-table writes/walks, CR3, frame-record storage and
-free-list head, range and memory records, bounded messages, LAPIC and output. `services/service/files.au` owns filesystem tables, records and
+`scripts/meson_aurora_assembly.py`). The retained Aurora `ExecutionOwner` owns both resident lifecycles; separate
+MemoryManager, BudgetLedger and ServiceIncarnation roots retain their existing
+authority. Trusted C++ owns authenticated physical execution/trap observations,
+endpoint/transaction records, firmware reads, page-table effects, bounded messages,
+LAPIC and output. `services/service/files.au` owns filesystem tables, records and
 bytes in its own process. The former native file-store adapter and its ABI are
 now test-only references beneath `tests/`, never kernel image inputs. Assembly keeps the
 trap entry (`kernel/exceptions.S`) and the CPL 3 transition (`process-user.S`).
 Each C++ decoder rejects a result outside its closed encoding before using it.
 
+
+### Fixed source execution owner
+
+`kernel.execution_lifecycle` retains one 272-byte owner: a private 16-byte
+`ExecutionAuthority` and two flat sixteen-word slots. Source alone selects
+empty/prepared/executing/parked/retiring transitions, nonwrapping slot generation,
+first-entry/resume, terminal precedence and cleanup obligations. Every process
+composition uses it, including bootstrap, fixtures and never-started writer cleanup;
+it is not just an extension of the production ServiceOwner.
+
+Each synchronous native effect authenticates its issuer, exact stable field and
+root, slot, MM epoch/root and initial/saved-frame identities. The operation guard
+spans user execution, traps, kernel-root restoration, stopped timer accounting,
+drain and observation capture. Native does not maintain a second lifecycle ledger.
+The source selects a canonical private entry-mode field before calling one
+`activate(slot)` effect. This deliberately shares one ABI entry for first-entry
+and resume: native dispatches the selected physical mechanism only after exact
+root/field/slot authentication; it does not infer eligibility from physical
+context presence. Linked effect and stack admission cover both mechanisms.
+Its primary event and independent exhaustion evidence remain distinct. Accounting
+at the stop boundary can exhaust even after an invalid syscall or fault; source
+selects expiry for those collisions as for voluntary park/exit. Forced retirement
+uses one factual receipt (output failure, explicit intent, earlier expiry,
+endpoint cancellation and service loss), never a caller-selected reason. Source
+preserves that raw receipt while selecting terminal reason/detail separately.
+Prepared explicit cancellation releases an admitted client without entering it.
+
+External output runs with execution-owner loans closed. An ephemeral exact
+22-word frame snapshot proves the callback did not replace even a still-valid
+register/RIP/RSP value; no hash or retained lifecycle mirror is used. Pre-callback
+incarnation, MM epoch/root, saved-context identity and pending-operation observations
+must still match afterward. Existing ServiceOwner/ExecutionEffects loans remain
+under their sealed synchronous contract: no owner/root/frame pointer reaches the
+sink, parent reentry rejects before source access, and output bytes are an owned
+bounded endpoint copy. This is not general callback safety. Completion reauthenticates
+the stopped operation and permits only service RAX/RDX delivery, client RAX reply,
+or successful-output RAX writes. Initial boot-writer arguments, full trap capture
+and terminal context scrub are separate physical operations. Retirement revokes
+activation first, preserves storage-role identity through seal/abandon and MM
+verification/release/audit, scrubs contexts, finishes roles/budget, and publishes
+empty last. Any post-visible failure is fail-stop, not rollback.
+
+A prepared mounted service has an actual bootstrap-loss cleanup route: source
+revocation precedes live-role abandon; an unowned backend attempt is cleaned only
+after that owner cleanup. Failed loading remains with its load/MM owner until
+execution preparation publishes. The standalone recovery writer instead grants
+its role immediately before the execute loop, with no recoverable early return
+between grant and first entry. Invalid post-grant ownership or admission is
+fail-stop, not an invented abort/rollback authority. There is no actual
+never-started recovery-writer guest route claimed here.
+
+The compiler admits the exact owner/observation/result layouts, constructor
+transfer, borrowed entries and consuming finish. Image admission tracks named
+supervisor, saved-continuation, TSS.RSP0 and double-fault IST domains. Hardware-saved
+CS routes kernel-origin drain/diagnostics separately from CPL3 policy; the parked
+supervisor chain is not charged to the separate RSP0 domain. Exact RSP provenance,
+IRET frame consumption, suspended depth and actual linked effects are checked.
+A supervisor-only single-CPU trap guard bounds reentry to the hardware frame and
+stub pushes before a stack-free nonreturning emergency path; CLI/HLT is the
+fallback, with debug-exit only diagnostic. This is a finite machine-entry contract,
+not general instruction semantics or an SMP recursion guarantee. These bounded
+single-CPU mechanisms are not a scheduler, general asynchronous ownership or
+memory-safety proof. Final-source native and guest qualification is required independently of
+prior design reviews and historical receipts.
 
 ### Production command orchestration
 
@@ -71,8 +136,7 @@ no client completion or rollback promise is manufactured. Native code retains
 the endpoint identity, copied bytes and physical accounting. Loader/control and
 fixture consumers still pump the same transport primitives natively.
 
-This removes the native production command loop, not the resident scheduler,
-physical resource accounting or persistent owner policy. Native effect receipts authenticate the
+This removes the native production command loop, not general scheduling or asynchronous ownership. Native effect receipts authenticate the
 distinct issuer/lease binding and epoch, prevent reentry and duplicate physical effects, and keep
 pending I/O distinct from command decisions. The grant is revoked before return
 to the console. The retained source frame stays on the supervisor stack while
@@ -90,7 +154,11 @@ it to its original watchdog loss. These fixture selectors observe real endpoint
 state without modifying it. They use canonical lease issuance and the shared
 native effects, but do not claim that a production source command selects those
 exact cancellation boundaries. The following ordinary client verifies retained
-service progress after staged cancellation.
+service progress after staged cancellation. The same row also cancels the real
+one-tick RPC only after its caller budget is exhausted (watchdog wins), and
+cancels another admitted client before its first entry (no user execution).
+The command protocol carries explicit-after-expiry and settled/draining facts;
+source selects their results without a native hidden-cause drain turn.
 
 ## Handoff
 

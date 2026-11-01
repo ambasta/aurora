@@ -206,8 +206,20 @@ __au_runtime_group_entry:
         )
         need(
             execution_facts["enums"]["__au_exec_request"]["cases"]
-            == {"ready": 0, "cancelled": 1, "service_lost": 2, "pending": 3, "cancel_requested": 4},
-            "ExecRequest preserves expiry and pending cases, appending explicit cancellation",
+            == {
+                "ready": 0,
+                "cancelled": 1,
+                "service_lost": 2,
+                "pending": 3,
+                "cancel_requested": 4,
+                "explicit_after_expiry": 5,
+            },
+            "ExecRequest keeps explicit cancellation and prior expiry as distinct factual evidence",
+        )
+        need(
+            execution_facts["enums"]["__au_exec_cancel"]["cases"]
+            == {"settled": 0, "draining": 1, "service_lost": 2, "settled_after_expiry": 3, "draining_after_expiry": 4},
+            "ExecCancel reports transport settlement separately from prior expiry",
         )
         bootstrap_entry = next(
             row for row in execution_facts["functions"].values() if row.get("source_name") == "bootstrap_entry"
@@ -280,11 +292,15 @@ __au_runtime_group_entry:
             ]
         )
         need(result.returncode == 0, result.stderr.decode())
-        for mode in [*range(25), *range(100, 118)]:
+        for mode in [*range(28), *range(100, 118)]:
             result = run([binary, mode])
             need(
                 result.returncode
-                == (0 if mode == 0 or 17 <= mode <= 22 or mode == 100 or 113 <= mode <= 117 else -signal.SIGILL),
+                == (
+                    0
+                    if mode == 0 or 17 <= mode <= 22 or 25 <= mode <= 27 or mode == 100 or 113 <= mode <= 117
+                    else -signal.SIGILL
+                ),
                 f"execution mode {mode}: {result.returncode}",
             )
 

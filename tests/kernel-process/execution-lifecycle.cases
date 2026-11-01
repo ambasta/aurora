@@ -1,0 +1,78 @@
+# Real source transitions; event numbers are the admitted native observation ABI.
+empty state:0 state:1 finish
+first-exit prepare:0 state:0 run:0:6:42:0 state:0 finish
+park-resume prepare:0 run:0:2:0:0 state:0 run:0:6:0:0 finish
+slot-reuse prepare:0 run:0:6:0:0 prepare:0 run:0:6:7:0 state:0 finish
+two-slots prepare:0 prepare:1 run:1:6:1:0 run:0:6:2:0 state:0 state:1 finish
+prepare-refusal refuse:0 state:0 prepare:0 force:0:14:16:0 finish
+refuse-duplicate prepare:0 prepare:0 force:0:14:16:0 finish
+empty-run run:0:6:0:0 state:0 finish
+service-completion prepare:0 run:0:3:0:0 run:0:6:0:0 complete:0 run:0:6:0:0 finish
+client-completion prepare:1 run:1:4:0:0 complete:1 run:1:6:0:0 finish
+output-completion prepare:0 run:0:5:0:0 complete:0 run:0:6:0:0 finish
+completion-without-pending prepare:0 complete:0 run:0:6:0:0 finish
+timer-exhausted prepare:0 run:0:2:0:1 finish
+exchange-exhausted prepare:0 run:0:3:0:1 finish
+request-exhausted prepare:0 run:0:4:0:1 finish
+output-exhausted prepare:0 run:0:5:0:1 finish
+exit-exhausted prepare:0 run:0:6:42:1 finish
+invalid-exhausted prepare:0 run:0:7:99:1 finish
+fault-exhausted prepare:0 run:0:8:14:1 finish
+invalid-terminal prepare:0 run:0:7:15:0 finish
+fault-terminal prepare:0 run:0:8:13:0 finish
+never-started-cleanup prepare:0 force:0:14:16:0 finish
+output-failure prepare:0 run:0:5:0:0 force:0:14:1:0 finish
+expiry-before-cancel prepare:0 run:0:4:0:0 force:0:14:8:0 finish
+explicit-cancel prepare:0 run:0:4:0:0 force:0:14:10:0 finish
+service-loss prepare:0 prepare:1 run:1:4:0:0 force:1:14:16:0 force:0:14:16:0 finish
+force-refused prepare:0 force:0:0:0:0 state:0 force:0:14:16:0 finish
+wrong-binding native:wrong-binding
+wrong-epoch native:wrong-epoch
+copied-field native:copied-field
+cross-slot native:cross-slot
+wrong-kind native:wrong-kind
+not-quiet native:not-quiet
+owner-reentry native:owner-reentry
+effect-reentry native:effect-reentry
+consume-live native:consume-live
+canonical-other-slot native:canonical-other-slot
+after-finish native:after-finish
+reinitialize native:reinitialize
+stale-epoch source:stale-epoch
+wrong-root source:wrong-root
+wrong-service source:wrong-service
+wrong-initial source:wrong-initial
+wrong-saved source:wrong-saved
+foreign-identity source:foreign-identity
+invalid-event source:invalid-event
+invalid-exhaustion source:invalid-exhaustion
+cancel-exhausted source:cancel-exhausted
+cleanup-failure source:cleanup-failure
+completion-identity source:completion-identity
+completion-event source:completion-event
+finish-live source:finish-live
+high-bit-abi high-bits prepare:1 run:1:6:18446744073709551615:0 finish
+stale-reuse source:stale-reuse
+completion-exhausted source:completion-exhausted
+completion-detail source:completion-detail
+output-failure-exhausted source:output-failure-exhausted
+unavailable-exhausted source:unavailable-exhausted
+force-identity source:force-identity
+admission-empty can-prepare:0 can-prepare:1 finish
+admission-prepared prepare:0 can-prepare:0 can-prepare:1 force:0:14:16:0 can-prepare:0 finish
+admission-parked prepare:1 run:1:2:0:0 can-prepare:1 run:1:6:0:0 can-prepare:1 prepare:1 can-prepare:1 force:1:14:16:0 can-prepare:1 finish
+forced-prior-expiry prepare:0 run:0:2:0:0 force:0:14:14:0 finish
+forced-explicit-intent prepare:0 force:0:14:10:0 finish
+forced-output-before-cancel prepare:0 run:0:5:0:0 force:0:14:11:0 finish
+forced-unknown-mask source:forced-unknown-mask
+forced-empty-mask source:forced-empty-mask
+forced-explicit-without-endpoint source:forced-explicit-without-endpoint
+forced-prior-without-intent source:forced-prior-without-intent
+forced-service-expiry prepare:0 force:0:14:24:0 finish
+explicit-never-started prepare:1 force:1:14:10:0 finish
+prepared-output source:prepared-output
+prepared-expiry source:prepared-expiry
+prepared-prior source:prepared-prior
+service-output-collision source:service-output-collision
+output-with-timer source:output-with-timer
+expiry-without-request source:expiry-without-request

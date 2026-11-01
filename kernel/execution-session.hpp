@@ -38,7 +38,8 @@ enum class Request : U64 {
     cancelled,
     service_lost,
     pending,
-    cancel_requested
+    cancel_requested,
+    explicit_after_expiry
 };
 enum class Finish : U64 {
     complete,
@@ -50,7 +51,9 @@ enum class Finish : U64 {
 enum class Cancel : U64 {
     settled,
     draining,
-    service_lost
+    service_lost,
+    settled_after_expiry,
+    draining_after_expiry
 };
 class alignas(16) Lease final {
 public:

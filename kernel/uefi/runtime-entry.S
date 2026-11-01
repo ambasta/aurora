@@ -119,6 +119,8 @@ aurora_leave_user:
     pop %rbp
     pop %rbx
     mov $1, %eax
+    # The saved supervisor stack and callee-saved registers are complete.
+    movb $0, aurora_trap_guard(%rip)
     ret
 .global uefi_runtime_handler
 uefi_runtime_handler:
@@ -188,5 +190,7 @@ handler_offsets:
 .section .bss
 .balign 8
 .global uefi_runtime_saved_rsp
+.type uefi_runtime_saved_rsp,@object
 uefi_runtime_saved_rsp: .skip 8
+.size uefi_runtime_saved_rsp,8
 .section .note.GNU-stack,"",@progbits

@@ -286,7 +286,12 @@ def runs(text, mode):
             need(int(values["run"]) == current["run"] and values["rejected"] == "11", "Walk edit admitted")
             current["walked"] = True
             continue
-        if kind not in ("AURORA_PROCESS_KERNEL_FAULT", "AURORA_PROCESS_FAIL", "AURORA_PROCESS_RUNS_OK"):
+        if kind not in (
+            "AURORA_PROCESS_KERNEL_FAULT",
+            "AURORA_PROCESS_KERNEL_FAULT_PROBE",
+            "AURORA_PROCESS_FAIL",
+            "AURORA_PROCESS_RUNS_OK",
+        ):
             need(current and int(values.get("run", 0)) == current["run"], "Record outside its run: " + kind)
         if kind == "AURORA_PROCESS_REJECTED":
             need(not current["loaded"], "Rejected after loading")
@@ -343,7 +348,8 @@ def runs(text, mode):
             elif values["reason"] == "cancelled":
                 need(
                     mode == "process-service"
-                    and expected[current["run"] - 1][4] in ("raw-cancel-initial", "raw-cancel-tail")
+                    and expected[current["run"] - 1][4]
+                    in ("raw-cancel-initial", "raw-cancel-tail", "raw-cancel-before")
                     and not streams,
                     "Unexpected explicit cancellation",
                 )
@@ -369,7 +375,7 @@ def runs(text, mode):
             completed[current["run"]] = f"{current['key']}\t{current['outcome']}"
             del live[current["run"]]
             current = None
-        elif kind == "AURORA_PROCESS_KERNEL_FAULT":
+        elif kind in ("AURORA_PROCESS_KERNEL_FAULT", "AURORA_PROCESS_KERNEL_FAULT_PROBE"):
             need(current and current["loaded"] and "outcome" not in current, "Kernel fault outside a run")
             completed[current["run"]] = f"{current['key']}\tkernel fault vector={values['vector']}"
             if isolated:
@@ -388,7 +394,8 @@ def runs(text, mode):
             need(
                 mode == "process-hostile"
                 and fatal_companion == len(expected)
-                and text.count("AURORA_PROCESS_FAIL: kernel fault") == 1
+                and text.count("AURORA_PROCESS_KERNEL_FAULT_PROBE: vector=14") == 1
+                and "AURORA_PROCESS_KERNEL_FAULT:" not in text
                 and companion is not None
                 and companion["run"] == fatal_companion
                 and not companion["ended"]
@@ -680,6 +687,73 @@ def validate(
             "No trap fallback, continuation or successful return after authority rejection",
         )
         return
+    if mode.startswith("process-execution-authority-"):
+        frames(text)
+        case = PROCESS_CASES[mode][0]
+        probes = re.findall(
+            r"AURORA_EXECUTION_AUTHORITY_PROBE: case=(\d+) slot=(\d+) root=(\d+) kernel=(\d+) closed=1", text
+        )
+        need(len(probes) == 1 and int(probes[0][0]) == case, "One actual lifecycle boundary probe")
+        _, slot, current, kernel = map(int, probes[0])
+        need(
+            slot in (0, 1) and current == kernel and kernel > 0 and kernel % 4096 == 0,
+            "Lifecycle probe restores kernel root and closed windows",
+        )
+        reason = (
+            "execution lifecycle authority"
+            if case <= 67
+            else "stopped frame admission"
+            if case == 68
+            else "execution physical identity"
+            if case == 70
+            else "output callback frame changed"
+        )
+        after = text[text.index("AURORA_EXECUTION_AUTHORITY_PROBE:") :]
+        need(
+            status == 35 and after.count("AURORA_PROCESS_FAIL: " + reason) == 1,
+            "Actual lifecycle effect must reject before further execution",
+        )
+        need(
+            not any(
+                value in after
+                for value in (
+                    "AURORA_PROCESS_END:",
+                    "AURORA_PROCESS_RELEASED:",
+                    "AURORA_PROCESS_PARKED:",
+                    "AURORA_PROCESS_RESUMED:",
+                    "AURORA_PROCESS_RUNS_OK",
+                    "AURORA_PROCESS_OK",
+                    "AURORA_PROCESS_KERNEL_FAULT:",
+                    "AURORA_STDOUT:",
+                    "AURORA_STDERR:",
+                )
+            ),
+            "No retirement, trap fallback, output or resume after lifecycle rejection",
+        )
+        return
+    if mode == "process-nested-fault":
+        frames(text)
+        marker = "AURORA_PROCESS_NESTED_FAULT_PROBE"
+        need(status == 35 and text.count(marker) == 1, "Actual nested UD fault must stop globally")
+        after = text[text.index(marker) :]
+        need(
+            not any(
+                value in after
+                for value in (
+                    "AURORA_PROCESS_KERNEL_FAULT:",
+                    "AURORA_PROCESS_END:",
+                    "AURORA_PROCESS_RELEASED:",
+                    "AURORA_PROCESS_PARKED:",
+                    "AURORA_PROCESS_RESUMED:",
+                    "AURORA_PROCESS_OK",
+                    "AURORA_PROCESS_RUNS_OK",
+                    "AURORA_STDOUT:",
+                    "AURORA_STDERR:",
+                )
+            ),
+            "Emergency trap must not reenter dispatch, cleanup, output or resume",
+        )
+        return
     if mode in ("process-frame-require-kernel", "process-frame-require-process"):
         frames(text)
         context = "kernel" if mode.endswith("-kernel") else "process"
@@ -688,12 +762,19 @@ def validate(
         current, kernel = map(int, probes[0][1:])
         need(current > 0 and kernel > 0 and current % 4096 == 0 and kernel % 4096 == 0, "Aligned real roots")
         need((current == kernel) == (context == "kernel"), "Allocator require uses selected real CR3")
-        need(
-            status == 35 and text.count("AURORA_PROCESS_FAIL: kernel fault") == 1, "Allocator require must stop kernel"
-        )
+        need(status == 35, "Allocator require must stop kernel")
         after = text[text.index("AURORA_FRAME_REQUIRE_PROBE:") :]
         faults = re.findall(r"AURORA_PROCESS_KERNEL_FAULT: vector=(\d+) error=\d+ rip=\d+ cs=(\d+) cr2=\d+", after)
-        need(faults == [("6", "8")], "Source require traps at CPL0, not a recoverable user fault")
+        if context == "kernel":
+            need(
+                faults == [("6", "8")] and text.count("AURORA_PROCESS_FAIL: kernel fault") == 1,
+                "First-level source require traps at CPL0",
+            )
+        else:
+            need(
+                not faults and after.count("AURORA_PROCESS_FAIL: frame metadata authority") == 1,
+                "Process-root consume is denied before entering source cleanup",
+            )
         need(
             not any(
                 marker in after
@@ -904,14 +985,20 @@ def validate(
         )
         need("AURORA_FILE_SERVICE_LOST:" not in text, "File service lost its state")
         cancelled = re.findall(
-            r"^AURORA_EXECUTION_CANCEL: client=(\d+) tail=([01]) generation=(\d+) transaction=(\d+) next=(\d+)$",
+            r"^AURORA_EXECUTION_CANCEL: client=(\d+) tail=([0134]) generation=(\d+) transaction=(\d+) next=(\d+)$",
             text.replace("\r", ""),
             re.MULTILINE,
         )
+        cancellation_points = {
+            "raw-cancel-initial": "0",
+            "raw-cancel-tail": "1",
+            "lifecycle rpc": "3",
+            "raw-cancel-before": "4",
+        }
         expected_cancel = [
-            (str(index), str(int(row[4] == "raw-cancel-tail")))
+            (str(index), cancellation_points[row[4]])
             for index, row in enumerate(PROCESS_CASES[mode][1], 1)
-            if row[4] in ("raw-cancel-initial", "raw-cancel-tail")
+            if row[4] in cancellation_points
         ]
         need(
             [(client, tail) for client, tail, _, _, _ in cancelled] == expected_cancel
@@ -919,7 +1006,7 @@ def validate(
                 generation == "1" and int(transaction) > 0 and transaction == next_id
                 for _, _, generation, transaction, next_id in cancelled
             ),
-            "Authenticated initial/tail cancellation boundaries",
+            "Authenticated staged, prior-expiry and before-entry cancellation boundaries",
         )
         need(text.count("AURORA_EXECUTION_CANCEL:") == len(cancelled), "Malformed cancellation boundary")
     if mode == "process-xfs-clean":
@@ -942,7 +1029,12 @@ def validate(
         golden = f"{mode}-{xfs_history}" if mode == "process-xfs-clean" else mode
         compare(ROOT / f"tests/kernel-process/{golden}.golden", runs(text, mode))
         if mode == "process-hostile":
-            need(status == 35 and text.count("AURORA_PROCESS_FAIL: kernel fault") == 1, "Kernel fault continued")
+            need(
+                status == 35
+                and text.count("AURORA_PROCESS_KERNEL_FAULT_PROBE: vector=14") == 1
+                and "AURORA_PROCESS_KERNEL_FAULT:" not in text,
+                "Kernel fault continued",
+            )
         else:
             need(status == 33 and "AURORA_PROCESS_FAIL" not in text, "Process row failed")
         return

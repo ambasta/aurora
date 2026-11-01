@@ -176,13 +176,13 @@ export namespace compiler_catalog {
     // 2 (Port), 3 (Serve) and 4 (HostFiles) only when admitted syntax names one
     // of their types.
     auto type_count() -> i64 {
-        return 59;
+        return 61;
     }
     auto type_kind(i64 type) -> compiler_resolver::ResolvedTypeKind {
-        if (type == 54 || type == 57 || type == 58) {
+        if (type == 54 || type == 57 || type == 58 || type == 59) {
             return compiler_resolver::ResolvedTypeKind::service_resource;
         }
-        if (type == 55) {
+        if (type == 55 || type == 60) {
             return compiler_resolver::ResolvedTypeKind::class_value;
         }
         if (type == 56) {
@@ -266,6 +266,9 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::invalid;
     }
     auto type_family(i64 type) -> i64 {
+        if (type == 59 || type == 60) {
+            return 11;
+        }
         if (type == 57 || type == 58) {
             return 10;
         }
@@ -305,6 +308,9 @@ export namespace compiler_catalog {
     }
     // Field or case count of a nominal type.
     auto member_count(i64 type) -> i64 {
+        if (type == 60) {
+            return 8;
+        }
         if (type == 55) {
             return 2;
         }
@@ -320,7 +326,7 @@ export namespace compiler_catalog {
         if (type == 50 || type == 52 || type == 53) {
             return 2;
         }
-        if (type == 37 || type == 41 || type == 46) {
+        if (type == 37 || type == 41) {
             return 3;
         }
         if (type == 39) {
@@ -329,7 +335,10 @@ export namespace compiler_catalog {
         if (type == 38) {
             return 9;
         }
-        if (type == 43 || type == 44) {
+        if (type == 43) {
+            return 6;
+        }
+        if (type == 44 || type == 46) {
             return 5;
         }
         if (type == 40) {
@@ -372,6 +381,9 @@ export namespace compiler_catalog {
     }
     // Catalog type of a class field.
     auto field_type(i64 type, i64 field) -> i64 {
+        if (type == 60) {
+            return 1;
+        }
         if (type == 55) {
             if (field == 0) {
                 return 38;
@@ -434,6 +446,14 @@ export namespace compiler_catalog {
     // Words: full spelling, then for nominal types the native spelling and the
     // field or case names in declaration order. See use_word for begin/end.
     auto type_word(compiler_resolver::Session& session, i64 type, i64 part, i64 begin, i64 end) -> i64 {
+        if (type == 59) {
+            return use_word(session, "builtin::ExecutionAuthority", part, begin, end);
+        }
+        if (type == 60) {
+            return use_word(session,
+                "builtin::ExecutionObservation;__au_execution_observation;event;detail;exhausted;epoch;root;service;initial;saved",
+                part, begin, end);
+        }
         if (type == 58) {
             return use_word(session, "builtin::MappingAuthority", part, begin, end);
         }
@@ -542,8 +562,9 @@ export namespace compiler_catalog {
             return use_word(session, "builtin::ExecutionLease", part, begin, end);
         }
         if (type == 46) {
-            return use_word(session, "builtin::ExecCancel;__au_exec_cancel;settled;draining;service_lost", part, begin,
-                end);
+            return use_word(session,
+                "builtin::ExecCancel;__au_exec_cancel;settled;draining;service_lost;settled_after_expiry;draining_after_expiry",
+                part, begin, end);
         }
         if (type == 36) {
             return use_word(session, "builtin::ExecutionEffects", part, begin, end);
@@ -572,8 +593,8 @@ export namespace compiler_catalog {
         }
         if (type == 43) {
             return use_word(session,
-                "builtin::ExecRequest;__au_exec_request;ready;cancelled;service_lost;pending;cancel_requested", part,
-                begin, end);
+                "builtin::ExecRequest;__au_exec_request;ready;cancelled;service_lost;pending;cancel_requested;explicit_after_expiry",
+                part, begin, end);
         }
         return use_word(session,
             "builtin::ExecFinish;__au_exec_finish;complete;output_failed;cancelled;service_lost;cancel_requested", part,
@@ -617,9 +638,12 @@ export namespace compiler_catalog {
 
     // Resource identities are catalog ordinals, not per-family resolver kinds.
     auto resource_count() -> i64 {
-        return 5;
+        return 6;
     }
     auto resource_kind(i64 type) -> i64 {
+        if (type == 59) {
+            return 5;
+        }
         if (type == 58) {
             return 4;
         }
@@ -638,6 +662,9 @@ export namespace compiler_catalog {
         return -1;
     }
     auto resource_type(i64 kind) -> i64 {
+        if (kind == 5) {
+            return 59;
+        }
         if (kind == 4) {
             return 58;
         }
@@ -656,7 +683,7 @@ export namespace compiler_catalog {
         return -1;
     }
     auto resource_retained(i64 kind) -> bool {
-        return kind == 2 || kind == 3 || kind == 4;
+        return kind == 2 || kind == 3 || kind == 4 || kind == 5;
     }
     auto resource_field_eligible(i64 kind) -> bool {
         return kind == 0 || resource_retained(kind);
@@ -686,6 +713,9 @@ export namespace compiler_catalog {
         return kind >= 0 && kind < resource_count();
     }
     auto resource_method_count(i64 kind) -> i64 {
+        if (kind == 5) {
+            return 6;
+        }
         if (kind == 4) {
             return 24;
         }
@@ -701,6 +731,9 @@ export namespace compiler_catalog {
         return 0;
     }
     auto resource_method_word(compiler_resolver::Session& session, i64 kind, i64 method, i64 begin, i64 end) -> i64 {
+        if (kind == 5) {
+            return use_word(session, "prepare;activate;complete;force;retire;finish", method, begin, end);
+        }
         if (kind == 4) {
             return use_word(session,
                 "observe_table;observe_next_present;publish_empty_entry;clear_expected_entry;scrub_unpublished_frame;downgrade_snapshot_entry;snapshot_anchor_publish;snapshot_anchor_clear;frame_address;frame_index;shared_slots;shared_slot;shared_value;shared_upper;reserved_first;reserved_end;initialize_shared_upper;publish_shared_entry;copy_source_frame;fill_snapshot_chunk;clear_shared_entry;revoke_root;observe_snapshot_anchor;finish",
@@ -723,6 +756,15 @@ export namespace compiler_catalog {
         return -1;
     }
     auto resource_method_result(i64 kind, i64 method) -> i64 {
+        if (kind == 5) {
+            if (method < 0 || method >= 6) {
+                return -1;
+            }
+            if (method < 4) {
+                return 60;
+            }
+            return 3;
+        }
         if (kind == 4) {
             if (method == 1 || method == 8 || method == 9 || method == 10 || method == 11 || method == 12 || method
                 == 13 || method == 14 || method == 15) {
@@ -781,6 +823,12 @@ export namespace compiler_catalog {
         return 42;
     }
     auto resource_method_parameters(i64 kind, i64 method) -> i64 {
+        if (kind == 5) {
+            if (method == 5) {
+                return 0;
+            }
+            return 1;
+        }
         if (kind == 4) {
             if (method == 10 || method == 14 || method == 15 || method == 23) {
                 return 0;
@@ -805,6 +853,9 @@ export namespace compiler_catalog {
         return 0;
     }
     auto resource_method_parameter(i64 kind, i64 method) -> i64 {
+        if (kind == 5) {
+            return 1;
+        }
         if (kind == 4) {
             return 1;
         }
@@ -847,6 +898,9 @@ export namespace compiler_catalog {
         return i64(name.at(index));
     }
     auto type_source_byte(i64 type, i64 index) -> i64 {
+        if (type == 59) {
+            return catalog_byte("builtin::ExecutionAuthority", index);
+        }
         if (type == 58) {
             return catalog_byte("builtin::MappingAuthority", index);
         }
@@ -865,6 +919,12 @@ export namespace compiler_catalog {
         return -1;
     }
     auto type_native_byte(i64 type, i64 index) -> i64 {
+        if (type == 59) {
+            return catalog_byte("__au_execution_authority", index);
+        }
+        if (type == 60) {
+            return catalog_byte("__au_execution_observation", index);
+        }
         if (type == 58) {
             return catalog_byte("__au_mapping_authority", index);
         }
@@ -922,6 +982,27 @@ export namespace compiler_catalog {
         return -1;
     }
     auto resource_runtime_byte(i64 kind, i64 method, i64 index) -> i64 {
+        if (kind == 5) {
+            if (method == 0) {
+                return catalog_byte("__au_runtime_execution_authority_prepare", index);
+            }
+            if (method == 1) {
+                return catalog_byte("__au_runtime_execution_authority_activate", index);
+            }
+            if (method == 2) {
+                return catalog_byte("__au_runtime_execution_authority_complete", index);
+            }
+            if (method == 3) {
+                return catalog_byte("__au_runtime_execution_authority_force", index);
+            }
+            if (method == 4) {
+                return catalog_byte("__au_runtime_execution_authority_retire", index);
+            }
+            if (method == 5) {
+                return catalog_byte("__au_runtime_execution_authority_finish", index);
+            }
+            return -1;
+        }
         if (kind == 4) {
             if (method == 0) {
                 return catalog_byte("__au_runtime_mapping_observe_table", index);

@@ -16,6 +16,14 @@ path is distinguished from an actual guest run of the final binary.
 The retained-run authority and transcript deduplication passed integrated
 qualification in [PR #242](https://github.com/ambasta/aurora/pull/242).
 
+A fixed two-slot source ExecutionOwner now owns resident entry/resume eligibility,
+terminal selection and retirement obligations across production and fixture paths.
+Native effects retain physical register/trap/endpoint evidence and exact-root
+operation guards, not a mirrored phase ledger. Its 272-byte retained layout and
+16-byte private capability are admitted at the bridge; final-source compiler,
+native, stack and guest qualification remain required. This does not broaden
+scheduling, asynchronous ownership, SMP or hardware claims.
+
 Native copied-record consumers retain one consolidated artifact-build ABI
 admission over compiler facts; removing those consumers remains future work.
 

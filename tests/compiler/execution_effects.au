@@ -21,12 +21,14 @@ auto execution_consume(builtin::ExecutionEffects& effects) -> u64 {
     while (requested == builtin::ExecRequest::pending) {
         requested = lease.request();
     }
-    if (requested != builtin::ExecRequest::ready && requested != builtin::ExecRequest::cancel_requested) {
+    if (requested != builtin::ExecRequest::ready && requested != builtin::ExecRequest::cancel_requested && requested
+        != builtin::ExecRequest::explicit_after_expiry) {
         result = 4u64;
     }
     const builtin::ExecCancel cancelled = lease.cancel();
     if (cancelled != builtin::ExecCancel::settled && cancelled != builtin::ExecCancel::draining && cancelled
-        != builtin::ExecCancel::service_lost) {
+        != builtin::ExecCancel::service_lost && cancelled != builtin::ExecCancel::settled_after_expiry && cancelled
+        != builtin::ExecCancel::draining_after_expiry) {
         result = 5u64;
     }
     if (lease.finish(builtin::ExecFinish::cancel_requested) != builtin::ExecEffect::success) {

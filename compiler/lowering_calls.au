@@ -2043,7 +2043,7 @@ export namespace compiler_lowering {
             }
             if (field >= 0) {
                 i64 affected = field;
-                if (resource == 4) {
+                if (resource == 4 || resource == 5) {
                     affected = -2;
                 }
                 if (compiler_catalog::resource_method_effect(resource, method) != 0 && !no_span_borrow(session,

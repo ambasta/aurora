@@ -87,6 +87,8 @@ end
 ; CASE: execution lease observations move and helper transfer
 ; RUN: emit
 ; RUN: stack-facts
+; CHECK-JSON: functions.execution_ir_entry.service_abi.calls.__au_runtime_execution_request {"sysv_arguments":2,"result_max":5}
+; CHECK-JSON: functions.execution_ir_entry.service_abi.calls.__au_runtime_execution_cancel {"sysv_arguments":2,"result_max":4}
 ; CHECK-NOT: __au_runtime_bytes_
 layout __au_execution_prep [(enum __au_exec_prepared display=builtin::ExecPrepared) (enum __au_exec_status display=builtin::ExecStatus)]
 fields __au_execution_prep [((enum __au_exec_prepared display=builtin::ExecPrepared) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false)]
@@ -96,9 +98,9 @@ enum __au_exec_prepared 3
 enum __au_exec_status 9
 enum __au_exec_step 4
 enum __au_exec_effect 2
-enum __au_exec_request 5
+enum __au_exec_request 6
 enum __au_exec_finish 5
-enum __au_exec_cancel 3
+enum __au_exec_cancel 5
 function execution_ir_entry
   result u64
   params [25]
@@ -224,16 +226,32 @@ end
 ; RUN: verify
 ; EXPECT-ERROR: noncanonical sealed service enum
 @@ -9 +9 @@
--enum __au_exec_request 5
-+enum __au_exec_request 4
+-enum __au_exec_request 6
++enum __au_exec_request 5
 
 ; CASE: execution rejects widened request enum
 ; BASE: execution lease observations move and helper transfer
 ; RUN: verify
 ; EXPECT-ERROR: noncanonical sealed service enum
 @@ -9 +9 @@
--enum __au_exec_request 5
-+enum __au_exec_request 6
+-enum __au_exec_request 6
++enum __au_exec_request 7
+
+; CASE: execution rejects old cancellation enum
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: noncanonical sealed service enum
+@@ -11 +11 @@
+-enum __au_exec_cancel 5
++enum __au_exec_cancel 3
+
+; CASE: execution rejects widened cancellation enum
+; BASE: execution lease observations move and helper transfer
+; RUN: verify
+; EXPECT-ERROR: noncanonical sealed service enum
+@@ -11 +11 @@
+-enum __au_exec_cancel 5
++enum __au_exec_cancel 6
 
 ; CASE: execution rejects old issuer effect operation
 ; BASE: execution lease observations move and helper transfer

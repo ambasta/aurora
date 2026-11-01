@@ -175,6 +175,19 @@ trap_entry unexpected_interrupt
     pushq $0
     pushq $255
 exception_common:
+    # Single CPU: the supervisor-only guard covers physical trap handling,
+    # including calls, root changes and restoration. A fault during that work
+    # may already have pushed a CPU frame and this stub's vector/error words;
+    # it must not recurse into C++ on the interrupted stack.
+.ifdef AURORA_PROCESS_TRAPS
+    cmpb $0, uefi_process_trap_guard(%rip)
+    jne uefi_process_nested_fault
+    movb $1, uefi_process_trap_guard(%rip)
+.else
+    cmpb $0, aurora_trap_guard(%rip)
+    jne aurora_nested_fault
+    movb $1, aurora_trap_guard(%rip)
+.endif
     cld
     push %rax
     push %rbx
@@ -199,11 +212,29 @@ exception_common:
     mov 112(%rsp), %r9
     mov %rsp, %rbx
     and $-16, %rsp
+    # RCX is the original CS at word 18 of the normalized trap frame.
+    # Keep the physical kernel-origin path separate from user policy calls.
+    test $3, %cl
+    jz kernel_origin_dispatch
 .ifdef AURORA_PROCESS_TRAPS
     call uefi_process_exception_dispatch
 .else
     call aurora_exception_dispatch
 .endif
+    jmp dispatch_complete
+kernel_origin_dispatch:
+.ifdef AURORA_PROCESS_TRAPS
+    call uefi_process_kernel_exception_dispatch
+.else
+.ifdef AURORA_RELATIVE_ONLY
+    call aurora_kernel_exception_dispatch
+.else
+    # BIOS retains its existing combined dispatcher; both physical origins
+    # receive that complete bound. UEFI supplies the separate kernel adapter.
+    call aurora_exception_dispatch
+.endif
+.endif
+dispatch_complete:
     cmp $1, %rax
 .ifdef AURORA_PROCESS_TRAPS
     je uefi_process_leave_user
@@ -227,7 +258,22 @@ exception_common:
     pop %rbx
     pop %rax
     add $16, %rsp
+    # All registers are restored. Only the hardware return frame remains.
+.ifdef AURORA_PROCESS_TRAPS
+    movb $0, uefi_process_trap_guard(%rip)
+.else
+    movb $0, aurora_trap_guard(%rip)
+.endif
     iretq
+# Emergency recursion is terminal, including if debug-exit is absent. There
+# are no calls, pushes, formatting, cleanup, or memory accesses here.
+trap_entry nested_fault
+    cli
+    mov $0xf4, %dx
+    mov $0x11, %al
+    out %al, %dx
+1:  hlt
+    jmp 1b
 trap_entry breakpoint_probe
     push %rbx
     push %rbp
@@ -335,5 +381,18 @@ trap_entry exception_vectors
     .quad aurora_exception_29
     .quad aurora_exception_30
     .quad aurora_exception_31
+.endif
+.section .bss
+.balign 8
+trap_entry trap_guard
+    .byte 0
+.ifdef AURORA_PROCESS_TRAPS
+.type uefi_process_trap_guard,@object
+.size uefi_process_trap_guard,1
+.hidden uefi_process_trap_guard
+.else
+.type aurora_trap_guard,@object
+.size aurora_trap_guard,1
+.hidden aurora_trap_guard
 .endif
 .section .note.GNU-stack,"",@progbits

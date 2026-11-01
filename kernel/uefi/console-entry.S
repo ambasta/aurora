@@ -7,6 +7,9 @@
 uefi_console_interrupt:
     pushq $0
     pushq $64
+    cmpb $0, uefi_payload_trap_guard(%rip)
+    jne uefi_payload_nested_fault
+    movb $1, uefi_payload_trap_guard(%rip)
     cld
     push %rax
     push %rbx
@@ -44,5 +47,6 @@ uefi_console_interrupt:
     pop %rbx
     pop %rax
     add $16, %rsp
+    movb $0, uefi_payload_trap_guard(%rip)
     iretq
 .section .note.GNU-stack,"",@progbits

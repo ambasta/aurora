@@ -42,9 +42,18 @@ the build on a violation:
   stack facts the compilers emit (GCC `.su`/`.ci`, Aurora `.stack.json`); only
   handwritten assembly is decoded instruction by instruction. It rejects call
   cycles, undeclared indirect calls and compiled transfers without a compiler
-  edge, and bounds the entry path plus the worst interrupt, every interrupt
-  window (functions with STI) and every user trap entry by one limit per image
-  (`stack_cap`, 15360 bytes, in `kernel/bootstrap-layout-values.inc`).
+  edge, and bounds the supervisor path, interrupt windows (functions with STI),
+  TSS.RSP0 and double-fault IST separately by the unchanged per-image limit
+  (`stack_cap`, 15360 bytes, in `kernel/bootstrap-layout-values.inc`). Saved-CS
+  provenance selects the physical kernel/user dispatcher; shared exceptions
+  are not treated as user-only. Named continuation saves retain supervisor
+  depth while bounded full-frame resume arguments describe separate storage.
+  Register aliases and IRET frame consumption are checked; arbitrary RSP
+  replacement rejects. A supervisor-only single-CPU trap guard sends recursive
+  faults to a checked stack-free halt path, charging the already-pushed CPU
+  frame and vector/error prelude even there. Lifecycle effect closures include
+  physical trap edges and reject callbacks and undeclared source/assembly ABI
+  boundaries. This does not prove arbitrary native code safe.
   GCC alias relations must resolve without conflicts or cycles to a bounded
   compiled body; every alias and its body must be defined executable ELF
   functions with the same unique address and extent. They share the body's

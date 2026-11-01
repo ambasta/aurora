@@ -3,6 +3,7 @@
 #include "apic-timer-io.hpp"
 #include "../retained-budget.hpp"
 #include "../retained-service.hpp"
+#include "../execution-lifecycle.hpp"
 #include "../round-robin-transport.hpp"
 #include "process-space.hpp"
 #include "image-snapshot.hpp"
@@ -284,7 +285,7 @@ public:
     ProcessSpace *space = nullptr;
     BudgetRoot *budget = nullptr;
     U64 run = 0, flags = 0, calls = 0, memory_calls = 0, commits = 0, peak = 0;
-    std::array<U64, frame_words> *continuation = nullptr;
+    std::array<U64, frame_words> *continuation = nullptr, *captured = nullptr;
     U64 slice = 0, service = 0, block_generation = 0, block_sectors = 0, companion = 0;
     U64 recovery_generation = 0, recovery_sectors = 0;
     U64 mounted_generation = 0, mounted_sectors = 0;
@@ -301,6 +302,15 @@ public:
 };
 constinit Running running;
 constinit Outcome outcome;
+class ExecutionCapture final {
+public:
+    aurora::lifecycle::Event event = aurora::lifecycle::Event::none;
+    U64 detail = 0;
+    bool exhausted = false;
+    process::TrapClass trap = process::TrapClass::kernel;
+    U64 vector = 0, error = 0, rip = 0, cr2 = 0;
+};
+constinit ExecutionCapture execution_capture;
 constinit U64 owned_arena = 0, kernel_root = 0, physical_bits = 0, process_volume_bytes = 0;
 constinit bool draining = false;
 constinit aurora::uefi::ProcessOutput output_sink = nullptr;
@@ -358,6 +368,19 @@ auto root() -> U64 {
     asm volatile("mov %%cr3, %0" : "=r"(value));
     return value;
 }
+class LifecyclePlatform final {
+public:
+    static auto quiet() -> bool {
+        return Timer::irq_off() && root() == kernel_root && !running.space && space.closed() && !Timer::read(0x390) &&
+               Timer::quiet(0x100, false) && Timer::quiet(0x200, false);
+    }
+    [[noreturn]] static auto fail() -> void {
+        ::fail("execution lifecycle authority");
+    }
+};
+using LifecycleRoot = aurora::lifecycle::Root<LifecyclePlatform>;
+constinit LifecycleRoot execution_owner;
+
 auto read_msr(std::uint32_t index) -> U64 {
     std::uint32_t low, high;
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(index));
@@ -517,6 +540,8 @@ auto capture_shared(U64 arena) -> void {
         fail("shared kernel slots");
     table.attach(space, shared, physical_bits, kernel_root);
     table.attach_boot_volume(space.volume(process_volume_bytes));
+    if (!execution_owner.created())
+        execution_owner.initialize();
 }
 
 #ifdef AURORA_PROCESS_FIXTURE
@@ -566,9 +591,20 @@ public:
     BudgetRoot budget;
     std::array<U64, frame_words> continuation{};
     std::array<U64, 8> initial{};
-    bool started = false;
 };
 constinit std::array<Resident, KernelSpace::process_slots> residents;
+
+// These are actual synchronous command-operation receipts, not slot lifecycle
+// state. Only the active command transport may install a force context.
+class ExecutionBinding final {
+public:
+    U64 client = 0, service_generation = 0;
+    bool output_pending = false, request_pending = false;
+    bool output_failed = false, request_failed = false;
+    bool explicit_cancel_requested = false, expiry_preceded_cancel = false;
+};
+constinit const ExecutionBinding *forced_execution = nullptr;
+constinit const bool *completed_output = nullptr;
 
 // A copied synchronous endpoint, not a namespace or backing store. Exactly
 // one transaction is outstanding. Source/transaction never come from a client.
@@ -603,18 +639,33 @@ constinit U64 recovery_owner = 0, recovery_root = 0, recovery_generation = 0, re
 constinit U64 mounted_owner = 0, mounted_root = 0, mounted_generation = 0, mounted_sectors = 0, mounted_service = 0;
 #ifdef AURORA_PROCESS_FIXTURE
 constinit U64 recovery_cut_case = 0, mounted_cut_case = 0;
-constinit bool frame_finish_fault = false;
+constinit bool frame_finish_fault = false, nested_fault_probe = false;
+constinit U64 execution_probe_case = 0;
 constinit bool mounted_owner_termination = false;
 #endif
 constinit bool recovery_completed = false;
 constinit std::array<std::byte, 512> block_copy{};
 
+#ifdef AURORA_PROCESS_FIXTURE
+auto execution_probe_marker(U64 probe, U64 slot) -> void {
+    Serial::text("AURORA_EXECUTION_AUTHORITY_PROBE:");
+    field("case", probe);
+    field("slot", slot);
+    field("root", root());
+    field("kernel", kernel_root);
+    field("closed", space.closed());
+    Serial::text("\r\n");
+}
+#endif
+
 auto save_frame(const volatile U64 *frame) -> void {
     if (!running.continuation)
         fail("missing process continuation");
-    for (std::size_t word = 0; word < frame_words; ++word)
-        (*running.continuation)[word] = frame[word];
-    outcome.parked = true;
+    if (running.captured != running.continuation ||
+        frame != reinterpret_cast<const volatile U64 *>(owned_arena + BootstrapLayout::rsp0_top - frame_words * 8))
+        fail("process capture identity");
+    if (execution_capture.event == aurora::lifecycle::Event::none)
+        execution_capture.event = aurora::lifecycle::Event::timer;
 }
 
 // Partial LAPIC counts belong to the outgoing process. Voluntary exchanges
@@ -632,9 +683,7 @@ auto elapsed(U64 count, bool progress = false) -> void {
             endpoint.caller_cancelled = true;
     }
     if (!charge_counts(*running.budget, count, progress)) {
-        outcome.watchdog = true;
-        outcome.parked = false;
-        outcome.exited = false;
+        execution_capture.exhausted = true;
     }
 }
 auto arm_slice() -> void {
@@ -653,8 +702,10 @@ auto charge_tick(U64 vector, U64 error, U64 rip, U64 cs, const volatile U64 *fra
         kernel_fault(vector, error, rip, cs);
     elapsed(running.slice);
     running.slice = 0;
-    if (outcome.watchdog)
+    if (execution_capture.exhausted) {
+        execution_capture.event = aurora::lifecycle::Event::timer;
         return 1;
+    }
     if (running.continuation) {
         save_frame(frame);
         return 1;
@@ -990,7 +1041,7 @@ auto endpoint_exchange(volatile U64 *frame) -> bool {
     }
     endpoint.window = window;
     endpoint.waiting = true;
-    outcome.exchange = true;
+    execution_capture.event = aurora::lifecycle::Event::exchange;
     save_frame(frame);
     return true;
 }
@@ -1049,7 +1100,7 @@ auto file_request(const process::KernelCall &call, volatile U64 *frame) -> bool 
     endpoint.written = length;
     endpoint.caller = 1;
     endpoint.caller_cancelled = false;
-    outcome.request = true;
+    execution_capture.event = aurora::lifecycle::Event::request;
     save_frame(frame);
     return true;
 }
@@ -1062,32 +1113,32 @@ auto kernel_call(volatile U64 *frame) -> U64 {
 #ifdef AURORA_PROCESS_FIXTURE
             if (mounted_owner_termination) {
                 mounted_owner_termination = false;
-                outcome.exited = true;
-                outcome.status = 1;
+                execution_capture.event = aurora::lifecycle::Event::exited;
+                execution_capture.detail = 1;
                 return 1;
             }
 #endif
             return 0;
         }
-        outcome.invalid_call = true;
-        outcome.operation = operation;
-        outcome.rip = frame[frame_rip];
+        execution_capture.event = aurora::lifecycle::Event::invalid_call;
+        execution_capture.detail = operation;
+        execution_capture.rip = frame[frame_rip];
         return 1;
     }
     if (frame[frame_rax] == 16) {
         if (block_read(frame))
             return 0;
-        outcome.invalid_call = true;
-        outcome.operation = 16;
-        outcome.rip = frame[frame_rip];
+        execution_capture.event = aurora::lifecycle::Event::invalid_call;
+        execution_capture.detail = 16;
+        execution_capture.rip = frame[frame_rip];
         return 1;
     }
     if (frame[frame_rax] == 15) {
         if (endpoint_exchange(frame))
             return 1;
-        outcome.invalid_call = true;
-        outcome.operation = 15;
-        outcome.rip = frame[frame_rip];
+        execution_capture.event = aurora::lifecycle::Event::invalid_call;
+        execution_capture.detail = 15;
+        execution_capture.rip = frame[frame_rip];
         return 1;
     }
     const auto decoded =
@@ -1098,12 +1149,14 @@ auto kernel_call(volatile U64 *frame) -> U64 {
     if (running.space->charged() > running.peak)
         running.peak = running.space->charged();
     // Fixture: fault in the kernel during the run's first call (process.md#guest-rows).
-    if ((running.flags & 1) && running.calls++ == 0)
+    if ((running.flags & 1) && running.calls++ == 0) {
+        Serial::text("AURORA_PROCESS_KERNEL_FAULT_PROBE: vector=14\r\n");
         static_cast<void>(*reinterpret_cast<volatile U64 *>(KernelSpace::window_base + frames::page));
+    }
     const auto action = static_cast<process::CallAction>(decoded->action);
     if (action == process::CallAction::exit) {
-        outcome.exited = true;
-        outcome.status = decoded->value;
+        execution_capture.event = aurora::lifecycle::Event::exited;
+        execution_capture.detail = decoded->value;
         return 1;
     }
     if (action == process::CallAction::print && !running.service) {
@@ -1113,7 +1166,7 @@ auto kernel_call(volatile U64 *frame) -> U64 {
                     endpoint.bytes[at] = (*bytes)[at];
                 endpoint.count = decoded->length;
                 output_error_stream = decoded->value == 2;
-                outcome.output = true;
+                execution_capture.event = aurora::lifecycle::Event::output;
                 save_frame(frame);
                 return 1;
             }
@@ -1152,20 +1205,21 @@ auto kernel_call(volatile U64 *frame) -> U64 {
             return 0;
         }
     }
-    outcome.invalid_call = true;
-    outcome.operation = frame[frame_rax];
-    outcome.rip = frame[frame_rip];
+    execution_capture.event = aurora::lifecycle::Event::invalid_call;
+    execution_capture.detail = frame[frame_rax];
+    execution_capture.rip = frame[frame_rip];
     return 1;
 }
 } // namespace
 
-// Every trap, interrupt and kernel call (kernel/exceptions.S). A process's own
-// frame is the exact RSP0 frame under its root, which the Aurora policy then
-// verifies; it ends only that process (result 1) or resumes it (0). The timer
-// drain is the one kernel-mode interrupt admitted; anything else stops.
-auto dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("uefi_process_exception_dispatch")
+// The assembly gate separates saved-CS origins before selecting a dispatcher.
+// Kernel-origin faults and the bounded timer drain stay on the suspended
+// supervisor domain; they never traverse the CPL3 process policy closure.
+auto kernel_dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("uefi_process_kernel_exception_dispatch")
     __attribute__((visibility("hidden")));
-auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
+auto kernel_dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
+    if (cs != 8)
+        kernel_fault(vector, error, rip, cs);
     const auto begin = reinterpret_cast<U64>(&drain_begin), end = reinterpret_cast<U64>(&drain_end);
     if (vector == 64 && cs == 8 && draining && rip >= begin && rip <= end && root() == kernel_root &&
         frame >= owned_arena + Handoff::stack_bottom && frame < owned_arena + Handoff::stack_top) {
@@ -1174,10 +1228,27 @@ auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
         draining = false;
         return 0;
     }
-    if (!running.space || (cs & 3) != 3 || frame != owned_arena + BootstrapLayout::rsp0_top - frame_words * 8 ||
-        root() != running.space->root())
+    kernel_fault(vector, error, rip, cs);
+}
+
+// CPL3 frames arrive only on the exact TSS.RSP0 frame under their admitted root.
+auto dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("uefi_process_exception_dispatch")
+    __attribute__((visibility("hidden")));
+auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
+    if (!execution_owner.busy() || !running.space || !running.captured || cs != 0x1b ||
+        frame != owned_arena + BootstrapLayout::rsp0_top - frame_words * 8 || root() != running.space->root())
         kernel_fault(vector, error, rip, cs);
     auto *words = reinterpret_cast<volatile U64 *>(frame);
+    // Full authenticated trap capture is distinct from the tightly bounded
+    // stopped-return writes and from writes to an actively executing syscall.
+    for (std::size_t word = 0; word < frame_words; ++word)
+        (*running.captured)[word] = words[word];
+#ifdef AURORA_PROCESS_FIXTURE
+    if (nested_fault_probe) {
+        Serial::text("AURORA_PROCESS_NESTED_FAULT_PROBE\r\n");
+        asm volatile("ud2");
+    }
+#endif
     process::ProcessTrap trap{vector, error, words[17], words[18], words[19], words[20], words[21], 0, 0x10000};
     if (vector == 14)
         asm volatile("mov %%cr2, %0" : "=r"(trap.cr2));
@@ -1204,8 +1275,8 @@ auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
             field("root", root());
             field("kernel", kernel_root);
             Serial::text("\r\n");
-            static_cast<void>(table.finish());
-            fail("frame require returned");
+            table.admit_finish();
+            fail("frame consume guard returned");
         }
 #endif
         if (!running.space->commit(trap.cr2))
@@ -1215,11 +1286,13 @@ auto dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
         ++running.commits;
         return 0;
     }
-    outcome.trap = *kind;
-    outcome.vector = vector;
-    outcome.error = error;
-    outcome.rip = trap.rip;
-    outcome.cr2 = trap.cr2;
+    execution_capture.event = aurora::lifecycle::Event::fault;
+    execution_capture.detail = vector;
+    execution_capture.trap = *kind;
+    execution_capture.vector = vector;
+    execution_capture.error = error;
+    execution_capture.rip = trap.rip;
+    execution_capture.cr2 = trap.cr2;
     return 1;
 }
 
@@ -1389,9 +1462,17 @@ auto load_image(std::span<const std::byte> view,
                 U64 companion = 0,
                 bool grant_mounted = false,
                 U64 snapshot_epoch = 0) -> bool {
+    if (execution_owner.entered())
+        fail("execution lifecycle reentry");
     auto &resident = residents[slot];
-    if (resident.space || resident.started)
+    if (resident.space || execution_owner.phase(slot) != aurora::lifecycle::Phase::empty)
         fail("resident slot already owned");
+    // A known source incarnation refusal precedes physical allocation; it may
+    // not be discovered only after a loaded address space becomes visible.
+    if (!execution_owner.can_prepare(slot)) {
+        refuse(run, "execution generation exhausted");
+        return false;
+    }
     static_cast<void>(view);
     ImageManifest manifest;
     if (snapshot_epoch) {
@@ -1529,6 +1610,7 @@ auto load_image(std::span<const std::byte> view,
     resident.state.run = run;
     resident.state.flags = entry.flags;
     resident.state.continuation = preemptible ? &resident.continuation : nullptr;
+    resident.state.captured = &resident.continuation;
     resident.state.service = service;
     resident.state.block_generation = read_generation;
     resident.state.block_sectors = read_sectors;
@@ -1536,7 +1618,7 @@ auto load_image(std::span<const std::byte> view,
     resident.state.mounted_sectors = write_sectors;
     resident.state.external = external;
     resident.state.companion = companion;
-    if (!audit_residents())
+    if (!audit_residents() || !execution_owner.prepare(slot))
         fail("resident admission audit");
     return true;
 }
@@ -1552,8 +1634,10 @@ auto load_one(std::span<const std::byte> view,
               bool external = false,
               U64 service = 0,
               bool grant_block = false) -> bool {
+    if (execution_owner.entered())
+        fail("execution lifecycle reentry");
     auto &resident = residents[slot];
-    if (resident.space || resident.started)
+    if (resident.space || execution_owner.phase(slot) != aurora::lifecycle::Phase::empty)
         fail("resident slot already owned");
     const auto path = runs.subspan(entry.path, entry.path_bytes);
     const auto arguments = runs.subspan(entry.arguments, entry.argument_bytes);
@@ -1574,7 +1658,25 @@ auto load_one(std::span<const std::byte> view,
 
 #endif
 
-auto retire_resident(std::size_t slot) -> bool {
+auto release_resident_physical(std::size_t slot) -> bool {
+    using namespace aurora::lifecycle;
+    if (execution_owner.canonical(slot, Field::phase) != static_cast<U64>(Phase::retiring))
+        fail("execution retirement phase");
+    outcome = {};
+    const auto terminal = static_cast<Event>(execution_owner.canonical(slot, Field::terminal));
+    const auto detail = execution_owner.canonical(slot, Field::terminal_detail);
+    outcome.exited = terminal == Event::exited;
+    outcome.watchdog = terminal == Event::expired;
+    outcome.invalid_call = terminal == Event::invalid_call || terminal == Event::output_failed;
+    outcome.cancelled = terminal == Event::cancelled;
+    outcome.unavailable = terminal == Event::unavailable;
+    outcome.status = detail;
+    outcome.operation = detail;
+    outcome.trap = execution_capture.trap;
+    outcome.vector = execution_capture.vector;
+    outcome.error = execution_capture.error;
+    outcome.rip = execution_capture.rip;
+    outcome.cr2 = execution_capture.cr2;
     auto &resident = residents[slot];
     running = resident.state;
     running.space = nullptr;
@@ -1588,22 +1690,19 @@ auto retire_resident(std::size_t slot) -> bool {
     bool sealed_writer = false;
 #ifdef AURORA_UEFI_NVME
     if (mounted_writer) {
-        aurora::uefi::nvme_mounted_abandon();
         if (!resident.state.service || resident.state.service != mounted_service ||
             resident.state.mounted_generation != mounted_generation ||
             resident.state.mounted_sectors != mounted_sectors || process_space.owner() != mounted_owner ||
             process_space.root() != mounted_root || root() != kernel_root || !space.closed())
             fail("mounted retirement authority");
+        aurora::uefi::nvme_mounted_abandon();
     }
     if (writer) {
         if (resident.state.service || resident.state.recovery_generation != recovery_generation ||
             resident.state.recovery_sectors != recovery_sectors || process_space.owner() != recovery_owner ||
-            process_space.root() != recovery_root || root() != kernel_root || !space.closed()) {
-            aurora::uefi::nvme_recovery_abandon();
+            process_space.root() != recovery_root || root() != kernel_root || !space.closed())
             fail("recovery retirement authority");
-        }
-        const bool success = outcome.exited && !outcome.status && !outcome.watchdog && !outcome.invalid_call &&
-                             !outcome.unavailable && !outcome.parked;
+        const bool success = terminal == Event::exited && detail == 0;
         sealed_writer = success && aurora::uefi::nvme_recovery_seal();
         if (!sealed_writer)
             aurora::uefi::nvme_recovery_abandon();
@@ -1671,7 +1770,6 @@ auto retire_resident(std::size_t slot) -> bool {
     resident.budget.stop();
     running.budget = nullptr;
     resident.state = {};
-    resident.started = false;
 #ifdef AURORA_UEFI_NVME
     if (writer) {
         recovery_completed = sealed_writer && aurora::uefi::nvme_recovery_retired();
@@ -1694,11 +1792,53 @@ auto retire_resident(std::size_t slot) -> bool {
     return true;
 }
 
+auto authenticate_stopped_frame(std::size_t slot, bool syscall) -> void {
+    const auto &resident = residents[slot];
+    const auto &frame = resident.continuation;
+    if (resident.state.captured != &resident.continuation || !resident.state.continuation)
+        fail("stopped frame identity");
+    const process::ProcessTrap trap{
+        frame[15], frame[16], frame[17], frame[18], frame[19], frame[20], frame[21], 0, 0x10000};
+    const auto kind = process::trap(trap);
+    if (!kind || (syscall ? *kind != process::TrapClass::call
+                          : (*kind != process::TrapClass::call && *kind != process::TrapClass::timer)))
+        fail("stopped frame admission");
+}
+
 // Copies run only while the supervisor owns execution. The selected root is
 // already fully admitted and is restored before any other process can enter.
-auto deliver_before_enter(std::size_t slot) -> void {
-    if (!(running.service && endpoint.delivery) && !(slot == 1 && endpoint.completion))
+auto complete_resident_physical(std::size_t slot) -> void {
+    using namespace aurora::lifecycle;
+    const auto pending = static_cast<Event>(execution_owner.canonical(slot, Field::pending));
+    authenticate_stopped_frame(slot, true);
+    auto &resident = residents[slot];
+    if (pending == Event::output) {
+        if (slot != 1 || !completed_output || !*completed_output || endpoint.caller ||
+            resident.continuation[frame_rax] != 2 || resident.continuation[frame_rdx] != endpoint.count ||
+            (resident.continuation[frame_rdi] == 2) != output_error_stream)
+            fail("output completion evidence");
+        resident.continuation[frame_rax] = 0;
         return;
+    }
+    if ((pending != Event::exchange || !resident.state.service || !endpoint.delivery || !endpoint.waiting ||
+         endpoint.generation != resident.state.service) &&
+        (pending != Event::request || slot != 1 || !endpoint.completion || endpoint.caller ||
+         endpoint.source != resident.state.run))
+        fail("stopped completion evidence");
+    if (pending == Event::exchange) {
+        if (resident.continuation[frame_rax] != 15 || resident.continuation[frame_rdi] != endpoint.window ||
+            resident.continuation[frame_rdx] != resident.state.service || endpoint.count > Endpoint::capacity)
+            fail("service delivery stopped frame");
+    } else {
+        const auto &frame = resident.continuation;
+        const auto call =
+            process::call(frame[frame_rax], frame[frame_rdi], frame[frame_rsi], frame[frame_rdx], frame[frame_r10]);
+        if (!call || call->action != endpoint.call.action || call->value != endpoint.call.value ||
+            call->length != endpoint.call.length || call->base != endpoint.call.base ||
+            call->record != endpoint.call.record)
+            fail("client completion stopped frame");
+    }
+    running = resident.state;
     const U64 admitted_root = table.activation_root(slot, running.space->epoch());
     asm volatile("mov %0, %%cr3" : : "r"(admitted_root) : "memory");
     if (running.service && endpoint.delivery) {
@@ -1738,19 +1878,21 @@ auto deliver_before_enter(std::size_t slot) -> void {
         endpoint.completion = false;
     }
     asm volatile("mov %0, %%cr3" : : "r"(kernel_root) : "memory");
+    running.space = nullptr;
 }
 
 // One entry or resumption. A timer park returns to this kernel loop before
 // another process can enter, preserving the single saved kernel continuation.
-auto run_resident(std::size_t slot) -> bool {
+auto activate_resident_physical(std::size_t slot) -> void {
+    using namespace aurora::lifecycle;
+    const bool resume = execution_owner.canonical(slot, Field::mode) == 1;
     auto &resident = residents[slot];
     if (!resident.space || !resident.budget.available() || running.space || root() != kernel_root)
         fail("resident activation");
     running = resident.state;
-    outcome = Outcome{};
+    execution_capture = {};
     arm_slice();
-    deliver_before_enter(slot);
-    if (resident.started && !resident.state.external) {
+    if (resume && !resident.state.external) {
         Serial::text("AURORA_PROCESS_RESUMED:");
         field("run", resident.state.run);
         field("ticks", resident.budget.used());
@@ -1759,8 +1901,8 @@ auto run_resident(std::size_t slot) -> bool {
     const U64 admitted_root = table.activation_root(slot, resident.space->epoch());
     if (resident.initial[4] != admitted_root)
         fail("resident root generation");
-    const auto result = resident.started ? process_resume(resident.continuation.data(), admitted_root)
-                                         : process_enter(resident.initial.data());
+    const auto result =
+        resume ? process_resume(resident.continuation.data(), admitted_root) : process_enter(resident.initial.data());
     if (result != 1 || root() != kernel_root)
         fail("process exit");
     const U64 current = running.slice ? Timer::read(0x390) : 0;
@@ -1775,7 +1917,6 @@ auto run_resident(std::size_t slot) -> bool {
         elapsed(consumed, true);
         running.slice = 0;
     }
-    resident.started = true;
     resident.state = running;
     running.space = nullptr;
     if (Timer::pending()) {
@@ -1784,16 +1925,206 @@ auto run_resident(std::size_t slot) -> bool {
     }
     if (draining || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
         fail("timer drain");
-    if (outcome.parked) {
-        if (!resident.state.external) {
-            Serial::text("AURORA_PROCESS_PARKED:");
-            field("run", resident.state.run);
-            field("ticks", resident.budget.used());
-            Serial::text("\r\n");
-        }
-        return false;
+}
+
+auto authenticate_execution(std::size_t slot, aurora::lifecycle::Phase phase) -> void {
+    using namespace aurora::lifecycle;
+    if (slot >= residents.size() || !execution_owner.busy() ||
+        execution_owner.canonical(slot, Field::phase) != static_cast<U64>(phase))
+        fail("execution canonical phase");
+    const auto &resident = residents[slot];
+    if (!resident.space || !execution_owner.canonical(slot, Field::generation) ||
+        execution_owner.canonical(slot, Field::epoch) != resident.space->epoch() ||
+        execution_owner.canonical(slot, Field::root) != resident.space->root() ||
+        execution_owner.canonical(slot, Field::service) != resident.state.service ||
+        execution_owner.canonical(slot, Field::initial) != reinterpret_cast<U64>(resident.initial.data()) ||
+        execution_owner.canonical(slot, Field::saved) != reinterpret_cast<U64>(resident.continuation.data()) ||
+        resident.state.space != &*resident.space || resident.state.budget != &resident.budget ||
+        resident.state.captured != &resident.continuation ||
+        (resident.state.continuation && resident.state.continuation != &resident.continuation) ||
+        resident.state.run > 0xffffffffULL - frames::first_owner ||
+        resident.space->owner() != frames::first_owner + resident.state.run ||
+        resident.initial[4] != table.activation_root(slot, resident.space->epoch()))
+        fail("execution physical identity");
+}
+auto execution_observation(std::size_t slot, aurora::lifecycle::Event event, U64 detail = 0, bool exhausted = false)
+    -> aurora::lifecycle::Observation {
+    const auto &resident = residents[slot];
+    return {static_cast<U64>(event),
+            detail,
+            exhausted,
+            resident.space->epoch(),
+            resident.space->root(),
+            resident.state.service,
+            reinterpret_cast<U64>(resident.initial.data()),
+            reinterpret_cast<U64>(resident.continuation.data())};
+}
+auto observe_forced_execution(std::size_t slot) -> aurora::lifecycle::Observation {
+    using namespace aurora::lifecycle;
+    const auto phase = static_cast<Phase>(execution_owner.canonical(slot, Field::phase));
+    if (phase != Phase::prepared && phase != Phase::parked)
+        fail("forced execution phase");
+    authenticate_execution(slot, phase);
+    if (phase == Phase::parked)
+        authenticate_stopped_frame(slot, false);
+    execution_capture = {};
+    // These bits capture independent physical facts, not an ordered terminal
+    // decision: failed output, explicit intent, earlier expiry, cancellation,
+    // service loss. Only source normalizes their precedence and final detail.
+    U64 facts = endpoint.caller_cancelled ? 8 : 0;
+    const auto service_phase = service_root.phase();
+    if (service_phase == aurora::service::Phase::retiring) {
+        if (forced_execution || snapshot || endpoint.caller || endpoint.completion || loading_image ||
+            (residents[slot].state.service && residents[slot].state.service != service_root.generation()))
+            fail("service loss physical boundary");
+        return execution_observation(slot, Event::forced, facts | 16);
     }
-    return retire_resident(slot);
+    if (slot != 1 || service_phase != aurora::service::Phase::ready || !residents[0].space ||
+        residents[0].state.service != endpoint.generation)
+        fail("forced client physical boundary");
+    if (forced_execution) {
+        const auto &binding = *forced_execution;
+        if (!binding.client || binding.client != residents[slot].state.run || !binding.service_generation ||
+            binding.service_generation != endpoint.generation || binding.output_pending || binding.request_pending ||
+            binding.request_failed || (binding.expiry_preceded_cancel && !binding.explicit_cancel_requested))
+            fail("forced command binding");
+        if (phase == Phase::prepared && (!binding.explicit_cancel_requested || binding.expiry_preceded_cancel ||
+                                         binding.output_failed || execution_owner.canonical(slot, Field::pending)))
+            fail("prepared cancellation evidence");
+        if (binding.output_failed) {
+            if (execution_owner.canonical(slot, Field::pending) != static_cast<U64>(Event::output) ||
+                residents[slot].continuation[frame_rax] != 2 ||
+                residents[slot].continuation[frame_rdx] != endpoint.count || endpoint.caller)
+                fail("output failure stopped context");
+        } else if (!endpoint.caller_cancelled || endpoint.caller || endpoint.completion) {
+            fail("cancelled command physical boundary");
+        }
+        facts |= binding.output_failed ? 1 : 0;
+        facts |= binding.explicit_cancel_requested ? 2 : 0;
+        facts |= binding.expiry_preceded_cancel ? 4 : 0;
+    } else {
+        // The nonproduction request loop has no command lease. Its real
+        // endpoint cancellation is authenticated, never a supplied reason.
+        if (phase != Phase::parked || !endpoint.caller_cancelled || endpoint.caller || endpoint.completion ||
+            execution_owner.canonical(slot, Field::pending) != static_cast<U64>(Event::request))
+            fail("expired endpoint physical boundary");
+    }
+    return execution_observation(slot, Event::forced, facts);
+}
+
+template <aurora::lifecycle::EffectKind kind>
+auto execution_authority_observe(
+    const void *binding, U64 epoch, const void *field, aurora::lifecycle::Observation *output, U64 slot) -> void {
+    using namespace aurora::lifecycle;
+#ifdef AURORA_PROCESS_FIXTURE
+    if (kind == EffectKind::prepare && execution_probe_case >= 64 && execution_probe_case <= 67) {
+        const U64 probe = execution_probe_case;
+        execution_probe_case = 0;
+        execution_probe_marker(probe, slot);
+        if (probe == 64)
+            field = reinterpret_cast<const void *>(reinterpret_cast<U64>(field) + 8);
+        else if (probe == 65)
+            binding = reinterpret_cast<const void *>(reinterpret_cast<U64>(binding) + 8);
+        else if (probe == 66)
+            slot ^= 1;
+        else
+            ++epoch;
+    }
+#endif
+    execution_owner.enter(binding, epoch, field, kind, slot);
+    if (!output || slot >= residents.size())
+        fail("execution observation destination");
+    if constexpr (kind == EffectKind::prepare) {
+        const auto &resident = residents[slot];
+        if (execution_owner.canonical(slot, Field::phase) != static_cast<U64>(Phase::empty) || !resident.space ||
+            !resident.state.run || resident.state.space != &*resident.space ||
+            resident.state.captured != &resident.continuation ||
+            (resident.state.continuation && resident.state.continuation != &resident.continuation) ||
+            resident.state.budget != &resident.budget ||
+            resident.initial[4] != table.activation_root(slot, resident.space->epoch()))
+            fail("execution prepare identity");
+        *output = execution_observation(slot, Event::prepared);
+    } else if constexpr (kind == EffectKind::activate) {
+#ifdef AURORA_PROCESS_FIXTURE
+        if (execution_probe_case == 70) {
+            execution_probe_case = 0;
+            execution_probe_marker(70, slot);
+            residents[slot].initial[4] ^= frames::page;
+        }
+#endif
+        authenticate_execution(slot, Phase::executing);
+        const U64 mode = execution_owner.canonical(slot, Field::mode);
+        if (mode > 1 || execution_owner.canonical(slot, Field::pending) ||
+            (mode && !residents[slot].state.continuation))
+            fail("execution entry mode");
+        if (mode)
+            authenticate_stopped_frame(slot, false);
+        activate_resident_physical(slot);
+        *output =
+            execution_observation(slot, execution_capture.event, execution_capture.detail, execution_capture.exhausted);
+    } else if constexpr (kind == EffectKind::complete) {
+        authenticate_execution(slot, Phase::parked);
+#ifdef AURORA_PROCESS_FIXTURE
+        if (execution_probe_case == 68) {
+            execution_probe_case = 0;
+            execution_probe_marker(68, slot);
+            residents[slot].continuation[18] = 8;
+        }
+#endif
+        complete_resident_physical(slot);
+        *output = execution_observation(slot, Event::completed);
+    } else if constexpr (kind == EffectKind::force) {
+        *output = observe_forced_execution(slot);
+    } else {
+        fail("execution observation kind");
+    }
+    execution_owner.leave();
+}
+
+auto run_resident(std::size_t slot) -> bool {
+    using namespace aurora::lifecycle;
+    if (execution_owner.entered() || slot >= residents.size())
+        fail("execution lifecycle reentry");
+    if ((residents[slot].state.service && endpoint.delivery) || (slot == 1 && endpoint.completion))
+        if (!execution_owner.complete(slot))
+            fail("execution completion refused");
+    const auto result = execution_owner.execute(slot);
+    const auto event = static_cast<Event>(result.event);
+    const bool parked = event >= Event::timer && event <= Event::output;
+    const bool terminal =
+        event == Event::exited || event == Event::invalid_call || event == Event::fault || event == Event::expired;
+    if ((!parked && !terminal) || !result.generation || execution_owner.generation(slot) != result.generation)
+        fail("execution activation report");
+    // These source queries verify only report consistency; no native phase or
+    // eligibility ledger is retained. Source already selected and cleaned up.
+    const auto phase = execution_owner.phase(slot);
+    if (terminal ? (residents[slot].space.has_value() || phase != Phase::empty)
+                 : (!residents[slot].space || phase != Phase::parked))
+        fail("execution report cleanup mismatch");
+    if (terminal)
+        return true;
+    outcome = {};
+    outcome.parked = true;
+    outcome.exchange = event == Event::exchange;
+    outcome.request = event == Event::request;
+    outcome.output = event == Event::output;
+    if (!residents[slot].state.external) {
+        Serial::text("AURORA_PROCESS_PARKED:");
+        field("run", residents[slot].state.run);
+        field("ticks", residents[slot].budget.used());
+        Serial::text("\r\n");
+    }
+    return false;
+}
+auto force_resident(std::size_t slot) -> void {
+    using aurora::lifecycle::Event;
+    if (execution_owner.entered())
+        fail("execution forced retirement reentry");
+    const auto result = execution_owner.force(slot);
+    if (result.event < static_cast<U64>(Event::output_failed) || result.event > static_cast<U64>(Event::unavailable) ||
+        !result.generation || execution_owner.generation(slot) != result.generation || residents[slot].space ||
+        execution_owner.phase(slot) != aurora::lifecycle::Phase::empty)
+        fail("execution forced retirement refused");
 }
 
 // One bounded request/reply round trip. The service budget is per operation,
@@ -2103,9 +2434,7 @@ auto abandon_service_observed(ServiceLoss loss) -> void {
     for (std::size_t slot : {std::size_t{1}, std::size_t{0}}) {
         if (!residents[slot].space)
             continue;
-        outcome = {};
-        outcome.unavailable = true;
-        static_cast<void>(retire_resident(slot));
+        force_resident(slot);
     }
     const auto frozen =
         generation ? ServiceLoss{static_cast<ServiceFailure>(service_root.reason()), service_root.detail()} : loss;
@@ -2122,8 +2451,8 @@ auto abandon_service(ServiceFailure failure = ServiceFailure::observe) -> void {
 // Shared one-way writer execution; only admitted boot compositions may call it.
 auto finish_recovery(U64 baseline) -> bool {
     auto &resident = residents[0];
-    if (!resident.space || resident.started || resident.state.service || resident.state.block_generation ||
-        next_block_generation == ~U64{0})
+    if (!resident.space || execution_owner.phase(0) != aurora::lifecycle::Phase::prepared || resident.state.service ||
+        resident.state.block_generation || next_block_generation == ~U64{0})
         fail("recovery mint state");
     recovery_owner = resident.space->owner();
     recovery_root = resident.space->root();
@@ -2309,8 +2638,9 @@ public:
             }
             if (!endpoint.waiting)
                 return Progress::pending;
-            require(residents[0].started && endpoint.window && !endpoint.transaction && !endpoint.source &&
-                    !endpoint.replied && !endpoint.delivery && !endpoint.caller);
+            require(execution_owner.phase(0) == aurora::lifecycle::Phase::parked && endpoint.window &&
+                    !endpoint.transaction && !endpoint.source && !endpoint.replied && !endpoint.delivery &&
+                    !endpoint.caller);
             binding.initial_receipt = true;
             return Progress::complete;
         }
@@ -2356,10 +2686,15 @@ public:
             if (!binding.failed && bound(binding) && !endpoint.caller_cancelled && !endpoint.invalid_reply_operation)
                 loss = {ServiceFailure::consumer_rejected, 0};
 #ifdef AURORA_UEFI_NVME
-            if (binding.mounted_attempt)
-                aurora::uefi::nvme_mounted_abandon();
+            // A granted role belongs to the execution owner even before first
+            // entry. Its cleanup must follow source revocation, not precede it.
+            const bool unowned_mounted_attempt = binding.mounted_attempt && !mounted_generation;
 #endif
             abandon_service_observed(loss);
+#ifdef AURORA_UEFI_NVME
+            if (unowned_mounted_attempt)
+                aurora::uefi::nvme_mounted_abandon();
+#endif
             binding.pending_operation = binding.pending_transaction = 0;
             binding.initial_receipt = binding.seal_receipt = binding.storage_receipt = false;
             return Result::unavailable;
@@ -2474,14 +2809,62 @@ auto ensure_file_service(std::span<const std::byte> volume, U64 expected = 0, bo
 }
 
 [[gnu::noinline]] auto deliver_output() -> bool {
+    if (execution_owner.entered() || completed_output || forced_execution)
+        fail("output lifecycle scope");
     if (!output_sink || !Timer::irq_off() || root() != kernel_root || Timer::read(0x390) ||
         !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false) || endpoint.count > Endpoint::capacity)
         fail("process output ownership");
+    if (!residents[1].space || execution_owner.phase(1) != aurora::lifecycle::Phase::parked)
+        fail("output stopped context");
+    const auto generation = execution_owner.generation(1);
+    const U64 pending = execution_owner.pending(1);
+    const U64 saved_context = reinterpret_cast<U64>(residents[1].continuation.data());
+    const U64 capture_context = reinterpret_cast<U64>(residents[1].state.captured);
+    const U64 resume_context = reinterpret_cast<U64>(residents[1].state.continuation);
+    if (pending != static_cast<U64>(aurora::lifecycle::Event::output) || capture_context != saved_context ||
+        resume_context != saved_context)
+        fail("output pending context");
+    const auto stopped_frame = residents[1].continuation;
+    const auto epoch = residents[1].space->epoch();
+    const auto physical_root = residents[1].space->root();
     const bool delivered = output_sink(output_context, output_error_stream, {endpoint.bytes.data(), endpoint.count});
-    if (delivered)
-        residents[1].continuation[frame_rax] = 0;
+    if (execution_owner.entered() || !residents[1].space || execution_owner.generation(1) != generation ||
+        execution_owner.pending(1) != pending ||
+        reinterpret_cast<U64>(residents[1].continuation.data()) != saved_context ||
+        reinterpret_cast<U64>(residents[1].state.captured) != capture_context ||
+        reinterpret_cast<U64>(residents[1].state.continuation) != resume_context ||
+        residents[1].space->epoch() != epoch || residents[1].space->root() != physical_root)
+        fail("output callback lifecycle changed");
+    // A different but individually well-formed frame is not the frame whose
+    // output operation was delivered. Compare exact physical words, not a hash.
+    if (residents[1].continuation != stopped_frame)
+        fail("output callback frame changed");
+    if (delivered) {
+        completed_output = &delivered;
+        if (!execution_owner.complete(1))
+            fail("output completion refused");
+        completed_output = nullptr;
+    }
     return delivered;
 }
+#ifdef AURORA_PROCESS_FIXTURE
+auto execution_output_probe(void *, bool, std::span<const std::byte>) -> bool {
+    if ((execution_probe_case != 69 && execution_probe_case != 71) || execution_owner.entered() ||
+        !residents[1].space || execution_owner.phase(1) != aurora::lifecycle::Phase::parked)
+        fail("output callback probe setup");
+    const U64 probe = execution_probe_case;
+    execution_probe_case = 0;
+    execution_probe_marker(probe, 1);
+    // The external callback cannot touch the source root. Corrupt only its
+    // native stopped frame; completion must reauthenticate after returning.
+    if (probe == 69)
+        residents[1].continuation[18] = 8;
+    else
+        residents[1].continuation[0] ^= 1;
+    return true;
+}
+#endif
+
 // Actual resources/effect evidence belong to the private authenticated lease
 // binding. Aurora owns command sequencing; there is no native command loop.
 class ExecutionEffects {
@@ -2495,13 +2878,7 @@ protected:
     }
 
 public:
-    class Binding final {
-    public:
-        U64 client = 0, service_generation = 0;
-        bool output_pending = false, request_pending = false;
-        bool output_failed = false, request_failed = false;
-        bool explicit_cancel_requested = false, expiry_preceded_cancel = false;
-    };
+    using Binding = ExecutionBinding;
     static auto bound_client(const Binding &binding) -> bool {
         return binding.client && residents[1].space && residents[1].state.run == binding.client;
     }
@@ -2556,8 +2933,8 @@ public:
         binding.request_pending = false;
         if (binding.request_failed)
             return Request::service_lost;
-        if (binding.explicit_cancel_requested && !binding.expiry_preceded_cancel)
-            return Request::cancel_requested;
+        if (binding.explicit_cancel_requested)
+            return binding.expiry_preceded_cancel ? Request::explicit_after_expiry : Request::cancel_requested;
         return endpoint.caller_cancelled ? Request::cancelled : Request::ready;
     }
     static auto cancel(Binding &binding) -> aurora::execution::Cancel {
@@ -2583,21 +2960,17 @@ public:
         if (!binding.request_pending) {
             require(!endpoint.caller);
             endpoint.completion = false;
-            return Cancel::settled;
+            return binding.expiry_preceded_cancel ? Cancel::settled_after_expiry : Cancel::settled;
         }
         require(endpoint.caller == std::optional<std::size_t>{1});
-        // Preserve an earlier expiry through the request observation. The
-        // settled cancel result alone cannot communicate its watchdog cause.
-        if (binding.expiry_preceded_cancel)
-            return Cancel::draining;
         if (endpoint.waiting && !endpoint.replied && !endpoint.delivery) {
             // An initial message or raw-write tail has not been dispatched.
             // Preserve server waiting/transaction/next and its existing budget.
             require(settle_staged_cancellation(binding.client, binding.service_generation));
             binding.request_pending = false;
-            return Cancel::settled;
+            return binding.expiry_preceded_cancel ? Cancel::settled_after_expiry : Cancel::settled;
         }
-        return Cancel::draining;
+        return binding.expiry_preceded_cancel ? Cancel::draining_after_expiry : Cancel::draining;
     }
     static auto finish(Binding &binding, aurora::execution::Finish disposition) -> aurora::execution::Effect {
         using namespace aurora::execution;
@@ -2616,22 +2989,24 @@ public:
         require(!binding.request_failed && bound_service(binding));
         if (disposition == Finish::output_failed) {
             require(binding.output_failed && bound_client(binding));
-            outcome = {};
-            outcome.invalid_call = true;
-            outcome.operation = 2;
-            static_cast<void>(retire_resident(1));
+            require(!forced_execution);
+            forced_execution = &binding;
+            force_resident(1);
+            forced_execution = nullptr;
         } else if (disposition == Finish::cancelled) {
             require(!binding.output_failed && endpoint.caller_cancelled && bound_client(binding) &&
                     (!binding.explicit_cancel_requested || binding.expiry_preceded_cancel));
-            outcome = {};
-            outcome.watchdog = true;
-            static_cast<void>(retire_resident(1));
+            require(!forced_execution);
+            forced_execution = &binding;
+            force_resident(1);
+            forced_execution = nullptr;
         } else if (disposition == Finish::cancel_requested) {
             require(!binding.output_failed && binding.explicit_cancel_requested && !binding.expiry_preceded_cancel &&
                     endpoint.caller_cancelled && bound_client(binding));
-            outcome = {};
-            outcome.cancelled = true;
-            static_cast<void>(retire_resident(1));
+            require(!forced_execution);
+            forced_execution = &binding;
+            force_resident(1);
+            forced_execution = nullptr;
         } else {
             require(disposition == Finish::complete && !binding.output_failed && !residents[1].space);
         }
@@ -2865,13 +3240,13 @@ auto run_file_client() -> bool {
     while (residents[1].space) {
         if (run_resident(1))
             break;
+        if (outcome.output && !deliver_output())
+            fail("fixture output delivery");
         if (outcome.request) {
             if (!client_request())
                 return false;
             if (endpoint.caller_cancelled) {
-                outcome = {};
-                outcome.watchdog = true;
-                static_cast<void>(retire_resident(1));
+                force_resident(1);
                 break;
             }
         }
@@ -2981,7 +3356,21 @@ auto execution_cancel_fixture(std::span<const std::byte> volume,
     bool observed = false, request = false;
     U64 drain_transaction = 0, drain_next = 0, drain_used = 0, drain_quantum = 0;
     Finish disposition = Finish::complete;
-    if (prepared.state == Prepared::loaded) {
+    if (prepared.state == Prepared::loaded && point == 4) {
+        if (execution_owner.phase(1) != aurora::lifecycle::Phase::prepared ||
+            static_cast<Cancel>(Session::cancel(lease.binding, lease.generation)) != Cancel::settled)
+            fail("execution prepared cancellation");
+        observed = true;
+        disposition = Finish::cancel_requested;
+        Serial::text("AURORA_EXECUTION_CANCEL:");
+        field("client", client);
+        field("tail", point);
+        field("generation", endpoint.generation);
+        field("transaction", endpoint.transaction);
+        field("next", endpoint.next);
+        Serial::text("\r\n");
+    }
+    if (prepared.state == Prepared::loaded && point != 4) {
         for (;;) {
             if (!request) {
                 const auto step = Session::advance(lease.binding, lease.generation);
@@ -3002,7 +3391,7 @@ auto execution_cancel_fixture(std::span<const std::byte> volume,
                                              : write && staged &&
                                                    (point == 1 ? endpoint.written == endpoint.call.length
                                                                : endpoint.written < endpoint.call.length);
-            if (boundary && !observed) {
+            if (point != 3 && boundary && !observed) {
                 const U64 generation = endpoint.generation, transaction = endpoint.transaction, next = endpoint.next;
                 const U64 used = residents[0].state.budget->used();
                 const U64 quantum = residents[0].state.budget->quantum();
@@ -3055,6 +3444,21 @@ auto execution_cancel_fixture(std::span<const std::byte> volume,
                 request = false;
                 continue;
             }
+            if (point == 3 && result == Request::cancelled) {
+                if (!endpoint.caller_cancelled || endpoint.caller || endpoint.completion ||
+                    residents[1].budget.available() ||
+                    static_cast<Cancel>(Session::cancel(lease.binding, lease.generation)) !=
+                        Cancel::settled_after_expiry)
+                    fail("execution prior expiry evidence");
+                observed = true;
+                Serial::text("AURORA_EXECUTION_CANCEL:");
+                field("client", client);
+                field("tail", point);
+                field("generation", endpoint.generation);
+                field("transaction", endpoint.transaction);
+                field("next", endpoint.next);
+                Serial::text("\r\n");
+            }
             disposition = result == Request::service_lost ? Finish::service_lost : Finish::cancelled;
             break;
         }
@@ -3067,6 +3471,12 @@ auto execution_cancel_fixture(std::span<const std::byte> volume,
         fail("execution cancellation boundary not observed");
     if (point == 2 && disposition != Finish::service_lost)
         fail("execution delivered cancellation did not observe service loss");
+    // The real source-selected terminal record is checked by the guest oracle;
+    // finish's later service close legitimately replaces the shared report.
+    if (point == 3 && disposition != Finish::cancelled)
+        fail("execution prior expiry finalization");
+    if (point == 4 && disposition != Finish::cancel_requested)
+        fail("execution prepared cancellation finalization");
     return disposition != Finish::service_lost;
 }
 #endif
@@ -3134,6 +3544,8 @@ auto run_external(std::span<const std::byte> view,
         const auto arguments = runs.subspan(entry->arguments, entry->argument_bytes);
         constexpr std::string_view initial_cancel{"raw-cancel-initial\0", 19};
         constexpr std::string_view tail_cancel{"raw-cancel-tail\0", 16};
+        constexpr std::string_view before_cancel{"raw-cancel-before\0", 18};
+        constexpr std::string_view expired_cancel{"lifecycle\0rpc\0", 14};
         const auto matches = [&](std::string_view name) {
             if (arguments.size() != name.size())
                 return false;
@@ -3143,8 +3555,10 @@ auto run_external(std::span<const std::byte> view,
             return true;
         };
         const bool initial = matches(initial_cancel), tail = matches(tail_cancel);
-        if (initial || tail || cancel_delivered) {
-            if (!execution_cancel_fixture(view, runs, *entry, count, cancel_delivered ? 2 : tail ? 1 : 0)) {
+        const bool before = matches(before_cancel), expired = matches(expired_cancel);
+        if (initial || tail || before || expired || cancel_delivered) {
+            const U64 point = before ? 4 : expired ? 3 : cancel_delivered ? 2 : tail ? 1 : 0;
+            if (!execution_cancel_fixture(view, runs, *entry, count, point)) {
                 if (!recover)
                     fail("execution fixture service loss");
                 close_service_operation();
@@ -3328,6 +3742,16 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 [[noreturn]] auto run_list(U64 arena, std::span<const std::byte> view, U64 selected) -> void {
     U64 run_case = selected;
 #ifdef AURORA_PROCESS_FIXTURE
+    if (selected >= 64 && selected <= 71) {
+        execution_probe_case = selected;
+        run_case = selected == 69 || selected == 71 ? 1 : 3;
+        if (selected == 69 || selected == 71)
+            output_sink = execution_output_probe;
+    }
+    if (selected == 63) {
+        nested_fault_probe = true;
+        run_case = 3;
+    }
     if (selected == 43) {
         frame_finish_fault = true;
         run_case = 3;
@@ -3363,7 +3787,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
     process_kernel_root = kernel_root;
     const bool paired = selected == 7;
     U64 count = 0;
-    if ((selected >= 1 && selected <= 6) || selected == 43 || selected == 44)
+    if ((selected >= 1 && selected <= 6) || selected == 43 || selected == 44 || (selected >= 63 && selected <= 71))
         count = run_independent(view, *runs);
     if (selected == 8)
         count = run_external(view, *runs);
@@ -3594,6 +4018,8 @@ auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
     frame_cases(h.get(96));
     space_cases(*runtime_plan, h.get(96));
     export_entry(view, exported);
+    if (execution_owner.created() && !execution_owner.finish())
+        fail("execution owner finalization");
     Serial::text("AURORA_PROCESS_OK\r\n");
     aurora::hardware::Io::write(0xf4, 0x10);
     for (;;)
@@ -3631,8 +4057,9 @@ auto prepare_recovery(std::span<const std::byte> volume) -> void {
     entry.ticks = 16;
     entry.flags = 8;
     entry.quota = 16384;
-    if (residents[0].space || residents[1].space || endpoint.generation || recovery_generation || recovery_completed ||
-        !image || next_run >= 0xffffffffULL - frames::first_owner || !aurora::uefi::nvme_recovery_sector_count() ||
+    if (residents[0].space || residents[1].space || endpoint.generation || recovery_generation || recovery_completed)
+        fail("recovery preparation ownership");
+    if (!image || next_run >= 0xffffffffULL - frames::first_owner || !aurora::uefi::nvme_recovery_sector_count() ||
         !load_image(volume, *image, bytes_of(arguments), entry, ++next_run, 0, true, true) ||
         !finish_recovery(baseline)) {
         aurora::uefi::nvme_recovery_abandon();
@@ -3753,8 +4180,9 @@ using ExecutionSession = aurora::execution::Session<ExecutionTransport, Executio
 
 namespace {
 auto enter_runtime(U64 arena, const Bytes &handoff) -> bool {
-    if (!Timer::irq_off() || root() != handoff.get(88) || running.space || residents[1].space || snapshot ||
-        Timer::read(0x390) || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
+    if (execution_owner.entered() || !Timer::irq_off() || root() != handoff.get(88) || running.space ||
+        residents[1].space || snapshot || Timer::read(0x390) || !Timer::quiet(0x100, false) ||
+        !Timer::quiet(0x200, false))
         return false;
 #ifdef AURORA_UEFI_NVME
     const bool selected_block = handoff.get(Handoff::composition_word) == 4;
@@ -3791,9 +4219,9 @@ auto enter_runtime(U64 arena, const Bytes &handoff) -> bool {
     return true;
 }
 auto leave_runtime(const Bytes &handoff) -> void {
-    if (running.space || residents[1].space || snapshot || endpoint.caller || endpoint.delivery ||
-        endpoint.completion || Timer::read(0x390) || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false) ||
-        !audit_residents() || !space.verify(table, ranges, handoff.get(96)))
+    if (execution_owner.entered() || running.space || residents[1].space || snapshot || endpoint.caller ||
+        endpoint.delivery || endpoint.completion || Timer::read(0x390) || !Timer::quiet(0x100, false) ||
+        !Timer::quiet(0x200, false) || !audit_residents() || !space.verify(table, ranges, handoff.get(96)))
         fail("process runtime return audit");
     if (!service_root.close_operation())
         fail("process runtime lifecycle return");
@@ -4076,6 +4504,8 @@ auto aurora::uefi::finish_programs(U64 arena, const Bytes &handoff) -> bool {
     if (result > 1 || !input.shutdown_terminal || (result != 0) != input.shutdown_failed)
         fail("resident finalization result");
     resident_owner.finish(operation);
+    if (!execution_owner.finish())
+        fail("execution owner finalization");
     leave_runtime(handoff);
     Serial::text("AURORA_RESIDENT_OWNER_FINISHED: clean=");
     Serial::number(result == 0 ? 1 : 0);
@@ -4401,4 +4831,47 @@ __attribute__((visibility("hidden"))) auto __au_runtime_mapping_finish(const voi
 extern "C" __attribute__((visibility("hidden"))) auto
 __au_runtime_mapping_observe_snapshot_anchor(const void *token, U64 epoch, U64 ticket) -> U64 {
     return aurora::uefi::MappingAuthority::observe_snapshot_anchor(token, epoch, ticket);
+}
+
+// The compiler admits these exact retained-field effects. No source pointer or
+// copied observation can mint an issuer, change slots, or bypass busy scope.
+extern "C" {
+__attribute__((visibility("hidden"))) void __au_runtime_execution_authority_prepare(
+    const void *binding, U64 epoch, const void *field, aurora::lifecycle::Observation *output, U64 slot) {
+    execution_authority_observe<aurora::lifecycle::EffectKind::prepare>(binding, epoch, field, output, slot);
+}
+__attribute__((visibility("hidden"))) void __au_runtime_execution_authority_activate(
+    const void *binding, U64 epoch, const void *field, aurora::lifecycle::Observation *output, U64 slot) {
+    execution_authority_observe<aurora::lifecycle::EffectKind::activate>(binding, epoch, field, output, slot);
+}
+__attribute__((visibility("hidden"))) void __au_runtime_execution_authority_complete(
+    const void *binding, U64 epoch, const void *field, aurora::lifecycle::Observation *output, U64 slot) {
+    execution_authority_observe<aurora::lifecycle::EffectKind::complete>(binding, epoch, field, output, slot);
+}
+__attribute__((visibility("hidden"))) void __au_runtime_execution_authority_force(
+    const void *binding, U64 epoch, const void *field, aurora::lifecycle::Observation *output, U64 slot) {
+    execution_authority_observe<aurora::lifecycle::EffectKind::force>(binding, epoch, field, output, slot);
+}
+__attribute__((visibility("hidden"))) bool
+__au_runtime_execution_authority_retire(const void *binding, U64 epoch, const void *field, U64 slot) {
+    using namespace aurora::lifecycle;
+    execution_owner.enter(binding, epoch, field, EffectKind::retire, slot);
+    authenticate_execution(slot, Phase::retiring);
+    const bool result = release_resident_physical(slot);
+    execution_owner.leave();
+    return result;
+}
+__attribute__((visibility("hidden"))) bool
+__au_runtime_execution_authority_finish(const void *binding, U64 epoch, const void *field) {
+    using namespace aurora::lifecycle;
+    execution_owner.enter(binding, epoch, field, EffectKind::finish, 0);
+    if (execution_owner.canonical(0, Field::phase) != static_cast<U64>(Phase::empty) ||
+        execution_owner.canonical(1, Field::phase) != static_cast<U64>(Phase::empty) || residents[0].space ||
+        residents[1].space || snapshot || endpoint.caller || endpoint.delivery || endpoint.completion ||
+        !audit_residents())
+        fail("execution owner cleanup");
+    execution_owner.consume();
+    execution_owner.leave();
+    return true;
+}
 }

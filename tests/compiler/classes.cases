@@ -39,3 +39,100 @@ module app; ${COUNTER}auto sum(i64 n)->i64{if(n==0){return 0;}return n+sum(n-1);
 @case constructor return type rejected
 @error constructor cannot have a return type
 module app; class Wrong {public:auto Wrong()->i64{return 42;}}; auto test() -> i64 {return 42;}
+
+# Retained lifecycle authority uses the existing native-origin owner contract.
+@prelude EXECUTION_HEAD
+class Lifecycle {
+    builtin::ExecutionAuthority authority;
+    array<u64, 32> state;
+public:
+    Lifecycle(builtin::ExecutionAuthority input) : authority(move(input)), state{} {}
+@prelude EXECUTION_FINISH
+    auto finish() && -> bool { return authority.finish(); }
+};
+@case execution observation exact copied layout
+module app; auto test() -> i64 {
+    static_assert(size_of(builtin::ExecutionObservation) == 64);
+    static_assert(field_count(builtin::ExecutionObservation) == 8);
+    return 42;
+}
+@case execution authority cannot mint
+@error
+module app; auto test() -> i64 { builtin::ExecutionAuthority input = builtin::ExecutionAuthority(); return 42; }
+@case execution authority cannot copy constructor input
+@error
+module app; class Lifecycle { builtin::ExecutionAuthority authority; public:
+Lifecycle(builtin::ExecutionAuthority input) : authority(input) {} };
+auto test() -> i64 { return 42; }
+@case execution authority cannot mix resident capability
+@error
+module app; class Lifecycle { builtin::ExecutionAuthority authority; builtin::ResidentSlot slot; public:
+Lifecycle(builtin::ExecutionAuthority input, builtin::ResidentSlot other) : authority(move(input)), slot(move(other)) {} };
+auto test() -> i64 { return 42; }
+@case execution authority rejects wrong native input
+@error
+module app; class Lifecycle { builtin::ExecutionAuthority authority; public:
+Lifecycle(builtin::ResidentSlot input) : authority(move(input)) {} };
+auto test() -> i64 { return 42; }
+@case execution authority cannot escape result
+@error
+module app; auto escape() -> builtin::ExecutionAuthority { return 0u64; } auto test() -> i64 { return 42; }
+@case execution authority cannot escape parameter
+@error
+module app; auto escape(builtin::ExecutionAuthority input) -> u64 { return 0u64; } auto test() -> i64 { return 42; }
+@case execution authority field remains private
+@error
+module app; class Lifecycle { public: builtin::ExecutionAuthority authority;
+Lifecycle(builtin::ExecutionAuthority input) : authority(move(input)) {} };
+auto test() -> i64 { return 42; }
+@case execution authority cannot finalize through borrowed receiver
+@error
+module app; ${EXECUTION_HEAD} auto stop() -> bool { return authority.finish(); } ${EXECUTION_FINISH}
+auto test() -> i64 { return 42; }
+@case execution authority consuming return must discharge
+@error
+module app; ${EXECUTION_HEAD} auto finish() && -> bool { return false; } };
+auto test() -> i64 { return 42; }
+@case execution authority consuming field cannot be used twice
+@error
+module app; ${EXECUTION_HEAD} auto finish() && -> bool { authority.finish(); return authority.finish(); } };
+auto test() -> i64 { return 42; }
+@case execution authority requires unsigned slot
+@error
+module app; ${EXECUTION_HEAD}
+auto run() -> builtin::ExecutionObservation { const builtin::ExecutionObservation event = authority.activate(0); return event; }
+${EXECUTION_FINISH} auto test() -> i64 { return 42; }
+@prelude EXECUTION_BYTE_HEAD
+class Lifecycle {
+    builtin::ExecutionAuthority authority;
+    array<u8, 32> state;
+public:
+    Lifecycle(builtin::ExecutionAuthority input) : authority(move(input)), state{} {}
+@case execution effect rejects live sibling span
+@error
+module app; ${EXECUTION_BYTE_HEAD}
+auto run() -> u64 { const builtin::span<const u8> view = borrow_bytes(state);
+const builtin::ExecutionObservation event = authority.activate(0u64); return u64(view.at(0)) + event.event; }
+${EXECUTION_FINISH} auto test() -> i64 { return 42; }
+@case execution consume rejects live sibling span
+@error
+module app; ${EXECUTION_BYTE_HEAD}
+auto finish() && -> bool { const builtin::span<const u8> view = borrow_bytes(state); return authority.finish(); } };
+auto test() -> i64 { return 42; }
+
+@case command and resident lifecycle modules compose without nominal collision
+module app;
+import kernel.execution_session;
+import kernel.execution_lifecycle;
+auto test() -> i64 {
+    static_assert(size_of(kernel::ExecutionResult) == 16);
+    static_assert(size_of(kernel::LifecycleResult) == 24);
+    static_assert(type_id(kernel::ExecutionResult) != type_id(kernel::LifecycleResult));
+    const kernel::ExecutionResult command = kernel::ExecutionResult(builtin::ExecStatus::exited, 40u64);
+    const kernel::LifecycleResult lifecycle = kernel::LifecycleResult(6u64, 2u64, 1u64);
+    return i64(command.value() + lifecycle.detail);
+}
+@module kernel.execution_session
+${EXECUTION_SESSION_MODULE}
+@module kernel.execution_lifecycle
+${EXECUTION_LIFECYCLE_MODULE}

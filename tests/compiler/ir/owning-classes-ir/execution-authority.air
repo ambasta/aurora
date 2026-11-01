@@ -1,0 +1,261 @@
+; CASE: execution authority stable field and observation ABI
+; RUN: verify
+; EXPECT-OK
+; RUN: emit
+; CHECK: __au_runtime_execution_authority_prepare
+; CHECK: __au_runtime_execution_authority_activate
+; CHECK: __au_runtime_execution_authority_complete
+; CHECK: __au_runtime_execution_authority_force
+; CHECK: __au_runtime_execution_authority_retire
+; CHECK: __au_runtime_execution_authority_finish
+; RUN: stack-facts
+; CHECK-JSON: functions.execution_prepare.service_abi.calls {"__au_runtime_execution_authority_prepare":{"sysv_arguments":5,"result_max":18446744073709551615}}
+; CHECK-JSON: functions.execution_activate.service_abi.calls {"__au_runtime_execution_authority_activate":{"sysv_arguments":5,"result_max":18446744073709551615}}
+; CHECK-JSON: functions.execution_complete.service_abi.calls {"__au_runtime_execution_authority_complete":{"sysv_arguments":5,"result_max":18446744073709551615}}
+; CHECK-JSON: functions.execution_force.service_abi.calls {"__au_runtime_execution_authority_force":{"sysv_arguments":5,"result_max":18446744073709551615}}
+; CHECK-JSON: functions.execution_retire.service_abi.calls {"__au_runtime_execution_authority_retire":{"sysv_arguments":4,"result_max":1}}
+; CHECK-JSON: functions.execution_finish.service_abi.calls {"__au_runtime_execution_authority_finish":{"sysv_arguments":3,"result_max":1}}
+layout ExecutionOwner []
+fields ExecutionOwner [((26 __au_execution_authority) 0 0 false)]
+storage ExecutionOwner [] [0] 16 16 16
+layout __au_execution_observation [u64*8]
+fields __au_execution_observation [(u64 0 1 false) (u64 1 1 false) (u64 2 1 false) (u64 3 1 false) (u64 4 1 false) (u64 5 1 false) (u64 6 1 false) (u64 7 1 false)]
+storage __au_execution_observation [0 8 16 24 32 40 48 56] [0 8 16 24 32 40 48 56] 64 8 64
+function execution_constructor
+  result i64
+  params [(26 __au_execution_authority)]
+  frame 16
+  receiver ExecutionOwner true true
+  service_resource 16 __au_execution_authority true
+    BindRetainedResourceParameter 0 16 5
+    InitializeBytesField 0 0 16
+    Constant
+    Return
+end
+function execution_prepare
+  result u64
+  params []
+  frame 64
+  receiver ExecutionOwner true false
+  slot 8 u64
+  slot 16 u64
+  slot 24 u64
+  slot 32 u64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 u64
+  object 64 __au_execution_observation false
+    BeginObject 64
+    Constant 1 u64
+    RetainedFieldOperation 0 0 0 64 5
+    EndObject 64
+    Constant 42 u64
+    Return
+end
+function execution_activate
+  result u64
+  params []
+  frame 64
+  receiver ExecutionOwner true false
+  slot 8 u64
+  slot 16 u64
+  slot 24 u64
+  slot 32 u64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 u64
+  object 64 __au_execution_observation false
+    BeginObject 64
+    Constant 1 u64
+    RetainedFieldOperation 0 0 1 64 5
+    EndObject 64
+    Constant 42 u64
+    Return
+end
+function execution_complete
+  result u64
+  params []
+  frame 64
+  receiver ExecutionOwner true false
+  slot 8 u64
+  slot 16 u64
+  slot 24 u64
+  slot 32 u64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 u64
+  object 64 __au_execution_observation false
+    BeginObject 64
+    Constant 1 u64
+    RetainedFieldOperation 0 0 2 64 5
+    EndObject 64
+    Constant 42 u64
+    Return
+end
+function execution_force
+  result u64
+  params []
+  frame 64
+  receiver ExecutionOwner true false
+  slot 8 u64
+  slot 16 u64
+  slot 24 u64
+  slot 32 u64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 u64
+  object 64 __au_execution_observation false
+    BeginObject 64
+    Constant 1 u64
+    RetainedFieldOperation 0 0 3 64 5
+    EndObject 64
+    Constant 42 u64
+    Return
+end
+function execution_retire
+  result bool
+  params []
+  frame 0
+  receiver ExecutionOwner true false
+    Constant 1 u64
+    RetainedFieldOperation 0 0 4 0 5
+    Return
+end
+function execution_finish
+  result bool
+  params []
+  frame 0
+  receiver ExecutionOwner true false true true
+    RetainedFieldOperation 0 0 5 0 5
+    Return
+end
+
+; CASE: execution binding cannot claim another resource
+; BASE: execution authority stable field and observation ABI
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -13 +13 @@
+-    BindRetainedResourceParameter 0 16 5
++    BindRetainedResourceParameter 0 16 2
+
+; CASE: execution effect requires exact field
+; BASE: execution authority stable field and observation ABI
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -55 +55 @@
+-    RetainedFieldOperation 0 0 1 64 5
++    RetainedFieldOperation 0 1 1 64 5
+
+; CASE: execution effect requires exact root
+; BASE: execution authority stable field and observation ABI
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -55 +55 @@
+-    RetainedFieldOperation 0 0 1 64 5
++    RetainedFieldOperation 16 0 1 64 5
+
+; CASE: execution effect cannot claim mapping authority
+; BASE: execution authority stable field and observation ABI
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -55 +55 @@
+-    RetainedFieldOperation 0 0 1 64 5
++    RetainedFieldOperation 0 0 1 64 4
+
+; CASE: execution slot rejects signed selector
+; BASE: execution authority stable field and observation ABI
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -33 +33 @@
+-    Constant 1 u64
++    Constant 1 i64
+@@ -54 +54 @@
+-    Constant 1 u64
++    Constant 1 i64
+@@ -75 +75 @@
+-    Constant 1 u64
++    Constant 1 i64
+@@ -96 +96 @@
+-    Constant 1 u64
++    Constant 1 i64
+@@ -107 +107 @@
+-    Constant 1 u64
++    Constant 1 i64
+
+; CASE: execution borrowed receiver cannot consume
+; BASE: execution authority stable field and observation ABI
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -115 +115 @@
+-  receiver ExecutionOwner true false true true
++  receiver ExecutionOwner true false
+
+; CASE: execution consuming return cannot retain authority
+; BASE: execution authority stable field and observation ABI
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -116 +116 @@
+-    RetainedFieldOperation 0 0 5 0 5
++    Constant 0 bool
+
+; CASE: execution authority cannot consume twice
+; BASE: execution authority stable field and observation ABI
+; RUN: verify
+; EXPECT-ERROR: resource field does not hold live ownership
+@@ -116,0 +117 @@
++    RetainedFieldOperation 0 0 5 0 5
+
+; CASE: execution authority constructor must transfer
+; BASE: execution authority stable field and observation ABI
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -14 +13,0 @@
+-    InitializeBytesField 0 0 16
+
+; CASE: execution effects after sibling loan scope closes
+; RUN: verify
+; EXPECT-OK
+layout LoanOwner [u8*8]
+fields LoanOwner [((26 __au_execution_authority) 0 0 false) (u8 0 8 true)]
+storage LoanOwner [16 17 18 19 20 21 22 23] [0 16] 32 16 32
+function execution_loan_retire
+  result bool
+  params []
+  frame 64
+  receiver LoanOwner true false
+  span 56
+    BorrowReceiverArraySpan 1 56
+    EndSpan 56
+    Constant 1 u64
+    RetainedFieldOperation 0 0 4 0 5
+    Return
+end
+function execution_loan_finish
+  result bool
+  params []
+  frame 64
+  receiver LoanOwner true false true true
+  span 56
+    BorrowReceiverArraySpan 1 56
+    EndSpan 56
+    RetainedFieldOperation 0 0 5 0 5
+    Return
+end
+
+; CASE: execution effect rejects live sibling loan
+; BASE: execution effects after sibling loan scope closes
+; RUN: verify
+; EXPECT-ERROR: owned byte or root mutation with live readonly span
+@@ -11 +10,0 @@
+-    EndSpan 56
+
+; CASE: execution consumption rejects live sibling loan
+; BASE: execution effects after sibling loan scope closes
+; RUN: verify
+; EXPECT-ERROR: owned byte or root mutation with live readonly span
+@@ -23 +22,0 @@
+-    EndSpan 56

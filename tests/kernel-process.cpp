@@ -16,6 +16,7 @@
 //   kernel-process benchmark FRAMES  quiet fixed-workload timings (65536 or 1048576 frames)
 // Other modes compare stdout with the golden file beside the cases.
 #include "../kernel/execution-session.hpp"
+#include "../kernel/execution-lifecycle.hpp"
 #include "../kernel/service-bootstrap.hpp"
 #include "../kernel/resident-owner.hpp"
 #include "../kernel/retained-budget.hpp"
@@ -1244,9 +1245,11 @@ constexpr const char *statuses[] = {
 constexpr const char *preparations[] = {"loaded", "refused", "service_lost"};
 constexpr const char *steps[] = {"retired", "output", "request", "parked"};
 constexpr const char *effects[] = {"success", "failed"};
-constexpr const char *requests[] = {"ready", "cancelled", "service_lost", "pending", "cancel_requested"};
+constexpr const char *requests[] = {
+    "ready", "cancelled", "service_lost", "pending", "cancel_requested", "explicit_after_expiry"};
 constexpr const char *finishes[] = {"complete", "output_failed", "cancelled", "service_lost", "cancel_requested"};
-constexpr const char *cancels[] = {"settled", "draining", "service_lost"};
+constexpr const char *cancels[] = {
+    "settled", "draining", "service_lost", "settled_after_expiry", "draining_after_expiry"};
 std::vector<std::vector<std::string>> script;
 std::size_t cursor{};
 std::string trace;
@@ -2075,6 +2078,7 @@ auto service_incarnation_mode(const char *cases) -> int {
 }
 
 #include "kernel-process-resident.hpp"
+#include "kernel-process-execution-lifecycle.hpp"
 
 // Real source lifecycle over the named physical-page test device. Cases carry
 // requests; reviewed golden values, not a second mapping policy, are the oracle.
@@ -2525,6 +2529,8 @@ auto main(int argc, char **argv) -> int {
         return manager_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "benchmark")
         return frame_benchmark(number(argv[2]));
+    if (argc == 3 && std::string{argv[1]} == "lifecycle")
+        return lifecycle_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "resident")
         return resident_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "bootstrap")

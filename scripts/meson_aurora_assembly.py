@@ -122,7 +122,7 @@ def validate_native_abi(facts, source):
             return dict(bytes=8, kind=source)
         if source == "span":
             return dict(bytes=56, kind="span")
-        if source in ("__au_resident_slot", "__au_owned_words", "__au_mapping_authority"):
+        if source in ("__au_resident_slot", "__au_owned_words", "__au_mapping_authority", "__au_execution_authority"):
             return dict(bytes=16, kind="owner", type_name=source)
         if source in ("builtin::CallSession", "builtin::ConsoleSession"):
             return dict(bytes=16, kind="service")
@@ -524,6 +524,39 @@ def validate_native_abi(facts, source):
         borrowed_entry(nominal, "manager_validate_access", ["u64"] * 4 + ["bool"], "u64", True)
         borrowed_entry(nominal, "manager_map_region", ["u64", "u64", "kernel::ProcessRegion", "u64"], "bool", True)
 
+    if "# EXECUTION_LIFECYCLE_ABI:" in source:
+        nominal = retained_root("kernel::ExecutionOwner", reservation=272)
+        record(
+            "kernel::ExecutionOwner",
+            272,
+            [("authority", "__au_execution_authority", 0), ("state", "u64", 32)],
+            alignment=16,
+        )
+        record(
+            "__au_execution_observation",
+            64,
+            [
+                (name, "u64", 0)
+                for name in ("event", "detail", "exhausted", "epoch", "root", "service", "initial", "saved")
+            ],
+        )
+        record("kernel::LifecycleResult", 24, [("event", "u64", 0), ("detail", "u64", 0), ("generation", "u64", 0)])
+        entry(
+            "kernel::ExecutionOwner", ["__au_execution_authority"], "i64", receiver=nominal, mode="complete_constructor"
+        )
+        entry("kernel::finish", [], "bool", receiver=nominal, mode="receiver_consuming")
+        for name, result, mutable in (
+            ("can_prepare", "bool", False),
+            ("prepare", "bool", True),
+            ("execute", "kernel::LifecycleResult", True),
+            ("force", "kernel::LifecycleResult", True),
+            ("complete", "bool", True),
+            ("phase", "u64", False),
+            ("generation", "u64", False),
+            ("pending", "u64", False),
+        ):
+            borrowed_entry(nominal, "lifecycle_" + name, ["u64"], result, mutable)
+
     if "# RESIDENT_OWNER_ABI:" in source:
         nominal = retained_root("kernel::ServiceOwner")
         record("kernel::ServiceOwner", 16, [("slot", "__au_resident_slot", 0)], alignment=16)
@@ -726,9 +759,9 @@ def validate_native_abi(facts, source):
         enum("__au_exec_prepared", "loaded refused service_lost")
         enum("__au_exec_step", "retired output request parked")
         enum("__au_exec_effect", "success failed")
-        enum("__au_exec_request", "ready cancelled service_lost pending cancel_requested")
+        enum("__au_exec_request", "ready cancelled service_lost pending cancel_requested explicit_after_expiry")
         enum("__au_exec_finish", "complete output_failed cancelled service_lost cancel_requested")
-        enum("__au_exec_cancel", "settled draining service_lost")
+        enum("__au_exec_cancel", "settled draining service_lost settled_after_expiry draining_after_expiry")
         record(
             "__au_execution_prep",
             16,
