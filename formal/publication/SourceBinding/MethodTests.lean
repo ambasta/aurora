@@ -51,4 +51,3 @@ private def bodyCases : List (String × Bool) := [
   | .compare .gt (.sub (.sub _ _) _) (.wordLit 0) => pure ()
   | _ => throw (IO.userError "subtraction association changed")
   IO.println s!"NATIVE method/guard fixtures: {bodyCases.length + 2} passed"
-

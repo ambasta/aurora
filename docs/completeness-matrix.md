@@ -30,8 +30,15 @@ A separate source-binding checkpoint checks full restricted-ASCII lexical and
 declaration-shell coverage, supplied-module graph consistency and named member/field
 binding, full selected-method syntax, pure leading-guard typing and an explicit
 source/IR signature plus complete ordered-field metadata identity profile.
-Tail typing/effects, general type/name resolution, source-use/IR execution
-correspondence and same-typed field-use swap rejection remain unproved.
+A separate bounded semantic certificate proves the pure leading rejection guard
+corresponds to the actual IR prefix from parameter binding through false return
+or the boundary after the leading-if. Checked short-circuiting excludes unsigned
+subtraction underflow for bounded scalar inputs; exact first-exit uniqueness,
+prefix no-call/store forms and preterminal receiver preservation are proved.
+Same-typed use swaps are rejected by this layer, not structural typing alone.
+Full-source/publication acceptance is still native evidence, not concrete kernel
+acceptance. Tail typing/effects, general type/name resolution, native/backend
+fidelity and the native API entry/exit protocol remain unproved.
 
 | Destination | Status |
 |---|---|

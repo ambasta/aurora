@@ -1,4 +1,5 @@
 import SourceBinding
+import SourceBinding.SemanticBinding
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -45,10 +46,11 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"SOURCE-GUARD body_statements={guarded.method.parsed.statements.length} tail_statements={guarded.method.tail.length + 1} pure_typed_guard=true"
   if let some path := irPath then
     let publication ← readSource path 16777216
-    let some bound := bindIR files rootName selectedModule selectedPath member.toUTF8 guarded.selected publication |
-      throw (IO.userError "source/publication identity rejected")
-    IO.println s!"SOURCE-IR-IDENTITY callable={bound.id} fields={declared.length} publication_bytes={publication.size}"
-    IO.println "IDENTITY ONLY: same-typed field-use swaps remain admissible; no semantic correspondence claim."
+    let some safe := bindSafeSemantics files rootName selectedModule selectedPath member.toUTF8 publication |
+      throw (IO.userError "source/publication guard semantics rejected")
+    let semantic := safe.semantic
+    IO.println s!"SOURCE-IR-GUARD callable={semantic.ir.id} fields={declared.length} publication_bytes={publication.size} entry=0 expression_end={semantic.endExpr} continuation={semantic.endExpr + 4}"
+    IO.println "SAFE GUARD: checked short-circuit range certificate; first-exit includes binding and false-return. Tail instructions/effects unproved."
   IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
-  IO.println "NATIVE receipt only. Full selected body syntax + pure guard typing; tail untyped. No source/IR execution equivalence, capture/backend fidelity or concrete kernel acceptance."
+  IO.println "NATIVE receipt only. Full selected body syntax + pure guard typing; tail untyped. Guard-prefix semantics only; no tail effects, capture/backend fidelity or concrete kernel acceptance."
   return 0
