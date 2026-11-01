@@ -37,7 +37,11 @@ subtraction underflow for bounded scalar inputs; exact first-exit uniqueness,
 prefix no-call/store forms and preterminal receiver preservation are proved.
 Same-typed use swaps are rejected by this layer, not structural typing alone.
 Full-source/publication acceptance is still native evidence, not concrete kernel
-acceptance. Tail typing/effects, general type/name resolution, native/backend
+acceptance. A further bounded endpoint checks complete scalar stateful `enter` and `leave`
+bodies individually, with actual parameter entry, ordered stores, current receiver
+on return/assertion failure and local termination. It reuses the scalar semantics
+and derives no-rollback/frame behavior from executed stores. Full `fill_snapshot`
+call/resource traces, general type/name resolution and borrowing, native/backend
 fidelity and the native API entry/exit protocol remain unproved.
 
 | Destination | Status |
