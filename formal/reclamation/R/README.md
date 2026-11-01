@@ -18,7 +18,11 @@ remote mutable state. Gates close locally, then wait for their earlier registrat
 replies before sealing. Reserved receivers can activate during Closing. A sealed
 tombstone dominates delayed/duplicate publication. Uses disable submission before
 draining explicit outstanding work; disabling alone does not prohibit queued
-effects. Gate retirement leaves child/use liabilities intact. Logical aliases
+effects. A responsible use owner may request closure of its exact published use
+in any root phase (`requestUseClose`); this only enqueues the existing close
+packet. It does not close the parent gate or change work, seals or receipts.
+Owner identity is bound by the use descriptor in the honest-endpoint action
+contract, not by a proved sender-authentication implementation. Gate retirement leaves child/use liabilities intact. Logical aliases
 share the same backing root, but writer exclusion/snapshot immutability is outside
 this reclamation proof.
 
@@ -55,7 +59,10 @@ registration after gate close, activation during Closing, authority retirement
 while queued uses remain, effects after submission disable, duplicate/lost
 packets, individual completions, receipts and reuse. A separate reachable trace
 closes and seals an unpublished gate while its initial publication packet remains
-queued; that packet cannot pass the tombstone guard. Losing all packets preserves
+queued; that packet cannot pass the tombstone guard. An Active-phase trace
+closes a use while queued work can still effect, finishes/seals/acknowledges it,
+then admits a fresh use from the same still-open gate. Two delayed deliveries
+of the old exact-ticket close cannot close that fresh use. Losing all packets preserves
 the remaining liability rather than allowing quiescence.
 
 Seven controls establish invariant/provenance failures: premature gate sealing,
@@ -67,7 +74,7 @@ reception/retirement/quiescence/reuse/effect rules to exhibit an actual old-vers
 access after reuse.
 
 Run `./verify-r.sh` from the enclosing directory with the pinned Lean toolchain.
-It builds this refinement and audits 29 exported theorem dependency reports;
+It builds this refinement and audits 33 exported theorem dependency reports;
 only standard `propext` and `Quot.sound` are permitted. No project axioms,
 admitted proofs or compiler-backed proof shortcuts are used. Run the existing
 `./verify.sh` separately for Q. Ordinary `make test` does not install Lean or
@@ -77,3 +84,7 @@ the PR; none of these results upgrades physical-platform qualification.
 The registration/grant binding invariant proves the unique retained request/ID
 association needed for reclamation; a full typed grant/authorization theorem is
 not claimed. The existing Q artifact and its acceptance gate remain separate.
+
+The [A0 snapshot authority layer](../A/README.md) separately composes immutable
+grant/footprint metadata and conserved writer permission with this protocol.
+It does not change R's hardware, recovery or concurrency qualification.

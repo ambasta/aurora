@@ -113,14 +113,17 @@ theorem root_settled : Settled s14 0 := by
   · simp [one, zero] at found
 
 /-- Exact packet-membership facts are reduced in the finite witness, not assumed. -/
-theorem reaches20 : Reaches s0 s20 := by
+theorem reaches7 : Reaches s0 s7 := by
   apply Reaches.trans (Reaches.single (.root s0 a rfl))
   apply Reaches.trans (Reaches.single (.publish s1 0 (entryAt s1 0) (by decide) rfl (by trivial) rfl))
   apply Reaches.trans (Reaches.single (.request s2 0 0 (entryAt s2 0) a none rfl rfl rfl rfl rfl))
   apply Reaches.trans (Reaches.single (.register s3 (0,0) none (entryAt s3 0) a (by decide) rfl rfl rfl))
   apply Reaches.trans (Reaches.single (.grant s4 (0,0) 1 ⟨none,false⟩ (by decide) rfl))
   apply Reaches.trans (Reaches.single (.publish s5 1 (entryAt s5 1) (by decide) rfl (by trivial) rfl))
-  apply Reaches.trans (Reaches.single (.submit s6 1 (entryAt s6 1) a rfl rfl rfl rfl))
+  exact Reaches.single (.submit s6 1 (entryAt s6 1) a rfl rfl rfl rfl)
+
+theorem reaches20 : Reaches s0 s20 := by
+  apply Reaches.trans reaches7
   apply Reaches.trans (Reaches.single (.request s7 0 1 (entryAt s7 0) a (some b) rfl rfl rfl rfl rfl))
   apply Reaches.trans (Reaches.single (.beginClose s8 rfl))
   apply Reaches.trans (closeTicket_reaches (s := s9) (i := 0) (e := entryAt s9 0) rfl rfl (by trivial))
@@ -280,6 +283,65 @@ theorem successful_reuse_with_duplicate_loss : Reachable s30 := by
   apply Reaches.trans suffix28
   apply Reaches.trans (Reaches.single (.quiesce s28 rfl final_empty final_gates))
   exact Reaches.single (.reuse s29 rfl)
+
+/-- Owner-driven normal use completion keeps the backing root Active. -/
+def activeCloseRequested := enqueue s7 (.close 1)
+def activeUseClosed := edit activeCloseRequested 1 (fun e => { e with closed := true })
+def activeUseDrained := edit activeUseClosed 1 (fun e => { e with work := 0 })
+def activeUseRetired := sealRetire activeUseDrained 1 (entryAt activeUseDrained 1)
+def nextUseRequested := ask activeUseRetired (0,1) none
+def nextUseRegistered := register nextUseRequested (0,1) (.use a)
+def nextUseGranted := grant nextUseRegistered (0,1) none 2
+def nextUsePublished := pub nextUseGranted 2
+def nextUseSubmitted := submit nextUsePublished 2
+
+theorem active_completion_reaches : Reachable nextUseSubmitted := by
+  apply Reaches.trans reaches7
+  apply Reaches.trans (Reaches.single (.requestUseClose s7 1 (entryAt s7 1) a rfl rfl rfl))
+  apply Reaches.trans (Reaches.single (.close activeCloseRequested 1
+    (entryAt activeCloseRequested 1) (by decide) rfl (by trivial)))
+  apply Reaches.trans (Reaches.single (.effect activeUseClosed 1
+    (entryAt activeUseClosed 1) a rfl rfl (by decide)))
+  apply Reaches.trans (Reaches.single (.finishOne activeUseClosed 1 0
+    (entryAt activeUseClosed 1) a rfl rfl rfl))
+  apply Reaches.trans (sealUse_reaches (s := activeUseDrained) (i := 1)
+    (e := entryAt activeUseDrained 1) rfl rfl rfl rfl)
+  apply Reaches.trans (Reaches.single (.request activeUseRetired 0 1
+    (entryAt activeUseRetired 0) a none rfl rfl rfl rfl rfl))
+  apply Reaches.trans (Reaches.single (.register nextUseRequested (0,1) none
+    (entryAt nextUseRequested 0) a (by decide) rfl rfl rfl))
+  apply Reaches.trans (Reaches.single (.grant nextUseRegistered (0,1) 2
+    ⟨none,false⟩ (by decide) rfl))
+  apply Reaches.trans (Reaches.single (.publish nextUseGranted 2
+    (entryAt nextUseGranted 2) (by decide) rfl (by trivial) rfl))
+  exact Reaches.single (.submit nextUsePublished 2 (entryAt nextUsePublished 2) a rfl rfl rfl rfl)
+
+theorem active_completion_and_fresh_use : nextUseSubmitted.phase = .active ∧
+    (entryAt nextUseSubmitted 0).closed = false ∧
+    (entryAt nextUseSubmitted 1).live = false ∧
+    (entryAt nextUseSubmitted 1).receipt = true ∧
+    Step nextUseSubmitted (.access 0 2) nextUseSubmitted :=
+  ⟨rfl,rfl,rfl,rfl,.effect nextUseSubmitted 2 (entryAt nextUseSubmitted 2) a rfl rfl (by decide)⟩
+
+/-- Close changes only the identified use; it cannot close a fresh ticket. -/
+theorem close_preserves_other_ticket (s : State Agent) (i j : Nat) (e : Entry Agent)
+    (different : j ≠ i) :
+    (put s i { e with closed := true }).entries j = s.entries j := by
+  simp [put, different]
+
+def oldCloseOnce := edit nextUseSubmitted 1 (fun e => { e with closed := true })
+def oldCloseTwice := edit oldCloseOnce 1 (fun e => { e with closed := true })
+
+/-- The retained old close packet can be delivered twice after a new use exists.
+    Both deliveries target ticket 1; ticket 2 remains executable. -/
+theorem stale_duplicate_close_isolated :
+    Step nextUseSubmitted .internal oldCloseOnce ∧
+    Step oldCloseOnce .internal oldCloseTwice ∧
+    oldCloseTwice.entries 2 = nextUseSubmitted.entries 2 ∧
+    Step oldCloseTwice (.access 0 2) oldCloseTwice := by
+  exact ⟨.close nextUseSubmitted 1 (entryAt nextUseSubmitted 1) (by decide) rfl (by trivial),
+    .close oldCloseOnce 1 (entryAt oldCloseOnce 1) (by decide) rfl (by trivial),
+    rfl, .effect oldCloseTwice 2 (entryAt oldCloseTwice 2) a rfl rfl (by decide)⟩
 
 end Witness
 end Aurora.R

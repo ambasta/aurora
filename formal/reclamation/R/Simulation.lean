@@ -84,6 +84,8 @@ theorem step_refines (h : LocalInvariant s) (step : Step s event t) :
       exact Q.Step.beginClose (project s) active
   | requestClose i e closing found kind =>
       simpa using Q.Step.stutter (project s)
+  | requestUseClose i e owner found use published =>
+      simpa using Q.Step.stutter (project s)
   | close i e packet found kind =>
       rw [project_unchanged_put (replacement := { e with closed := true }) found rfl]
       exact Q.Step.stutter (project s)
