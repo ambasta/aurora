@@ -144,3 +144,34 @@ receipts additionally trust Lean code generation/runtime, standard byte-array
 primitives, file IO, OS and acquired file identity. Hashes record provenance,
 not semantic correspondence. Resource probes establish implementation feasibility,
 not authority safety. Huge artifact constants are not compiled into Lean proofs.
+
+## Source binding: lexical/header checkpoint
+
+`SourceBinding` starts a separate, reusable source-text boundary. Its independent
+byte grammar covers every byte, including whitespace and line comments, with
+maximal words and adjacent two-byte punctuation. Checked numeric spellings in
+this deliberately narrow profile are canonical decimal i64/u64/u8 literals.
+Strings, character literals, block comments, non-ASCII bytes and other literal
+forms reject, even inside otherwise unselected code. This is a supported subset,
+not a change to Aurora's source-language rules. CRLF and ASCII whitespace 9–13
+are admitted; line comments end before LF or at EOF.
+
+The first declaration family binds a module header and all leading imports to
+exact token/byte spans. **Remaining declaration tokens are retained, not checked.**
+Acceptance therefore does not yet exclude a later duplicate module/member/field,
+prove graph closure or filesystem module resolution, identify a selected method,
+or establish any source-to-IR correspondence. A complete lexical/declaration
+shell and selected typed AST are the next dependency; unrelated bodies and
+constructor arguments will remain lexically balanced but semantically opaque.
+Neither their Aurora validity nor constructor/initializer effects follow from
+such a shell. Selection must come from the enclosing declaration walk, never a
+substring search or separately transcribed AST.
+
+Run `./verify-source-binding.sh` for the generic theorem audit, tiny kernel
+fixtures and explicitly native header fixtures, and
+`.lake/build/bin/source-binding-probe SOURCE ...` for native full-file lexical
+coverage/header receipts. Complete-graph native acceptance is not a concrete
+kernel theorem and does not establish capture authenticity. Initial concrete
+header reductions did not complete in the first probe; kernel fixtures use
+small explicit bounds without changing the generic theorems or
+production profile. No `native_decide` or admitted acceptance axiom is used.
