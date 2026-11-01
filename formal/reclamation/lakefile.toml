@@ -1,0 +1,6 @@
+name = "aurora-reclamation"
+version = "0.1.0"
+defaultTargets = ["Q"]
+
+[[lean_lib]]
+name = "Q"
