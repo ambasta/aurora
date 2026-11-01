@@ -53,7 +53,11 @@ the build on a violation:
   faults to a checked stack-free halt path, charging the already-pushed CPU
   frame and vector/error prelude even there. Lifecycle effect closures include
   physical trap edges and reject callbacks and undeclared source/assembly ABI
-  boundaries. This does not prove arbitrary native code safe.
+  boundaries. Disabled user SYSCALL/SYSENTER probes require a declared runtime
+  MSR-disable contract and a checked companion kernel's actual #UD/#GP RSP0
+  entries. A hypothetical fallthrough loses all stack authority; no enabled
+  fast-entry return ABI is assumed. Supervisor instructions still reject.
+  This does not prove arbitrary native code safe.
   GCC alias relations must resolve without conflicts or cycles to a bounded
   compiled body; every alias and its body must be defined executable ELF
   functions with the same unique address and extent. They share the body's

@@ -215,6 +215,10 @@ class Image:
         self.frames, self.edges, self.signatures, aliases, self.source_names = compiler_facts(facts)
         self.callbacks = [entry.partition("=")[::2] for entry in policy.get("callbacks", [])]
         self.user_traps = policy.get("user_traps", [])
+        self.disabled_user_transfers = {
+            row["instruction"]: row["faults"] for row in policy.get("disabled_user_transfers", [])
+        }
+        self.used_user_transfers = set()
         self.async_entries = policy.get("async_entries", [])
         self.kernel_traps = policy.get("kernel_traps", [])
         self.ist_traps = policy.get("ist_traps", [])
@@ -601,6 +605,18 @@ class Image:
             destination = parts[-1] if parts else ""
             source = parts[0] if len(parts) == 2 else ""
             written_register = register_owner(destination)
+            if domain == "external-user":
+                # There is no assumed return ABI for an untrusted privilege
+                # transfer. Only stack-free control flow to a terminal remains
+                # admitted; even a stack access through a derived register or
+                # absolute address cannot regain authority here.
+                need(
+                    op in TERMINAL
+                    or op.startswith("nop")
+                    or (op == "jmp" or op in BRANCHES)
+                    and direct_target(args) is not None,
+                    self.where(f"stack authority unavailable after user privilege transfer in {name}: {op} {args}"),
+                )
             if op.startswith("popf"):
                 condition = None
             if (
@@ -634,9 +650,24 @@ class Image:
                     "ljmp",
                     "lcall",
                     "xbegin",
-                ),
+                )
+                or self.user
+                and op in ("syscall", "sysenter"),
                 self.where(f"unsupported implicit stack operation in {name}"),
             )
+            if self.user and op in ("syscall", "sysenter"):
+                need(
+                    op in self.disabled_user_transfers,
+                    self.where(f"user privilege transfer has no disabled-entry contract: {op}"),
+                )
+                self.used_user_transfers.add(op)
+                # Runtime admission disables and verifies these entry MSRs, so
+                # hostile attempts take #UD/#GP on the kernel trap domain.
+                # Still analyze a hypothetical fallthrough without assuming an
+                # enabled transfer restores any user stack/register authority.
+                # Keep the accumulated depth/high-water; never mint a new top.
+                domain, frame, saved, condition, origin_intact = "external-user", None, None, None, False
+                registers.clear()
             # Partial-register and implicit writes revoke the complete pointer
             # authority. A later 64-bit read may not reuse stale provenance.
             implicit = set()
@@ -794,6 +825,7 @@ class Image:
                 )
                 if taken is not False:
                     if target in self.compiled:
+                        need(domain != "external-user", self.where("compiled transfer without user stack authority"))
                         calls[target] = max(calls.get(target, 0), depth)
                     else:
                         schedule(
@@ -896,6 +928,7 @@ class Image:
             need(-48 <= depth <= 1 << 20, self.where(f"runaway stack depth in {name}"))
             peaks[domain] = max(peaks.get(domain, 0), (0 if domain == "snapshot" else 8) + depth)
             if following in self.compiled:
+                need(domain != "external-user", self.where("compiled fallthrough without user stack authority"))
                 calls[following] = max(calls.get(following, 0), depth)
             else:
                 schedule(
@@ -1032,7 +1065,11 @@ class Image:
             )
         if self.user:
             need(normal[0] <= limit, self.where(f"stack {normal[0]} exceeds {limit}: {self.chain(normal[1])}"))
-            return dict(result, total=normal[0])
+            return dict(
+                result,
+                total=normal[0],
+                disabled_transfers={op: self.disabled_user_transfers[op] for op in sorted(self.used_user_transfers)},
+            )
         # A callable bridge that happens to be unused is not a hardware vector.
         # Hardware roots are explicit domain declarations; all other functions
         # still receive ordinary code/edge/standalone-stack admission above.
@@ -1072,6 +1109,16 @@ class Image:
         )
         need(rsp0 <= limit, self.where(f"RSP0 domain {rsp0} exceeds {limit}"))
         need(emergency_stack <= limit, self.where(f"IST domain {emergency_stack} exceeds {limit}"))
+        fault_entries = {}
+        for targets in self.disabled_user_transfers.values():
+            for target in targets:
+                addresses = self.names.get(target, set())
+                need(
+                    len(addresses) == 1 and addresses <= trap - ist,
+                    self.where(f"disabled user transfer lacks an admitted RSP0 fault root: {target}"),
+                )
+                address = next(iter(addresses))
+                fault_entries[target] = CPU_FRAME + self.peak(address, origin="user")[0] + nested
         suspended = []
         for address, depth in sorted(self.suspended.items()):
             retained = self.retained(entry, address)
@@ -1091,6 +1138,7 @@ class Image:
                 return_fault=return_fault,
             ),
             suspended=suspended,
+            disabled_transfer_faults=fault_entries,
         )
         live = {name for a in self.closure([entry, *entries]) for name in self.address_names.get(a, [self.label[a]])}
         missing = sorted(set(self.reachable) - live)
@@ -1133,6 +1181,16 @@ def main(argv):
         policy = image_policy(options["policy"], options["profile"])
         limit = int(options["limit"], 0)
         results = [Image(path, facts, policy, user).check(limit) for path, facts, user in images]
+        for result in results:
+            for opcode, targets in result.get("disabled_transfers", {}).items():
+                for target in targets:
+                    providers = [kernel for kernel in results if target in kernel.get("disabled_transfer_faults", {})]
+                    need(
+                        len(providers) == 1,
+                        f"{result['image']}: {opcode} needs one checked kernel RSP0 fault entry {target}",
+                    )
+                    bound = providers[0]["disabled_transfer_faults"][target]
+                    need(bound <= limit, f"{result['image']}: {opcode} fault stack {bound} exceeds {limit}")
     except CheckError as error:
         print(f"FAIL: kernel stack check {options.get('profile', '')}: {error}", file=sys.stderr)
         return 1

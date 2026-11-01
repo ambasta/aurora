@@ -124,6 +124,17 @@ RULES = [
         ],
     },
     {
+        "profiles": ["uefi/runtime-fixture"],
+        # install_architecture clears/readbacks EFER.SCE and SYSENTER MSRs
+        # before user entry. These are disabled-entry fault contracts, not a
+        # system-call return ABI. The combined check binds every used opcode
+        # to the actual CPL3 fault roots and their separate RSP0 bounds.
+        "disabled_user_transfers": [
+            {"instruction": "syscall", "faults": ["aurora_exception_6"]},
+            {"instruction": "sysenter", "faults": ["aurora_exception_6", "aurora_exception_13"]},
+        ],
+    },
+    {
         "profiles": ["uefi/platform-fixture"],
         "callbacks": ["payload_main(="],
     },
