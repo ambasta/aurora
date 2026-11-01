@@ -71,6 +71,27 @@ def source_verifier_probes(directory, args):
 
     directory.mkdir(parents=True)
     modules = staged_modules(bootstrap, directory)
+    # Exercise bounded spelling storage from the actual unmodified catalogue.
+    catalog = directory / "catalog-word"
+    command(
+        [
+            args.compiler,
+            "--emit-object",
+            "--local-symbols",
+            "--referenced-reflection-only",
+            "--runtime-root",
+            args.runtime_root,
+            "--module-root",
+            modules,
+            ROOT / "tests/compiler/catalog_word.au",
+            "-o",
+            catalog.with_suffix(".o"),
+        ],
+        timeout=30,
+    )
+    command(["ld", "-static", "-e", "_start", "-o", catalog, catalog.with_suffix(".o")], timeout=45)
+    command([catalog], timeout=5)
+    print("PASS catalogue spelling: bounds and reused invalid selectors")
     transfer = modules / "aurora/compiler/ir_verification_transfer.au"
     original_transfer = transfer.read_text()
     inputs = []

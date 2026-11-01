@@ -119,6 +119,42 @@ export namespace compiler_catalog {
     auto maximum_word() -> i64 {
         return 32;
     }
+    // A copied, bounded spelling: no span escapes an ordinary function.
+    class CatalogWord {
+        builtin::array<u8, 32> payload;
+        i64 count;
+    public:
+        CatalogWord() : payload{}, count(0) {
+        }
+        auto clear() -> i64 {
+            count = 0;
+            return -1;
+        }
+        auto size() const -> i64 {
+            return count;
+        }
+        auto capacity() const -> i64 {
+            const builtin::span<const u8> all = borrow_bytes(payload);
+            return all.size();
+        }
+        auto assign(builtin::span<const u8> name) -> i64 {
+            clear();
+            if (name.size() < 1 || name.size() > capacity() || name.size() > maximum_word()) {
+                return -1;
+            }
+            i64 at = 0;
+            while (at < name.size()) {
+                payload[at] = name.at(at);
+                at = at + 1;
+            }
+            count = name.size();
+            return count;
+        }
+        auto bytes() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(payload);
+            return all.subspan(0, count);
+        }
+    };
     auto word(builtin::span<const u8> words, i64 part) -> Word {
         i64 at = 0;
         i64 begin = 0;
@@ -734,40 +770,11 @@ export namespace compiler_catalog {
         if (kind < 0 || kind >= resource_count()) {
             return -1;
         }
-        const i64 size = resource_method_source_byte(kind, method, -1);
-        if (size < 1 || size > maximum_word()) {
+        CatalogWord name = CatalogWord();
+        if (resource_method_source(name, kind, method) < 1) {
             return session.fail_storage(compiler_resolver::StorageStatus::invalid);
         }
-        if (begin < 0) {
-            array<u8, 32> storage = "00000000000000000000000000000000";
-            i64 at = 0;
-            while (at < size) {
-                storage[at] = u8(resource_method_source_byte(kind, method, at));
-                at = at + 1;
-            }
-            const builtin::span<const u8> bytes = borrow_bytes(storage);
-            return session.append_text(bytes.subspan(0, size));
-        }
-        i64 first = 0;
-        i64 at = 0;
-        while (at < size) {
-            if (resource_method_source_byte(kind, method, at) == i64(':')) {
-                first = at + 1;
-            }
-            at = at + 1;
-        }
-        const i64 count = size - first;
-        if (end - begin != count) {
-            return 0;
-        }
-        at = 0;
-        while (at < count && session.good()) {
-            if (i64(session.source_byte(begin + at)) != resource_method_source_byte(kind, method, first + at)) {
-                return 0;
-            }
-            at = at + 1;
-        }
-        return 1;
+        return use_word(session, name.bytes(), 0, begin, end);
     }
     auto resource_method_result(i64 kind, i64 method) -> i64 {
         if (kind == 5) {
@@ -953,186 +960,186 @@ export namespace compiler_catalog {
         return i64(name.at(index));
     }
     // Canonical source spellings shared by resolution and publication.
-    // Like catalog_byte: -1 requests length; other invalid indices return -1.
-    auto resource_method_source_byte(i64 kind, i64 method, i64 index) -> i64 {
+    // Dispatch once into caller-owned storage; invalid selectors clear it.
+    auto resource_method_source(CatalogWord& name, i64 kind, i64 method) -> i64 {
         if (kind == 5) {
             if (method == 0) {
-                return catalog_byte("prepare", index);
+                return name.assign("prepare");
             }
             if (method == 1) {
-                return catalog_byte("activate", index);
+                return name.assign("activate");
             }
             if (method == 2) {
-                return catalog_byte("complete", index);
+                return name.assign("complete");
             }
             if (method == 3) {
-                return catalog_byte("force", index);
+                return name.assign("force");
             }
             if (method == 4) {
-                return catalog_byte("retire", index);
+                return name.assign("retire");
             }
             if (method == 5) {
-                return catalog_byte("finish", index);
+                return name.assign("finish");
             }
             if (method == 6) {
-                return catalog_byte("invalidate_service", index);
+                return name.assign("invalidate_service");
             }
         }
         if (kind == 4) {
             if (method == 0) {
-                return catalog_byte("observe_table", index);
+                return name.assign("observe_table");
             }
             if (method == 1) {
-                return catalog_byte("observe_next_present", index);
+                return name.assign("observe_next_present");
             }
             if (method == 2) {
-                return catalog_byte("publish_empty_entry", index);
+                return name.assign("publish_empty_entry");
             }
             if (method == 3) {
-                return catalog_byte("clear_expected_entry", index);
+                return name.assign("clear_expected_entry");
             }
             if (method == 4) {
-                return catalog_byte("scrub_unpublished_frame", index);
+                return name.assign("scrub_unpublished_frame");
             }
             if (method == 5) {
-                return catalog_byte("downgrade_snapshot_entry", index);
+                return name.assign("downgrade_snapshot_entry");
             }
             if (method == 6) {
-                return catalog_byte("snapshot_anchor_publish", index);
+                return name.assign("snapshot_anchor_publish");
             }
             if (method == 7) {
-                return catalog_byte("snapshot_anchor_clear", index);
+                return name.assign("snapshot_anchor_clear");
             }
             if (method == 8) {
-                return catalog_byte("frame_address", index);
+                return name.assign("frame_address");
             }
             if (method == 9) {
-                return catalog_byte("frame_index", index);
+                return name.assign("frame_index");
             }
             if (method == 10) {
-                return catalog_byte("shared_slots", index);
+                return name.assign("shared_slots");
             }
             if (method == 11) {
-                return catalog_byte("shared_slot", index);
+                return name.assign("shared_slot");
             }
             if (method == 12) {
-                return catalog_byte("shared_value", index);
+                return name.assign("shared_value");
             }
             if (method == 13) {
-                return catalog_byte("shared_upper", index);
+                return name.assign("shared_upper");
             }
             if (method == 14) {
-                return catalog_byte("reserved_first", index);
+                return name.assign("reserved_first");
             }
             if (method == 15) {
-                return catalog_byte("reserved_end", index);
+                return name.assign("reserved_end");
             }
             if (method == 16) {
-                return catalog_byte("initialize_shared_upper", index);
+                return name.assign("initialize_shared_upper");
             }
             if (method == 17) {
-                return catalog_byte("publish_shared_entry", index);
+                return name.assign("publish_shared_entry");
             }
             if (method == 18) {
-                return catalog_byte("copy_source_frame", index);
+                return name.assign("copy_source_frame");
             }
             if (method == 19) {
-                return catalog_byte("fill_snapshot_chunk", index);
+                return name.assign("fill_snapshot_chunk");
             }
             if (method == 20) {
-                return catalog_byte("clear_shared_entry", index);
+                return name.assign("clear_shared_entry");
             }
             if (method == 21) {
-                return catalog_byte("revoke_root", index);
+                return name.assign("revoke_root");
             }
             if (method == 22) {
-                return catalog_byte("observe_snapshot_anchor", index);
+                return name.assign("observe_snapshot_anchor");
             }
             if (method == 23) {
-                return catalog_byte("finish", index);
+                return name.assign("finish");
             }
         }
         if (kind == 3) {
             if (method == 0) {
-                return catalog_byte("size", index);
+                return name.assign("size");
             }
             if (method == 1) {
-                return catalog_byte("at", index);
+                return name.assign("at");
             }
             if (method == 2) {
-                return catalog_byte("set", index);
+                return name.assign("set");
             }
             if (method == 3) {
-                return catalog_byte("finish", index);
+                return name.assign("finish");
             }
         }
         if (kind == 2) {
             if (method == 0) {
-                return catalog_byte("prepare", index);
+                return name.assign("prepare");
             }
             if (method == 1) {
-                return catalog_byte("run", index);
+                return name.assign("run");
             }
             if (method == 2) {
-                return catalog_byte("console", index);
+                return name.assign("console");
             }
             if (method == 3) {
-                return catalog_byte("reject", index);
+                return name.assign("reject");
             }
             if (method == 4) {
-                return catalog_byte("begin_shutdown", index);
+                return name.assign("begin_shutdown");
             }
             if (method == 5) {
-                return catalog_byte("advance_shutdown", index);
+                return name.assign("advance_shutdown");
             }
             if (method == 6) {
-                return catalog_byte("finish", index);
+                return name.assign("finish");
             }
         }
         if (kind == 0) {
             if (method == 0) {
-                return catalog_byte("preparation", index);
+                return name.assign("preparation");
             }
             if (method == 1) {
-                return catalog_byte("advance", index);
+                return name.assign("advance");
             }
             if (method == 2) {
-                return catalog_byte("output", index);
+                return name.assign("output");
             }
             if (method == 3) {
-                return catalog_byte("request", index);
+                return name.assign("request");
             }
             if (method == 4) {
-                return catalog_byte("cancel", index);
+                return name.assign("cancel");
             }
             if (method == 5) {
-                return catalog_byte("finish", index);
+                return name.assign("finish");
             }
         }
         if (kind == 1) {
             if (method == 0) {
-                return catalog_byte("preparation", index);
+                return name.assign("preparation");
             }
             if (method == 1) {
-                return catalog_byte("begin_volume", index);
+                return name.assign("begin_volume");
             }
             if (method == 2) {
-                return catalog_byte("copy_volume", index);
+                return name.assign("copy_volume");
             }
             if (method == 3) {
-                return catalog_byte("seal_volume", index);
+                return name.assign("seal_volume");
             }
             if (method == 4) {
-                return catalog_byte("admit_storage", index);
+                return name.assign("admit_storage");
             }
             if (method == 5) {
-                return catalog_byte("advance", index);
+                return name.assign("advance");
             }
             if (method == 6) {
-                return catalog_byte("finish", index);
+                return name.assign("finish");
             }
         }
-        return -1;
+        return name.clear();
     }
     auto type_source_byte(i64 type, i64 index) -> i64 {
         if (type == 59) {

@@ -73,8 +73,12 @@ name cannot inject a new machine-record line.
   Version 2 appends the source spelling after the existing runtime symbol; all
   preceding field indices are unchanged. These values come directly
   from `compiler_catalog::resource_method_*` and `resource_runtime_byte`, not a
-  second signature table. `resource_method_source_byte` is the single spelling
-  inventory shared by source admission and publication; runtime symbol names are
+  second signature table. `resource_method_source` is the single spelling
+  inventory shared by source admission and publication. Each lookup copies one
+  checked name into a bounded inline `CatalogWord` owner; resolution and listing
+  consume its receiver-bound bytes without repeating method selection per byte.
+  The bounded name owner neither retains its input span nor requires heap
+  allocation. Runtime symbol names are
   not decoded to guess source names. Consumers require nonempty identifier-shaped
   source names unique within each resource kind (not globally unique). Version-1
   headers and missing spelling columns are not accepted by the version-2 consumer.

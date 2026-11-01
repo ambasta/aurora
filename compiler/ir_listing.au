@@ -480,14 +480,15 @@ export namespace compiler_ir_listing {
                     at = at + 1;
                     value = compiler_catalog::resource_runtime_byte(kind, method, at);
                 }
-                const i64 source_size = compiler_catalog::resource_method_source_byte(kind, method, -1);
+                compiler_catalog::CatalogWord source = compiler_catalog::CatalogWord();
+                const i64 source_size = compiler_catalog::resource_method_source(source, kind, method);
                 if (source_size < 1 || source_size > compiler_catalog::maximum_word() || !out.byte(' ')) {
                     return false;
                 }
+                const builtin::span<const u8> source_bytes = source.bytes();
                 at = 0;
                 while (at < source_size) {
-                    value = compiler_catalog::resource_method_source_byte(kind, method, at);
-                    if (value < 0 || value > 255 || !hex_byte(out, value)) {
+                    if (!hex_byte(out, i64(source_bytes.at(at)))) {
                         return false;
                     }
                     at = at + 1;

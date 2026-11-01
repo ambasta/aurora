@@ -1,0 +1,62 @@
+module catalog_controls;
+import aurora.host;
+import aurora.memory;
+import aurora.compiler.builtin_catalog;
+
+auto main(builtin::HostFiles& files, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    compiler_catalog::CatalogWord name = compiler_catalog::CatalogWord();
+    {
+        const builtin::span<const u8> bytes = name.bytes();
+        builtin::require(name.size() == 0 && bytes.size() == 0);
+    }
+    builtin::require(name.assign("12345678901234567890123456789012") == 32);
+    {
+        const builtin::span<const u8> bytes = name.bytes();
+        builtin::require(name.size() == 32 && bytes.size() == 32);
+    }
+    {
+        const builtin::span<const u8> bytes = name.bytes();
+        builtin::require(bytes.at(0) == '1' && bytes.at(31) == '2');
+    }
+    builtin::require(name.assign("") == -1);
+    {
+        const builtin::span<const u8> bytes = name.bytes();
+        builtin::require(name.size() == 0 && bytes.size() == 0);
+    }
+    builtin::require(name.assign("valid") == 5);
+    builtin::require(name.assign("123456789012345678901234567890123") == -1);
+    {
+        const builtin::span<const u8> bytes = name.bytes();
+        builtin::require(name.size() == 0 && bytes.size() == 0);
+    }
+    builtin::require(compiler_catalog::resource_method_source(name, 4, 19) == 19);
+    {
+        const builtin::span<const u8> bytes = name.bytes();
+        builtin::require(bytes.at(0) == 'f' && bytes.at(18) == 'k');
+    }
+    builtin::require(compiler_catalog::resource_method_source(name, -1, 0) == -1);
+    {
+        const builtin::span<const u8> bytes = name.bytes();
+        builtin::require(name.size() == 0 && bytes.size() == 0);
+    }
+    builtin::require(compiler_catalog::resource_method_source(name, 4, 19) == 19);
+    builtin::require(compiler_catalog::resource_method_source(name, 6, 0) == -1);
+    {
+        const builtin::span<const u8> bytes = name.bytes();
+        builtin::require(name.size() == 0 && bytes.size() == 0);
+    }
+    builtin::require(compiler_catalog::resource_method_source(name, 4, 19) == 19);
+    builtin::require(compiler_catalog::resource_method_source(name, 4, -1) == -1);
+    {
+        const builtin::span<const u8> bytes = name.bytes();
+        builtin::require(name.size() == 0 && bytes.size() == 0);
+    }
+    builtin::require(compiler_catalog::resource_method_source(name, 4, 19) == 19);
+    builtin::require(compiler_catalog::resource_method_source(name, 4, 24) == -1);
+    {
+        const builtin::span<const u8> bytes = name.bytes();
+        builtin::require(name.size() == 0 && bytes.size() == 0);
+    }
+    return builtin::HostExit::success;
+}
