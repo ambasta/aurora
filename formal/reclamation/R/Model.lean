@@ -192,6 +192,9 @@ inductive Step : State Agent → Q.Event → State Agent → Prop where
         { s with generation := s.generation + 1, phase := .active }
   | duplicate (s : State Agent) (p : Packet Agent) (present : p ∈ s.packets) :
       Step s .internal (enqueue s p)
+  /- Support-subset channel rearrangement: may drop, reorder or duplicate known
+     packets, but cannot forge a new payload. `duplicate` also exposes one-copy
+     duplication explicitly. No reliability/fairness is assumed. -/
   | lose (s : State Agent) (packets : List (Packet Agent))
       (subset : ∀ p, p ∈ packets → p ∈ s.packets) :
       Step s .internal { s with packets }

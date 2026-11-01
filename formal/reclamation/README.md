@@ -73,6 +73,11 @@ reuse, and a false drain receipt followed by the original retire, Quiesce and
 Reuse rules. The latter is an abstract analogue of unmapping without effective completion;
 there is no literal unmap instruction in this model.
 
+The [endpoint protocol refinement](R/README.md) now derives this abstract
+receipt premise from local close/drain state and packet provenance, and forward
+simulates Q. Its endpoint primitives and atomic per-root coordinator remain
+explicit assumptions; it is not a target-hardware or decentralized recovery proof.
+
 ## Tools and trust
 
 Use the official Lean 4.24.0 Linux release, without additional packages:

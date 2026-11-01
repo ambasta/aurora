@@ -192,6 +192,21 @@ distinguished explicitly. Atomic registration/activation, sound physical
 completion and permanent replay tombstones are abstract contracts; their actual
 concurrent implementation, hardware receipts and bounded metadata remain open.
 
+The [endpoint protocol refinement](../formal/reclamation/R/README.md) now
+provides a concrete-within-model asynchronous registration/publication and
+fence/drain protocol that forward-simulates Q for arbitrary agents and finite
+traces. Its receipt receiver checks identity, not physical state; local seal
+persistence and packet provenance prove the completion premise. Pending local
+registrations prevent premature gate sealing, while reserved receivers and
+permanent tombstones handle activation/publication races. Successful concrete
+reuse and mutation controls are checked, including a premature-receipt old-access
+witness. This retains sequential endpoint primitive contracts, exact-once local
+work completion, and an atomic per-root registration/transfer coordinator.
+It proves neither real CPU/GPU/storage completion nor weak memory, durable
+recovery, decentralized authority, progress, bounded replay state or obligation A.
+The coordinator is an intermediate refinement boundary, not a mandated global
+architecture. Independent-root commutativity is not established by this slice.
+
 **Obligation A.** Grant creation, attenuation, transfer, revocation and restart
 preserve authorization and non-aliasing across incarnations. Prove each
 transition's invariant preservation, including refusal and cancellation.
