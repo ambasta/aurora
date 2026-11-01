@@ -236,8 +236,13 @@ operational transitions. R/Q remain unchanged and supply safe generation reuse.
 The checked snapshot adapter requires exact returned-plus-free coverage before
 full freeze. The serial whole-writer result is an explicit restricted-profile
 corollary, not a claim that the generalized traces satisfy A0's stronger exclusion.
-Conditional alias-image lemmas do not verify native address decoding. No heap
-bytes, native page downgrade, physical completion or compiler semantics are proved.
+Conditional alias-image lemmas do not verify native address decoding. The separate
+[byte-effect interpretation](../formal/reclamation/B/README.md) now checks a bounded
+one-page, single-copy-per-use profile: real A admission, current-byte copying,
+partial-fault prefixes, complete payload/control write accounting and frozen-byte
+stability until reuse. Source contents are stable only within an admitted loan
+trace. This is a lifted model, not native request-to-use, mapping, page downgrade,
+physical completion or compiler refinement.
 Same-root protocol coordination, abstract atomic authority return, honest endpoints
 and unbounded metadata remain explicit boundaries; cross-root commutativity,
 weak memory, durable recovery and full obligation A remain open. Final-source

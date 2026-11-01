@@ -17,7 +17,11 @@ admits disjoint scattered writers and overlapping frozen readers under exact
 per-cell conservation, replay-safe returns and unchanged R/Q reclamation.
 Accounting erasure, an alias-image interpretation and a full-cover snapshot
 contract adapter are checked. Frozen footprints exclude permitted write events,
-not verified heap-byte mutation. Native loader chunk pins now admit only bounded
+not by themselves heap-byte mutation. The separate [byte-effect interpretation](../formal/reclamation/B/README.md)
+checks admitted one-page copy prefixes, complete payload/control write accounting
+and same-generation frozen-byte stability over lifted A traces. It restricts each
+use to one sequential copy and one stable source-loan epoch; the native request,
+physical mapping and destination-use binding remain unproved. Native loader chunk pins now admit only bounded
 coordinates in the boot-registered static endpoint buffer and recheck all source
 pages against the kernel-root boot tables and managed-frame inventory. This is
 native provenance enforcement, not source/native effect refinement; synchronous
