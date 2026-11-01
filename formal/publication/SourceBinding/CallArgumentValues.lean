@@ -44,4 +44,23 @@ theorem ReadyArguments.lookup (ready : ReadyArguments kinds values) {index : Nat
     cases index with
     | zero => cases atKind; exact ⟨value,rfl,typed⟩
     | succ index => exact ih atKind
+theorem eval_call_arguments_supported (state : SourceState) {kinds : List GuardType}
+    (arguments : CallArguments kinds) : evalCallArguments state arguments ≠ .trap .unsupported := by
+  induction arguments with
+  | nil => intro impossible; cases impossible
+  | cons expression rest ih =>
+    cases first : evalGuard state expression with
+    | trap fault =>
+      intro impossible
+      simp only [evalCallArguments,first,Outcome.then,Outcome.trap.injEq] at impossible
+      subst fault
+      exact eval_supported state expression first
+    | value value =>
+      intro impossible
+      cases later : evalCallArguments state rest with
+      | value values => simp only [evalCallArguments,first,Outcome.then,later] at impossible; cases impossible
+      | trap fault =>
+        simp only [evalCallArguments,first,Outcome.then,later,Outcome.trap.injEq] at impossible
+        subst fault
+        exact ih later
 end Aurora.SourceBinding

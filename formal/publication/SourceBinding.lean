@@ -17,3 +17,5 @@ import SourceBinding.CallArgumentValues
 import SourceBinding.CallMachine
 import SourceBinding.CallEnvironment
 import SourceBinding.CallArgumentProof
+import SourceBinding.CallBinding
+import SourceBinding.CallFootprint

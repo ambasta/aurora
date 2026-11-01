@@ -1,6 +1,7 @@
 import SourceBinding.CallSource
 import SourceBinding.CallProjection
 namespace Aurora.SourceBinding
+open Aurora.Publication
 
 /-- Ordinary occurrences, including unreachable suffixes. -/
 inductive OrdinaryOccurs (target : OrdinaryDescriptor) : List CallPiece → Prop
@@ -47,4 +48,37 @@ theorem CallFamilyBinding.source_body_present
       family.leaves.lookup target = some leaf ∧ family.sourceBodies target = some leaf.source.body := by
   obtain ⟨leaf,found⟩ := family.leaves.lookup_present occurs
   exact ⟨leaf,found,by simp only [CallFamilyBinding.sourceBodies,found,Option.map_some]⟩
+def CallFamilyBinding.program (family : CallFamilyBinding files root module path member bytes) : CallProgram :=
+  canonicalCalls (tables family.shape.ir.publication.artifact.document.reversed.reverse)
+    (pieceTargets family.shape.source.pieces)
+
+theorem CallProjectionBinding.root_call
+    {family : CallFamilyBinding files root module path member bytes} (projection : CallProjectionBinding family)
+    (present : target ∈ pieceTargets family.shape.source.pieces)
+    (meaning : InvocationAt (tables family.shape.ir.publication.artifact.document.reversed.reverse)
+      family.shape.ir.id pc target) : family.program family.shape.ir.id pc = some (targetOperation target) :=
+  canonical_call_complete (projection.compatible.unique family.shape.ir.selected present meaning)
+
+def TypedInvocation.target : TypedInvocation → CallTarget
+  | .ordinary target _ => .ordinary target
+  | .resourceAssert target _ => .resource target
+
+theorem pieceTargets.member (pieces : List CallPiece) {call : TypedInvocation}
+    (member : .invoke call ∈ pieces) : call.target ∈ pieceTargets pieces := by
+  induction pieces with
+  | nil => cases member
+  | cons piece rest ih =>
+    cases member with
+    | head => cases call <;> exact List.mem_cons_self
+    | tail _ later =>
+      have prior := ih later
+      cases piece with
+      | localBody _ => exact prior
+      | invoke other => cases other <;> exact List.mem_cons_of_mem _ prior
+
+theorem OrdinaryOccurs.of_member {target : OrdinaryDescriptor} {arguments : CallArguments target.parameters}
+    (member : .invoke (.ordinary target arguments) ∈ pieces) : OrdinaryOccurs target pieces := by
+  induction member with
+  | head => exact .here
+  | tail _ _ ih => exact .later ih
 end Aurora.SourceBinding

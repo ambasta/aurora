@@ -308,7 +308,7 @@ conditional audit write `operation := 2`. Leave's actual require precedes
 `operation := 0`, `active_slot := 3`. Failed entry/leave assertions therefore
 perform no stores in those bodies. A separate parsed-source write/read/failing-
 require fixture demonstrates that earlier writes/events survive failure; this is
-not a rollback rule. No full `fill_snapshot` call-stack/resource trace theorem,
+not a rollback rule. This D3b1 stage adds no full `fill_snapshot` call-stack/resource trace theorem,
 external-effect contract, authority/A.Enabled result, native pre-call scope/pinning
 purity, serializer/backend/ABI fidelity or hardware theorem is added.
 
@@ -324,3 +324,81 @@ endpoint, or `--body-examples --ir PUBLICATION` for actual selected `enter`/`lea
 value controls as well. Existing `--snapshot-examples` still selects D3a and cannot
 be combined with body mode. `probe-source-bodies.py` records native production
 mutations with D2 structural acceptance reported separately from D3b1 rejection.
+
+## D3b2: complete bounded call composition
+
+`CallBinding` extends the same byte-backed selection to the complete
+`fill_snapshot` body and its actual call-free ordinary callees. It reuses the
+existing parsed statement/expression AST, scalar evaluator, `EffectBody`, typed
+entry and body proofs. The bounded profile adds top-level self-method calls with
+discarded scalar results and exact `builtin::require(resource-field.method(args))`.
+Arguments are pure, evaluated left-to-right; calls nested elsewhere remain
+unsupported. Every source statement, callee body and canonical instruction is
+checked, including unreachable suffixes and finite label-only gaps. In particular,
+the administrative label after the old guard cut is executed, not silently
+identified with the first call.
+
+Ordinary calls retain the same source class, declaration/signature and decoded
+publication tables. Their actual entry and entire body are executed; no assumed
+callee summary, assertion truth or receiver frame condition is used. Resource
+identity joins the declared field/type, catalogue resource, version-2 unique
+source method spelling, method ordinal, ordered signature, effect tag and native
+linkage bytes. This profile supports effect tag 1 only; the tag supplies **no**
+authority, ownership, preservation or progress fact. Coherent nonempty linkage
+changes describe a different accepted interface, not a producer-fidelity failure.
+Conflicting matching descriptors are rejected by an independently checked finite
+ambiguity guard. Neither source-method publication nor these joins prove compiler
+resolver/serializer or native implementation fidelity.
+
+There is one shared optional-scalar receiver map and an abstract world. Saved
+caller frames contain only control state, locals, arguments and residual operand
+stack, never a receiver snapshot. Ordinary return restores the protected caller
+context with the returned accumulator and the *current* shared state. Callee
+faults retain completed stores and the active/saved machine frames. External
+invocation freezes its complete descriptor, evaluated argument list and pre-state
+in a `Waiting` occurrence. The parameterized external relation may replace every
+receiver field and the entire world and return a raw optional scalar or an opaque
+fault. Both source and IR use the same response witness. Frame protection is an
+explicit abstract interface boundary, not a proved native ABI or memory-safety
+property. An external fault retains the post-invocation suspended continuation
+(advanced PC, consumed arguments), not a native fault-site PC.
+
+The actual following require handles raw true, false, missing and wrong-kind
+results. True clears the IR accumulator; false assertion-faults; malformed results
+type-fault. All completed enter stores and external mutations remain. There is no
+automatic leave, rollback or cleanup. A true external result can still cause the
+actual leave body to fail after mutation of its checked fields. Events record
+ordinary invocation/return, completed local stores and external invocation/response
+with the actual post-state; environmental changes are not fabricated local stores.
+
+`CallBinding.finite_correspondence` equates the exact sets of finite observable
+traces ending in return, fault or a suspended request, from fresh PC0 with bounded
+supplied root arguments. Callee argument readiness, actual source-body lookup,
+projection and complete body coverage are derived internally. Receiver values may
+be malformed, producing matched faults. Forward simulation and converse reflection
+preserve the same external choices; there is no global unique-outcome theorem for
+nondeterministic environments. Terminal observations equate value/fault, current
+receiver/world and ordered events, not a source PC or temporary stack. A stronger
+internal continuation relation makes repeated invocation/resumption compositional.
+
+`first_boundary` constructs finite local progress to the next suspension or
+terminal result; `not_locally_diverges` excludes an infinite local running path
+before that boundary. Neither demands a response exists. Blocked/divergent external
+behavior can only be classified by explicitly supplied predicates on the same
+pending request; absence of a response proves neither classification. Classification
+transport is not an external execution or divergence-equivalence theorem, and
+ongoing external activity has no invented final receiver state.
+
+Structural read/write footprints and ordered-store replay prove preservation of
+disjoint guard fields across actual local callee execution, including fault
+prefixes. The fixed parameter map for the root guard is the saved caller map,
+not the enter callee's different arguments. This fact is conditional on the reached
+local prefix and says nothing about later external effects or authority validity.
+The actual admitted source has disjoint guard reads and enter writes.
+
+This remains a sequential mathematical interface model: no physical-memory,
+weak-memory, locking, DMA/GPU, distributed authority, `A.Enabled`, native pre-call
+scope/pinning, backend or hardware safety theorem follows. Large actual-source/IR
+acceptance and executable scenarios remain native receipts, **not concrete kernel
+acceptance proofs**. The generic Lean correspondence and local progress proofs
+are kernel-checked with audited `propext`/`Quot.sound` dependencies.

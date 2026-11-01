@@ -60,4 +60,40 @@ theorem BodyResultRelated.supported (related : BodyResultRelated slots stack sto
       cases fault with
       | assertion => trivial
       | scalar scalar => cases scalar <;> first | trivial | exact supported
+theorem expression_parameters (state : SourceState) (outcome : Outcome Value)
+    (next : Value → BodyEvaluation)
+    (preserved : ∀ value, (next value).execution.state.parameters = state.parameters) :
+    (sourceExpression state outcome next).execution.state.parameters = state.parameters := by
+  cases outcome with
+  | trap fault => rfl
+  | value value => exact preserved value
+
+theorem eval_body_parameters (body : EffectBody) (state : SourceState) :
+    (evalBody body state).execution.state.parameters = state.parameters := by
+  induction body generalizing state with
+  | skip => rfl
+  | seq first rest firstIH restIH =>
+    have initial := firstIH state
+    simp only [evalBody]
+    cases firstEq : (evalBody first state).execution with
+    | next next => exact (restIH next).trans (by simpa only [firstEq,SourceExecution.state] using initial)
+    | returned value next | trap value next => exact initial
+  | assign kind ordinal value =>
+    apply expression_parameters
+    intro scalar
+    apply expression_parameters
+    intro checked; rfl
+  | require condition =>
+    apply expression_parameters
+    intro value; cases value with
+    | word _ => rfl
+    | boolean b => cases b <;> rfl
+  | returnValue kind value => apply expression_parameters; intro scalar; rfl
+  | branch condition body ih =>
+    apply expression_parameters
+    intro value; cases value with
+    | word _ => rfl
+    | boolean b => cases b with
+      | false => rfl
+      | true => exact ih state
 end Aurora.SourceBinding
