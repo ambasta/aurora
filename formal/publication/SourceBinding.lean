@@ -10,3 +10,4 @@ import SourceBinding.Selection
 import SourceBinding.IRIdentity
 import SourceBinding.MethodSyntax
 import SourceBinding.SemanticBinding
+import SourceBinding.BodyBinding

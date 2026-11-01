@@ -5,6 +5,7 @@ inductive SourceStatement where
   | ifThen (condition : SourceExpr) (body : List SourceStatement)
   | returnValue (value : SourceExpr)
   | call (callee : Callee) (arguments : List SourceExpr)
+  | assign (name : ByteArray) (value : SourceExpr)
   deriving BEq
 
 mutual
@@ -16,6 +17,9 @@ mutual
         StatementSyntax input (keyword :: opening :: tokens) (.ifThen condition body) rest
     | returnValue : Is input keyword "return" → ExprSyntax input 1 tokens value (semicolon :: rest) →
         Is input semicolon ";" → StatementSyntax input (keyword :: tokens) (.returnValue value) rest
+    | assign : Identifier input name → Is input equal "=" →
+        ExprSyntax input 1 tokens value (semicolon :: rest) → Is input semicolon ";" →
+        StatementSyntax input (name :: equal :: tokens) (.assign (spelling input name) value) rest
     | call : ExprSyntax input 1 tokens (.call callee arguments) (semicolon :: rest) →
         Is input semicolon ";" → StatementSyntax input tokens (.call callee arguments) rest
   inductive StatementsSyntax (input : ByteArray) : Bool → List Lexeme → List SourceStatement → List Lexeme → Prop
@@ -33,6 +37,37 @@ structure ParsedStatements (input : ByteArray) (nested : Bool) (tokens : List Le
   statements : List SourceStatement
   rest : List Lexeme
   grammar : StatementsSyntax input nested tokens statements rest
+
+/-- Assignment targets are one unqualified identifier, never expression lvalues.
+    The same exact token stream is consumed; malformed assignments fail closed. -/
+def plainStatementSyntax (input : ByteArray) (tokens : List Lexeme) :
+    Option (ParsedStatement input tokens) := do
+  let callSyntax : Option (ParsedStatement input tokens) := do
+    let value ← expressionSyntax input 4096 1 tokens
+    match eq : value.rest with
+    | semicolon :: remaining =>
+      if semi : Is input semicolon ";" then
+        match call : value.expression with
+        | .call callee arguments =>
+          return ⟨.call callee arguments,remaining,.call (call ▸ eq ▸ value.grammar) semi⟩
+        | _ => none
+      else none
+    | [] => none
+  match shape : tokens with
+  | name :: equal :: afterEqual =>
+    if assignment : Is input equal "=" then
+      if ident : Identifier input name then
+        let value ← expressionSyntax input 4096 1 afterEqual
+        match eq : value.rest with
+        | semicolon :: rest =>
+          if semi : Is input semicolon ";" then
+            return ⟨.assign (spelling input name) value.expression,rest,
+              .assign ident assignment (eq ▸ value.grammar) semi⟩
+          else none
+        | [] => none
+      else none
+    else shape ▸ callSyntax
+  | _ => shape ▸ callSyntax
 
 mutual
   def statementsSyntax (input : ByteArray) : (fuel : Nat) → (nested : Bool) → (tokens : List Lexeme) →
@@ -82,17 +117,7 @@ mutual
               return ⟨.returnValue value.expression,remaining,.returnValue returning (eq ▸ value.grammar) semi⟩
             else none
           | [] => none
-        else
-          let value ← expressionSyntax input 4096 1 (token :: tail)
-          match eq : value.rest with
-          | semicolon :: remaining =>
-            if semi : Is input semicolon ";" then
-              match call : value.expression with
-              | .call callee arguments =>
-                return ⟨.call callee arguments,remaining,.call (call ▸ eq ▸ value.grammar) semi⟩
-              | _ => none
-            else none
-          | [] => none
+        else plainStatementSyntax input (token :: tail)
 end
 
 structure ParsedMethod (input : ByteArray) (function : Function) where

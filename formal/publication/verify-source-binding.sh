@@ -14,6 +14,10 @@ lake env lean SourceBinding/PrimitiveTests.lean
 lake env lean SourceBinding/EntryTests.lean
 lake env lean SourceBinding/GuardTests.lean
 lake env lean SourceBinding/SafetyTests.lean
+lake env lean SourceBinding/StatefulTests.lean
+lake env lean SourceBinding/BodySyntaxTests.lean
+lake env lean SourceBinding/EffectCodeTests.lean
+lake env lean SourceBinding/BodyProofTests.lean
 output=$(mktemp)
 trap 'rm -f "$output"' EXIT
 lake env lean SourceBinding/Audit.lean | tee "$output"
@@ -37,7 +41,7 @@ for line in open(sys.argv[1]):
         count += 1
     else:
         sys.exit(f'Unexpected audit output: {line}')
-if count != 65:
-    sys.exit(f'Expected sixty-five theorem audits, got {count}')
+if count != 82:
+    sys.exit(f'Expected eighty-two theorem audits, got {count}')
 print(f'Checked {count} source-binding theorem dependency reports.')
 PY

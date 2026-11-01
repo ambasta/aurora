@@ -5,7 +5,8 @@ This standalone Lean project consumes the actual version-1
 checks wire syntax and the specific structural predicates below. An optional
 root selection additionally checks the `scalar-receiver-v1` instruction/type/CFG
 and call-closure profile. A separate D3a layer below checks bounded raw-source
-guard/IR semantic correspondence. Neither layer proves complete Aurora verifier
+guard/IR semantic correspondence; D3b1 below adds complete scalar stateful bodies.
+These layers do not prove complete Aurora verifier
 admission, compiler correctness or kernel safety.
 
 ## Byte-backed chain
@@ -224,14 +225,15 @@ outcomes erase machine state, so no terminal-machine preservation is asserted.
 This is a model/actual-listing statement, **not native API purity**: native input
 pinning and authority scope setup can occur before the source call.
 
-The entire selected tail remains syntax-only. In particular `enter`, resource
-`fill_snapshot_chunk` arguments/effects and `leave` have no execution proof here;
+The D3a selected tail remains syntax-only. The separate D3b1 endpoint below
+checks `enter` and `leave` individually, not their invocation from `fill_snapshot`.
+Resource `fill_snapshot_chunk` arguments/effects have no execution proof here;
 external calls may fail or mutate the receiver. No constructor/initialization,
 producer/capture fidelity, listing-to-object, ABI, backend/ISA, hardware or
 A.Enabled/authority theorem follows. Source/IR semantics and linkage/catalogue
 conventions are explicit bounded models, not a verified Aurora compiler.
 
-The focused gate audits 65 theorem exports, allowing only `propext`/`Quot.sound`.
+The focused gate audits 82 theorem exports, allowing only `propext`/`Quot.sound`.
 Full eight-file source/current 5 MB publication acceptance and production
 mutations are **native receipts, not kernel proofs about those concrete bytes**.
 `probe-source-semantics.py` checks the same native executable on complete inputs;
@@ -256,3 +258,62 @@ Complete-graph native acceptance is not a concrete kernel theorem. Initial
 concrete header reductions did not complete in the first probe; tiny kernel
 fixtures use small explicit bounds without weakening generic theorems or the
 production profile. No `native_decide` or admitted acceptance axiom is used.
+
+
+## D3b1: complete scalar stateful bodies
+
+`BodyBinding` connects the same selected raw-source method, metadata identity,
+actual parameter-entry instructions and the entire canonical IR body. The body
+starts immediately after its declared argument binds; its checked endpoint must
+equal the complete instruction count. Syntactic suffixes after returns are still
+checked. Independent `BodyCode` rules cover sequence, pure scalar expressions,
+field assignment, exact `builtin::require` with one bool argument, return and both
+single-label and jump/false-label/join-label conditional layouts. Ordinary and
+resource calls remain rejected. Field targets resolve to actual declared scalar
+ordinals/types; mutable ordinary receiver identity comes from `BoundIR`/D2.
+This is not general name-resolution or borrowed-mutability soundness. The receiver
+is an ordinal-to-optional-scalar map, not a native heap/layout model; opaque
+resource fields participate in metadata identity, not resource-value semantics.
+
+The stateful semantics delegates pure operations to D3a's existing scalar rules.
+A conservative erasure/lift connects the models without recreating arithmetic.
+Successful stores validate their scalar value, update exactly one field and emit
+an ordered store event. Require true clears the accumulator; false is an explicit
+assertion fault. Returns and faults retain the actual current machine state.
+Source evaluation reads the current receiver after each preceding assignment.
+`EffectRuns.store_frame` derives receiver changes by replaying completed events,
+including after faults, and derives argument preservation—no callee frame axiom.
+
+`BodyBinding.executes` constructs a finite terminal run from PC0 for declared,
+bounded scalar arguments and a fresh empty callee frame. Receiver readiness and
+assertion success are not premises: malformed receiver values can produce matched
+scalar faults. `terminal_correspondence` equates the source return value or fault,
+current terminal receiver and exact ordered store events. Successful returns have
+an empty callee stack; failure correspondence does not equate a source PC or
+expression temporaries with the IR's fault frame. Deterministic terminal uniqueness
+fixes the actual IR terminal machine/events, and `terminates` separately excludes
+an alternative infinite local execution. These are not native caller-frame or
+concurrent-environment guarantees.
+
+The production workload checks complete `enter` and `leave` independently.
+Enter's actual require precedes `active_slot := slot`, `operation := 1`, and the
+conditional audit write `operation := 2`. Leave's actual require precedes
+`operation := 0`, `active_slot := 3`. Failed entry/leave assertions therefore
+perform no stores in those bodies. A separate parsed-source write/read/failing-
+require fixture demonstrates that earlier writes/events survive failure; this is
+not a rollback rule. No full `fill_snapshot` call-stack/resource trace theorem,
+external-effect contract, authority/A.Enabled result, native pre-call scope/pinning
+purity, serializer/backend/ABI fidelity or hardware theorem is added.
+
+The expanded focused gate includes tiny kernel fixtures and native source/body,
+mutation and stateful execution controls. Full production source/publication
+acceptance remains **native execution evidence, not a concrete kernel theorem**.
+The independent generic proofs remain kernel-checked with only the audited
+`propext`/`Quot.sound` dependencies. Mutation addressing and workload expectations
+are test data, never checker rules or golden instruction sequences.
+
+Use `--body --ir PUBLICATION` before the selection arguments for the complete-body
+endpoint, or `--body-examples --ir PUBLICATION` for actual selected `enter`/`leave`
+value controls as well. Existing `--snapshot-examples` still selects D3a and cannot
+be combined with body mode. `probe-source-bodies.py` records native production
+mutations with D2 structural acceptance reported separately from D3b1 rejection.
