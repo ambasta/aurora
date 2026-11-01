@@ -505,6 +505,13 @@ an unsafe teardown entry or unreclaimable boundary is fail-stop, not unwinding.
 The actual retained terminal entry is invoked in place by native composition;
 ordinary source `move(local).finish()` calls remain outside this first surface.
 
+Client stop-accounting may expire immediately after a request is staged but
+before server dispatch. Authenticated terminal cleanup withdraws that matching
+staged request without minting an ordinal or renewing a budget. Delivery,
+processing and replied phases remain ineligible for such withdrawal. A compiled
+lifecycle/endpoint composition case supplies request-plus-exhaustion evidence;
+the production lifecycle RPC guest exercises actual timed retirement.
+
 ### Command loader boundary
 
 The production supervisor API `run_program` uses the same retained owner and

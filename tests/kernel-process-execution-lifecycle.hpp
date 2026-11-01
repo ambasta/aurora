@@ -357,6 +357,26 @@ auto lifecycle_mode(const char *path) -> int {
                 if (slot >= 2)
                     usage("invalid lifecycle incarnation slot");
                 lifecycle_fixture::incarnations[slot] = number(fields[2]);
+            } else if (operation == "staged-request-expiry" && fields.size() == 1) {
+                endpoint_fixture::Root endpoint;
+                endpoint.create();
+                output << " bind=" << endpoint.bind(7);
+                output << " exchange=" << static_cast<U64>(endpoint.accept_exchange(7, 0, 0));
+                lifecycle_fixture::incarnations = {7, 7};
+                output << " service=" << root.prepare(0);
+                output << " prepare=" << root.prepare(1);
+                output << " stage=" << endpoint.stage_client(17);
+                // The two actual source owners compose at the captured
+                // request + exhausted boundary. This models stop evidence;
+                // the production lifecycle RPC guest supplies real timing.
+                lifecycle_fixture::selected = {4, 0, 1};
+                const auto result = root.execute(1);
+                output << " terminal=" << result.event << ':' << result.detail << ':' << result.generation;
+                output << " resident=" << static_cast<U64>(root.phase(1));
+                output << " before=";
+                endpoint_fixture::view(endpoint, output);
+                output << " withdraw=" << endpoint.finish_client(17) << " after=";
+                endpoint_fixture::view(endpoint, output);
             } else if (operation == "loader-snapshot" && fields.size() == 1) {
                 lifecycle_fixture::loader_snapshot = true;
             } else if (operation == "high-bits" && fields.size() == 1) {
