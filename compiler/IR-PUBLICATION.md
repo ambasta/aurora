@@ -98,8 +98,13 @@ values and unused code capacity are not semantic records.
 
 ## Consumer and proof boundary
 
-No semantic decoder or correspondence checker is introduced by this format.
-A later reusable checked decoder must reject unknown versions/capabilities,
+The format itself provides no semantic correspondence proof. The external
+[Lean consumer](../formal/publication/README.md) now checks wire syntax and a
+restricted scalar-receiver structural/CFG/call-closure profile against explicit
+relations. It does not certify source correspondence, full compiler admission,
+opaque resource extents, native effects or backend output. Concrete full-file
+acceptance remains native execution evidence, separate from generic kernel proofs.
+A checked consumer must reject unknown versions/capabilities,
 duplicate identities, missing rows, count/range errors, malformed hex/integers,
 truncated/trailing records, unsupported types and operations, dangling calls,
 and CFG facts inconsistent with instruction semantics. It must bind typed

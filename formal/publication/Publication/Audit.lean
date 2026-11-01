@@ -1,0 +1,25 @@
+import Publication
+#print axioms Aurora.Publication.frame_sound
+#print axioms Aurora.Publication.frame_oversize
+#print axioms Aurora.Publication.line_exhausted
+#print axioms Aurora.Publication.frame_exhausted
+#print axioms Aurora.Publication.AsciiRun.ordered
+#print axioms Aurora.Publication.Frames.no_trailing
+#print axioms Aurora.Publication.decodeEnd_sound
+#print axioms Aurora.Publication.digit_exhausted
+#print axioms Aurora.Publication.tokens_sound
+#print axioms Aurora.Publication.field_sound
+#print axioms Aurora.Publication.FieldListText.lengths
+#print axioms Aurora.Publication.FieldListText.integer_at
+#print axioms Aurora.Publication.record_sound
+#print axioms Aurora.Publication.document_sound
+#print axioms Aurora.Publication.Increasing.pairwise
+#print axioms Aurora.Publication.structure_sound
+#print axioms Aurora.Publication.artifact_sound
+#print axioms Aurora.Publication.FlowsTo.known
+#print axioms Aurora.Publication.TypedRows.length
+#print axioms Aurora.Publication.function_sound
+#print axioms Aurora.Publication.AllFunctions.member
+#print axioms Aurora.Publication.slice_sound
+#print axioms Aurora.Publication.predecessors_reachable
+#print axioms Aurora.Publication.function_reachable

@@ -1,0 +1,8 @@
+name = "aurora-publication"
+version = "0.1.0"
+defaultTargets = ["Publication"]
+[[lean_lib]]
+name = "Publication"
+[[lean_exe]]
+name = "publication-probe"
+root = "Main"

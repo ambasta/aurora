@@ -20,8 +20,12 @@ contract adapter are checked. Frozen footprints exclude permitted write events,
 not verified heap-byte mutation. Cross-root composition, source/ISA refinement,
 weak memory, recovery and hardware qualification remain open. A generic
 [typed published-IR format](../compiler/IR-PUBLICATION.md) now exposes canonical
-field/layout, callable, operand and catalogue records for a future checked
-consumer. It adds no source-to-IR or native-code proof.
+field/layout, callable, operand and catalogue records. The external
+[Lean consumer](../formal/publication/README.md) proves generic byte-decoding and
+restricted scalar type/CFG/call-closure checks sound against explicit relations.
+Production-file acceptance is native execution evidence, not a kernel theorem
+about those bytes. Same-typed field swaps remain structurally admissible; source
+correspondence, opaque physical extents, effects and backend proofs remain open.
 
 | Destination | Status |
 |---|---|
