@@ -249,13 +249,18 @@ export namespace kernel {
             }
             return EndpointCancel::refused;
         }
-        // Physical retirement may discard an undelivered client completion,
-        // but never withdraw an already dispatched server operation.
+        // Physical retirement may withdraw an undispatched staged request or
+        // undelivered completion, never an already dispatched server operation.
         auto finish_client(u64 client) -> bool {
             if (client == 0u64) {
                 return false;
             }
             if ((state == EndpointPhase::waiting || state == EndpointPhase::revoked) && client_value == 0u64) {
+                return true;
+            }
+            if (state == EndpointPhase::staged && client_value == client) {
+                client_value = 0u64;
+                state = EndpointPhase::waiting;
                 return true;
             }
             return complete_client(client);

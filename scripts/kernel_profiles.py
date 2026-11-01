@@ -1294,6 +1294,7 @@ def uefi_profile(profile_mode, flags):
         (process, "endpoint-root", "endpoint-root", "endpoint-root", ["kernel/policies"]),
         (process, "service-bootstrap", "service-bootstrap", "service-bootstrap", ["kernel/policies"]),
         (profile_mode == "production", "resident-owner", "resident-owner", "resident-owner", ["kernel/policies"]),
+        (profile_mode == "production", "committed-load", "committed-load", "committed-load", ["kernel/policies"]),
         (profile_mode == "production", "execution", "execution", "execution", ["kernel/policies"]),
     ):
         if enabled:

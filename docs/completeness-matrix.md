@@ -42,6 +42,13 @@ invalidation preserves frozen identity for bootstrap/shutdown receipts. This doe
 not migrate the separate legacy Mailbox or add general IPC/scheduling; final-source
 qualification remains revision-specific.
 
+Committed executable acquisition now keeps open/read progress, bounded count admission,
+close-before-load ordering and failure selection in a short-lived Aurora operation.
+Native code retains authenticated RPC effects, snapshot epoch/copy effects and ELF
+mapping; memory-manager and endpoint roots remain the sole owners of their existing
+state. This does not add asynchronous loading or replay, and final-source qualification
+remains revision-specific.
+
 Native copied-record consumers retain one consolidated artifact-build ABI
 admission over compiler facts; removing those consumers remains future work.
 
