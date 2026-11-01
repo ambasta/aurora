@@ -17,7 +17,11 @@ admits disjoint scattered writers and overlapping frozen readers under exact
 per-cell conservation, replay-safe returns and unchanged R/Q reclamation.
 Accounting erasure, an alias-image interpretation and a full-cover snapshot
 contract adapter are checked. Frozen footprints exclude permitted write events,
-not verified heap-byte mutation. Cross-root composition, source/ISA refinement,
+not verified heap-byte mutation. Native loader chunk pins now admit only bounded
+coordinates in the boot-registered static endpoint buffer and recheck all source
+pages against the kernel-root boot tables and managed-frame inventory. This is
+native provenance enforcement, not source/native effect refinement; synchronous
+mapping/content stability and physical translation semantics remain trusted. Cross-root composition, source/ISA refinement,
 weak memory, recovery and hardware qualification remain open. A generic
 [typed published-IR format](../compiler/IR-PUBLICATION.md) now exposes canonical
 field/layout, callable, operand and catalogue records. The external

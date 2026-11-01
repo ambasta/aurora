@@ -776,6 +776,8 @@ def validate(
         current, kernel = map(int, probes[0][1:])
         need(current > 0 and kernel > 0 and current % 4096 == 0 and kernel % 4096 == 0, "Real aligned authority roots")
         need(current != kernel if probe == 50 else current == kernel, "Exact authority probe root context")
+        if probe == 79:
+            need(text.count("AURORA_LOADER_SOURCE_COPY_OK: bytes=65536") == 1, "Exact registered full-buffer copy")
         after = text[text.index("AURORA_MAPPING_AUTHORITY_PROBE:") :]
         if probe >= 50:
             receipts = re.findall(r"AURORA_MAPPING_AUTHORITY_REJECT: case=(\d+) closed=(\d+) opens=(\d+)", after)

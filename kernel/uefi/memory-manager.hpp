@@ -3,6 +3,9 @@
 #include <initializer_list>
 
 namespace aurora::uefi {
+class MemoryManager;
+// Fixed-origin boot hook, implemented beside the actual endpoint object.
+auto register_loader_source(MemoryManager &manager) -> void;
 class ManagerResult final {
 public:
     std::uint64_t outcome = 2, value = 0;
@@ -60,6 +63,10 @@ public:
     static constexpr std::size_t root_bytes = 496;
 
 private:
+    friend auto register_loader_source(MemoryManager &manager) -> void;
+    auto register_loader_buffer(std::span<const std::byte> bytes, U64 arena, U64 table_pages) -> void {
+        authority_.register_loader_buffer(bytes, arena, table_pages);
+    }
     alignas(16) mutable std::array<std::byte, root_bytes> storage_{};
     mutable words::Binding binding_;
     mutable MappingAuthority authority_;
@@ -336,9 +343,9 @@ public:
         MappingAuthority::Scope scope(authority_, domain(slot), epoch, false, words::Access::write, purpose);
         return __au_runtime_manager_map_region(storage_.data(), reinterpret_cast<const U64 *>(&args));
     }
-    [[nodiscard]] auto fill_snapshot(U64 epoch, U64 offset, std::span<const std::byte> bytes) -> bool {
-        auto input = authority_.loader_chunk_source(bytes, epoch);
-        const auto args = arguments({epoch, offset, bytes.size()});
+    [[nodiscard]] auto fill_snapshot(U64 epoch, U64 offset, U64 source, U64 count) -> bool {
+        auto input = authority_.loader_chunk_source(source, count, epoch);
+        const auto args = arguments({epoch, offset, count});
         MappingAuthority::Scope scope(authority_,
                                       Domain::snapshot,
                                       epoch,

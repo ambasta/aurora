@@ -314,7 +314,7 @@ public:
     U64 vector = 0, error = 0, rip = 0, cr2 = 0;
 };
 constinit ExecutionCapture execution_capture;
-constinit U64 owned_arena = 0, kernel_root = 0, physical_bits = 0, process_volume_bytes = 0;
+constinit U64 owned_arena = 0, kernel_root = 0, kernel_table_pages = 0, physical_bits = 0, process_volume_bytes = 0;
 constinit bool draining = false;
 constinit aurora::uefi::ProcessOutput output_sink = nullptr;
 constinit void *output_context = nullptr;
@@ -542,6 +542,7 @@ auto capture_shared(U64 arena) -> void {
     if (!shared.slots)
         fail("shared kernel slots");
     table.attach(space, shared, physical_bits, kernel_root);
+    aurora::uefi::register_loader_source(table);
     table.attach_boot_volume(space.volume(process_volume_bytes));
     if (!execution_owner.created())
         execution_owner.initialize();
@@ -622,6 +623,15 @@ public:
     U64 written = 0, request_operation = 0, invalid_reply_operation = 0;
 };
 constinit Endpoint endpoint;
+} // namespace
+
+// Only this fixed-origin boot hook can register a loader source. No public API
+// accepts a pointer/span to substitute another object for the endpoint buffer.
+auto aurora::uefi::register_loader_source(MemoryManager &manager) -> void {
+    manager.register_loader_buffer(endpoint.bytes, owned_arena, kernel_table_pages);
+}
+
+namespace {
 // Short source loans are allowed only in the quiet supervisor or the exact
 // authenticated syscall scope. They never survive a copy, CR3 switch or entry.
 constinit bool endpoint_trap_scope = false;
@@ -3952,8 +3962,8 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 
 #ifdef AURORA_PROCESS_FIXTURE
 // Fatal admission cases share the ordinary lifecycle programs and source
-// lifecycle. Only effect operands, never source banks or phase fields, are
-// corrupted by the one-shot adapters below.
+// lifecycle. One-shot adapters corrupt effect operands or an actual endpoint
+// source leaf, never source banks or phase fields.
 [[noreturn]] auto authority_lifetime_probe(std::span<const std::byte> view, U64 probe) -> void {
     if (probe == 50 || probe == 52 || probe == 53 || probe == 54) {
         const auto runs = process::volume_lookup(view, bytes_of("runs/7"));
@@ -3987,9 +3997,63 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
         __builtin_trap();
     }
     constexpr std::array<std::byte, 16> chunk{};
+    for (U64 at = 0; at < chunk.size(); ++at)
+        endpoint.bytes[64 + at] = chunk[at];
     const U64 epoch = table.begin_snapshot(frames::first_owner + 2, frames::page);
-    if (!epoch || !table.fill_snapshot(epoch, 0, chunk))
+    if (!epoch || !table.fill_snapshot(epoch, 0, 64, chunk.size()))
         fail("mapping authority probe snapshot");
+    if (probe >= 73 && probe <= 79) {
+        if (probe == 79) {
+            // Exercise the last byte and every partial source page before
+            // refusing a second registration of this same static object.
+            if (!table.discard_snapshot(epoch))
+                fail("loader source positive discard");
+            for (U64 at = 0; at < endpoint.bytes.size(); ++at)
+                endpoint.bytes[at] = std::byte((at * 13 + 7) & 255);
+            const U64 whole = table.begin_snapshot(frames::first_owner + 2, endpoint.bytes.size());
+            if (!whole || !table.fill_snapshot(whole, 0, 0, endpoint.bytes.size()) || !table.seal_snapshot(whole))
+                fail("loader source positive fill");
+            {
+                auto pin = table.snapshot_read(whole);
+                const auto copied = pin.bytes();
+                for (U64 at = 0; at < endpoint.bytes.size(); ++at)
+                    if (copied[at] != endpoint.bytes[at])
+                        fail("loader source positive bytes");
+            }
+            if (!table.discard_snapshot(whole))
+                fail("loader source positive release");
+            Serial::text("AURORA_LOADER_SOURCE_COPY_OK: bytes=65536\r\n");
+            arm_authority_probe(probe);
+            aurora::uefi::register_loader_source(table);
+            __builtin_trap();
+        }
+        if (probe <= 75) {
+            const U64 first = probe == 73 ? endpoint.bytes.size() : probe == 74 ? ~U64{0} : 1;
+            const U64 count = probe == 75 ? ~U64{0} : 1;
+            arm_authority_probe(probe);
+            static_cast<void>(table.fill_snapshot(epoch, 0, first, count));
+            __builtin_trap();
+        }
+        // Corrupt only an interior endpoint-buffer page's actual leaf. The
+        // requested two-byte source straddles that page boundary; checking only
+        // its first page would miss this malformed last partial page.
+        const U64 base = reinterpret_cast<U64>(endpoint.bytes.data());
+        const U64 page = (base + 2 * frames::page) & ~U64{4095};
+        U64 current = kernel_root;
+        for (const unsigned shift : {39U, 30U, 21U})
+            current = reinterpret_cast<volatile U64 *>(current)[(page >> shift) & 511] & KernelSpace::address_mask;
+        auto &leaf = reinterpret_cast<volatile U64 *>(current)[(page >> 12) & 511];
+        const auto managed = ranges.address(0);
+        if (!managed)
+            fail("loader source alias fixture");
+        leaf = probe == 76   ? 0
+               : probe == 77 ? page | KernelSpace::data_flags | 128
+                             : *managed | KernelSpace::data_flags;
+        asm volatile("invlpg (%0)" : : "r"(page) : "memory");
+        arm_authority_probe(probe);
+        static_cast<void>(table.fill_snapshot(epoch, 0, page - base - 1, 2));
+        __builtin_trap();
+    }
     if (probe != 57 && !table.seal_snapshot(epoch))
         fail("mapping authority probe seal");
     if (probe == 51 || probe == 52) {
@@ -4005,14 +4069,14 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
     }
     if (probe == 55) {
         arm_authority_probe(probe);
-        static_cast<void>(table.fill_snapshot(epoch, 0, chunk));
+        static_cast<void>(table.fill_snapshot(epoch, 0, 64, chunk.size()));
         __builtin_trap();
     }
     if (probe == 56) {
         if (!table.discard_snapshot(epoch))
             fail("mapping authority probe discard");
         const U64 next = table.begin_snapshot(frames::first_owner + 2, frames::page);
-        if (next != epoch + 1 || !table.fill_snapshot(next, 0, chunk) || !table.seal_snapshot(next))
+        if (next != epoch + 1 || !table.fill_snapshot(next, 0, 64, chunk.size()) || !table.seal_snapshot(next))
             fail("mapping authority probe reuse");
     }
     if (probe == 56 || probe == 57) {
@@ -4275,6 +4339,7 @@ constinit std::optional<KernelSpace::Plan> runtime_plan;
 auto initialize_process(U64 arena, const Bytes &h, U64 selected, bool timer_ready) -> std::span<const std::byte> {
     owned_arena = arena;
     kernel_root = h.get(88);
+    kernel_table_pages = h.get(96);
 #ifndef AURORA_PRODUCTION
     if (selected && !timer_ready)
         establish_timer(arena, h);
@@ -4402,7 +4467,7 @@ auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
         aurora::uefi::MappingAuthority::fixture_admission(selected);
         fail("mapping authority probe returned");
     }
-    if (selected >= 50 && selected <= 62) {
+    if ((selected >= 50 && selected <= 62) || (selected >= 73 && selected <= 79)) {
         install_architecture(arena);
         capture_shared(arena);
         process_kernel_root = kernel_root;
@@ -4511,8 +4576,7 @@ auto load_committed(std::span<const std::byte> volume,
             // A copied source request is not byte or snapshot authority. Recheck
             // the current reply and exact manager-owned epoch at the copy edge.
             if (!snapshot || Bytes{endpoint.bytes}.get(0) || Bytes{endpoint.bytes}.get(8) != request.count ||
-                request.count > endpoint.bytes.size() - 64 ||
-                !snapshot->fill(request.offset, std::span<const std::byte>{endpoint.bytes}.subspan(64, request.count)))
+                request.count > endpoint.bytes.size() - 64 || !snapshot->fill(request.offset, 64, request.count))
                 fail("loader snapshot fill");
             break;
         case Action::seal:

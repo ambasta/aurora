@@ -37,8 +37,8 @@ public:
 
     // The input pin is synchronous and closes before return. The caller may
     // invoke the service only between fills, with no destination alias alive.
-    [[nodiscard]] auto fill(U64 offset, std::span<const std::byte> bytes) -> bool {
-        return manager_.fill_snapshot(epoch_, offset, bytes);
+    [[nodiscard]] auto fill(U64 offset, U64 source, U64 count) -> bool {
+        return manager_.fill_snapshot(epoch_, offset, source, count);
     }
     [[nodiscard]] auto verify() const -> bool {
         return manager_.verify_snapshot(epoch_);
