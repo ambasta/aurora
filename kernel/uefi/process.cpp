@@ -2478,9 +2478,10 @@ auto service_lost(ServiceLoss loss, U64 generation) -> void {
 // A cleanup observation is admitted only at the actual resource boundary. The
 // copied generation is not sufficient to manufacture this acknowledgement.
 auto acknowledge_service_cleanup(U64 generation) -> void {
-    if (residents[0].space || residents[1].space || snapshot || running.space || endpoint.generation ||
-        endpoint.caller || endpoint_owner.observe().waiting() || endpoint_owner.observe().replied() ||
-        endpoint_owner.observe().delivery() || endpoint_owner.observe().completion() || !audit_residents() ||
+    if (const auto endpoint_observation = endpoint_owner.observe();
+        residents[0].space || residents[1].space || snapshot || running.space || endpoint.generation ||
+        endpoint.caller || endpoint_observation.waiting() || endpoint_observation.replied() ||
+        endpoint_observation.delivery() || endpoint_observation.completion() || !audit_residents() ||
         !service_root.cleaned(generation))
         fail("file service cleanup acknowledgement");
 }
@@ -2535,9 +2536,10 @@ auto abandon_service_observed(ServiceLoss loss) -> void {
         if (endpoint.generation && endpoint.generation != generation)
             fail("file service loss incarnation");
         if (phase == aurora::service::Phase::retiring) {
-            if (residents[0].space || residents[1].space || snapshot || loading_image || endpoint.caller ||
-                endpoint_owner.observe().replied() || endpoint_owner.observe().delivery() ||
-                endpoint_owner.observe().completion() || service_root.reason() == aurora::service::Reason::shutdown)
+            if (const auto endpoint_observation = endpoint_owner.observe();
+                residents[0].space || residents[1].space || snapshot || loading_image || endpoint.caller ||
+                endpoint_observation.replied() || endpoint_observation.delivery() ||
+                endpoint_observation.completion() || service_root.reason() == aurora::service::Reason::shutdown)
                 fail("file service pending terminal cleanup");
         } else if (!service_root.lose(generation, static_cast<aurora::service::Reason>(loss.kind), loss.detail)) {
             fail("file service loss observation");
@@ -2726,8 +2728,11 @@ public:
             failed(binding);
             return Effect::failed;
         }
-        require(endpoint_owner.observe().waiting() && !endpoint_owner.observe().delivery() &&
-                !endpoint_owner.observe().replied() && !endpoint.caller);
+        {
+            const auto endpoint_observation = endpoint_owner.observe();
+            require(endpoint_observation.waiting() && !endpoint_observation.delivery() &&
+                    !endpoint_observation.replied() && !endpoint.caller);
+        }
         message_header(operation, id, offset, payload.size());
         for (U64 at = 0; at < payload.size(); ++at)
             endpoint.bytes[64 + at] = payload[at];
@@ -2783,15 +2788,21 @@ public:
             if (initial == aurora::endpoint::Step::resume)
                 return Progress::pending;
             require(initial == aurora::endpoint::Step::replied);
-            require(execution_owner.phase(0) == aurora::lifecycle::Phase::parked && endpoint.window &&
-                    !endpoint_owner.observe().transaction && !endpoint_owner.observe().source &&
-                    !endpoint_owner.observe().replied() && !endpoint_owner.observe().delivery() && !endpoint.caller);
+            {
+                const auto endpoint_observation = endpoint_owner.observe();
+                require(execution_owner.phase(0) == aurora::lifecycle::Phase::parked && endpoint.window &&
+                        !endpoint_observation.transaction && !endpoint_observation.source &&
+                        !endpoint_observation.replied() && !endpoint_observation.delivery() && !endpoint.caller);
+            }
             binding.initial_receipt = true;
             return Progress::complete;
         }
-        require(binding.pending_operation && binding.pending_transaction &&
-                endpoint_owner.observe().transaction == binding.pending_transaction &&
-                endpoint_owner.observe().source == 0);
+        {
+            const auto endpoint_observation = endpoint_owner.observe();
+            require(binding.pending_operation && binding.pending_transaction &&
+                    endpoint_observation.transaction == binding.pending_transaction &&
+                    endpoint_observation.source == 0);
+        }
         const auto progress = advance_exchange();
         if (progress == ExchangeProgress::failed || !bound(binding) || endpoint.caller_cancelled) {
             failed(binding);
@@ -2800,10 +2811,10 @@ public:
         if (progress == ExchangeProgress::pending)
             return Progress::pending;
         const U64 operation = binding.pending_operation;
-        const bool authenticated = endpoint_owner.observe().transaction == binding.pending_transaction &&
-                                   endpoint_owner.observe().source == 0 && endpoint_owner.observe().waiting() &&
-                                   endpoint_owner.observe().replied() && !endpoint_owner.observe().delivery() &&
-                                   endpoint.count == 64;
+        const auto endpoint_reply = endpoint_owner.observe();
+        const bool authenticated = endpoint_reply.transaction == binding.pending_transaction &&
+                                   endpoint_reply.source == 0 && endpoint_reply.waiting() && endpoint_reply.replied() &&
+                                   !endpoint_reply.delivery() && endpoint.count == 64;
         const auto reply = authenticated ? aurora::bootstrap::inspect_reply(operation, {endpoint.bytes.data(), 64})
                                          : aurora::bootstrap::Reply::invalid;
         if (reply == aurora::bootstrap::Reply::invalid) {
@@ -2836,16 +2847,19 @@ public:
                 // A real bootstrap execution may already have revoked and
                 // retired its unpublished service. Consume only this lease's
                 // matching frozen observation; never revive it for publication.
-                require(binding.failed && binding.run && endpoint.generation == binding.generation &&
-                        outcome.terminal_run == binding.run && outcome.terminal_service == binding.generation &&
-                        service_root.reason() != aurora::service::Reason::shutdown &&
-                        static_cast<U64>(service_root.reason()) == static_cast<U64>(binding.loss.kind) &&
-                        service_root.detail() == binding.loss.detail && !residents[0].space && !residents[1].space &&
-                        !snapshot && !loading_image && !endpoint.caller && !endpoint_owner.observe().waiting() &&
-                        !endpoint_owner.observe().replied() && !endpoint_owner.observe().delivery() &&
-                        !endpoint_owner.observe().completion() && LifecyclePlatform::quiet() &&
-                        execution_owner.phase(0) == aurora::lifecycle::Phase::empty &&
-                        execution_owner.phase(1) == aurora::lifecycle::Phase::empty);
+                {
+                    const auto endpoint_observation = endpoint_owner.observe();
+                    require(binding.failed && binding.run && endpoint.generation == binding.generation &&
+                            outcome.terminal_run == binding.run && outcome.terminal_service == binding.generation &&
+                            service_root.reason() != aurora::service::Reason::shutdown &&
+                            static_cast<U64>(service_root.reason()) == static_cast<U64>(binding.loss.kind) &&
+                            service_root.detail() == binding.loss.detail && !residents[0].space &&
+                            !residents[1].space && !snapshot && !loading_image && !endpoint.caller &&
+                            !endpoint_observation.waiting() && !endpoint_observation.replied() &&
+                            !endpoint_observation.delivery() && !endpoint_observation.completion() &&
+                            LifecyclePlatform::quiet() && execution_owner.phase(0) == aurora::lifecycle::Phase::empty &&
+                            execution_owner.phase(1) == aurora::lifecycle::Phase::empty);
+                }
             } else {
                 require(phase == aurora::service::Phase::starting);
             }
@@ -2866,11 +2880,14 @@ public:
             binding.initial_receipt = binding.seal_receipt = binding.storage_receipt = false;
             return Result::unavailable;
         }
-        require(disposition == Finish::publish && phase == aurora::service::Phase::starting && !binding.failed &&
-                bound(binding) && binding.initial_receipt && binding.seal_receipt &&
-                (!binding.storage_required || binding.storage_receipt) && !binding.pending_operation &&
-                !endpoint.caller_cancelled && endpoint_owner.observe().waiting() &&
-                !endpoint_owner.observe().replied() && !endpoint_owner.observe().delivery() && !endpoint.caller);
+        {
+            const auto endpoint_observation = endpoint_owner.observe();
+            require(disposition == Finish::publish && phase == aurora::service::Phase::starting && !binding.failed &&
+                    bound(binding) && binding.initial_receipt && binding.seal_receipt &&
+                    (!binding.storage_required || binding.storage_receipt) && !binding.pending_operation &&
+                    !endpoint.caller_cancelled && endpoint_observation.waiting() && !endpoint_observation.replied() &&
+                    !endpoint_observation.delivery() && !endpoint.caller);
+        }
         // Publication consumes the actual receipts once. The mounted broker is
         // still unarmed until the normal budget is restored at this boundary.
         binding.initial_receipt = binding.seal_receipt = binding.storage_receipt = false;
@@ -2904,18 +2921,19 @@ public:
         return Result::ready;
     }
     static auto settled(const Binding &binding) -> bool {
-        if (loading_image || residents[1].space || snapshot || endpoint.caller || endpoint_owner.observe().replied() ||
-            endpoint_owner.observe().delivery() || endpoint_owner.observe().completion() || binding.pending_operation ||
+        const auto endpoint_observation = endpoint_owner.observe();
+        if (loading_image || residents[1].space || snapshot || endpoint.caller || endpoint_observation.replied() ||
+            endpoint_observation.delivery() || endpoint_observation.completion() || binding.pending_operation ||
             binding.initial_receipt || binding.seal_receipt || binding.storage_receipt || !audit_residents())
             return false;
         const auto phase = service_root.phase();
         if (phase == aurora::service::Phase::absent)
-            return !residents[0].space && !endpoint.generation && !endpoint_owner.observe().waiting();
+            return !residents[0].space && !endpoint.generation && !endpoint_observation.waiting();
         return phase == aurora::service::Phase::ready && service_root.generation() == binding.generation &&
                residents[0].space && residents[0].state.run == binding.run &&
                residents[0].state.service == binding.generation && endpoint.generation == binding.generation &&
                residents[0].space->owner() == binding.owner && residents[0].space->root() == binding.root &&
-               endpoint_owner.observe().waiting();
+               endpoint_observation.waiting();
     }
 };
 class ServiceBootstrapPlatform final {
@@ -3191,9 +3209,9 @@ public:
         return Effect::success;
     }
     static auto settled(const Binding &binding) -> bool {
+        const auto endpoint_observation = endpoint_owner.observe();
         return !binding.client && !binding.output_pending && !binding.request_pending && !residents[1].space &&
-               !snapshot && !endpoint.caller && !endpoint_owner.observe().delivery() &&
-               !endpoint_owner.observe().completion();
+               !snapshot && !endpoint.caller && !endpoint_observation.delivery() && !endpoint_observation.completion();
     }
 };
 class ExecutionPlatform final {
@@ -3219,9 +3237,10 @@ public:
 };
 
 auto begin_service_shutdown() -> void {
-    if (!residents[0].space || residents[1].space || snapshot || endpoint.caller ||
-        endpoint_owner.observe().replied() || endpoint_owner.observe().delivery() ||
-        endpoint_owner.observe().completion() || !service_root.begin_shutdown(endpoint.generation))
+    if (const auto endpoint_observation = endpoint_owner.observe();
+        !residents[0].space || residents[1].space || snapshot || endpoint.caller || endpoint_observation.replied() ||
+        endpoint_observation.delivery() || endpoint_observation.completion() ||
+        !service_root.begin_shutdown(endpoint.generation))
         fail("file service shutdown intent");
     // The preceding client is fully settled. This source-admitted shutdown is
     // a new caller context, not another message of the cancelled request.
@@ -3446,8 +3465,9 @@ auto run_file_client() -> bool {
     return true;
 }
 auto close_service_operation() -> void {
-    if (residents[1].space || snapshot || endpoint.caller || endpoint_owner.observe().delivery() ||
-        endpoint_owner.observe().completion() || !audit_residents() || !service_root.close_operation())
+    if (const auto endpoint_observation = endpoint_owner.observe();
+        residents[1].space || snapshot || endpoint.caller || endpoint_observation.delivery() ||
+        endpoint_observation.completion() || !audit_residents() || !service_root.close_operation())
         fail("file service operation cleanup");
 }
 auto run_independent(std::span<const std::byte> view, std::span<const std::byte> runs) -> U64 {
@@ -3541,11 +3561,12 @@ using FixtureExecutionSession = aurora::execution::Session<FixtureExecutionTrans
 // charged count comes from the existing LAPIC; there is no synthetic expiry.
 auto execution_expiry_gate(U64 client) -> void {
     using namespace aurora::lifecycle;
-    if (execution_owner.entered() || forced_execution || completed_output || !LifecyclePlatform::quiet() ||
+    if (const auto endpoint_observation = endpoint_owner.observe();
+        execution_owner.entered() || forced_execution || completed_output || !LifecyclePlatform::quiet() ||
         !residents[0].space || !residents[1].space || residents[1].state.run != client ||
         endpoint.caller != std::optional<std::size_t>{1} || endpoint.caller_cancelled ||
-        !endpoint_owner.observe().waiting() || endpoint_owner.observe().replied() ||
-        endpoint_owner.observe().delivery() || endpoint_owner.observe().completion() || snapshot || loading_image ||
+        !endpoint_observation.waiting() || endpoint_observation.replied() || endpoint_observation.delivery() ||
+        endpoint_observation.completion() || snapshot || loading_image ||
         service_root.phase() != aurora::service::Phase::ready || service_root.generation() != endpoint.generation ||
         residents[0].state.service != endpoint.generation || execution_owner.phase(0) != Phase::parked ||
         execution_owner.phase(1) != Phase::parked || execution_owner.pending(1) != static_cast<U64>(Event::request) ||
@@ -3597,14 +3618,14 @@ auto execution_expiry_gate(U64 client) -> void {
         if (!available)
             endpoint.caller_cancelled = true;
     }
-    if (!endpoint.caller_cancelled || !residents[0].space || !residents[1].space || residents[1].state.run != client ||
-        endpoint.generation != generation || endpoint_owner.observe().transaction != transaction ||
-        endpoint_owner.observe().next != next || endpoint.written != written || endpoint.count != count ||
-        endpoint_owner.observe().source != source ||
-        endpoint.call.action != static_cast<U64>(process::CallAction::write) || endpoint.call.length != 65536 ||
-        endpoint.caller != std::optional<std::size_t>{1} || !endpoint_owner.observe().waiting() ||
-        endpoint_owner.observe().replied() || endpoint_owner.observe().delivery() ||
-        endpoint_owner.observe().completion() || execution_owner.generation(1) != client_generation ||
+    if (const auto endpoint_observation = endpoint_owner.observe();
+        !endpoint.caller_cancelled || !residents[0].space || !residents[1].space || residents[1].state.run != client ||
+        endpoint.generation != generation || endpoint_observation.transaction != transaction ||
+        endpoint_observation.next != next || endpoint.written != written || endpoint.count != count ||
+        endpoint_observation.source != source || endpoint.call.action != static_cast<U64>(process::CallAction::write) ||
+        endpoint.call.length != 65536 || endpoint.caller != std::optional<std::size_t>{1} ||
+        !endpoint_observation.waiting() || endpoint_observation.replied() || endpoint_observation.delivery() ||
+        endpoint_observation.completion() || execution_owner.generation(1) != client_generation ||
         execution_owner.generation(0) != server_generation || execution_owner.phase(0) != Phase::parked ||
         execution_owner.phase(1) != Phase::parked || execution_owner.pending(1) != static_cast<U64>(Event::request) ||
         residents[1].space->epoch() != client_epoch || residents[1].space->root() != client_root ||
@@ -3687,12 +3708,13 @@ auto execution_cancel_fixture(std::span<const std::byte> volume,
                 const bool available = residents[0].state.budget->available();
                 const bool was_waiting = endpoint_owner.observe().waiting();
                 const auto cancelled = static_cast<Cancel>(Session::cancel(lease.binding, lease.generation));
-                if (cancelled != (point == 2 ? Cancel::draining : Cancel::settled) ||
-                    endpoint.generation != generation || endpoint_owner.observe().transaction != transaction ||
-                    endpoint_owner.observe().next != next || endpoint_owner.observe().waiting() != was_waiting ||
-                    endpoint_owner.observe().replied() || endpoint_owner.observe().delivery() ||
+                if (const auto endpoint_observation = endpoint_owner.observe();
+                    cancelled != (point == 2 ? Cancel::draining : Cancel::settled) ||
+                    endpoint.generation != generation || endpoint_observation.transaction != transaction ||
+                    endpoint_observation.next != next || endpoint_observation.waiting() != was_waiting ||
+                    endpoint_observation.replied() || endpoint_observation.delivery() ||
                     (point == 2 ? endpoint.caller != std::optional<std::size_t>{1} : endpoint.caller.has_value()) ||
-                    endpoint_owner.observe().completion() || residents[0].state.budget->used() != used ||
+                    endpoint_observation.completion() || residents[0].state.budget->used() != used ||
                     residents[0].state.budget->quantum() != quantum ||
                     residents[0].state.budget->available() != available)
                     fail("execution staged cancellation preservation");
@@ -3722,8 +3744,9 @@ auto execution_cancel_fixture(std::span<const std::byte> volume,
                     // profile size. Crossing a tick increments used and may
                     // reload quantum; every actual server step consumes counts.
                     const bool consumed = used > drain_used || (used == drain_used && quantum < drain_quantum);
-                    if (endpoint_owner.observe().transaction != drain_transaction ||
-                        endpoint_owner.observe().next != drain_next || !consumed ||
+                    if (const auto endpoint_observation = endpoint_owner.observe();
+                        endpoint_observation.transaction != drain_transaction ||
+                        endpoint_observation.next != drain_next || !consumed ||
                         !residents[0].state.budget->available() || !quantum || quantum > ceiling)
                         fail("execution cancellation drain renewed transaction or budget");
                     drain_used = used;
@@ -4091,9 +4114,10 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
         const auto generation = execution_owner.generation(0);
         if (!service_root.open_operation() || !runtime_storage.select(true, 3) || ensure_file_service(view))
             fail("mounted prepared refusal startup");
-        if (residents[0].space || residents[1].space || snapshot || endpoint.generation || endpoint.caller ||
-            endpoint_owner.observe().waiting() || endpoint_owner.observe().replied() ||
-            endpoint_owner.observe().delivery() || endpoint_owner.observe().completion() || loading_image ||
+        if (const auto endpoint_observation = endpoint_owner.observe();
+            residents[0].space || residents[1].space || snapshot || endpoint.generation || endpoint.caller ||
+            endpoint_observation.waiting() || endpoint_observation.replied() || endpoint_observation.delivery() ||
+            endpoint_observation.completion() || loading_image ||
             service_root.phase() != aurora::service::Phase::absent ||
             execution_owner.phase(0) != aurora::lifecycle::Phase::empty ||
             execution_owner.phase(1) != aurora::lifecycle::Phase::empty ||
@@ -4553,8 +4577,9 @@ auto enter_runtime(U64 arena, const Bytes &handoff) -> bool {
     return true;
 }
 auto leave_runtime(const Bytes &handoff) -> void {
-    if (execution_owner.entered() || running.space || residents[1].space || snapshot || endpoint.caller ||
-        endpoint_owner.observe().delivery() || endpoint_owner.observe().completion() || Timer::read(0x390) ||
+    if (const auto endpoint_observation = endpoint_owner.observe();
+        execution_owner.entered() || running.space || residents[1].space || snapshot || endpoint.caller ||
+        endpoint_observation.delivery() || endpoint_observation.completion() || Timer::read(0x390) ||
         !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false) || !audit_residents() ||
         !space.verify(table, ranges, handoff.get(96)))
         fail("process runtime return audit");
@@ -4576,10 +4601,10 @@ auto ResidentPlatform::quiet() -> bool {
     ::fail("resident owner authority");
 }
 auto resident_boundary(const ResidentInput &input) -> void {
-    if (!ResidentPlatform::quiet() || residents[1].space || snapshot || endpoint.caller ||
-        endpoint_owner.observe().replied() || endpoint_owner.observe().delivery() ||
-        endpoint_owner.observe().completion() || !audit_residents() ||
-        !space.verify(table, ranges, input.arguments.map_count))
+    if (const auto endpoint_observation = endpoint_owner.observe();
+        !ResidentPlatform::quiet() || residents[1].space || snapshot || endpoint.caller ||
+        endpoint_observation.replied() || endpoint_observation.delivery() || endpoint_observation.completion() ||
+        !audit_residents() || !space.verify(table, ranges, input.arguments.map_count))
         fail("resident owner effect boundary");
 }
 auto resident_prepare(ResidentInput &input) -> bool {
@@ -4676,8 +4701,9 @@ auto resident_shutdown_failed(ResidentInput &input) -> aurora::bootstrap::Progre
 }
 auto resident_begin_shutdown(ResidentInput &input) -> aurora::bootstrap::Progress {
     using aurora::bootstrap::Progress;
-    if (residents[1].space || snapshot || endpoint.caller || endpoint_owner.observe().replied() ||
-        endpoint_owner.observe().delivery() || endpoint_owner.observe().completion() || input.shutdown_pending ||
+    if (const auto endpoint_observation = endpoint_owner.observe();
+        residents[1].space || snapshot || endpoint.caller || endpoint_observation.replied() ||
+        endpoint_observation.delivery() || endpoint_observation.completion() || input.shutdown_pending ||
         input.shutdown_terminal)
         fail("resident shutdown admission");
     if (service_root.phase() == aurora::service::Phase::absent) {
@@ -4703,9 +4729,10 @@ auto resident_begin_shutdown(ResidentInput &input) -> aurora::bootstrap::Progres
 }
 auto resident_advance_shutdown(ResidentInput &input) -> aurora::bootstrap::Progress {
     using aurora::bootstrap::Progress;
-    if (!input.shutdown_pending || input.shutdown_terminal || !input.shutdown_generation ||
+    if (const auto endpoint_observation = endpoint_owner.observe();
+        !input.shutdown_pending || input.shutdown_terminal || !input.shutdown_generation ||
         input.shutdown_generation != endpoint.generation ||
-        input.shutdown_transaction != endpoint_owner.observe().transaction || endpoint_owner.observe().source ||
+        input.shutdown_transaction != endpoint_observation.transaction || endpoint_observation.source ||
         service_root.phase() != aurora::service::Phase::stopping)
         fail("resident shutdown transaction");
     // One canonical transport step, without minting another transaction or
@@ -5200,13 +5227,15 @@ __attribute__((visibility("hidden"))) U64 __au_runtime_execution_authority_retir
     execution_owner.enter(binding, epoch, field, EffectKind::retire, slot);
     authenticate_execution(slot, Phase::retiring);
     authenticate_terminal_capture(slot);
-    if (slot == 0 && residents[0].state.service &&
-        (service_root.phase() != aurora::service::Phase::retiring ||
-         service_root.generation() != residents[0].state.service || endpoint.generation != residents[0].state.service ||
-         residents[1].space || snapshot || loading_image || endpoint.caller || endpoint_owner.observe().waiting() ||
-         endpoint_owner.observe().replied() || endpoint_owner.observe().delivery() ||
-         endpoint_owner.observe().completion()))
-        fail("service retirement invalidation boundary");
+    if (slot == 0 && residents[0].state.service) {
+        const auto endpoint_observation = endpoint_owner.observe();
+        if (service_root.phase() != aurora::service::Phase::retiring ||
+            service_root.generation() != residents[0].state.service ||
+            endpoint.generation != residents[0].state.service || residents[1].space || snapshot || loading_image ||
+            endpoint.caller || endpoint_observation.waiting() || endpoint_observation.replied() ||
+            endpoint_observation.delivery() || endpoint_observation.completion())
+            fail("service retirement invalidation boundary");
+    }
     const bool result = release_resident_physical(slot);
     execution_owner.leave();
     return result ? 1 : 0;
@@ -5226,10 +5255,11 @@ __attribute__((visibility("hidden"))) U64 __au_runtime_execution_authority_finis
                                                                                   const void *field) {
     using namespace aurora::lifecycle;
     execution_owner.enter(binding, epoch, field, EffectKind::finish, 0);
-    if (execution_owner.canonical(0, Field::phase) != static_cast<U64>(Phase::empty) ||
+    if (const auto endpoint_observation = endpoint_owner.observe();
+        execution_owner.canonical(0, Field::phase) != static_cast<U64>(Phase::empty) ||
         execution_owner.canonical(1, Field::phase) != static_cast<U64>(Phase::empty) || residents[0].space ||
-        residents[1].space || snapshot || endpoint.caller || endpoint_owner.observe().delivery() ||
-        endpoint_owner.observe().completion() || !audit_residents())
+        residents[1].space || snapshot || endpoint.caller || endpoint_observation.delivery() ||
+        endpoint_observation.completion() || !audit_residents())
         fail("execution owner cleanup");
     execution_owner.consume();
     execution_owner.leave();

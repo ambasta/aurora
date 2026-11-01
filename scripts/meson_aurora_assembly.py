@@ -393,18 +393,6 @@ def validate_native_abi(facts, source):
                 ("client", "u64", 0),
             ],
         )
-        record(
-            "kernel::EndpointTransaction",
-            48,
-            [
-                ("incarnation_value", "u64", 0),
-                ("state", "kernel::EndpointPhase", 0),
-                ("sequence", "u64", 0),
-                ("transaction_value", "u64", 0),
-                ("source_value", "u64", 0),
-                ("client_value", "u64", 0),
-            ],
-        )
         entry("process_endpoint_create", ["u64"], "kernel::EndpointTransaction")
         for name, tail, result, mutable in (
             ("bind", ["u64"], "bool", True),
