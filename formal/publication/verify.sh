@@ -31,7 +31,7 @@ for line in open(sys.argv[1]):
         count += 1
     else:
         sys.exit(f'Unexpected audit output: {line}')
-if count != 24:
-    sys.exit(f'Expected twenty-four theorem audits, got {count}')
+if count != 26:
+    sys.exit(f'Expected twenty-six theorem audits, got {count}')
 print(f'Checked {count} theorem dependency reports.')
 PY

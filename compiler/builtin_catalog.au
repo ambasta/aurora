@@ -731,30 +731,43 @@ export namespace compiler_catalog {
         return 0;
     }
     auto resource_method_word(compiler_resolver::Session& session, i64 kind, i64 method, i64 begin, i64 end) -> i64 {
-        if (kind == 5) {
-            return use_word(session, "prepare;activate;complete;force;retire;finish;invalidate_service", method, begin,
-                end);
+        if (kind < 0 || kind >= resource_count()) {
+            return -1;
         }
-        if (kind == 4) {
-            return use_word(session,
-                "observe_table;observe_next_present;publish_empty_entry;clear_expected_entry;scrub_unpublished_frame;downgrade_snapshot_entry;snapshot_anchor_publish;snapshot_anchor_clear;frame_address;frame_index;shared_slots;shared_slot;shared_value;shared_upper;reserved_first;reserved_end;initialize_shared_upper;publish_shared_entry;copy_source_frame;fill_snapshot_chunk;clear_shared_entry;revoke_root;observe_snapshot_anchor;finish",
-                method, begin, end);
+        const i64 size = resource_method_source_byte(kind, method, -1);
+        if (size < 1 || size > maximum_word()) {
+            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
         }
-        if (kind == 3) {
-            return use_word(session, "size;at;set;finish", method, begin, end);
+        if (begin < 0) {
+            array<u8, 32> storage = "00000000000000000000000000000000";
+            i64 at = 0;
+            while (at < size) {
+                storage[at] = u8(resource_method_source_byte(kind, method, at));
+                at = at + 1;
+            }
+            const builtin::span<const u8> bytes = borrow_bytes(storage);
+            return session.append_text(bytes.subspan(0, size));
         }
-        if (kind == 2) {
-            return use_word(session, "prepare;run;console;reject;begin_shutdown;advance_shutdown;finish", method, begin,
-                end);
+        i64 first = 0;
+        i64 at = 0;
+        while (at < size) {
+            if (resource_method_source_byte(kind, method, at) == i64(':')) {
+                first = at + 1;
+            }
+            at = at + 1;
         }
-        if (kind == 0) {
-            return use_word(session, "preparation;advance;output;request;cancel;finish", method, begin, end);
+        const i64 count = size - first;
+        if (end - begin != count) {
+            return 0;
         }
-        if (kind == 1) {
-            return use_word(session, "preparation;begin_volume;copy_volume;seal_volume;admit_storage;advance;finish",
-                method, begin, end);
+        at = 0;
+        while (at < count && session.good()) {
+            if (i64(session.source_byte(begin + at)) != resource_method_source_byte(kind, method, first + at)) {
+                return 0;
+            }
+            at = at + 1;
         }
-        return -1;
+        return 1;
     }
     auto resource_method_result(i64 kind, i64 method) -> i64 {
         if (kind == 5) {
@@ -938,6 +951,188 @@ export namespace compiler_catalog {
             return -1;
         }
         return i64(name.at(index));
+    }
+    // Canonical source spellings shared by resolution and publication.
+    // Like catalog_byte: -1 requests length; other invalid indices return -1.
+    auto resource_method_source_byte(i64 kind, i64 method, i64 index) -> i64 {
+        if (kind == 5) {
+            if (method == 0) {
+                return catalog_byte("prepare", index);
+            }
+            if (method == 1) {
+                return catalog_byte("activate", index);
+            }
+            if (method == 2) {
+                return catalog_byte("complete", index);
+            }
+            if (method == 3) {
+                return catalog_byte("force", index);
+            }
+            if (method == 4) {
+                return catalog_byte("retire", index);
+            }
+            if (method == 5) {
+                return catalog_byte("finish", index);
+            }
+            if (method == 6) {
+                return catalog_byte("invalidate_service", index);
+            }
+        }
+        if (kind == 4) {
+            if (method == 0) {
+                return catalog_byte("observe_table", index);
+            }
+            if (method == 1) {
+                return catalog_byte("observe_next_present", index);
+            }
+            if (method == 2) {
+                return catalog_byte("publish_empty_entry", index);
+            }
+            if (method == 3) {
+                return catalog_byte("clear_expected_entry", index);
+            }
+            if (method == 4) {
+                return catalog_byte("scrub_unpublished_frame", index);
+            }
+            if (method == 5) {
+                return catalog_byte("downgrade_snapshot_entry", index);
+            }
+            if (method == 6) {
+                return catalog_byte("snapshot_anchor_publish", index);
+            }
+            if (method == 7) {
+                return catalog_byte("snapshot_anchor_clear", index);
+            }
+            if (method == 8) {
+                return catalog_byte("frame_address", index);
+            }
+            if (method == 9) {
+                return catalog_byte("frame_index", index);
+            }
+            if (method == 10) {
+                return catalog_byte("shared_slots", index);
+            }
+            if (method == 11) {
+                return catalog_byte("shared_slot", index);
+            }
+            if (method == 12) {
+                return catalog_byte("shared_value", index);
+            }
+            if (method == 13) {
+                return catalog_byte("shared_upper", index);
+            }
+            if (method == 14) {
+                return catalog_byte("reserved_first", index);
+            }
+            if (method == 15) {
+                return catalog_byte("reserved_end", index);
+            }
+            if (method == 16) {
+                return catalog_byte("initialize_shared_upper", index);
+            }
+            if (method == 17) {
+                return catalog_byte("publish_shared_entry", index);
+            }
+            if (method == 18) {
+                return catalog_byte("copy_source_frame", index);
+            }
+            if (method == 19) {
+                return catalog_byte("fill_snapshot_chunk", index);
+            }
+            if (method == 20) {
+                return catalog_byte("clear_shared_entry", index);
+            }
+            if (method == 21) {
+                return catalog_byte("revoke_root", index);
+            }
+            if (method == 22) {
+                return catalog_byte("observe_snapshot_anchor", index);
+            }
+            if (method == 23) {
+                return catalog_byte("finish", index);
+            }
+        }
+        if (kind == 3) {
+            if (method == 0) {
+                return catalog_byte("size", index);
+            }
+            if (method == 1) {
+                return catalog_byte("at", index);
+            }
+            if (method == 2) {
+                return catalog_byte("set", index);
+            }
+            if (method == 3) {
+                return catalog_byte("finish", index);
+            }
+        }
+        if (kind == 2) {
+            if (method == 0) {
+                return catalog_byte("prepare", index);
+            }
+            if (method == 1) {
+                return catalog_byte("run", index);
+            }
+            if (method == 2) {
+                return catalog_byte("console", index);
+            }
+            if (method == 3) {
+                return catalog_byte("reject", index);
+            }
+            if (method == 4) {
+                return catalog_byte("begin_shutdown", index);
+            }
+            if (method == 5) {
+                return catalog_byte("advance_shutdown", index);
+            }
+            if (method == 6) {
+                return catalog_byte("finish", index);
+            }
+        }
+        if (kind == 0) {
+            if (method == 0) {
+                return catalog_byte("preparation", index);
+            }
+            if (method == 1) {
+                return catalog_byte("advance", index);
+            }
+            if (method == 2) {
+                return catalog_byte("output", index);
+            }
+            if (method == 3) {
+                return catalog_byte("request", index);
+            }
+            if (method == 4) {
+                return catalog_byte("cancel", index);
+            }
+            if (method == 5) {
+                return catalog_byte("finish", index);
+            }
+        }
+        if (kind == 1) {
+            if (method == 0) {
+                return catalog_byte("preparation", index);
+            }
+            if (method == 1) {
+                return catalog_byte("begin_volume", index);
+            }
+            if (method == 2) {
+                return catalog_byte("copy_volume", index);
+            }
+            if (method == 3) {
+                return catalog_byte("seal_volume", index);
+            }
+            if (method == 4) {
+                return catalog_byte("admit_storage", index);
+            }
+            if (method == 5) {
+                return catalog_byte("advance", index);
+            }
+            if (method == 6) {
+                return catalog_byte("finish", index);
+            }
+        }
+        return -1;
     }
     auto type_source_byte(i64 type, i64 index) -> i64 {
         if (type == 59) {

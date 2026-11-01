@@ -1,9 +1,9 @@
 import Publication.Fields
 namespace Aurora.Publication
 
-/-- Version-1 wire schema only, not an instruction-semantics catalogue. -/
+/-- Version-2 wire schema only, not an instruction-semantics catalogue. -/
 def schema : String → Option (List FieldKind)
-  | "aurora-published-ir" => some (["1", "types", "fields", "callables", "operands", "cfg", "resources"].map .literal)
+  | "aurora-published-ir" => some (["2", "types", "fields", "callables", "operands", "cfg", "resources"].map .literal)
   | "ir-counts" => some (List.replicate 11 .signed)
   | "ir-name-bytes" | "ir-literal-bytes" => some [.hex]
   | "ir-type" => some (List.replicate 6 .signed ++ List.replicate 3 .unsigned)
@@ -15,7 +15,7 @@ def schema : String → Option (List FieldKind)
   | "ir-slot" => some (List.replicate 6 .signed)
   | "ir-catalog-type" => some [.signed, .signed, .hex]
   | "ir-resource" => some [.signed, .signed, .signed, .hex]
-  | "ir-resource-method" => some (List.replicate 8 .signed ++ [.hex])
+  | "ir-resource-method" => some (List.replicate 8 .signed ++ [.hex, .hex])
   | "ir-operand" => some [.signed, .signed, .signed, .unsigned, .signed, .signed]
   | "ir-body" => some (List.replicate 3 .signed)
   | "ir-code" => some (List.replicate 4 .signed ++ [.unsigned] ++ List.replicate 8 .signed)
