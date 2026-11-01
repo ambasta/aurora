@@ -1,0 +1,33 @@
+fresh view=absent:0:0:0:0:0 step=failed completion=none reset=1 view=absent:0:0:0:0:0
+zero_bind bind=0 view=absent:0:0:0:0:0
+initial_exchange bind=1 exchange=initial view=waiting:1:0:0:0:0 completion=none
+initial_refusals bind=1 exchange=refused exchange=refused exchange=refused view=initial:1:0:0:0:0 exchange=initial exchange=refused view=waiting:1:0:0:0:0
+control_roundtrip bind=1 exchange=initial begin=1 view=delivery:1:1:1:0:0 completion=service step=resume delivered=1 view=processing:1:1:1:0:0 step=resume alive=resume exchange=reply alive=replied view=replied:1:1:1:0:0 control=1 view=waiting:1:1:1:0:0
+foreign_delivery bind=1 exchange=initial begin=1 delivered=0 delivered=0 view=delivery:1:1:1:0:0 delivered=1 delivered=0 view=processing:1:1:1:0:0
+reply_refusals bind=1 exchange=initial begin=1 exchange=refused delivered=1 exchange=refused exchange=refused exchange=refused view=processing:1:1:1:0:0 exchange=reply exchange=refused view=replied:1:1:1:0:0
+consume_control_once bind=1 exchange=initial begin=1 delivered=1 exchange=reply control=0 view=replied:1:1:1:0:0 control=1 control=0 view=waiting:1:1:1:0:0
+client_roundtrip bind=1 exchange=initial stage=1 client_step=launch view=delivery:1:1:1:7:7 completion=service delivered=1 client_step=resume exchange=reply client_step=replied consume=completion view=completion:1:1:1:7:7 completion=client complete=1 view=waiting:1:1:1:7:0 finish=1
+client_wrong_identity bind=1 exchange=initial stage=0 stage=1 stage=0 client_step=failed cancel=refused complete=0 finish=0 view=staged:1:0:0:0:7
+client_consume_refusals bind=1 exchange=initial stage=1 client_step=launch delivered=1 exchange=reply control=0 consume=refused view=replied:1:1:1:7:7 consume=completion complete=0 view=completion:1:1:1:7:7 complete=1 complete=0 view=waiting:1:1:1:7:0
+staged_cancel bind=1 exchange=initial stage=1 cancel=refused view=staged:1:0:0:0:7 cancel=settled view=waiting:1:0:0:0:0 finish=1
+delivered_cancel_drains bind=1 exchange=initial stage=1 client_step=launch cancel=draining view=delivery:1:1:1:7:7 delivered=1 cancel=draining exchange=reply consume=cancelled view=waiting:1:1:1:7:0 completion=none finish=1
+reply_cancelled_no_completion bind=1 exchange=initial stage=1 client_step=launch delivered=1 exchange=reply cancel=draining consume=cancelled complete=0 view=waiting:1:1:1:7:0
+raw_write_tail bind=1 exchange=initial stage=1 client_step=launch delivered=1 exchange=reply consume=tail view=staged:1:1:1:7:7 client_step=launch view=delivery:1:2:2:7:7 delivered=1 exchange=reply consume=completion complete=1 view=waiting:1:2:2:7:0
+raw_write_tail_cancel bind=1 exchange=initial stage=1 client_step=launch delivered=1 exchange=reply consume=tail cancel=settled view=waiting:1:1:1:7:0
+cancel_precedes_tail bind=1 exchange=initial stage=1 client_step=launch delivered=1 exchange=reply consume=cancelled view=waiting:1:1:1:7:0
+terminal_preserves_receipt bind=1 exchange=initial begin=1 delivered=1 invalidate=1 view=revoked:1:1:1:0:0 alive=failed step=failed completion=none invalidate=1 view=revoked:1:1:1:0:0
+stale_terminal bind=1 exchange=initial begin=1 delivered=1 invalidate=0 view=processing:1:1:1:0:0 invalidate=1 bind=1 invalidate=0 view=initial:2:1:0:0:0
+restart_retains_ordinal bind=1 exchange=initial begin=1 delivered=1 invalidate=1 bind=1 view=initial:2:1:0:0:0 exchange=initial begin=1 view=delivery:2:2:2:0:0
+same_incarnation_rebind bind=1 invalidate=1 bind=0 view=revoked:1:0:0:0:0
+reset_requires_drained bind=1 reset=0 exchange=initial reset=0 begin=1 reset=0 delivered=1 reset=0 exchange=reply reset=0 control=1 reset=0 invalidate=1 reset=1 view=absent:0:0:0:0:0 bind=1 view=initial:1:0:0:0:0
+maximum_once bind=1 exchange=initial begin=1 view=delivery:1:18446744073709551615:18446744073709551615:0:0 delivered=1 exchange=reply control=1 begin=0 view=waiting:1:18446744073709551615:18446744073709551615:0:0
+maximum_preserved_restart bind=1 exchange=initial begin=0 invalidate=1 bind=1 exchange=initial begin=0 view=waiting:2:18446744073709551615:0:0:0
+revoke_client bind=1 exchange=initial stage=1 client_step=launch delivered=1 invalidate=1 view=revoked:1:1:1:7:0 consume=refused cancel=refused complete=0 finish=1
+before_create deny=denied
+duplicate_create deny=denied
+not_excluded deny=denied
+reentrant deny=denied
+late_previous_reply bind=1 exchange=initial begin=1 delivered=1 exchange=reply control=1 begin=1 delivered=1 exchange=refused view=processing:1:2:2:0:0 exchange=reply view=replied:1:2:2:0:0
+maximum_incarnation bind=1 invalidate=1 bind=0 bind=0 bind=0 view=revoked:18446744073709551615:0:0:0:0
+pending_does_not_mint bind=1 exchange=initial stage=1 client_step=launch client_step=resume delivered=1 client_step=resume alive=resume client_step=resume view=processing:1:1:1:7:7
+completion_cancel bind=1 exchange=initial stage=1 client_step=launch delivered=1 exchange=reply consume=completion cancel=settled complete=0 view=waiting:1:1:1:7:0

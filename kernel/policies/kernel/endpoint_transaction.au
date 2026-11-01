@@ -1,0 +1,274 @@
+export module kernel.endpoint_transaction;
+
+export namespace kernel {
+    enum class EndpointPhase {
+        absent,
+        initial,
+        waiting,
+        staged,
+        delivery,
+        processing,
+        replied,
+        completion,
+        revoked
+    };
+    enum class EndpointExchange {
+        refused,
+        initial,
+        reply
+    };
+    enum class EndpointStep {
+        failed,
+        launch,
+        resume,
+        replied
+    };
+    enum class EndpointConsume {
+        refused,
+        completion,
+        cancelled,
+        tail
+    };
+    enum class EndpointCancel {
+        refused,
+        settled,
+        draining
+    };
+    enum class EndpointCompletion {
+        none,
+        service,
+        client
+    };
+
+    // An observation is copied evidence, never authority to name a physical
+    // process, select a destination, or replay an accepted transaction.
+    class EndpointObservation {
+    public:
+        u64 incarnation;
+        EndpointPhase phase;
+        u64 next;
+        u64 transaction;
+        u64 source;
+        u64 client;
+        EndpointObservation(u64 incarnation_input, EndpointPhase phase_input, u64 next_input, u64 transaction_input,
+            u64 source_input, u64 client_input) : incarnation(incarnation_input), phase(phase_input), next(next_input),
+            transaction(transaction_input), source(source_input), client(client_input) {
+        }
+    };
+
+    // One retained copied endpoint. Short effect-free loans select transitions;
+    // native code authenticates the physical participants and performs copies.
+    class EndpointTransaction {
+        u64 incarnation_value;
+        EndpointPhase state;
+        u64 sequence;
+        u64 transaction_value;
+        u64 source_value;
+        u64 client_value;
+    public:
+        EndpointTransaction(u64 previous) : incarnation_value(0u64), state(EndpointPhase::absent), sequence(previous),
+            transaction_value(0u64), source_value(0u64), client_value(0u64) {
+        }
+        auto observe() const -> EndpointObservation {
+            const EndpointObservation result = EndpointObservation(incarnation_value, state, sequence,
+                transaction_value, source_value, client_value);
+            return result;
+        }
+        // Production rebinding preserves the ordinal sequence. A service's
+        // independently authenticated incarnation must advance, never revive.
+        auto bind(u64 incarnation) -> bool {
+            if ((state != EndpointPhase::absent && state != EndpointPhase::revoked) || client_value != 0u64
+                || incarnation == 0u64 || incarnation <= incarnation_value) {
+                return false;
+            }
+            incarnation_value = incarnation;
+            state = EndpointPhase::initial;
+            transaction_value = 0u64;
+            source_value = 0u64;
+            return true;
+        }
+        // Only a completely revoked/empty composition may reset its sequence.
+        // The native boundary separately authenticates reclaimed participants.
+        auto reset() -> bool {
+            if ((state != EndpointPhase::absent && state != EndpointPhase::revoked) || client_value != 0u64) {
+                return false;
+            }
+            incarnation_value = 0u64;
+            state = EndpointPhase::absent;
+            sequence = 0u64;
+            transaction_value = 0u64;
+            source_value = 0u64;
+            return true;
+        }
+        auto accept_exchange(u64 incarnation, u64 transaction, u64 count) -> EndpointExchange {
+            if (incarnation == 0u64 || incarnation != incarnation_value || count > 65536u64) {
+                return EndpointExchange::refused;
+            }
+            if (state == EndpointPhase::initial && transaction == 0u64 && count == 0u64) {
+                state = EndpointPhase::waiting;
+                return EndpointExchange::initial;
+            }
+            if (state != EndpointPhase::processing || transaction == 0u64 || transaction != transaction_value) {
+                return EndpointExchange::refused;
+            }
+            state = EndpointPhase::replied;
+            return EndpointExchange::reply;
+        }
+        auto stage_client(u64 client) -> bool {
+            if (client == 0u64 || client_value != 0u64 || state != EndpointPhase::waiting) {
+                return false;
+            }
+            client_value = client;
+            state = EndpointPhase::staged;
+            return true;
+        }
+        // Only a new message mints an ordinal. Resuming execution or draining
+        // cancellation never reaches this branch and never renews a budget.
+        auto begin(u64 source) -> bool {
+            if (sequence == 18446744073709551615u64 || !((state == EndpointPhase::waiting && client_value == 0u64)
+                || (state == EndpointPhase::staged && client_value == source && source != 0u64))) {
+                return false;
+            }
+            sequence = sequence + 1u64;
+            transaction_value = sequence;
+            source_value = source;
+            state = EndpointPhase::delivery;
+            return true;
+        }
+        auto client_step(u64 client) -> EndpointStep {
+            if (client == 0u64 || client != client_value) {
+                return EndpointStep::failed;
+            }
+            if (state == EndpointPhase::staged) {
+                if (begin(client)) {
+                    return EndpointStep::launch;
+                }
+                return EndpointStep::failed;
+            }
+            if (source_value != client) {
+                return EndpointStep::failed;
+            }
+            return step();
+        }
+        auto initial_step() const -> EndpointStep {
+            if (state == EndpointPhase::initial) {
+                return EndpointStep::resume;
+            }
+            if (state == EndpointPhase::waiting && transaction_value == 0u64 && source_value == 0u64) {
+                return EndpointStep::replied;
+            }
+            return EndpointStep::failed;
+        }
+        auto step() const -> EndpointStep {
+            if (state == EndpointPhase::delivery || state == EndpointPhase::processing) {
+                return EndpointStep::resume;
+            }
+            if (state == EndpointPhase::replied) {
+                return EndpointStep::replied;
+            }
+            return EndpointStep::failed;
+        }
+        // Execution may already have revoked this root before returning a
+        // natural service terminal. It is a failed exchange, not a live reply.
+        auto observe_step(bool service_alive) const -> EndpointStep {
+            if (!service_alive) {
+                return EndpointStep::failed;
+            }
+            return step();
+        }
+        auto completion() const -> EndpointCompletion {
+            if (state == EndpointPhase::delivery) {
+                return EndpointCompletion::service;
+            }
+            if (state == EndpointPhase::completion) {
+                return EndpointCompletion::client;
+            }
+            return EndpointCompletion::none;
+        }
+        auto delivered(u64 incarnation, u64 transaction) -> bool {
+            if (incarnation == 0u64 || incarnation != incarnation_value || transaction == 0u64 || transaction
+                != transaction_value || state != EndpointPhase::delivery) {
+                return false;
+            }
+            state = EndpointPhase::processing;
+            return true;
+        }
+        auto consume_control(u64 transaction) -> bool {
+            if (transaction == 0u64 || transaction != transaction_value || client_value != 0u64 || state
+                != EndpointPhase::replied) {
+                return false;
+            }
+            state = EndpointPhase::waiting;
+            return true;
+        }
+        // 'more' is authenticated successful-write remainder evidence. Native
+        // copies the tail only after this decision; cancellation wins over it.
+        auto consume_client(u64 transaction, bool cancelled, bool more) -> EndpointConsume {
+            if (transaction == 0u64 || transaction != transaction_value || client_value == 0u64 || state
+                != EndpointPhase::replied) {
+                return EndpointConsume::refused;
+            }
+            if (cancelled) {
+                client_value = 0u64;
+                state = EndpointPhase::waiting;
+                return EndpointConsume::cancelled;
+            }
+            if (more) {
+                state = EndpointPhase::staged;
+                return EndpointConsume::tail;
+            }
+            state = EndpointPhase::completion;
+            return EndpointConsume::completion;
+        }
+        auto complete_client(u64 client) -> bool {
+            if (client == 0u64 || client != client_value || state != EndpointPhase::completion) {
+                return false;
+            }
+            client_value = 0u64;
+            state = EndpointPhase::waiting;
+            return true;
+        }
+        auto cancel(u64 client, bool cancelled) -> EndpointCancel {
+            if (client == 0u64 || !cancelled) {
+                return EndpointCancel::refused;
+            }
+            if (state == EndpointPhase::waiting && client_value == 0u64) {
+                return EndpointCancel::settled;
+            }
+            if (client != client_value) {
+                return EndpointCancel::refused;
+            }
+            if (state == EndpointPhase::staged || state == EndpointPhase::completion) {
+                client_value = 0u64;
+                state = EndpointPhase::waiting;
+                return EndpointCancel::settled;
+            }
+            if (state == EndpointPhase::delivery || state == EndpointPhase::processing || state
+                == EndpointPhase::replied) {
+                return EndpointCancel::draining;
+            }
+            return EndpointCancel::refused;
+        }
+        // Physical retirement may discard an undelivered client completion,
+        // but never withdraw an already dispatched server operation.
+        auto finish_client(u64 client) -> bool {
+            if (client == 0u64) {
+                return false;
+            }
+            if ((state == EndpointPhase::waiting || state == EndpointPhase::revoked) && client_value == 0u64) {
+                return true;
+            }
+            return complete_client(client);
+        }
+        auto invalidate(u64 incarnation) -> bool {
+            if (incarnation == 0u64 || incarnation != incarnation_value || state == EndpointPhase::absent) {
+                return false;
+            }
+            state = EndpointPhase::revoked;
+            client_value = 0u64;
+            // Keep the frozen transaction/source for authenticated terminal
+            // shutdown and bootstrap receipts. No phase remains deliverable.
+            return true;
+        }
+    };
+}

@@ -1,0 +1,67 @@
+module kernel_endpoint_root;
+import kernel.endpoint_transaction;
+
+// Effect-free loans of the one retained transaction owner. Native composition
+// authenticates physical participants; no source loan spans an effect.
+auto process_endpoint_create(u64 previous) -> kernel::EndpointTransaction {
+    const kernel::EndpointTransaction endpoint = kernel::EndpointTransaction(previous);
+    return endpoint;
+}
+auto process_endpoint_bind(kernel::EndpointTransaction& endpoint, u64 incarnation) -> bool {
+    return endpoint.bind(incarnation);
+}
+auto process_endpoint_reset(kernel::EndpointTransaction& endpoint) -> bool {
+    return endpoint.reset();
+}
+auto process_endpoint_observe(const kernel::EndpointTransaction& endpoint) -> kernel::EndpointObservation {
+    return endpoint.observe();
+}
+auto process_endpoint_accept_exchange(kernel::EndpointTransaction& endpoint, u64 incarnation, u64 transaction,
+    u64 count) -> kernel::EndpointExchange {
+    return endpoint.accept_exchange(incarnation, transaction, count);
+}
+auto process_endpoint_stage_client(kernel::EndpointTransaction& endpoint, u64 client) -> bool {
+    return endpoint.stage_client(client);
+}
+auto process_endpoint_begin(kernel::EndpointTransaction& endpoint, u64 source) -> bool {
+    return endpoint.begin(source);
+}
+auto process_endpoint_client_step(kernel::EndpointTransaction& endpoint, u64 client) -> kernel::EndpointStep {
+    return endpoint.client_step(client);
+}
+auto process_endpoint_step(const kernel::EndpointTransaction& endpoint) -> kernel::EndpointStep {
+    return endpoint.step();
+}
+auto process_endpoint_observe_step(const kernel::EndpointTransaction& endpoint,
+    bool service_alive) -> kernel::EndpointStep {
+    return endpoint.observe_step(service_alive);
+}
+auto process_endpoint_completion(const kernel::EndpointTransaction& endpoint) -> kernel::EndpointCompletion {
+    return endpoint.completion();
+}
+auto process_endpoint_delivered(kernel::EndpointTransaction& endpoint, u64 incarnation, u64 transaction) -> bool {
+    return endpoint.delivered(incarnation, transaction);
+}
+auto process_endpoint_consume_control(kernel::EndpointTransaction& endpoint, u64 transaction) -> bool {
+    return endpoint.consume_control(transaction);
+}
+auto process_endpoint_consume_client(kernel::EndpointTransaction& endpoint, u64 transaction, bool cancelled,
+    bool more) -> kernel::EndpointConsume {
+    return endpoint.consume_client(transaction, cancelled, more);
+}
+auto process_endpoint_complete_client(kernel::EndpointTransaction& endpoint, u64 client) -> bool {
+    return endpoint.complete_client(client);
+}
+auto process_endpoint_cancel(kernel::EndpointTransaction& endpoint, u64 client,
+    bool cancelled) -> kernel::EndpointCancel {
+    return endpoint.cancel(client, cancelled);
+}
+auto process_endpoint_finish_client(kernel::EndpointTransaction& endpoint, u64 client) -> bool {
+    return endpoint.finish_client(client);
+}
+auto process_endpoint_invalidate(kernel::EndpointTransaction& endpoint, u64 incarnation) -> bool {
+    return endpoint.invalidate(incarnation);
+}
+auto process_endpoint_initial_step(const kernel::EndpointTransaction& endpoint) -> kernel::EndpointStep {
+    return endpoint.initial_step();
+}

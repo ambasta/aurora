@@ -151,7 +151,7 @@ RULES = [
     {
         "profiles": ["*"],
         "imports": [],
-        "import_free": ["budget-root", "service-root"],
+        "import_free": ["budget-root", "service-root", "endpoint-root"],
         "forbidden": ["__au_runtime_service_saturation_create", "*process_service_saturation_create*"],
     },
     {
@@ -358,6 +358,8 @@ RULES = [
                     "uefi_process_drain_end",
                 ],
                 "source_entries": [
+                    "__au_runtime_endpoint_accept_exchange",
+                    "__au_runtime_endpoint_stage_client",
                     "__au_runtime_manager_space_value",
                     "__au_runtime_manager_fault_access",
                     "__au_runtime_manager_commit_fault_block",
@@ -381,6 +383,9 @@ RULES = [
                 "root": "__au_runtime_execution_authority_complete",
                 "physical": [],
                 "source_entries": [
+                    "__au_runtime_endpoint_observe",
+                    "__au_runtime_endpoint_delivered",
+                    "__au_runtime_endpoint_complete_client",
                     "__au_runtime_process_trap",
                     "__au_runtime_process_call",
                     "__au_runtime_manager_space_value",
@@ -392,6 +397,7 @@ RULES = [
                 "root": "__au_runtime_execution_authority_force",
                 "physical": [],
                 "source_entries": [
+                    "__au_runtime_endpoint_observe",
                     "__au_runtime_service_phase",
                     "__au_runtime_service_generation",
                     "__au_runtime_manager_space_value",
@@ -402,6 +408,7 @@ RULES = [
                 "root": "__au_runtime_execution_authority_retire",
                 "physical": [],
                 "source_entries": [
+                    "__au_runtime_endpoint_observe",
                     "__au_runtime_service_phase",
                     "__au_runtime_service_generation",
                     "__au_runtime_budget_used",
@@ -415,6 +422,7 @@ RULES = [
                 "root": "__au_runtime_execution_authority_invalidate_service",
                 "physical": [],
                 "source_entries": [
+                    "__au_runtime_endpoint_invalidate",
                     "__au_runtime_manager_space_value",
                     "__au_runtime_budget_used",
                     "__au_runtime_service_observe_terminal",
@@ -424,7 +432,11 @@ RULES = [
             {
                 "root": "__au_runtime_execution_authority_finish",
                 "physical": [],
-                "source_entries": ["__au_runtime_manager_audit_residents"],
+                "source_entries": [
+                    "__au_runtime_manager_space_value",
+                    "__au_runtime_endpoint_observe",
+                    "__au_runtime_manager_audit_residents",
+                ],
             },
         ],
         "imports:execution-lifecycle": [
@@ -513,6 +525,29 @@ RULES = [
             "__au_runtime_budget_available",
             "__au_runtime_budget_quantum",
             "__au_runtime_budget_used",
+        ],
+    },
+    # The production endpoint owns actual request/reply transitions in source.
+    {
+        "profiles": ["uefi/process-fixture", "uefi/production"],
+        "reachable": [
+            "__au_runtime_endpoint_create",
+            "__au_runtime_endpoint_bind",
+            "__au_runtime_endpoint_accept_exchange",
+            "__au_runtime_endpoint_stage_client",
+            "__au_runtime_endpoint_begin",
+            "__au_runtime_endpoint_client_step",
+            "__au_runtime_endpoint_initial_step",
+            "__au_runtime_endpoint_step",
+            "__au_runtime_endpoint_observe_step",
+            "__au_runtime_endpoint_completion",
+            "__au_runtime_endpoint_delivered",
+            "__au_runtime_endpoint_consume_control",
+            "__au_runtime_endpoint_consume_client",
+            "__au_runtime_endpoint_complete_client",
+            "__au_runtime_endpoint_cancel",
+            "__au_runtime_endpoint_finish_client",
+            "__au_runtime_endpoint_invalidate",
         ],
     },
     # Retained incarnation admission must be reached by real process paths.

@@ -552,6 +552,12 @@ process_service_object = custom_target('process-service-root',
               '--module-root', meson.project_source_root() / 'kernel/policies', '--local-symbols',
               '--referenced-reflection-only', '--bridge', files('../kernel/uefi/service-root-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+process_endpoint_object = custom_target('process-endpoint-root',
+    input: '../examples/kernel-endpoint-root.au', output: 'endpoint-root.o', depfile: 'endpoint-root.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'kernel/policies', '--local-symbols',
+              '--referenced-reflection-only', '--bridge', files('../kernel/uefi/endpoint-root-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 process_service_saturation_object = custom_target('process-service-saturation-root',
     input: 'kernel-process-service-root.au', output: 'service-saturation-root.o', depfile: 'service-saturation-root.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
@@ -570,7 +576,7 @@ kernel_process = executable('kernel-process', 'kernel-process.cpp', process_poli
     process_lifecycle_object[0], process_lifecycle_object[1],
     process_frame_allocator_object,
     process_word_view_object, process_memory_manager_object, process_memory_policy_object,
-    process_files_policy_object, process_budget_object, process_service_object, process_service_saturation_object,
+    process_files_policy_object, process_budget_object, process_service_object, process_endpoint_object, process_service_saturation_object,
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DAURORA_PROCESS_FIXTURE', '-DAURORA_UEFI_NVME'], link_args: ['-no-pie'],
     native: true, override_options: fixture_options, install: false)
 # The native static linker runs once-built objects and itself; its ELF output
@@ -603,6 +609,10 @@ test('kernel-process-resident-owner', python,
 test('kernel-process-service-bootstrap', python,
      args: ['-B', golden_runner, files('kernel-process/bootstrap.golden'), '--', kernel_process,
             'bootstrap', files('kernel-process/bootstrap.cases')],
+     suite: ['full', 'merge', 'dev'], timeout: 60)
+test('kernel-process-endpoint', python,
+     args: ['-B', golden_runner, files('kernel-process/endpoint.golden'), '--', kernel_process,
+            'endpoint', files('kernel-process/endpoint.cases')],
      suite: ['full', 'merge', 'dev'], timeout: 60)
 test('kernel-process-service-incarnation', python,
      args: ['-B', golden_runner, files('kernel-process/service-incarnation.golden'), '--', kernel_process,

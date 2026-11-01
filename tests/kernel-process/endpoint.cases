@@ -1,0 +1,35 @@
+# name initial_next operations; view is phase:incarnation:next:transaction:source:client.
+# Cases call the real source owner. Ordinals are observations, not authority.
+fresh 0 view step completion reset view
+zero_bind 0 bind:0 view
+initial_exchange 0 bind:1 exchange:1:0:0 view completion
+initial_refusals 0 bind:1 exchange:2:0:0 exchange:1:1:0 exchange:1:0:1 view exchange:1:0:0 exchange:1:0:0 view
+control_roundtrip 0 bind:1 exchange:1:0:0 begin:0 view completion step delivered:1:1 view step alive:1 exchange:1:1:64 alive:1 view control:1 view
+foreign_delivery 0 bind:1 exchange:1:0:0 begin:0 delivered:2:1 delivered:1:2 view delivered:1:1 delivered:1:1 view
+reply_refusals 0 bind:1 exchange:1:0:0 begin:0 exchange:1:1:64 delivered:1:1 exchange:2:1:64 exchange:1:2:64 exchange:1:1:65537 view exchange:1:1:64 exchange:1:1:64 view
+consume_control_once 0 bind:1 exchange:1:0:0 begin:0 delivered:1:1 exchange:1:1:64 control:2 view control:1 control:1 view
+client_roundtrip 0 bind:1 exchange:1:0:0 stage:7 client_step:7 view completion delivered:1:1 client_step:7 exchange:1:1:64 client_step:7 consume:1:0:0 view completion complete:7 view finish:7
+client_wrong_identity 0 bind:1 exchange:1:0:0 stage:0 stage:7 stage:8 client_step:8 cancel:8:1 complete:8 finish:8 view
+client_consume_refusals 0 bind:1 exchange:1:0:0 stage:7 client_step:7 delivered:1:1 exchange:1:1:64 control:1 consume:2:0:0 view consume:1:0:0 complete:8 view complete:7 complete:7 view
+staged_cancel 0 bind:1 exchange:1:0:0 stage:7 cancel:7:0 view cancel:7:1 view finish:7
+delivered_cancel_drains 0 bind:1 exchange:1:0:0 stage:7 client_step:7 cancel:7:1 view delivered:1:1 cancel:7:1 exchange:1:1:64 consume:1:1:0 view completion finish:7
+reply_cancelled_no_completion 0 bind:1 exchange:1:0:0 stage:7 client_step:7 delivered:1:1 exchange:1:1:64 cancel:7:1 consume:1:1:0 complete:7 view
+raw_write_tail 0 bind:1 exchange:1:0:0 stage:7 client_step:7 delivered:1:1 exchange:1:1:64 consume:1:0:1 view client_step:7 view delivered:1:2 exchange:1:2:64 consume:2:0:0 complete:7 view
+raw_write_tail_cancel 0 bind:1 exchange:1:0:0 stage:7 client_step:7 delivered:1:1 exchange:1:1:64 consume:1:0:1 cancel:7:1 view
+cancel_precedes_tail 0 bind:1 exchange:1:0:0 stage:7 client_step:7 delivered:1:1 exchange:1:1:64 consume:1:1:1 view
+terminal_preserves_receipt 0 bind:1 exchange:1:0:0 begin:0 delivered:1:1 invalidate:1 view alive:0 step completion invalidate:1 view
+stale_terminal 0 bind:1 exchange:1:0:0 begin:0 delivered:1:1 invalidate:2 view invalidate:1 bind:2 invalidate:1 view
+restart_retains_ordinal 0 bind:1 exchange:1:0:0 begin:0 delivered:1:1 invalidate:1 bind:2 view exchange:2:0:0 begin:0 view
+same_incarnation_rebind 0 bind:1 invalidate:1 bind:1 view
+reset_requires_drained 0 bind:1 reset exchange:1:0:0 reset begin:0 reset delivered:1:1 reset exchange:1:1:64 reset control:1 reset invalidate:1 reset view bind:1 view
+maximum_once 18446744073709551614 bind:1 exchange:1:0:0 begin:0 view delivered:1:18446744073709551615 exchange:1:18446744073709551615:64 control:18446744073709551615 begin:0 view
+maximum_preserved_restart 18446744073709551615 bind:1 exchange:1:0:0 begin:0 invalidate:1 bind:2 exchange:2:0:0 begin:0 view
+revoke_client 0 bind:1 exchange:1:0:0 stage:7 client_step:7 delivered:1:1 invalidate:1 view consume:1:0:0 cancel:7:1 complete:7 finish:7
+before_create 0 deny:before_create
+duplicate_create 0 deny:duplicate_create
+not_excluded 0 deny:not_excluded
+reentrant 0 deny:reentrant
+late_previous_reply 0 bind:1 exchange:1:0:0 begin:0 delivered:1:1 exchange:1:1:64 control:1 begin:0 delivered:1:2 exchange:1:1:64 view exchange:1:2:64 view
+maximum_incarnation 0 bind:18446744073709551615 invalidate:18446744073709551615 bind:18446744073709551615 bind:1 bind:0 view
+pending_does_not_mint 0 bind:1 exchange:1:0:0 stage:7 client_step:7 client_step:7 delivered:1:1 client_step:7 alive:1 client_step:7 view
+completion_cancel 0 bind:1 exchange:1:0:0 stage:7 client_step:7 delivered:1:1 exchange:1:1:64 consume:1:0:0 cancel:7:1 complete:7 view

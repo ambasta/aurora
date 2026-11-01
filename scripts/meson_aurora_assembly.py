@@ -217,6 +217,12 @@ def validate_native_abi(facts, source):
                 "kernel::ServiceAction",
                 "kernel::ServicePhase",
                 "kernel::ServiceReason",
+                "kernel::EndpointPhase",
+                "kernel::EndpointExchange",
+                "kernel::EndpointStep",
+                "kernel::EndpointConsume",
+                "kernel::EndpointCancel",
+                "kernel::EndpointCompletion",
                 "kernel::FileStatus",
                 "__au_exec_status",
                 "__au_exec_prepared",
@@ -366,6 +372,61 @@ def validate_native_abi(facts, source):
             ("detail", [], "u64", False),
         ):
             borrowed_entry(nominal, "process_service_" + name, tail, result, mutable)
+
+    if "# RETAINED_ENDPOINT_ABI:" in source:
+        nominal = retained_root("kernel::EndpointTransaction", reservation=48)
+        enum("kernel::EndpointPhase", "absent initial waiting staged delivery processing replied completion revoked")
+        enum("kernel::EndpointExchange", "refused initial reply")
+        enum("kernel::EndpointStep", "failed launch resume replied")
+        enum("kernel::EndpointConsume", "refused completion cancelled tail")
+        enum("kernel::EndpointCancel", "refused settled draining")
+        enum("kernel::EndpointCompletion", "none service client")
+        record(
+            "kernel::EndpointObservation",
+            48,
+            [
+                ("incarnation", "u64", 0),
+                ("phase", "kernel::EndpointPhase", 0),
+                ("next", "u64", 0),
+                ("transaction", "u64", 0),
+                ("source", "u64", 0),
+                ("client", "u64", 0),
+            ],
+        )
+        record(
+            "kernel::EndpointTransaction",
+            48,
+            [
+                ("incarnation_value", "u64", 0),
+                ("state", "kernel::EndpointPhase", 0),
+                ("sequence", "u64", 0),
+                ("transaction_value", "u64", 0),
+                ("source_value", "u64", 0),
+                ("client_value", "u64", 0),
+            ],
+        )
+        entry("process_endpoint_create", ["u64"], "kernel::EndpointTransaction")
+        for name, tail, result, mutable in (
+            ("bind", ["u64"], "bool", True),
+            ("reset", [], "bool", True),
+            ("observe", [], "kernel::EndpointObservation", False),
+            ("accept_exchange", ["u64", "u64", "u64"], "kernel::EndpointExchange", True),
+            ("stage_client", ["u64"], "bool", True),
+            ("begin", ["u64"], "bool", True),
+            ("client_step", ["u64"], "kernel::EndpointStep", True),
+            ("step", [], "kernel::EndpointStep", False),
+            ("initial_step", [], "kernel::EndpointStep", False),
+            ("observe_step", ["bool"], "kernel::EndpointStep", False),
+            ("completion", [], "kernel::EndpointCompletion", False),
+            ("delivered", ["u64", "u64"], "bool", True),
+            ("consume_control", ["u64"], "bool", True),
+            ("consume_client", ["u64", "bool", "bool"], "kernel::EndpointConsume", True),
+            ("complete_client", ["u64"], "bool", True),
+            ("cancel", ["u64", "bool"], "kernel::EndpointCancel", True),
+            ("finish_client", ["u64"], "bool", True),
+            ("invalidate", ["u64"], "bool", True),
+        ):
+            borrowed_entry(nominal, "process_endpoint_" + name, tail, result, mutable)
 
     if "# WORD_VIEW_TEST_ABI:" in source:
         nominal = retained_root("kernel_word_test::WordViewFixture")

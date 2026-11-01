@@ -17,13 +17,43 @@ enum against the compiler's ABI facts (`PROCESS_POLICY_ABI` in
 `scripts/meson_aurora_assembly.py`). The retained Aurora `ExecutionOwner` owns both resident lifecycles; separate
 MemoryManager, BudgetLedger and ServiceIncarnation roots retain their existing
 authority. Trusted C++ owns authenticated physical execution/trap observations,
-endpoint/transaction records, firmware reads, page-table effects, bounded messages,
+endpoint buffers and physical transaction receipts, firmware reads, page-table effects, bounded messages,
 LAPIC and output. `services/service/files.au` owns filesystem tables, records and
 bytes in its own process. The former native file-store adapter and its ABI are
 now test-only references beneath `tests/`, never kernel image inputs. Assembly keeps the
 trap entry (`kernel/exceptions.S`) and the CPL 3 transition (`process-user.S`).
 Each C++ decoder rejects a result outside its closed encoding before using it.
 
+
+### Retained copied endpoint transaction
+
+`kernel.endpoint_transaction` owns the one process endpoint's transaction phase,
+nonwrapping message ordinal, source identity and client completion obligation.
+Short source transitions select initial Serve admission, new dispatch versus
+resumption, reply consumption, raw-write tail restaging and cancellation settlement
+versus draining. Native `Endpoint` retains no mutable transaction phase or ordinal
+ledger. Production service rebinding preserves the sequence; independent fixture
+compositions reset it only after physical participants have been reclaimed.
+
+Native code still authenticates the actual service incarnation, client run,
+stopped frame, endpoint window and user ranges, performs bounded copies and
+restarts the server budget only for a source-selected new message. Cancellation
+and expiry remain separate native evidence; delivered work drains rather than
+being replayed or described as rolled back. Invalidation revokes delivery and
+completion while retaining the frozen transaction/source observation for outer
+bootstrap and shutdown receipts. Natural service termination can invalidate the
+endpoint before an exchange step returns; that is a failed exchange, not a live
+reply or a reason to restore old state.
+
+Opaque root loans are effect-free and nonreentrant. The trusted adapter admits
+only the quiet supervisor or the exact authenticated syscall scope, validates
+unchanged CR3 and active context, and closes the loan before any copy, CR3 change,
+timer effect or user entry. Physical delivery acknowledgements run after restoring
+the kernel root. Copied observations support physical assertions and diagnostics;
+they neither grant authority nor select native lifecycle transitions. This is the
+existing fixed process endpoint, not the separate legacy fixture Mailbox, a
+general IPC abstraction, scheduler or asynchronous ownership feature. Final-source
+hosted, stack, image and guest qualification remains required.
 
 ### Fixed source execution owner
 
