@@ -8,7 +8,7 @@ auto process_load_create() -> kernel::CommittedLoad {
 auto process_load_next(const kernel::CommittedLoad& operation) -> kernel::LoadRequest {
     return operation.next();
 }
-auto process_load_accept(kernel::CommittedLoad& operation, kernel::LoadAction action, bool ok, u64 status,
-    u64 value, u64 count) -> bool {
+auto process_load_accept(kernel::CommittedLoad& operation, kernel::LoadAction action, bool ok, u64 status, u64 value,
+    u64 count) -> bool {
     return operation.accept(action, ok, status, value, count);
 }
