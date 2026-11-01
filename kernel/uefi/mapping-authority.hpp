@@ -59,6 +59,8 @@ private:
     SourceKind source_kind_ = SourceKind::none;
     const std::byte *source_ = nullptr;
     U64 source_bytes_ = 0, source_epoch_ = 0, source_ticket_ = 0, boot_bytes_ = 0;
+    const std::byte *loader_buffer_ = nullptr;
+    U64 loader_bytes_ = 0, boot_table_pages_ = 0;
     static inline MappingAuthority *owner_ = nullptr;
     static void require(bool condition) {
         if (!condition)
@@ -265,6 +267,41 @@ private:
                 !scoped_ && !parser_pinned_ && source_kind_ == SourceKind::none && space_->closed() &&
                 interrupts_off() && current_root() == kernel_root_ && binding_->identity());
     }
+    // The only registered chunk object is the supervisor's static endpoint
+    // buffer. Its boot-arena mapping is identity-mapped, but that is CHECKED
+    // against every actual leaf, never inferred from a native pointer value.
+    auto validate_loader_source(U64 first, U64 bytes) const -> void {
+        const auto base = reinterpret_cast<std::uintptr_t>(loader_buffer_);
+        require(loader_buffer_ && bytes && first >= base && first - base <= loader_bytes_ &&
+                bytes <= loader_bytes_ - (first - base) && current_root() == kernel_root_ && interrupts_off() &&
+                space_->closed());
+        const PageTables tables{kernel_root_, static_cast<std::size_t>(boot_table_pages_)};
+        const U64 last = first + bytes - 1;
+        for (U64 page = first & ~U64{4095};; page += frames::page) {
+            const U64 leaf = tables.entry(page), physical = leaf & KernelSpace::address_mask;
+            require((leaf & ~KernelSpace::address_mask & ~KernelSpace::hardware_bits) == KernelSpace::data_flags &&
+                    physical < physical_limit_ && physical % frames::page == 0 && physical == page &&
+                    !ranges_->index(physical).has_value());
+            if (last - page < frames::page)
+                break;
+        }
+    }
+    // Private boot-owner registration, not an arbitrary-span public pin API.
+    // The native initializer supplies the admitted arena/table inventory; the
+    // exact static object is selected by register_loader_source, not its caller.
+    auto register_loader_buffer(std::span<const std::byte> bytes, U64 arena, U64 table_pages) -> void {
+        pin_ready();
+        const auto first = reinterpret_cast<std::uintptr_t>(bytes.data());
+        require(!loader_buffer_ && !bytes.empty() && bytes.size() <= 65536 && arena >= 0x100000 &&
+                arena % frames::page == 0 && arena <= 0x100000000ULL - Handoff::arena_bytes &&
+                kernel_root_ == arena + Handoff::tables_offset && table_pages && table_pages <= Handoff::table_pages &&
+                first >= arena && first - arena <= Handoff::arena_bytes &&
+                bytes.size() <= Handoff::arena_bytes - (first - arena));
+        loader_buffer_ = bytes.data();
+        loader_bytes_ = bytes.size();
+        boot_table_pages_ = table_pages;
+        validate_loader_source(first, bytes.size());
+    }
     auto validate_snapshot_identity(U64 epoch) const -> void {
         const U64 ticket = scalar(snapshot_offset + 24), index = ticket & 0xffffffff;
         const U64 record = bank(0, index);
@@ -450,10 +487,12 @@ public:
         require(!bytes.empty() && bytes.size() <= 65536);
         return SourcePin(*this, SourceKind::arguments, bytes, 0);
     }
-    [[nodiscard]] auto loader_chunk_source(std::span<const std::byte> bytes, U64 epoch) -> SourcePin {
+    [[nodiscard]] auto loader_chunk_source(U64 offset, U64 count, U64 epoch) -> SourcePin {
         pin_ready();
-        require(!bytes.empty() && bytes.size() <= 65536 && epoch && scalar(snapshot_offset + 8) == epoch &&
-                scalar(snapshot_offset + 16) == 1);
+        require(loader_buffer_ && count && offset <= loader_bytes_ && count <= loader_bytes_ - offset && epoch &&
+                scalar(snapshot_offset + 8) == epoch && scalar(snapshot_offset + 16) == 1);
+        const auto bytes = std::span<const std::byte>{loader_buffer_, loader_bytes_}.subspan(offset, count);
+        validate_loader_source(reinterpret_cast<std::uintptr_t>(bytes.data()), bytes.size());
         return SourcePin(*this, SourceKind::chunk, bytes, epoch);
     }
     class SnapshotReadPin final {
@@ -762,6 +801,7 @@ public:
                 self.scalar(snapshot_offset + 16) == 1 && source <= self.source_bytes_ &&
                 count <= self.source_bytes_ - source && destination <= self.scalar(snapshot_offset + 32) &&
                 count <= self.scalar(snapshot_offset + 32) - destination);
+        self.validate_loader_source(reinterpret_cast<std::uintptr_t>(self.source_), self.source_bytes_);
         const auto directory = self.table(self.scalar(snapshot_offset + 24));
         require(directory.snapshot && directory.level == 2 &&
                 (KernelSpace::table_view(0)[2] & ~KernelSpace::hardware_bits) ==

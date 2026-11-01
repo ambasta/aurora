@@ -396,7 +396,22 @@ Native copy pins permit only the exact image-map, argument-map or snapshot-fill
 wrapper. Image and argument copies target a building resident; snapshot image
 copies additionally authenticate the sealed snapshot epoch, directory generation,
 extent and matching future owner. A chunk pin permits only filling its current
-unsealed snapshot. Ordinary manager operations reject live copy pins, including
+unsealed snapshot. Its source is now only a bounded offset/count in the exact
+static endpoint reply buffer registered once by the boot owner; arbitrary native
+spans cannot mint chunk pins. Registration, pin acquisition and the copy edge walk
+every covered source page in the admitted boot-table pool under the current kernel
+root. Exact supervisor RW/NX identity leaves (allowing hardware A/D bits), physical
+width and exclusion from the same managed frame inventory establish native-checked
+source/destination backing separation. These checks include partial end pages.
+The endpoint object and boot mappings remain live/stable in this synchronous,
+IRQ-off, nonreentrant single-CPU profile: no callback, endpoint exchange or CR3
+switch occurs during the fill. This is not a C++ lifetime proof, SMP/DMA exclusion,
+TLB-consistency proof or strengthening of argument-source pins. Native decoding,
+boot-inventory fidelity and absence of concurrent writers remain trusted.
+Later-page failures can retain earlier payload writes; scratch-window PTE updates
+are separate control effects. Fatal `require` does not promise rollback or RAII
+cleanup. No byte-copy/native refinement or `A.Enabled` theorem is claimed.
+Ordinary manager operations reject live copy pins, including
 snapshot retirement; parser pins reject every manager scope and activation.
 These purposes remain private native scope state, not source tokens or receipts.
 No mutable snapshot span escapes. Audits classify one copied table using lexical

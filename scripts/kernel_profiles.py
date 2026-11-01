@@ -366,6 +366,19 @@ MAPPING_AUTHORITY_PROBES = (
 )
 for number, mode in enumerate(MAPPING_AUTHORITY_PROBES, 45):
     PROCESS_CASES[mode] = (number, ())
+# Source provenance refusals share the same fixture binary and outer gate.
+LOADER_SOURCE_PROBES = (
+    "process-authority-loader-end",
+    "process-authority-loader-offset-overflow",
+    "process-authority-loader-count-overflow",
+    "process-authority-loader-missing-leaf",
+    "process-authority-loader-illegal-leaf",
+    "process-authority-loader-physical-alias",
+    "process-authority-loader-reregister",
+)
+for number, mode in enumerate(LOADER_SOURCE_PROBES, 73):
+    PROCESS_CASES[mode] = (number, ())
+MAPPING_AUTHORITY_PROBES += LOADER_SOURCE_PROBES
 PROCESS_CASES["process-require-user"] = (
     44,
     ((8, 0, 0, "bin/hostile", "hostile require"), (8, 0, 0, "bin/hostile", "hostile")),
