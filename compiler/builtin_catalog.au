@@ -119,6 +119,42 @@ export namespace compiler_catalog {
     auto maximum_word() -> i64 {
         return 32;
     }
+    // A copied, bounded spelling: no span escapes an ordinary function.
+    class CatalogWord {
+        builtin::array<u8, 32> payload;
+        i64 count;
+    public:
+        CatalogWord() : payload{}, count(0) {
+        }
+        auto clear() -> i64 {
+            count = 0;
+            return -1;
+        }
+        auto size() const -> i64 {
+            return count;
+        }
+        auto capacity() const -> i64 {
+            const builtin::span<const u8> all = borrow_bytes(payload);
+            return all.size();
+        }
+        auto assign(builtin::span<const u8> name) -> i64 {
+            clear();
+            if (name.size() < 1 || name.size() > capacity() || name.size() > maximum_word()) {
+                return -1;
+            }
+            i64 at = 0;
+            while (at < name.size()) {
+                payload[at] = name.at(at);
+                at = at + 1;
+            }
+            count = name.size();
+            return count;
+        }
+        auto bytes() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(payload);
+            return all.subspan(0, count);
+        }
+    };
     auto word(builtin::span<const u8> words, i64 part) -> Word {
         i64 at = 0;
         i64 begin = 0;
@@ -731,30 +767,14 @@ export namespace compiler_catalog {
         return 0;
     }
     auto resource_method_word(compiler_resolver::Session& session, i64 kind, i64 method, i64 begin, i64 end) -> i64 {
-        if (kind == 5) {
-            return use_word(session, "prepare;activate;complete;force;retire;finish;invalidate_service", method, begin,
-                end);
+        if (kind < 0 || kind >= resource_count()) {
+            return -1;
         }
-        if (kind == 4) {
-            return use_word(session,
-                "observe_table;observe_next_present;publish_empty_entry;clear_expected_entry;scrub_unpublished_frame;downgrade_snapshot_entry;snapshot_anchor_publish;snapshot_anchor_clear;frame_address;frame_index;shared_slots;shared_slot;shared_value;shared_upper;reserved_first;reserved_end;initialize_shared_upper;publish_shared_entry;copy_source_frame;fill_snapshot_chunk;clear_shared_entry;revoke_root;observe_snapshot_anchor;finish",
-                method, begin, end);
+        CatalogWord name = CatalogWord();
+        if (resource_method_source(name, kind, method) < 1) {
+            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
         }
-        if (kind == 3) {
-            return use_word(session, "size;at;set;finish", method, begin, end);
-        }
-        if (kind == 2) {
-            return use_word(session, "prepare;run;console;reject;begin_shutdown;advance_shutdown;finish", method, begin,
-                end);
-        }
-        if (kind == 0) {
-            return use_word(session, "preparation;advance;output;request;cancel;finish", method, begin, end);
-        }
-        if (kind == 1) {
-            return use_word(session, "preparation;begin_volume;copy_volume;seal_volume;admit_storage;advance;finish",
-                method, begin, end);
-        }
-        return -1;
+        return use_word(session, name.bytes(), 0, begin, end);
     }
     auto resource_method_result(i64 kind, i64 method) -> i64 {
         if (kind == 5) {
@@ -938,6 +958,188 @@ export namespace compiler_catalog {
             return -1;
         }
         return i64(name.at(index));
+    }
+    // Canonical source spellings shared by resolution and publication.
+    // Dispatch once into caller-owned storage; invalid selectors clear it.
+    auto resource_method_source(CatalogWord& name, i64 kind, i64 method) -> i64 {
+        if (kind == 5) {
+            if (method == 0) {
+                return name.assign("prepare");
+            }
+            if (method == 1) {
+                return name.assign("activate");
+            }
+            if (method == 2) {
+                return name.assign("complete");
+            }
+            if (method == 3) {
+                return name.assign("force");
+            }
+            if (method == 4) {
+                return name.assign("retire");
+            }
+            if (method == 5) {
+                return name.assign("finish");
+            }
+            if (method == 6) {
+                return name.assign("invalidate_service");
+            }
+        }
+        if (kind == 4) {
+            if (method == 0) {
+                return name.assign("observe_table");
+            }
+            if (method == 1) {
+                return name.assign("observe_next_present");
+            }
+            if (method == 2) {
+                return name.assign("publish_empty_entry");
+            }
+            if (method == 3) {
+                return name.assign("clear_expected_entry");
+            }
+            if (method == 4) {
+                return name.assign("scrub_unpublished_frame");
+            }
+            if (method == 5) {
+                return name.assign("downgrade_snapshot_entry");
+            }
+            if (method == 6) {
+                return name.assign("snapshot_anchor_publish");
+            }
+            if (method == 7) {
+                return name.assign("snapshot_anchor_clear");
+            }
+            if (method == 8) {
+                return name.assign("frame_address");
+            }
+            if (method == 9) {
+                return name.assign("frame_index");
+            }
+            if (method == 10) {
+                return name.assign("shared_slots");
+            }
+            if (method == 11) {
+                return name.assign("shared_slot");
+            }
+            if (method == 12) {
+                return name.assign("shared_value");
+            }
+            if (method == 13) {
+                return name.assign("shared_upper");
+            }
+            if (method == 14) {
+                return name.assign("reserved_first");
+            }
+            if (method == 15) {
+                return name.assign("reserved_end");
+            }
+            if (method == 16) {
+                return name.assign("initialize_shared_upper");
+            }
+            if (method == 17) {
+                return name.assign("publish_shared_entry");
+            }
+            if (method == 18) {
+                return name.assign("copy_source_frame");
+            }
+            if (method == 19) {
+                return name.assign("fill_snapshot_chunk");
+            }
+            if (method == 20) {
+                return name.assign("clear_shared_entry");
+            }
+            if (method == 21) {
+                return name.assign("revoke_root");
+            }
+            if (method == 22) {
+                return name.assign("observe_snapshot_anchor");
+            }
+            if (method == 23) {
+                return name.assign("finish");
+            }
+        }
+        if (kind == 3) {
+            if (method == 0) {
+                return name.assign("size");
+            }
+            if (method == 1) {
+                return name.assign("at");
+            }
+            if (method == 2) {
+                return name.assign("set");
+            }
+            if (method == 3) {
+                return name.assign("finish");
+            }
+        }
+        if (kind == 2) {
+            if (method == 0) {
+                return name.assign("prepare");
+            }
+            if (method == 1) {
+                return name.assign("run");
+            }
+            if (method == 2) {
+                return name.assign("console");
+            }
+            if (method == 3) {
+                return name.assign("reject");
+            }
+            if (method == 4) {
+                return name.assign("begin_shutdown");
+            }
+            if (method == 5) {
+                return name.assign("advance_shutdown");
+            }
+            if (method == 6) {
+                return name.assign("finish");
+            }
+        }
+        if (kind == 0) {
+            if (method == 0) {
+                return name.assign("preparation");
+            }
+            if (method == 1) {
+                return name.assign("advance");
+            }
+            if (method == 2) {
+                return name.assign("output");
+            }
+            if (method == 3) {
+                return name.assign("request");
+            }
+            if (method == 4) {
+                return name.assign("cancel");
+            }
+            if (method == 5) {
+                return name.assign("finish");
+            }
+        }
+        if (kind == 1) {
+            if (method == 0) {
+                return name.assign("preparation");
+            }
+            if (method == 1) {
+                return name.assign("begin_volume");
+            }
+            if (method == 2) {
+                return name.assign("copy_volume");
+            }
+            if (method == 3) {
+                return name.assign("seal_volume");
+            }
+            if (method == 4) {
+                return name.assign("admit_storage");
+            }
+            if (method == 5) {
+                return name.assign("advance");
+            }
+            if (method == 6) {
+                return name.assign("finish");
+            }
+        }
+        return name.clear();
     }
     auto type_source_byte(i64 type, i64 index) -> i64 {
         if (type == 59) {

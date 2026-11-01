@@ -1,6 +1,6 @@
 # Checked published-IR consumer
 
-This standalone Lean project consumes the actual version-1
+This standalone Lean project consumes the actual version-2
 [published listing](../../compiler/IR-PUBLICATION.md). The current D1 checkpoint
 checks wire syntax and the specific structural predicates below. An optional
 root selection additionally checks the `scalar-receiver-v1` instruction/type/CFG
@@ -14,7 +14,7 @@ admission, compiler correctness or kernel safety.
 `AsciiRun`/`Frames` specify printable ASCII payloads and LF terminators with
 consecutive spans covering the entire input. `Words`, `Digits`, `HexRun` and
 `FieldText` specify exact token boundaries, canonical bounded integers and
-lowercase hex. `RecordText` specifies the version-1 fixed tag/arity/field-kind
+lowercase hex. `RecordText` specifies the version-2 fixed tag/arity/field-kind
 schema. Known human-display tags are nonauthoritative; unknown tags reject.
 `WireDocument` relates all decoded records to the **same input and exact spans**
 used by framing. No host parser, golden AST or digest stands in for this relation.
@@ -29,7 +29,8 @@ actual integer values rather than the convenience accessor's default.
   leading/trailing display records outside the envelope;
 - published pool counts, dense pool identities and declared operational limits;
 - name/type/slot/payload ranges listed explicitly in `poolReferences`;
-- complete canonical field/leaf and resource-method keyed groups;
+- complete canonical field/leaf and resource-method keyed groups, including
+  nonempty ASCII identifier source-method spellings unique within each resource;
 - exact retained-body framing, consecutive positions, repeated counts and
   trailer count through the independent `BodyTrace` relation.
 
@@ -44,8 +45,14 @@ This consumer currently requires strictly increasing original instruction IDs
 and body callable IDs, nonempty retained bodies and the canonical section order.
 Sparse original IDs and adjacent labels remain permitted. Strict increase is a
 sufficient uniqueness restriction; rejecting a reordered listing does **not**
-prove that listing invalid under the publisher format. No linear complexity
-claim is made for the whole consumer (class/resource grouping scans pools).
+prove that listing invalid under the publisher format. Version 2 rejects old
+headers and missing source-method spelling columns. The
+exact spelling bytes, native linkage and signature are retained separately;
+name uniqueness does not prove that a producer published the right spelling or
+that source resolution/native effects implement it. Source-call binding remains
+a separate obligation.
+
+No linear complexity claim is made for the whole consumer (class/resource grouping scans pools).
 
 D1 is not full metadata or global IR verification. Operand-role-dependent nested
 references, instruction forms/flags/targets, type constructors, leaf expansion,

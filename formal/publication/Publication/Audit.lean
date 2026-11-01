@@ -23,3 +23,5 @@ import Publication
 #print axioms Aurora.Publication.slice_sound
 #print axioms Aurora.Publication.predecessors_reachable
 #print axioms Aurora.Publication.function_reachable
+#print axioms Aurora.Publication.source_method_name_nonempty
+#print axioms Aurora.Publication.resource_method_name_unique

@@ -480,6 +480,19 @@ export namespace compiler_ir_listing {
                     at = at + 1;
                     value = compiler_catalog::resource_runtime_byte(kind, method, at);
                 }
+                compiler_catalog::CatalogWord source = compiler_catalog::CatalogWord();
+                const i64 source_size = compiler_catalog::resource_method_source(source, kind, method);
+                if (source_size < 1 || source_size > compiler_catalog::maximum_word() || !out.byte(' ')) {
+                    return false;
+                }
+                const builtin::span<const u8> source_bytes = source.bytes();
+                at = 0;
+                while (at < source_size) {
+                    if (!hex_byte(out, i64(source_bytes.at(at)))) {
+                        return false;
+                    }
+                    at = at + 1;
+                }
                 if (!out.byte('\n')) {
                     return false;
                 }
@@ -491,7 +504,7 @@ export namespace compiler_ir_listing {
     }
     auto canonical(Listing& out, const compiler_ir_metadata::MetadataStore& metadata,
         const compiler_ir_instructions::InstructionStore& instructions) -> bool {
-        if (!out.word("aurora-published-ir 1 types fields callables operands cfg resources\nir-counts") || !integer(out,
+        if (!out.word("aurora-published-ir 2 types fields callables operands cfg resources\nir-counts") || !integer(out,
             metadata.byte_count()) || !integer(out, metadata.type_count()) || !integer(out, metadata.class_count())
             || !integer(out, metadata.enum_count()) || !integer(out, metadata.callable_count()) || !integer(out,
             metadata.slot_count()) || !integer(out, instructions.instruction_count()) || !integer(out,

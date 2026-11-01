@@ -1,4 +1,4 @@
-# Published IR records (version 1)
+# Published IR records (version 2)
 
 The existing pipeline listing option publishes generic typed records from the
 admitted metadata, normalized instruction store and builtin catalogue. It runs
@@ -6,7 +6,7 @@ only after verification and graph checking. **Listing replaces emission**: it
 is not an object-code certificate or a source-to-IR proof. The ordinary compiler
 CLI does not expose this test/tooling option.
 
-The `aurora-published-ir 1 types fields callables operands cfg resources` header
+The `aurora-published-ir 2 types fields callables operands cfg resources` header
 names the represented capabilities. These are not a claim of complete compiler
 semantics: reflection descriptors/views, native execution, hardware completion
 and the source-to-IR relation are not specified here. A proof consumer must
@@ -69,9 +69,20 @@ name cannot inject a new machine-record line.
   name hex. Resource kinds identify the existing sealed resource families.
 - `ir-resource-method`: kind, method ID, result catalogue ID, result metadata
   kind, parameter count, uniform parameter catalogue ID and metadata kind,
-  effect classification, runtime binding symbol hex. These values come directly
+  effect classification, runtime binding symbol hex, source method name hex.
+  Version 2 appends the source spelling after the existing runtime symbol; all
+  preceding field indices are unchanged. These values come directly
   from `compiler_catalog::resource_method_*` and `resource_runtime_byte`, not a
-  second signature table. This is the source/admission signature, **not** the
+  second signature table. `resource_method_source` is the single spelling
+  inventory shared by source admission and publication. Each lookup copies one
+  checked name into a bounded inline `CatalogWord` owner; resolution and listing
+  consume its receiver-bound bytes without repeating method selection per byte.
+  The bounded name owner neither retains its input span nor requires heap
+  allocation. Runtime symbol names are
+  not decoded to guess source names. Consumers require nonempty identifier-shaped
+  source names unique within each resource kind (not globally unique). Version-1
+  headers and missing spelling columns are not accepted by the version-2 consumer.
+  This is the source/admission signature, **not** the
   native ABI: hidden root/epoch/field/output arguments and native call lowering
   are not serialized here. Zero-parameter operations can have parameter kind -1.
   Effect classifications are the existing admission categories (0 observation,

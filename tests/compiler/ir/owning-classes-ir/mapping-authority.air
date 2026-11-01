@@ -170,10 +170,10 @@ end
 ; CASE: publication retains sealed resource field types and call operands
 ; BASE: atomic banks and synchronous mapping authority
 ; RUN: metadata
-; CHECK: aurora-published-ir 1 types fields callables operands cfg resources
+; CHECK: aurora-published-ir 2 types fields callables operands cfg resources
 ; CHECK: ir-type {{[0-9]+}} 26 {{[0-9]+ [0-9]+}} 0 0 0 0 0
 ; CHECK: ir-field 0 4 {{[0-9]+}} 0 0 0 1 64
-; CHECK: ir-resource-method 4 2 3 1 4 1 7 1 {{[0-9a-f]+}}
+; CHECK: ir-resource-method 4 2 3 1 4 1 7 1 {{[0-9a-f]+}} 7075626c6973685f656d7074795f656e747279{{$}}
 ; CHECK: body mapping_publish 1
 ; CHECK-NEXT: ir-body 1 10 0
 ; CHECK: ir-code 1 8 {{[0-9 -]+}}

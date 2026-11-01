@@ -119,9 +119,40 @@ def classComplete (t : Tables) (r : Record) : Prop :=
   Int.ofNat fs.size = r.integer 6 ∧ Dense fs 1 ∧ Int.ofNat ls.size = r.integer 7 ∧ Dense ls 1
 instance (t : Tables) (r : Record) : Decidable (classComplete t r) := by unfold classComplete; infer_instance
 
+/-- Canonical source method names in this publication profile are nonempty ASCII
+    identifiers. These are exact published bytes, not decoded native linkages. -/
+def SourceNameStart (b : Nat) : Prop := (65 ≤ b ∧ b ≤ 90) ∨ (97 ≤ b ∧ b ≤ 122) ∨ b = 95
+def SourceNameByte (b : Nat) : Prop := SourceNameStart b ∨ (48 ≤ b ∧ b ≤ 57)
+instance (b : Nat) : Decidable (SourceNameStart b) := by unfold SourceNameStart; infer_instance
+instance (b : Nat) : Decidable (SourceNameByte b) := by unfold SourceNameByte; infer_instance
+
+def SourceMethodName (name : ByteArray) : Prop :=
+  0 < name.size ∧ SourceNameStart (byte name 0) ∧ ∀ index, index < name.size → SourceNameByte (byte name index)
+instance (name : ByteArray) : Decidable (SourceMethodName name) := by unfold SourceMethodName; infer_instance
+
+def resourceMethodNames (t : Tables) (kind : Int) : List ByteArray :=
+  (group t.methods kind).toList.map (fun method => method.blob 9)
+
+theorem source_method_name_nonempty (name : ByteArray) (valid : SourceMethodName name) : 0 < name.size := valid.1
+
+/-- Uniqueness is local to a resource family; different resources may both have
+    a method named finish. Ordinal membership remains independently checked. -/
+theorem resource_method_name_unique (t : Tables) (kind : Int)
+    (unique : (resourceMethodNames t kind).Nodup) (i j : Nat) (name : ByteArray)
+    (first : (resourceMethodNames t kind)[i]? = some name)
+    (second : (resourceMethodNames t kind)[j]? = some name) : i = j := by
+  have bound : i < (resourceMethodNames t kind).length := by
+    by_cases inside : i < (resourceMethodNames t kind).length
+    · exact inside
+    · have absent : (resourceMethodNames t kind)[i]? = none := List.getElem?_eq_none (Nat.le_of_not_gt inside)
+      rw [absent] at first
+      cases first
+  exact List.getElem?_inj bound unique (first.trans second.symm)
+
 def resourceRanges (t : Tables) (r : Record) : Prop :=
   Index (r.integer 1) t.catalogs.size ∧ 0 ≤ r.integer 2 ∧
-  Int.ofNat (group t.methods (r.integer 0)).size = r.integer 2 ∧ Dense (group t.methods (r.integer 0)) 1
+  Int.ofNat (group t.methods (r.integer 0)).size = r.integer 2 ∧ Dense (group t.methods (r.integer 0)) 1 ∧
+  (resourceMethodNames t (r.integer 0)).Nodup
 instance (t : Tables) (r : Record) : Decidable (resourceRanges t r) := by unfold resourceRanges; infer_instance
 
 def methodRanges (t : Tables) (r : Record) : Prop :=
@@ -131,7 +162,7 @@ def methodRanges (t : Tables) (r : Record) : Prop :=
   r.integer 3 = (atRow t.catalogs (r.integer 2)).integer 1 ∧
   0 ≤ r.integer 4 ∧
   (r.integer 4 = 0 ∨ (Index (r.integer 5) t.catalogs.size ∧
-    r.integer 6 = (atRow t.catalogs (r.integer 5)).integer 1))
+    r.integer 6 = (atRow t.catalogs (r.integer 5)).integer 1)) ∧ SourceMethodName (r.blob 9)
 instance (t : Tables) (r : Record) : Decidable (methodRanges t r) := by unfold methodRanges; infer_instance
 
 /-- Adjacent strict increase is a deliberately restricted linear uniqueness

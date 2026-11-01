@@ -49,6 +49,29 @@ cases = [
     ("opaque-unselected-form", change_line(b"ir-code ", lambda x: field(x, 7, b"999")), True),
     ("opaque-unselected-target", change_line(b"ir-code ", lambda x: field(x, 4, b"999")), True),
 ]
+# Version-2 source spellings are structural identities, not inferred runtime names.
+method_rows = [line.split() for line in lines if line.startswith(b"ir-resource-method ")]
+if method_rows:
+    first_method = method_rows[0]
+    same_family = next(row for row in method_rows[1:] if row[1] == first_method[1])
+    method_tag = b" ".join(first_method[:3]) + b" "
+    cases += [
+        ("old-schema-version", change_line(b"aurora-published-ir ", lambda x: field(x, 1, b"1")), False),
+        ("missing-source-method-name", change_line(method_tag, lambda x: b" ".join(x.split()[:-1]) + b"\n"), False),
+        ("extra-source-method-name", change_line(method_tag, lambda x: x.rstrip(b"\n") + b" 66\n"), False),
+        ("empty-source-method-name", change_line(method_tag, lambda x: field(x, 10, b"")), False),
+        ("invalid-source-method-name", change_line(method_tag, lambda x: field(x, 10, b"39626164")), False),
+        ("duplicate-source-method-name", change_line(method_tag, lambda x: field(x, 10, same_family[10])), False),
+        ("missing-resource-method", change_line(method_tag, lambda _: b""), False),
+        ("duplicate-resource-method", change_line(method_tag, lambda x: x + x), False),
+        # A unique renamed spelling is different, well-formed catalogue data.
+        # No serializer/source-admission fidelity theorem is claimed by D1/D2.
+        (
+            "renamed-source-method",
+            change_line(method_tag, lambda x: field(x, 10, b"756e697175655f72656e616d6564")),
+            True,
+        ),
+    ]
 if roots:
     # Untrusted mutation addressing for this production workload only. These
     # helpers do not admit an AST or issue a certificate; Lean consumes every
