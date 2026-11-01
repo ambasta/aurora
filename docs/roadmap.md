@@ -39,7 +39,9 @@ already uses Aurora policies for memory admission, ELF layout, faults and kernel
 calls. A separate Aurora program owns file state. The retained source MemoryManager
 owns the allocation and mapping ledgers, reservation banks, cross-resident quota
 admission, fixed two-slot address-space lifecycle and loader snapshot lifecycle.
-Native code authenticates backing reachability and synchronous hardware effects
+The process endpoint transaction phase, ordinal and completion decisions also
+reside in a retained Aurora root; native code retains authenticated participant
+identity, bounded copying and timer effects. Native code authenticates backing reachability and synchronous hardware effects
 across metadata detach/reattach; it retains privileged execution, volatile
 page-table access and process/IPC transport. This is not an all-Aurora kernel.
 Retiring those components needs these language and bridge capabilities, each a

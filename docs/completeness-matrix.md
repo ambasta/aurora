@@ -34,6 +34,14 @@ compiler artifact's physical call signatures and compile-check native definition
 This removes a duplicate seven-effect signature table, not a runtime ownership
 boundary or a public FFI. Qualification remains revision-specific.
 
+The fixed process endpoint now retains transaction sequencing and completion
+policy in `kernel.endpoint_transaction`, with no native mutable phase/ordinal
+mirror. Native code authenticates participants and physical copies; source selects
+new dispatch, resumption, cancellation drain and reply consumption. Terminal
+invalidation preserves frozen identity for bootstrap/shutdown receipts. This does
+not migrate the separate legacy Mailbox or add general IPC/scheduling; final-source
+qualification remains revision-specific.
+
 Native copied-record consumers retain one consolidated artifact-build ABI
 admission over compiler facts; removing those consumers remains future work.
 
