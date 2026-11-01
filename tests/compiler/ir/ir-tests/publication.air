@@ -1,0 +1,92 @@
+; CASE: publication retains typed field identity signatures and full unsigned operands
+; RUN: metadata
+; CHECK: aurora-published-ir 1 types fields callables operands cfg resources
+; CHECK: ir-counts 24 19 1 0 2 2 10 14 0 6 61
+; CHECK: ir-name-bytes {{[0-9a-f]+}}
+; CHECK-DAG: ir-type 4 7 5 0 0 0 0 0 0
+; CHECK-DAG: ir-type 5 7 5 0 0 0 0 0 0
+; CHECK-DAG: ir-type 6 7 5 0 0 0 0 0 0
+; CHECK-DAG: ir-field 0 0 4 0 1 0 1 0
+; CHECK-DAG: ir-field 0 1 5 1 1 0 1 8
+; CHECK-DAG: ir-field 0 2 6 2 2 1 1 16
+; CHECK-DAG: ir-leaf-offset 0 3 24
+; CHECK: ir-callable 0 5 7 0 7 2 12 5 4 0 0 1 0 16 0 2
+; CHECK: ir-slot 0 10 8 {{[0-9]+}} 0 0
+; CHECK: ir-catalog-type 58 -1 5f5f61755f6d617070696e675f617574686f72697479
+; CHECK: ir-resource 4 58 24 6275696c74696e3a3a4d617070696e67417574686f72697479
+; CHECK: ir-resource-method 4 19 3 1 4 1 7 1 5f5f61755f72756e74696d655f6d617070696e675f66696c6c5f736e617073686f745f6368756e6b
+; CHECK: ir-operand {{[0-9]+}} 11 0 18446744073709551615 0 0
+; CHECK: body observe 0
+; CHECK-NEXT: ir-body 0 8 0
+; CHECK-NEXT: ir-code 0 0 [[#FIRST:]] -1 {{[0-9 ]+}}
+; CHECK-NEXT: code observe 0 id [[#FIRST]] {{.*}} : BindParameter 0 8 u64
+; CHECK: ir-code 0 7 [[#FIRST+7]] -1 {{[0-9 ]+}}
+; CHECK-NEXT: code observe 7 id [[#FIRST+7]] : Return
+; CHECK-NEXT: ir-end-body 0 8
+; CHECK: ir-end 2
+layout Value [u64 u64 u64 u64]
+fields Value [(u64 0 1 false) (u64 1 1 false) (u64 2 2 true)]
+storage Value [0 8 16 24] [0 8 16] 32 8 32
+function observe
+  result u64
+  params [u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+  receiver Value false false
+    BindParameter 0 8 u64
+    ReceiverLoad 1 u64
+    Push
+    Load 8 u64
+    BinaryValue 1 u64
+    Store 16 u64
+    Load 16 u64
+    Return
+end
+function literal
+  result u64
+  frame 0
+    Constant -1 u64
+    Return
+end
+
+; CASE: display names cannot inject canonical records
+; RUN: metadata
+; CHECK: ir-name-bytes {{[0-9a-f]*}}410a69722d656e64203939390d5c0080{{[0-9a-f]*}}
+; CHECK: class A\x0air-end 999\x0d\x5c\x00\x80 storage [] [] 8 8 8
+; CHECK-NOT: {{^ir-end 999$}}
+; CHECK: ir-end 1
+layout "A\nir-end 999\x0d\\\x00\x80" []
+function constant
+  result i64
+    Constant 0
+    Return
+end
+
+; CASE: publication preserves borrowed root mutability and literal bytes
+; RUN: metadata
+; CHECK: ir-callable 0 {{[0-9]+ [0-9]+}} 0 {{[0-9]+}} 2 0 0 0 1 1 {{[0-9]+}} 0 64 0 1
+; CHECK: ir-literal-bytes 0080ff0a
+; CHECK: ir-end 1
+layout Value [u64]
+function borrowed
+  result u8
+  params [(class Value)]
+  roots 1
+  rootmut 1
+  frame 64
+  span 64
+    BorrowLiteralSpan "\x00\x80\xff\n" 64
+    Constant 0
+    SpanLoad 64
+    EndSpan 64
+    Return
+end
+
+; CASE: publication cannot erase unsupported type-tail metadata
+; BASE: publication retains typed field identity signatures and full unsigned operands
+; RUN: metadata
+; EXPECT-ERROR: invalid typed IR
+@@ -5 +5 @@
+-  result u64
++  result (u64 eparam=T)

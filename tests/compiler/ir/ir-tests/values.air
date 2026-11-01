@@ -549,9 +549,14 @@ end
 ; BASE: query cannot change module view
 ; RUN: metadata
 ; CHECK: body test 0
+; CHECK-NEXT: ir-body {{[0-9 ]+}}
+; CHECK-NEXT: ir-code {{[0-9 -]+}}
 ; CHECK-NEXT: code test 0 
+; CHECK-NEXT: ir-code {{[0-9 -]+}}
 ; CHECK-NEXT: code test 1 
+; CHECK-NEXT: ir-code {{[0-9 -]+}}
 ; CHECK-NEXT: code test 2 
+; CHECK-NEXT: ir-code {{[0-9 -]+}}
 ; CHECK-NEXT: code test 3 
 ; CHECK-NOT: code test 4 
 @@ -1 +0,0 @@

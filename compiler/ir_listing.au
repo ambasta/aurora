@@ -3,6 +3,7 @@ import aurora.compiler.ir_graph;
 import aurora.compiler.ir_metadata_storage;
 import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.builtin_catalog;
 
 // A line-per-fact listing of published IR: canonical class storage, enums,
 // callables with their typed frames and storage origins, the retained set and
@@ -145,8 +146,16 @@ export namespace compiler_ir_listing {
         i64 at = 0;
         while (at < count) {
             const i64 value = metadata.byte_at(begin + at);
-            if (value < 0 || value > 255 || !out.byte(u8(value))) {
-                return false;
+            // Display text must not inject another line into the machine record stream.
+            if (value >= 32 && value < 127 && value != 92) {
+                if (!out.byte(u8(value))) {
+                    return false;
+                }
+            } else {
+                if (value < 0 || value > 255 || !out.word("\\x") || !out.byte(hex_digit(value / 16))
+                    || !out.byte(hex_digit(value % 16))) {
+                    return false;
+                }
             }
             at = at + 1;
         }
@@ -322,6 +331,230 @@ export namespace compiler_ir_listing {
             at = at + 1;
         }
         return out.ok();
+    }
+    // Machine records retain canonical indices and every raw type/operand field.
+    // The older display records below remain readable, not semantic authority.
+    auto integer(Listing& out, i64 value) -> bool {
+        return out.byte(' ') && out.number(value);
+    }
+    auto unsigned_integer(Listing& out, u64 value) -> bool {
+        return out.byte(' ') && out.natural(value);
+    }
+    auto indices(Listing& out, compiler_ir_metadata::IndexRange range) -> bool {
+        return integer(out, range.begin()) && integer(out, range.count());
+    }
+    auto bytes_range(Listing& out, compiler_ir_metadata::ByteRange range) -> bool {
+        return integer(out, range.begin()) && integer(out, range.count());
+    }
+    auto hex_byte(Listing& out, i64 value) -> bool {
+        return value >= 0 && value <= 255 && out.byte(hex_digit(value / 16)) && out.byte(hex_digit(value % 16));
+    }
+    auto canonical_classes(Listing& out, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+        i64 id = 0;
+        while (id < metadata.class_count()) {
+            const compiler_ir_metadata::ClassRow row = metadata.class_at(id);
+            const compiler_ir_metadata::ClassResultRow result = metadata.result_at(id);
+            if (result.canonical_storage() < 0) {
+                return false;
+            }
+            const compiler_ir_metadata::IndexRange fields = result.fields();
+            const compiler_ir_metadata::StorageRow storage = metadata.storage_at(result.canonical_storage());
+            const compiler_ir_metadata::PhysicalExtent extent = storage.extent();
+            const compiler_ir_metadata::IndexRange leaves = storage.leaf_offsets();
+            if (!out.word("ir-class") || !integer(out, id) || !bytes_range(out, row.name()) || !unsigned_integer(out,
+                row.membership()) || !indices(out, row.leaves()) || !integer(out, fields.count()) || !integer(out,
+                leaves.count()) || !integer(out, extent.size_bytes()) || !integer(out, extent.alignment())
+                || !integer(out, extent.reserved_bytes()) || !out.byte('\n')) {
+                return false;
+            }
+            const compiler_ir_metadata::IndexRange offsets = storage.field_offsets();
+            i64 field = 0;
+            while (field < fields.count()) {
+                const compiler_ir_metadata::FieldRow item = metadata.field_at(fields.begin() + field);
+                const compiler_ir_metadata::IndexRow offset = metadata.index_at(offsets.begin() + field);
+                if (!out.word("ir-field") || !integer(out, id) || !integer(out, field) || !integer(out, item.type())
+                    || !integer(out, item.first_leaf()) || !integer(out, item.length()) || !integer(out,
+                    item.array_flag()) || !integer(out, item.element_count()) || !integer(out, offset.value())
+                    || !out.byte('\n')) {
+                    return false;
+                }
+                field = field + 1;
+            }
+            i64 leaf = 0;
+            while (leaf < leaves.count()) {
+                const compiler_ir_metadata::IndexRow offset = metadata.index_at(leaves.begin() + leaf);
+                if (!out.word("ir-leaf-offset") || !integer(out, id) || !integer(out, leaf) || !integer(out,
+                    offset.value()) || !out.byte('\n')) {
+                    return false;
+                }
+                leaf = leaf + 1;
+            }
+            id = id + 1;
+        }
+        return out.ok();
+    }
+    auto canonical_callables(Listing& out, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+        i64 id = 0;
+        while (id < metadata.callable_count()) {
+            const compiler_ir_metadata::CallableRow row = metadata.callable_at(id);
+            const compiler_ir_metadata::ReceiverShape receiver = row.first_receiver();
+            if (!out.word("ir-callable") || !integer(out, id) || !bytes_range(out, row.name()) || !integer(out,
+                row.scope()) || !indices(out, row.types()) || !bytes_range(out, receiver.name())
+                || !unsigned_integer(out, receiver.attributes()) || !integer(out, row.borrowed_root_count())
+                || !integer(out, row.borrowed_root_mutability()) || !unsigned_integer(out, row.attributes())
+                || !integer(out, row.receiver_span_field()) || !integer(out, row.frame_bytes()) || !indices(out,
+                row.slots()) || !out.byte('\n')) {
+                return false;
+            }
+            id = id + 1;
+        }
+        id = 0;
+        while (id < metadata.slot_count()) {
+            const compiler_ir_metadata::SlotRow row = metadata.slot_at(id);
+            if (!out.word("ir-slot") || !integer(out, id) || !integer(out, row.kind()) || !integer(out, row.offset())
+                || !integer(out, row.type()) || !integer(out, row.length()) || !integer(out, row.mutable_value())
+                || !out.byte('\n')) {
+                return false;
+            }
+            id = id + 1;
+        }
+        return out.ok();
+    }
+    auto canonical_resources(Listing& out) -> bool {
+        i64 type_id = 0;
+        while (type_id < compiler_catalog::type_count()) {
+            if (!out.word("ir-catalog-type") || !integer(out, type_id) || !integer(out,
+                compiler_ir_metadata::catalogue_kind(type_id)) || !out.byte(' ')) {
+                return false;
+            }
+            i64 name_at = 0;
+            i64 name_byte = compiler_catalog::type_native_byte(type_id, name_at);
+            while (name_byte != -1) {
+                if (!hex_byte(out, name_byte)) {
+                    return false;
+                }
+                name_at = name_at + 1;
+                name_byte = compiler_catalog::type_native_byte(type_id, name_at);
+            }
+            if (!out.byte('\n')) {
+                return false;
+            }
+            type_id = type_id + 1;
+        }
+        i64 kind = 0;
+        while (kind < compiler_catalog::resource_count()) {
+            const i64 type = compiler_catalog::resource_type(kind);
+            if (!out.word("ir-resource") || !integer(out, kind) || !integer(out, type) || !integer(out,
+                compiler_catalog::resource_method_count(kind)) || !out.byte(' ')) {
+                return false;
+            }
+            i64 at = 0;
+            i64 value = compiler_catalog::type_source_byte(type, at);
+            while (value != -1) {
+                if (!hex_byte(out, value)) {
+                    return false;
+                }
+                at = at + 1;
+                value = compiler_catalog::type_source_byte(type, at);
+            }
+            if (!out.byte('\n')) {
+                return false;
+            }
+            i64 method = 0;
+            while (method < compiler_catalog::resource_method_count(kind)) {
+                const i64 result = compiler_catalog::resource_method_result(kind, method);
+                const i64 parameter = compiler_catalog::resource_method_parameter(kind, method);
+                if (!out.word("ir-resource-method") || !integer(out, kind) || !integer(out, method) || !integer(out,
+                    result) || !integer(out, compiler_ir_metadata::catalogue_kind(result)) || !integer(out,
+                    compiler_catalog::resource_method_parameters(kind, method)) || !integer(out, parameter)
+                    || !integer(out, compiler_ir_metadata::catalogue_kind(parameter)) || !integer(out,
+                    compiler_catalog::resource_method_effect(kind, method)) || !out.byte(' ')) {
+                    return false;
+                }
+                at = 0;
+                value = compiler_catalog::resource_runtime_byte(kind, method, at);
+                while (value != -1) {
+                    if (!hex_byte(out, value)) {
+                        return false;
+                    }
+                    at = at + 1;
+                    value = compiler_catalog::resource_runtime_byte(kind, method, at);
+                }
+                if (!out.byte('\n')) {
+                    return false;
+                }
+                method = method + 1;
+            }
+            kind = kind + 1;
+        }
+        return out.ok();
+    }
+    auto canonical(Listing& out, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions) -> bool {
+        if (!out.word("aurora-published-ir 1 types fields callables operands cfg resources\nir-counts") || !integer(out,
+            metadata.byte_count()) || !integer(out, metadata.type_count()) || !integer(out, metadata.class_count())
+            || !integer(out, metadata.enum_count()) || !integer(out, metadata.callable_count()) || !integer(out,
+            metadata.slot_count()) || !integer(out, instructions.instruction_count()) || !integer(out,
+            instructions.operand_count()) || !integer(out, instructions.literal_count()) || !integer(out,
+            compiler_catalog::resource_count()) || !integer(out, compiler_catalog::type_count())
+            || !out.word("\nir-name-bytes ")) {
+            return false;
+        }
+        i64 id = 0;
+        while (id < metadata.byte_count()) {
+            if (!hex_byte(out, metadata.byte_at(id))) {
+                return false;
+            }
+            id = id + 1;
+        }
+        if (!out.byte('\n')) {
+            return false;
+        }
+        id = 0;
+        while (id < metadata.type_count()) {
+            const compiler_ir_metadata::RawTypeRow row = metadata.type_at(id);
+            const compiler_ir_metadata::RawTypeTail tail = row.tail();
+            if (!out.word("ir-type") || !integer(out, id) || !integer(out, row.kind()) || !bytes_range(out, row.name())
+                || !integer(out, tail.element_kind()) || !integer(out, tail.length()) || !unsigned_integer(out,
+                tail.element_parameter_bytes()) || !unsigned_integer(out, tail.length_parameter_bytes())
+                || !unsigned_integer(out, tail.template_argument_count()) || !out.byte('\n')) {
+                return false;
+            }
+            id = id + 1;
+        }
+        id = 0;
+        while (id < metadata.enum_count()) {
+            const compiler_ir_metadata::EnumRow row = metadata.enum_at(id);
+            if (!out.word("ir-enum") || !integer(out, id) || !bytes_range(out, row.name()) || !integer(out, row.cases())
+                || !out.byte('\n')) {
+                return false;
+            }
+            id = id + 1;
+        }
+        if (!canonical_classes(out, metadata) || !canonical_callables(out, metadata) || !canonical_resources(out)) {
+            return false;
+        }
+        id = 0;
+        while (id < instructions.operand_count()) {
+            const compiler_ir_instructions::RawOperandRow row = instructions.operand_at(id);
+            if (!out.word("ir-operand") || !integer(out, id) || !integer(out, row.role()) || !integer(out,
+                row.signed_value()) || !unsigned_integer(out, row.unsigned_value()) || !integer(out, row.begin())
+                || !integer(out, row.count()) || !out.byte('\n')) {
+                return false;
+            }
+            id = id + 1;
+        }
+        if (!out.word("ir-literal-bytes ")) {
+            return false;
+        }
+        id = 0;
+        while (id < instructions.literal_count()) {
+            if (!hex_byte(out, instructions.literal_at(id))) {
+                return false;
+            }
+            id = id + 1;
+        }
+        return out.byte('\n');
     }
     auto storage_text(Listing& out, const compiler_ir_metadata::MetadataStore& metadata, i64 begin, i64 count) -> bool {
         if (!out.byte('[')) {
@@ -524,9 +757,21 @@ export namespace compiler_ir_listing {
             || !out.number(id) || !out.byte('\n')) {
             return false;
         }
+        if (!out.word("ir-body") || !integer(out, id) || !integer(out, code.count()) || !integer(out,
+            code.unreachable_after()) || !out.byte('\n')) {
+            return false;
+        }
         i64 position = 0;
         while (position < code.count()) {
             const compiler_ir_instructions::CodeRow flow = instructions.code_at(code.begin() + position);
+            const compiler_ir_instructions::RawInstructionRow raw = instructions.instruction_at(flow.id());
+            if (!out.word("ir-code") || !integer(out, id) || !integer(out, position) || !integer(out, flow.id())
+                || !integer(out, flow.target()) || !unsigned_integer(out, flow.flags()) || !integer(out, raw.kind())
+                || !integer(out, raw.form()) || !integer(out, raw.unary_operation()) || !integer(out,
+                raw.binary_operation()) || !integer(out, raw.comparison_operation()) || !integer(out, raw.query())
+                || !integer(out, raw.operand_begin()) || !integer(out, raw.operand_count()) || !out.byte('\n')) {
+                return false;
+            }
             if (!out.word("code ") || !metadata_name(out, metadata, name.begin(), name.count()) || !out.byte(' ')
                 || !out.number(position) || !out.word(" id ") || !out.number(flow.id())) {
                 return false;
@@ -548,7 +793,7 @@ export namespace compiler_ir_listing {
             }
             position = position + 1;
         }
-        return out.ok();
+        return out.word("ir-end-body") && integer(out, id) && integer(out, code.count()) && out.byte('\n');
     }
     auto retained(Listing& out, const compiler_ir_metadata::MetadataStore& metadata,
         const compiler_ir_graph::Workspace& graph) -> bool {

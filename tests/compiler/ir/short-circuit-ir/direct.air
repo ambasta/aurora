@@ -150,11 +150,15 @@ end
 ; BASE: sparse maximum label identity
 ; RUN: metadata
 ; CHECK: body direct 0
+; CHECK-NEXT: ir-body {{[0-9 ]+}}
+; CHECK-NEXT: ir-code {{[0-9 -]+}}
 ; CHECK-NEXT: code direct 0 id [[#FIRST:]] target 1 
 ; CHECK-NOT: falls
+; CHECK-NEXT: ir-code {{[0-9 -]+}}
 ; CHECK-NEXT: code direct 1 id [[#ENTRY:]] 
 ; CHECK-SAME: falls entry
 ; CHECK-RANGE: [[#ENTRY]] [[#FIRST+2]]..
+; CHECK-NEXT: ir-code {{[0-9 -]+}}
 ; CHECK-NEXT: code direct 2 id [[#ENTRY+1]] target 1 
 ; CHECK-NOT: falls
 ; CHECK-NOT: code direct 3 
