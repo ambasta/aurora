@@ -68,8 +68,12 @@ empty last. Any post-visible failure is fail-stop, not rollback.
 
 A prepared mounted service has an actual bootstrap-loss cleanup route: source
 revocation precedes live-role abandon; an unowned backend attempt is cleaned only
-after that owner cleanup. Failed loading remains with its load/MM owner until
-execution preparation publishes. The standalone recovery writer instead grants
+after that owner cleanup. If unpublished bootstrap execution itself terminates,
+its consuming lease acknowledges only the same incarnation's frozen loss after
+source and physical cleanup; publication still requires a live starting owner.
+A completed load receipt distinguishes an already-retired mounted grant from an
+unowned backend attempt, avoiding duplicate abandonment. Failed loading remains
+with its load/MM owner until execution preparation publishes. The standalone recovery writer instead grants
 its role immediately before the execute loop, with no recoverable early return
 between grant and first entry. Invalid post-grant ownership or admission is
 fail-stop, not an invented abort/rollback authority. There is no actual
@@ -107,7 +111,9 @@ shutdown expiry remains observable. Individual request messages never reset
 cancellation this way.
 
 The compiler admits the exact owner/observation/result layouts, constructor
-transfer, borrowed entries and consuming finish. Image admission tracks named
+transfer, borrowed entries and consuming finish. Private boolean effects return
+canonical full-word zero/one values, not C++'s AL-only boolean convention.
+Image admission tracks named
 supervisor, saved-continuation, TSS.RSP0 and double-fault IST domains. Hardware-saved
 CS routes kernel-origin drain/diagnostics separately from CPL3 policy; the parked
 supervisor chain is not charged to the separate RSP0 domain. Exact RSP provenance,
@@ -185,9 +191,16 @@ it to its original watchdog loss. These fixture selectors observe real endpoint
 state without modifying it. They use canonical lease issuance and the shared
 native effects, but do not claim that a production source command selects those
 exact cancellation boundaries. The following ordinary client verifies retained
-service progress after staged cancellation. The same row also cancels the real
-one-tick RPC only after its caller budget is exhausted (watchdog wins), and
-cancels another admitted client before its first entry (no user execution).
+service progress after staged cancellation. The one-tick RPC remains an ordinary
+watchdog case, without assuming whether expiry occurs in the client or service.
+A separate eight-tick raw-write fixture pauses at its real staged request. With
+all effect loans closed it arms the existing LAPIC for each remaining quantum,
+waits for actual expiry, charges only measured counts and drains the pending IRQ
+through the normal kernel-origin path. Identity, stopped frames, transaction and
+server allowance remain unchanged. The real service then replies before explicit
+cancellation, so source selects watchdog precedence from actual prior expiry.
+No delay constant, synthetic charge, budget renewal or increased cap is used.
+Another admitted client is cancelled before its first entry (no user execution).
 The command protocol carries explicit-after-expiry and settled/draining facts;
 source selects their results without a native hidden-cause drain turn.
 

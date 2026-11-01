@@ -234,6 +234,7 @@ PROCESS_CASES = {
             (128, 0, 8192, "bin/isolation-6", "raw-cancel-tail"),
             (128, 0, 8192, "bin/probe", "probe file tree/shared read @1 0"),
             (128, 0, 8192, "bin/isolation-6", "raw-cancel-before"),
+            (8, 0, 8192, "bin/isolation-6", "raw-cancel-expired"),
         ),
     ),
     "process-service-hostile": (

@@ -1104,7 +1104,7 @@ def validate(
         cancellation_points = {
             "raw-cancel-initial": "0",
             "raw-cancel-tail": "1",
-            "lifecycle rpc": "3",
+            "raw-cancel-expired": "3",
             "raw-cancel-before": "4",
         }
         expected_cancel = [
@@ -1121,6 +1121,68 @@ def validate(
             "Authenticated staged, prior-expiry and before-entry cancellation boundaries",
         )
         need(text.count("AURORA_EXECUTION_CANCEL:") == len(cancelled), "Malformed cancellation boundary")
+        # This row reaches a real staged request before waiting on the existing
+        # LAPIC clock. The native receipt follows measured expiry and drain;
+        # the actual reply transaction and explicit cancellation follow it.
+        normalized = text.replace("\r", "")
+        gate = list(
+            re.finditer(
+                r"^AURORA_EXECUTION_EXPIRY_GATE: client=(\d+) generation=(\d+) transaction=(\d+) next=(\d+) "
+                r"used=(\d+) staged=1$",
+                normalized,
+                re.MULTILINE,
+            )
+        )
+        drained = list(
+            re.finditer(
+                r"^AURORA_EXECUTION_EXPIRY_DRAINED: client=(\d+) generation=(\d+) transaction=(\d+) next=(\d+) "
+                r"quanta=(\d+) counts=(\d+) used=(\d+) expired=1 drained=1 closed=1$",
+                normalized,
+                re.MULTILINE,
+            )
+        )
+        expiry_rows = [
+            (index, row[0]) for index, row in enumerate(PROCESS_CASES[mode][1], 1) if row[4] == "raw-cancel-expired"
+        ]
+        need(
+            len(expiry_rows) == len(gate) == len(drained) == 1
+            and normalized.count("AURORA_EXECUTION_EXPIRY_GATE:") == 1
+            and normalized.count("AURORA_EXECUTION_EXPIRY_DRAINED:") == 1,
+            "Missing or malformed actual LAPIC expiry gate",
+        )
+        client, limit = expiry_rows[0]
+        before = tuple(map(int, gate[0].groups()))
+        after = tuple(map(int, drained[0].groups()))
+        need(
+            before[:4] == after[:4]
+            and before[0] == client
+            and before[1] == 1
+            and before[2] == before[3]
+            and before[2] > 0
+            and 0 <= before[4] < limit
+            and 1 <= after[4] <= limit
+            and before[4] + after[4] == limit
+            and (after[4] - 1) * (1 << 24) < after[5] <= after[4] * (1 << 24)
+            and after[6] == limit,
+            "Measured expiry/drain changed request identity or budget bounds",
+        )
+        cancelled_after = re.search(
+            rf"^AURORA_EXECUTION_CANCEL: client={client} tail=3 generation={before[1]} "
+            rf"transaction={before[2] + 1} next={before[3] + 1}$",
+            normalized,
+            re.MULTILINE,
+        )
+        started = re.search(rf"^AURORA_PROCESS_RUN: run={client} ", normalized, re.MULTILINE)
+        ended = re.search(
+            rf"^AURORA_PROCESS_END: run={client} reason=watchdog ticks={limit}$", normalized, re.MULTILINE
+        )
+        need(
+            started
+            and cancelled_after
+            and ended
+            and started.start() < gate[0].start() < drained[0].start() < cancelled_after.start() < ended.start(),
+            "Staged write, real timer drain, reply/cancel and source watchdog ordering",
+        )
     if mode == "process-xfs-clean":
         ready = re.findall(
             r"AURORA_FILE_SERVICE_READY: generation=(\d+) owner=\d+ block_generation=(\d+) block_sectors=(\d+)", text

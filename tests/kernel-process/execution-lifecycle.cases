@@ -90,3 +90,6 @@ service-cleanup-failure source:service-cleanup-failure
 invalidate-cross-slot native:invalidate-cross-slot
 foreign-client-prepare incarnation:0:7 incarnation:1:8 prepare:0 prepare:1 state:1 run:0:6:0:0 finish
 missing-service-prepare incarnation:1:7 prepare:1 state:1 finish
+retire-noncanonical source:retire-noncanonical
+finish-noncanonical source:finish-noncanonical
+invalidate-noncanonical source:invalidate-noncanonical

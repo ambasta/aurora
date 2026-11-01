@@ -168,7 +168,7 @@ extern "C" void __au_runtime_execution_authority_complete(
 }
 // Models only physical invalidation/discard receipts. The compiled owner chooses
 // when this barrier occurs and which slot must be retired before the service.
-extern "C" bool
+extern "C" U64
 __au_runtime_execution_authority_invalidate_service(const void *binding, U64 epoch, const void *address, U64 slot) {
     enter(binding, epoch, address, Kind::invalidate_service, slot);
     identity(slot);
@@ -180,7 +180,7 @@ __au_runtime_execution_authority_invalidate_service(const void *binding, U64 epo
     }
     if (fault == "invalidate-failure") {
         current->leave();
-        return false;
+        return 0;
     }
     invalidated = true;
     effects << " invalidate=" << slot;
@@ -189,9 +189,9 @@ __au_runtime_execution_authority_invalidate_service(const void *binding, U64 epo
         effects << " snapshot=discarded";
     }
     current->leave();
-    return true;
+    return fault == "invalidate-noncanonical" ? U64{0x1000000000000001} : U64{1};
 }
-extern "C" bool __au_runtime_execution_authority_retire(const void *binding, U64 epoch, const void *address, U64 slot) {
+extern "C" U64 __au_runtime_execution_authority_retire(const void *binding, U64 epoch, const void *address, U64 slot) {
     enter(binding, epoch, address, Kind::retire, slot);
     identity(slot);
     if (current->canonical(slot, Field::phase) != 4)
@@ -206,15 +206,15 @@ extern "C" bool __au_runtime_execution_authority_retire(const void *binding, U64
     if (slot == 0)
         invalidated = false;
     current->leave();
-    return result;
+    return fault == "retire-noncanonical" ? U64{0x1000000000000001} : result ? U64{1} : U64{0};
 }
-extern "C" bool __au_runtime_execution_authority_finish(const void *binding, U64 epoch, const void *address) {
+extern "C" U64 __au_runtime_execution_authority_finish(const void *binding, U64 epoch, const void *address) {
     enter(binding, epoch, address, Kind::finish, 0);
     if (current->canonical(0, Field::phase) || current->canonical(1, Field::phase))
         usage("lifecycle consumption preceded complete two-slot retirement");
     current->consume();
     current->leave();
-    return true;
+    return fault == "finish-noncanonical" ? U64{0x1000000000000001} : U64{1};
 }
 auto denial(const std::string &name, bool source) -> void {
     const auto child = fork();
@@ -223,8 +223,12 @@ auto denial(const std::string &name, bool source) -> void {
     if (!child) {
         Root root;
         reset(root);
-        if (name == "natural-cross-incarnation" || name == "invalidate-failure" || name == "service-cleanup-failure" ||
-            name == "invalidate-cross-slot") {
+        if (name == "finish-noncanonical") {
+            fault = name;
+            static_cast<void>(root.finish());
+        } else if (name == "natural-cross-incarnation" || name == "invalidate-failure" ||
+                   name == "service-cleanup-failure" || name == "invalidate-cross-slot" ||
+                   name == "invalidate-noncanonical") {
             incarnations = {7, 7};
             static_cast<void>(root.prepare(0));
             static_cast<void>(root.prepare(1));

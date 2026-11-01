@@ -2764,16 +2764,33 @@ public:
     }
     static auto finish(Binding &binding, aurora::bootstrap::Finish disposition) -> aurora::bootstrap::Result {
         using namespace aurora::bootstrap;
-        require(binding.generation && service_root.phase() == aurora::service::Phase::starting &&
+        require(binding.generation && generation_ == binding.generation &&
                 service_root.generation() == binding.generation);
+        const auto phase = service_root.phase();
         if (disposition == Finish::abandon) {
+            if (phase == aurora::service::Phase::retiring) {
+                // A real bootstrap execution may already have revoked and
+                // retired its unpublished service. Consume only this lease's
+                // matching frozen observation; never revive it for publication.
+                require(binding.failed && binding.run && endpoint.generation == binding.generation &&
+                        outcome.terminal_run == binding.run && outcome.terminal_service == binding.generation &&
+                        service_root.reason() != aurora::service::Reason::shutdown &&
+                        static_cast<U64>(service_root.reason()) == static_cast<U64>(binding.loss.kind) &&
+                        service_root.detail() == binding.loss.detail && !residents[0].space && !residents[1].space &&
+                        !snapshot && !loading_image && !endpoint.caller && !endpoint.waiting && !endpoint.replied &&
+                        !endpoint.delivery && !endpoint.completion && LifecyclePlatform::quiet() &&
+                        execution_owner.phase(0) == aurora::lifecycle::Phase::empty &&
+                        execution_owner.phase(1) == aurora::lifecycle::Phase::empty);
+            } else {
+                require(phase == aurora::service::Phase::starting);
+            }
             ServiceLoss loss = binding.failed ? binding.loss : observe_service_loss(ServiceFailure::observe);
             if (!binding.failed && bound(binding) && !endpoint.caller_cancelled && !endpoint.invalid_reply_operation)
                 loss = {ServiceFailure::consumer_rejected, 0};
 #ifdef AURORA_UEFI_NVME
             // A granted role belongs to the execution owner even before first
             // entry. Its cleanup must follow source revocation, not precede it.
-            const bool unowned_mounted_attempt = binding.mounted_attempt && !mounted_generation;
+            const bool unowned_mounted_attempt = binding.mounted_attempt && (!binding.mounted_entry || !binding.run);
 #endif
             abandon_service_observed(loss);
 #ifdef AURORA_UEFI_NVME
@@ -2784,10 +2801,11 @@ public:
             binding.initial_receipt = binding.seal_receipt = binding.storage_receipt = false;
             return Result::unavailable;
         }
-        require(disposition == Finish::publish && !binding.failed && bound(binding) && binding.initial_receipt &&
-                binding.seal_receipt && (!binding.storage_required || binding.storage_receipt) &&
-                !binding.pending_operation && !endpoint.caller_cancelled && endpoint.waiting && !endpoint.replied &&
-                !endpoint.delivery && !endpoint.caller);
+        require(disposition == Finish::publish && phase == aurora::service::Phase::starting && !binding.failed &&
+                bound(binding) && binding.initial_receipt && binding.seal_receipt &&
+                (!binding.storage_required || binding.storage_receipt) && !binding.pending_operation &&
+                !endpoint.caller_cancelled && endpoint.waiting && !endpoint.replied && !endpoint.delivery &&
+                !endpoint.caller);
         // Publication consumes the actual receipts once. The mounted broker is
         // still unarmed until the normal budget is restored at this boundary.
         binding.initial_receipt = binding.seal_receipt = binding.storage_receipt = false;
@@ -3438,6 +3456,89 @@ public:
 };
 using FixtureExecutionSession = aurora::execution::Session<FixtureExecutionTransport, ExecutionPlatform>;
 
+// Fixture-only elapsed-clock gate at an authenticated, already-staged request.
+// No process runs here and no effect loan survives Session::advance. Every
+// charged count comes from the existing LAPIC; there is no synthetic expiry.
+auto execution_expiry_gate(U64 client) -> void {
+    using namespace aurora::lifecycle;
+    if (execution_owner.entered() || forced_execution || completed_output || !LifecyclePlatform::quiet() ||
+        !residents[0].space || !residents[1].space || residents[1].state.run != client ||
+        endpoint.caller != std::optional<std::size_t>{1} || endpoint.caller_cancelled || !endpoint.waiting ||
+        endpoint.replied || endpoint.delivery || endpoint.completion || snapshot || loading_image ||
+        service_root.phase() != aurora::service::Phase::ready || service_root.generation() != endpoint.generation ||
+        residents[0].state.service != endpoint.generation || execution_owner.phase(0) != Phase::parked ||
+        execution_owner.phase(1) != Phase::parked || execution_owner.pending(1) != static_cast<U64>(Event::request) ||
+        endpoint.call.action != static_cast<U64>(process::CallAction::write) || endpoint.call.length != 65536 ||
+        endpoint.written >= endpoint.call.length || !residents[1].budget.available())
+        fail("execution expiry gate admission");
+    authenticate_stopped_frame(1, true);
+    if (residents[1].state.budget != &residents[1].budget || !residents[1].state.external ||
+        residents[1].initial[4] != table.activation_root(1, residents[1].space->epoch()) ||
+        residents[0].initial[4] != table.activation_root(0, residents[0].space->epoch()))
+        fail("execution expiry physical binding");
+    const auto generation = endpoint.generation, transaction = endpoint.transaction, next = endpoint.next;
+    const auto written = endpoint.written, count = endpoint.count, source = endpoint.source;
+    const auto client_generation = execution_owner.generation(1), server_generation = execution_owner.generation(0);
+    const auto client_epoch = residents[1].space->epoch(), client_root = residents[1].space->root();
+    const auto server_epoch = residents[0].space->epoch(), server_root = residents[0].space->root();
+    const auto client_frame = residents[1].continuation, server_frame = residents[0].continuation;
+    const auto server_used = residents[0].budget.used(), server_quantum = residents[0].budget.quantum();
+    Serial::text("AURORA_EXECUTION_EXPIRY_GATE:");
+    field("client", client);
+    field("generation", generation);
+    field("transaction", transaction);
+    field("next", next);
+    field("used", residents[1].budget.used());
+    Serial::text(" staged=1\r\n");
+    U64 quanta = 0, counts = 0;
+    while (residents[1].budget.available()) {
+        if (++quanta > 8 || !LifecyclePlatform::quiet())
+            fail("execution expiry clock bound");
+        const auto armed = residents[1].budget.quantum();
+        if (!armed || armed > 0xffffffffULL || !Timer::arm(static_cast<std::uint32_t>(armed)))
+            fail("execution expiry clock arm");
+        // Wait for the actual clock boundary, not a fixed host-time delay.
+        while (Timer::read(0x390) || !Timer::pending())
+            asm volatile("pause");
+        const auto remaining = Timer::read(0x390);
+        if (!Timer::stop() || remaining > armed || !Timer::pending())
+            fail("execution expiry clock stop");
+        const auto measured = armed - remaining;
+        if (!measured || counts > ~U64{0} - measured)
+            fail("execution expiry measured counts");
+        counts += measured;
+        const bool available = charge_counts(residents[1].budget, measured, false);
+        draining = true;
+        process_drain();
+        if (draining || !LifecyclePlatform::quiet())
+            fail("execution expiry clock drain");
+        if (!available)
+            endpoint.caller_cancelled = true;
+    }
+    if (!endpoint.caller_cancelled || !residents[0].space || !residents[1].space || residents[1].state.run != client ||
+        endpoint.generation != generation || endpoint.transaction != transaction || endpoint.next != next ||
+        endpoint.written != written || endpoint.count != count || endpoint.source != source ||
+        endpoint.call.action != static_cast<U64>(process::CallAction::write) || endpoint.call.length != 65536 ||
+        endpoint.caller != std::optional<std::size_t>{1} || !endpoint.waiting || endpoint.replied ||
+        endpoint.delivery || endpoint.completion || execution_owner.generation(1) != client_generation ||
+        execution_owner.generation(0) != server_generation || execution_owner.phase(0) != Phase::parked ||
+        execution_owner.phase(1) != Phase::parked || execution_owner.pending(1) != static_cast<U64>(Event::request) ||
+        residents[1].space->epoch() != client_epoch || residents[1].space->root() != client_root ||
+        residents[0].space->epoch() != server_epoch || residents[0].space->root() != server_root ||
+        residents[1].continuation != client_frame || residents[0].continuation != server_frame ||
+        residents[0].budget.used() != server_used || residents[0].budget.quantum() != server_quantum)
+        fail("execution expiry gate preservation");
+    Serial::text("AURORA_EXECUTION_EXPIRY_DRAINED:");
+    field("client", client);
+    field("generation", generation);
+    field("transaction", transaction);
+    field("next", next);
+    field("quanta", quanta);
+    field("counts", counts);
+    field("used", residents[1].budget.used());
+    Serial::text(" expired=1 drained=1 closed=1\r\n");
+}
+
 auto execution_cancel_fixture(std::span<const std::byte> volume,
                               std::span<const std::byte> runs,
                               const process::RunEntry &entry,
@@ -3449,7 +3550,7 @@ auto execution_cancel_fixture(std::span<const std::byte> volume,
     const auto issuer = Session::open();
     const auto lease = Session::prepare(issuer.grant, issuer.generation);
     const auto prepared = Session::preparation(lease.binding, lease.generation);
-    bool observed = false, request = false;
+    bool observed = false, request = false, expiry_gated = false;
     U64 drain_transaction = 0, drain_next = 0, drain_used = 0, drain_quantum = 0;
     Finish disposition = Finish::complete;
     if (prepared.state == Prepared::loaded && point == 4) {
@@ -3487,6 +3588,10 @@ auto execution_cancel_fixture(std::span<const std::byte> volume,
                                              : write && staged &&
                                                    (point == 1 ? endpoint.written == endpoint.call.length
                                                                : endpoint.written < endpoint.call.length);
+            if (point == 3 && boundary && !expiry_gated) {
+                execution_expiry_gate(client);
+                expiry_gated = true;
+            }
             if (point != 3 && boundary && !observed) {
                 const U64 generation = endpoint.generation, transaction = endpoint.transaction, next = endpoint.next;
                 const U64 used = residents[0].state.budget->used();
@@ -3541,7 +3646,7 @@ auto execution_cancel_fixture(std::span<const std::byte> volume,
                 continue;
             }
             if (point == 3 && result == Request::cancelled) {
-                if (!endpoint.caller_cancelled || endpoint.caller || endpoint.completion ||
+                if (!expiry_gated || !endpoint.caller_cancelled || endpoint.caller || endpoint.completion ||
                     residents[1].budget.available() ||
                     static_cast<Cancel>(Session::cancel(lease.binding, lease.generation)) !=
                         Cancel::settled_after_expiry)
@@ -3641,7 +3746,7 @@ auto run_external(std::span<const std::byte> view,
         constexpr std::string_view initial_cancel{"raw-cancel-initial\0", 19};
         constexpr std::string_view tail_cancel{"raw-cancel-tail\0", 16};
         constexpr std::string_view before_cancel{"raw-cancel-before\0", 18};
-        constexpr std::string_view expired_cancel{"lifecycle\0rpc\0", 14};
+        constexpr std::string_view expired_cancel{"raw-cancel-expired\0", 19};
         const auto matches = [&](std::string_view name) {
             if (arguments.size() != name.size())
                 return false;
@@ -4965,6 +5070,8 @@ __au_runtime_mapping_observe_snapshot_anchor(const void *token, U64 epoch, U64 t
 
 // The compiler admits these exact retained-field effects. No source pointer or
 // copied observation can mint an issuer, change slots, or bypass busy scope.
+// Source boolean effects use a canonical full-word result, not the C++ AL-only
+// bool return convention. Keep the private ABI distinct from native helpers.
 extern "C" {
 __attribute__((visibility("hidden"))) void __au_runtime_execution_authority_prepare(
     const void *binding, U64 epoch, const void *field, aurora::lifecycle::Observation *output, U64 slot) {
@@ -4982,8 +5089,10 @@ __attribute__((visibility("hidden"))) void __au_runtime_execution_authority_forc
     const void *binding, U64 epoch, const void *field, aurora::lifecycle::Observation *output, U64 slot) {
     execution_authority_observe<aurora::lifecycle::EffectKind::force>(binding, epoch, field, output, slot);
 }
-__attribute__((visibility("hidden"))) bool
-__au_runtime_execution_authority_retire(const void *binding, U64 epoch, const void *field, U64 slot) {
+__attribute__((visibility("hidden"))) U64 __au_runtime_execution_authority_retire(const void *binding,
+                                                                                  U64 epoch,
+                                                                                  const void *field,
+                                                                                  U64 slot) {
     using namespace aurora::lifecycle;
     execution_owner.enter(binding, epoch, field, EffectKind::retire, slot);
     authenticate_execution(slot, Phase::retiring);
@@ -4996,18 +5105,21 @@ __au_runtime_execution_authority_retire(const void *binding, U64 epoch, const vo
         fail("service retirement invalidation boundary");
     const bool result = release_resident_physical(slot);
     execution_owner.leave();
-    return result;
+    return result ? 1 : 0;
 }
-__attribute__((visibility("hidden"))) bool
-__au_runtime_execution_authority_invalidate_service(const void *binding, U64 epoch, const void *field, U64 slot) {
+__attribute__((visibility("hidden"))) U64 __au_runtime_execution_authority_invalidate_service(const void *binding,
+                                                                                              U64 epoch,
+                                                                                              const void *field,
+                                                                                              U64 slot) {
     using namespace aurora::lifecycle;
     execution_owner.enter(binding, epoch, field, EffectKind::invalidate_service, slot);
     invalidate_service_physical(slot);
     execution_owner.leave();
-    return true;
+    return 1;
 }
-__attribute__((visibility("hidden"))) bool
-__au_runtime_execution_authority_finish(const void *binding, U64 epoch, const void *field) {
+__attribute__((visibility("hidden"))) U64 __au_runtime_execution_authority_finish(const void *binding,
+                                                                                  U64 epoch,
+                                                                                  const void *field) {
     using namespace aurora::lifecycle;
     execution_owner.enter(binding, epoch, field, EffectKind::finish, 0);
     if (execution_owner.canonical(0, Field::phase) != static_cast<U64>(Phase::empty) ||
@@ -5017,6 +5129,6 @@ __au_runtime_execution_authority_finish(const void *binding, U64 epoch, const vo
         fail("execution owner cleanup");
     execution_owner.consume();
     execution_owner.leave();
-    return true;
+    return 1;
 }
 }

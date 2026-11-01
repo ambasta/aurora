@@ -88,3 +88,6 @@ service-cleanup-failure denied=source
 invalidate-cross-slot denied=native
 foreign-client-prepare prepare=1 prepare=0 state=0:0 run=6:0:1 finish=1 enter=0 invalidate=0 retire=0:6:6
 missing-service-prepare prepare=0 state=0:0 finish=1
+retire-noncanonical denied=source
+finish-noncanonical denied=source
+invalidate-noncanonical denied=source
