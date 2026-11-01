@@ -1,7 +1,7 @@
 # Production process policy bridge, rendered from compiler ABI facts.
 # No kernel file-store, fixture run-list or serial-export entry is exposed here.
-# The full policy object retains its compiler facts and standalone stack checks.
-# PROCESS_POLICY_ABI: each entry receives one complete argument record in RDI
+# Its selected source root retains compiler facts and standalone stack checks.
+# PRODUCTION_PROCESS_POLICY_ABI: each entry receives one complete argument record in RDI
 # (moved to R11); class results also receive fresh caller storage in RSI (moved
 # to R10). A span argument is the 56-byte contiguous readonly view (kind 0) the
 # supervisor builds over bytes it has mapped; the bridge authenticates nothing.
@@ -45,12 +45,4 @@ process_result_entry __au_runtime_process_region, @process_region@
 process_entry __au_runtime_process_elf_entry, @process_elf_entry@
 process_entry __au_runtime_process_trap, @process_trap@
 process_result_entry __au_runtime_process_call, @process_call@
-process_result_entry __au_runtime_process_memory_map, @process_memory_map@
-process_result_entry __au_runtime_process_memory_remap, @process_memory_remap@
-process_result_entry __au_runtime_process_memory_unmap, @process_memory_unmap@
-process_entry __au_runtime_process_memory_find, @process_memory_find@
-process_entry __au_runtime_process_memory_fault, @process_memory_fault@
-process_result_entry __au_runtime_process_memory_budget, @process_memory_budget@
-# The scalar frame transition keeps the existing SysV scalar-symbol seam.
-.global aurora_kernel_frame_transition
-.hidden aurora_kernel_frame_transition
+process_entry __au_runtime_process_memory_load_charge, @process_memory_load_charge@

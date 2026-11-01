@@ -333,6 +333,29 @@ PROCESS_CASES["process-xfs-mounted-loss"] = (
 # probes must stop globally; the user probe must retire only its own process.
 PROCESS_CASES["process-frame-require-kernel"] = (42, ())
 PROCESS_CASES["process-frame-require-process"] = (43, PROCESS_CASES["process-memory"][1])
+# Internal cold boots of the existing kernel-require row, not a new family.
+MAPPING_AUTHORITY_PROBES = (
+    "process-authority-foreign",
+    "process-authority-epoch",
+    "process-authority-reentrant",
+    "process-authority-if",
+    "process-authority-detached",
+    "process-authority-wrong-root",
+    "process-authority-parser-mutation",
+    "process-authority-parser-activation",
+    "process-authority-table-generation",
+    "process-authority-child-generation",
+    "process-authority-sealed-fill",
+    "process-authority-snapshot-epoch",
+    "process-authority-unsealed-source",
+    "process-authority-source-retire",
+    "process-authority-snapshot-substitution",
+    "process-authority-parser-copy",
+    "process-authority-arguments-substitution",
+    "process-authority-copy-reentry",
+)
+for number, mode in enumerate(MAPPING_AUTHORITY_PROBES, 45):
+    PROCESS_CASES[mode] = (number, ())
 PROCESS_CASES["process-require-user"] = (
     44,
     ((8, 0, 0, "bin/hostile", "hostile require"), (8, 0, 0, "bin/hostile", "hostile")),
@@ -1251,7 +1274,7 @@ def uefi_profile(profile_mode, flags):
         (framebuffer, "display", "display-service", "display-service", ["kernel/policies", "library"]),
         (owned_bytes, "owned-bytes", "owned-bytes", "owned-bytes", ["kernel/policies", "library"]),
         (process, "process-policy", "process", "process", ["kernel/policies", "library"]),
-        (process, "frame-allocator", "frame-allocator", "frame-allocator", ["kernel/policies"]),
+        (process, "memory-manager", "memory-manager", "memory-manager", ["kernel/policies", "library"]),
         (process, "budget-root", "budget-root", "budget-root", ["kernel/policies"]),
         (process, "service-root", "service-root", "service-root", ["kernel/policies"]),
         (process, "service-bootstrap", "service-bootstrap", "service-bootstrap", ["kernel/policies"]),
@@ -1263,6 +1286,7 @@ def uefi_profile(profile_mode, flags):
                 source="examples/kernel-" + source + ".au", bridge="kernel/uefi/" + adapter + "-entry.S", roots=roots
             )
             if stem == "process-policy" and profile_mode == "production":
+                languages[stem]["source"] = "examples/kernel-process-production.au"
                 languages[stem]["bridge"] = "kernel/uefi/production-process-entry.S"
     return dict(
         platform="uefi",

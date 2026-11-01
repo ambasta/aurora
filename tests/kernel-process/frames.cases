@@ -409,6 +409,19 @@ grant-case stale
 grant-case bounds
 grant-case root-overlap
 grant-case root-overflow
+grant-case bankset-roundtrip
+grant-case bankset-overlap
+grant-case bankset-field-alias
+grant-case bankset-swapped-fields
+grant-case bankset-authority-as-bank
+grant-case bankset-bank-as-authority
+grant-case bankset-readonly-effect
+grant-case bankset-partial-resume
+grant-case bankset-partial-finish
+grant-case layout-minimum
+grant-case layout-table-boundary
+grant-case layout-slot-bounds
+grant-case layout-forged-plan
 
 # Readonly word loans publish a view only after exact scope authentication.
 word-borrow-case roundtrip

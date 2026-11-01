@@ -176,10 +176,10 @@ export namespace compiler_catalog {
     // 2 (Port), 3 (Serve) and 4 (HostFiles) only when admitted syntax names one
     // of their types.
     auto type_count() -> i64 {
-        return 58;
+        return 59;
     }
     auto type_kind(i64 type) -> compiler_resolver::ResolvedTypeKind {
-        if (type == 54 || type == 57) {
+        if (type == 54 || type == 57 || type == 58) {
             return compiler_resolver::ResolvedTypeKind::service_resource;
         }
         if (type == 55) {
@@ -266,7 +266,7 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::invalid;
     }
     auto type_family(i64 type) -> i64 {
-        if (type == 57) {
+        if (type == 57 || type == 58) {
             return 10;
         }
         if (type >= 54 && type < 57) {
@@ -434,6 +434,9 @@ export namespace compiler_catalog {
     // Words: full spelling, then for nominal types the native spelling and the
     // field or case names in declaration order. See use_word for begin/end.
     auto type_word(compiler_resolver::Session& session, i64 type, i64 part, i64 begin, i64 end) -> i64 {
+        if (type == 58) {
+            return use_word(session, "builtin::MappingAuthority", part, begin, end);
+        }
         if (type == 57) {
             return use_word(session, "builtin::OwnedWords", part, begin, end);
         }
@@ -614,9 +617,12 @@ export namespace compiler_catalog {
 
     // Resource identities are catalog ordinals, not per-family resolver kinds.
     auto resource_count() -> i64 {
-        return 4;
+        return 5;
     }
     auto resource_kind(i64 type) -> i64 {
+        if (type == 58) {
+            return 4;
+        }
         if (type == 57) {
             return 3;
         }
@@ -632,6 +638,9 @@ export namespace compiler_catalog {
         return -1;
     }
     auto resource_type(i64 kind) -> i64 {
+        if (kind == 4) {
+            return 58;
+        }
         if (kind == 3) {
             return 57;
         }
@@ -647,7 +656,7 @@ export namespace compiler_catalog {
         return -1;
     }
     auto resource_retained(i64 kind) -> bool {
-        return kind == 2 || kind == 3;
+        return kind == 2 || kind == 3 || kind == 4;
     }
     auto resource_field_eligible(i64 kind) -> bool {
         return kind == 0 || resource_retained(kind);
@@ -677,6 +686,9 @@ export namespace compiler_catalog {
         return kind >= 0 && kind < resource_count();
     }
     auto resource_method_count(i64 kind) -> i64 {
+        if (kind == 4) {
+            return 24;
+        }
         if (kind == 3) {
             return 4;
         }
@@ -689,6 +701,11 @@ export namespace compiler_catalog {
         return 0;
     }
     auto resource_method_word(compiler_resolver::Session& session, i64 kind, i64 method, i64 begin, i64 end) -> i64 {
+        if (kind == 4) {
+            return use_word(session,
+                "observe_table;observe_next_present;publish_empty_entry;clear_expected_entry;scrub_unpublished_frame;downgrade_snapshot_entry;snapshot_anchor_publish;snapshot_anchor_clear;frame_address;frame_index;shared_slots;shared_slot;shared_value;shared_upper;reserved_first;reserved_end;initialize_shared_upper;publish_shared_entry;copy_source_frame;fill_snapshot_chunk;clear_shared_entry;revoke_root;observe_snapshot_anchor;finish",
+                method, begin, end);
+        }
         if (kind == 3) {
             return use_word(session, "size;at;set;finish", method, begin, end);
         }
@@ -706,6 +723,13 @@ export namespace compiler_catalog {
         return -1;
     }
     auto resource_method_result(i64 kind, i64 method) -> i64 {
+        if (kind == 4) {
+            if (method == 1 || method == 8 || method == 9 || method == 10 || method == 11 || method == 12 || method
+                == 13 || method == 14 || method == 15) {
+                return 1;
+            }
+            return 3;
+        }
         if (method < 0 || method >= resource_method_count(kind)) {
             return -1;
         }
@@ -757,6 +781,21 @@ export namespace compiler_catalog {
         return 42;
     }
     auto resource_method_parameters(i64 kind, i64 method) -> i64 {
+        if (kind == 4) {
+            if (method == 10 || method == 14 || method == 15 || method == 23) {
+                return 0;
+            }
+            if (method == 1) {
+                return 2;
+            }
+            if (method == 17 || method == 20) {
+                return 3;
+            }
+            if (method == 2 || method == 3 || method == 5 || method == 18 || method == 19) {
+                return 4;
+            }
+            return 1;
+        }
         if (kind == 3 && (method == 1 || method == 2)) {
             return method;
         }
@@ -766,6 +805,9 @@ export namespace compiler_catalog {
         return 0;
     }
     auto resource_method_parameter(i64 kind, i64 method) -> i64 {
+        if (kind == 4) {
+            return 1;
+        }
         if (kind == 3 && (method == 1 || method == 2)) {
             return 1;
         }
@@ -805,6 +847,9 @@ export namespace compiler_catalog {
         return i64(name.at(index));
     }
     auto type_source_byte(i64 type, i64 index) -> i64 {
+        if (type == 58) {
+            return catalog_byte("builtin::MappingAuthority", index);
+        }
         if (type == 57) {
             return catalog_byte("builtin::OwnedWords", index);
         }
@@ -820,6 +865,9 @@ export namespace compiler_catalog {
         return -1;
     }
     auto type_native_byte(i64 type, i64 index) -> i64 {
+        if (type == 58) {
+            return catalog_byte("__au_mapping_authority", index);
+        }
         if (type == 57) {
             return catalog_byte("__au_owned_words", index);
         }
@@ -874,6 +922,81 @@ export namespace compiler_catalog {
         return -1;
     }
     auto resource_runtime_byte(i64 kind, i64 method, i64 index) -> i64 {
+        if (kind == 4) {
+            if (method == 0) {
+                return catalog_byte("__au_runtime_mapping_observe_table", index);
+            }
+            if (method == 1) {
+                return catalog_byte("__au_runtime_mapping_observe_next_present", index);
+            }
+            if (method == 2) {
+                return catalog_byte("__au_runtime_mapping_publish_empty_entry", index);
+            }
+            if (method == 3) {
+                return catalog_byte("__au_runtime_mapping_clear_expected_entry", index);
+            }
+            if (method == 4) {
+                return catalog_byte("__au_runtime_mapping_scrub_unpublished_frame", index);
+            }
+            if (method == 5) {
+                return catalog_byte("__au_runtime_mapping_downgrade_snapshot_entry", index);
+            }
+            if (method == 6) {
+                return catalog_byte("__au_runtime_mapping_snapshot_anchor_publish", index);
+            }
+            if (method == 7) {
+                return catalog_byte("__au_runtime_mapping_snapshot_anchor_clear", index);
+            }
+            if (method == 8) {
+                return catalog_byte("__au_runtime_mapping_frame_address", index);
+            }
+            if (method == 9) {
+                return catalog_byte("__au_runtime_mapping_frame_index", index);
+            }
+            if (method == 10) {
+                return catalog_byte("__au_runtime_mapping_shared_slots", index);
+            }
+            if (method == 11) {
+                return catalog_byte("__au_runtime_mapping_shared_slot", index);
+            }
+            if (method == 12) {
+                return catalog_byte("__au_runtime_mapping_shared_value", index);
+            }
+            if (method == 13) {
+                return catalog_byte("__au_runtime_mapping_shared_upper", index);
+            }
+            if (method == 14) {
+                return catalog_byte("__au_runtime_mapping_reserved_first", index);
+            }
+            if (method == 15) {
+                return catalog_byte("__au_runtime_mapping_reserved_end", index);
+            }
+            if (method == 16) {
+                return catalog_byte("__au_runtime_mapping_initialize_shared_upper", index);
+            }
+            if (method == 17) {
+                return catalog_byte("__au_runtime_mapping_publish_shared_entry", index);
+            }
+            if (method == 18) {
+                return catalog_byte("__au_runtime_mapping_copy_source_frame", index);
+            }
+            if (method == 19) {
+                return catalog_byte("__au_runtime_mapping_fill_snapshot_chunk", index);
+            }
+            if (method == 20) {
+                return catalog_byte("__au_runtime_mapping_clear_shared_entry", index);
+            }
+            if (method == 21) {
+                return catalog_byte("__au_runtime_mapping_revoke_root", index);
+            }
+            if (method == 22) {
+                return catalog_byte("__au_runtime_mapping_observe_snapshot_anchor", index);
+            }
+            if (method == 23) {
+                return catalog_byte("__au_runtime_mapping_finish", index);
+            }
+            return -1;
+        }
         if (kind == 3) {
             if (method == 0) {
                 return catalog_byte("__au_runtime_owned_words_size", index);

@@ -8,6 +8,7 @@ result, and each out-of-range input runs once from argv (native_runner.py).
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import argparse
+import json
 import tempfile
 
 from native_runner import Freestanding, check_trap, check_words, command, freestanding_glue, observe, run
@@ -66,18 +67,50 @@ auto require_false() -> i64 {
     builtin::require(counter.predicate(false));
     return 99;
 }
+class Literal {
+public:
+    Literal() {}
+    auto small() const -> u64 { return 4294967295u64; }
+    auto large() const -> u64 { return 4294967296u64; }
+};
+auto literal_small_probe() -> u64 {
+    const Literal value = Literal();
+    return value.small();
+}
+auto literal_large_probe() -> u64 {
+    const Literal value = Literal();
+    return value.large();
+}
 """
+    text_facts = None
     for mode in ("text", "object"):
         with tempfile.TemporaryDirectory(prefix="aurora-require-" + mode + "-") as temporary:
             directory = Path(temporary)
             source, output = directory / "require.au", directory / "require.output"
             source.write_text(source_text)
             options = ["--emit-object"] if mode == "object" else []
-            command([compiler, *options, source, "-o", output])
+            stack_path, abi_path = directory / "require.stack.json", directory / "require.abi.json"
+            command([compiler, *options, source, "-o", output, "--stack-facts", stack_path, "--abi-facts", abi_path])
+            stack, abi = json.loads(stack_path.read_text()), json.loads(abi_path.read_text())
+            for value, caller, folded in [
+                (4294967295, "literal_small_probe", True),
+                (4294967296, "literal_large_probe", False),
+            ]:
+                symbols = [symbol for symbol, fact in abi["literal_results"].items() if fact["value"] == value]
+                require(len(symbols) == 1, f"{mode} retained literal ABI identity for {value}")
+                symbol = symbols[0]
+                require(symbol in stack["functions"], f"{mode} literal callee was removed")
+                calls = stack["functions"][caller]["calls"]
+                require((symbol not in calls) == folded, f"{mode} literal emitted call edge for {value}")
+            if mode == "text":
+                text_facts = (stack, abi)
+            else:
+                require((stack, abi) == text_facts, "literal text/object stack and ABI facts differ")
             encoded = output.read_bytes() if mode == "object" else output.read_text()
             runner = NativeRunner(directory, None, 10)
-            observed, symbols = runner.assemble(encoded, ["require_true", "require_false"], values=[0])
-            check_words(observed, [1], [mode + " require predicate evaluated once"])
+            names = ["require_true", "require_false", "literal_small_probe", "literal_large_probe"]
+            observed, symbols = runner.assemble(encoded, names, values=[0, 2, 3])
+            check_words(observed, [1, 4294967295, 4294967296], [mode + " " + names[i] for i in [0, 2, 3]])
             check_trap(
                 observe(run([directory / "program", 1], 10)),
                 Trap.BOUNDS,
@@ -85,6 +118,7 @@ auto require_false() -> i64 {
                 mode + " require false never returned",
             )
     print("PASS require text/object: predicate once, true continues, false exact fail-stop")
+    print("PASS literal text/object: numeric boundaries, retained callees and emitted stack-edge parity")
 
 
 def main():

@@ -17,9 +17,9 @@ import kernel.process_space;
 // charge and its charge never exceeds a quota the kernel holds free frames
 // for: frames are committed on first touch, and a touch never fails.
 //
-// The supervisor stores the state and the records (sorted by first, which the
-// bump order keeps), writes the page tables and moves the frames; these
-// decisions carry no address it has not recorded.
+// MemoryManager owns the state and sorted records, selects page-table changes
+// and moves or retires frames through authenticated synchronous native effects.
+// These pure decisions carry no address the owner has not recorded.
 export namespace kernel {
     enum class MemoryVerdict {
         mapped,
@@ -314,19 +314,11 @@ export namespace kernel {
         return found;
     }
 
-    // The quota of a process whose image and arguments load with free frames
-    // left: its load (root, regions and their tables, and the two tables of
-    // each shared kernel slot) is charged first; the memory service may then
-    // charge requested frames (0 for every one left), at most those left.
-    auto memory_budget(builtin::span<const u8> image, u64 arguments, u64 slots, u64 requested,
-        u64 free) -> MemoryBudget {
-        const MemoryBudget refused = MemoryBudget{
-            .verdict = BudgetVerdict::quota,
-            .quota = 0u64,
-            .charged = 0u64
-        };
+    // Pure bounded parser cost: no available-frame or resident-quota input.
+    // The caller ends its immutable image pin before the owner admits this cost.
+    auto memory_load_charge(builtin::span<const u8> image, u64 arguments, u64 slots) -> u64 {
         if (slots > 2u64) {
-            return refused;
+            return 0u64;
         }
         u64 load = 1u64 + 2u64 * slots;
         i64 index = 0;
@@ -335,14 +327,28 @@ export namespace kernel {
             if (region.kind == 0u64) {
                 index = 12;
             } else {
-                if (region.pages > 17179869184u64 || region.first >= 140737488355328u64) {
-                    return refused;
+                if (region.pages == 0u64 || region.pages > 17179869184u64 || region.first >= 140737488355328u64) {
+                    return 0u64;
                 }
                 load = load + memory_charge(region.first, region.pages);
                 index = index + 1;
             }
         }
-        if (load == 1u64 + 2u64 * slots || load > free) {
+        if (load == 1u64 + 2u64 * slots) {
+            return 0u64;
+        }
+        return load;
+    }
+
+    // Quota admission consumes the copied layout cost and the manager's own
+    // available-frame calculation, after all native parser loans have ended.
+    auto memory_budget_from_charge(u64 load, u64 requested, u64 free) -> MemoryBudget {
+        const MemoryBudget refused = MemoryBudget{
+            .verdict = BudgetVerdict::quota,
+            .quota = 0u64,
+            .charged = 0u64
+        };
+        if (load == 0u64 || load > free) {
             return refused;
         }
         u64 granted = free - load;
@@ -354,6 +360,15 @@ export namespace kernel {
             .quota = load + granted,
             .charged = load
         };
+        return result;
+    }
+
+    // Compatibility pure query for existing hosted cases. Production admission
+    // uses the two operations above with the parser pin closed between them.
+    auto memory_budget(builtin::span<const u8> image, u64 arguments, u64 slots, u64 requested,
+        u64 free) -> MemoryBudget {
+        const MemoryBudget result = memory_budget_from_charge(memory_load_charge(image, arguments, slots), requested,
+            free);
         return result;
     }
 }

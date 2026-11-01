@@ -1,0 +1,210 @@
+# Real source owner over bounded hosted physical effects, not a second policy model.
+case lifecycle 1024
+prepare 0 16 128 7
+region 0 4194304 1 5
+live 0
+verify 0
+map 0 1
+map 0 65536
+commit 0 0
+verify 0
+remap 0 65536 32768
+verify 0
+remap 0 32768 131072
+verify 0
+unmap 0 65536
+unmap 0 131072
+verify 0
+audit
+retire 0
+audit
+end
+
+case resident-quota 256
+prepare 0 16 200 7
+region 0 4194304 1 5
+live 0
+prepare 1 16 200 7
+prepare 1 17 200 7
+region 1 4194304 1 5
+live 1
+map 1 65536
+commit 1 0
+snapshot 18 4096
+verify 0
+verify 1
+audit
+unmap 1 65536
+retire 1
+retire 0
+audit
+end
+
+case slot-reuse 256
+prepare 0 16 64 7
+region 0 4194304 1 5
+live 0
+retire 0
+prepare 0 17 64 7
+region 0 4194304 1 5
+live 0
+stale 0
+verify 0
+audit
+retire 0
+end
+
+case exact-walk 256
+prepare 0 16 64 7
+region 0 4194304 1 5
+live 0
+corrupt missing 0 4194304
+corrupt extra 0 4194304
+corrupt alias 0 4194304
+corrupt flags 0 4194304
+corrupt count 0 4194304
+corrupt owner 0 4194304
+corrupt generation 0 4194304
+verify 0
+audit
+retire 0
+end
+
+case snapshot 256
+snapshot 17 8192
+fill 32
+fill-at 8190 2
+fill-at 8191 2
+snapshot-verify
+seal
+snapshot-verify
+fill 1
+seal
+discard
+snapshot 18 0
+snapshot 18 4096
+discard
+audit
+end
+
+case snapshot-future-owner 1024
+prepare 0 16 128 7
+region 0 4194304 1 5
+live 0
+snapshot 17 8192
+fill 32
+seal
+prepare 1 17 64 7
+region 1 4194304 1 5
+live 1
+snapshot-verify
+verify 1
+audit
+discard
+live 1
+verify 1
+audit
+retire 1
+retire 0
+end
+
+case partial-load-drain 256
+prepare 0 16 64 11
+region 0 4194304 1 5
+audit
+retire 0
+audit
+prepare 0 17 64 7
+region 0 4194304 1 5
+live 0
+map 0 70368744181760
+map 0 1048576
+verify 0
+audit
+retire 0
+end
+
+case publication-fail-stop 256
+prepare 0 16 64 7
+region 0 4194304 1 5
+live 0
+map 0 65536
+fail-commit 0 19
+verify 0
+audit
+unmap 0 65536
+retire 0
+end
+
+case reservation-capacity 131072
+prepare 0 16 65536 7
+region 0 4194304 1 5
+live 0
+reserve-limit 0 16385
+verify 0
+audit
+retire 0
+end
+
+# Modeled finite-generation boundary: only valid free-record generations are
+# advanced. Source allocation/release performs every retirement and rollback.
+case staged-rollback-generation-boundary 60
+prepare 0 16 0 7
+region 0 4194304 1 5
+live 0
+generation-boundary
+map 0 65536
+commit 0 0
+unmap 0 65536
+map 0 65536
+commit 0 0
+unmap 0 65536
+map 0 65536
+commit-rollback 0 0
+verify 0
+audit
+unmap 0 65536
+retire 0
+end
+
+# Hand-counted boundary walks: the first case fills three distinct leaf tables.
+case load-leaf-boundary 1024
+prepare 0 16 0 522
+region 0 4190208 514 5
+live 0
+verify 0
+audit
+retire 0
+audit
+end
+
+case load-directory-boundary 256
+prepare 0 16 0 10
+region 0 1073737728 2 5
+live 0
+verify 0
+audit
+retire 0
+audit
+end
+
+case load-root-boundary 256
+prepare 0 16 0 11
+region 0 549755809792 2 5
+live 0
+verify 0
+audit
+retire 0
+audit
+end
+
+case load-regions-share-leaf 256
+prepare 0 16 0 13
+region 0 4194304 2 5
+region 0 4202496 2 5
+live 0
+verify 0
+audit
+retire 0
+audit
+end

@@ -12,7 +12,9 @@
 //                                 (events.cases, memory.cases)
 //   kernel-process files VOLUME CASES  file-service scripts over a volume
 //                                 (files.cases), one fresh service per line
-// stdout is compared with the golden file beside the cases.
+//   kernel-process manager CASES  source-owned memory lifecycle over a physical-page test device
+//   kernel-process benchmark FRAMES  quiet fixed-workload timings (65536 or 1048576 frames)
+// Other modes compare stdout with the golden file beside the cases.
 #include "../kernel/execution-session.hpp"
 #include "../kernel/service-bootstrap.hpp"
 #include "../kernel/resident-owner.hpp"
@@ -21,7 +23,9 @@
 #include "../kernel/uefi/frames.hpp"
 #include "../kernel/uefi/kernel-space.hpp"
 #include "kernel-process-files.hpp"
+#include "kernel-process/memory-manager-host.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -64,6 +68,7 @@ auto __au_runtime_owned_words_at(const void *binding, std::uint64_t epoch, std::
 }
 auto __au_runtime_owned_words_set(const void *binding, std::uint64_t epoch, std::uint64_t index, std::uint64_t value)
     -> std::uint64_t {
+    aurora::manager_host::Device::before_word_write(binding, index, value);
     return aurora::words::Binding::set(binding, epoch, index, value);
 }
 auto __au_runtime_owned_words_finish(const void *binding, std::uint64_t epoch) -> std::uint64_t {
@@ -313,6 +318,109 @@ auto grant_case(const std::string &name) -> void {
         using aurora::words::Access;
         using aurora::words::Binding;
         using aurora::words::Descriptor;
+        if (name.starts_with("layout-")) {
+            using Space = aurora::uefi::KernelSpace;
+            constexpr U64 process_pages = Space::process_slots * Space::process_pages;
+            if (name == "layout-minimum") {
+                const auto plan = Space::plan(200, 0, process_pages);
+                if (Space::plan(199, 0, process_pages) || !plan || plan->metadata != 196 || plan->tables != 3 ||
+                    plan->process != 192 || plan->reservation_tail != 1 || plan->scratch != 1)
+                    _exit(3);
+                const auto layout = Space::bank_layout(*plan, 200);
+                if (!layout || layout->word_offsets != std::array<U64, 4>{0, 512, 1024, 99840} ||
+                    layout->word_counts != std::array<U64, 4>{200, 200, 98816, 512} || layout->tail_offset != 99328 ||
+                    layout->tail_words != 512 || layout->metadata_words != 100352)
+                    _exit(3);
+            } else if (name == "layout-table-boundary") {
+                const auto before = Space::plan(81408, 0, process_pages), after = Space::plan(81409, 0, process_pages);
+                if (!before || !after || before->metadata != 512 || before->metadata_tables != 1 ||
+                    before->tables != 3 || after->metadata != 514 || after->metadata_tables != 2 ||
+                    after->tables != 4 || !Space::bank_layout(*before, 81408) || !Space::bank_layout(*after, 81409))
+                    _exit(3);
+            } else if (name == "layout-slot-bounds") {
+                if (Space::plan(65536, 0, process_pages + 1) ||
+                    Space::plan(65536, 0, process_pages + Space::process_pages) ||
+                    Space::plan(U64{1} << 32, 0, process_pages))
+                    _exit(3);
+            } else if (name == "layout-forged-plan") {
+                auto plan = Space::plan(65536, 0, process_pages);
+                if (!plan)
+                    _exit(3);
+                plan->scratch = 0;
+                if (Space::bank_layout(*plan, 65536))
+                    _exit(3);
+                plan->scratch = 1;
+                ++plan->records;
+                if (Space::bank_layout(*plan, 65536))
+                    _exit(3);
+            } else {
+                _exit(3);
+            }
+            _exit(0);
+        }
+        if (name.starts_with("bankset-")) {
+            std::array<std::array<U64, 4>, 4> backing{};
+            alignas(16) std::array<Descriptor, 5> root{};
+            Binding binding;
+            std::array<Binding::BankGrant, 4> grants{};
+            for (std::size_t index = 0; index < grants.size(); ++index)
+                grants[index] = {backing[index], index * sizeof(Descriptor)};
+            if (name == "bankset-overlap")
+                grants[3].words = backing[0];
+            if (name == "bankset-field-alias")
+                grants[3].field_offset = sizeof(Descriptor);
+            const auto issued = binding.bind_set(grants, root.data(), sizeof(root), 4 * sizeof(Descriptor));
+            for (std::size_t index = 0; index < grants.size(); ++index)
+                root[index] = issued.banks[index];
+            root[4] = issued.authority;
+            if (name == "bankset-swapped-fields")
+                std::swap(root[1], root[2]);
+            if (name == "bankset-authority-as-bank") {
+                Binding::Scope scope(binding, Access::write);
+                static_cast<void>(Binding::at(root[4].binding, root[4].epoch, 0));
+                _exit(3);
+            }
+            if (name == "bankset-bank-as-authority") {
+                Binding::Scope scope(binding, Access::write);
+                static_cast<void>(Binding::admitted_authority(root[0].binding, root[0].epoch));
+                _exit(3);
+            }
+            if (name == "bankset-readonly-effect") {
+                Binding::Scope scope(binding, Access::read);
+                static_cast<void>(Binding::admitted_authority(root[4].binding, root[4].epoch));
+                _exit(3);
+            }
+            {
+                Binding::Scope scope(binding, Access::write);
+                for (std::size_t index = 0; index < grants.size(); ++index)
+                    if (!Binding::set(root[index].binding, root[index].epoch, index, index + 17))
+                        _exit(3);
+            }
+            binding.suspend();
+            std::array<Binding::Backing, 4> restored{};
+            for (std::size_t index = 0; index < grants.size(); ++index)
+                restored[index] = {backing[index].data(), backing[index].size()};
+            if (name == "bankset-partial-resume")
+                restored[3].count = 3;
+            binding.resume_set(restored);
+            {
+                Binding::Scope scope(binding, Access::consume);
+                for (std::size_t index = 0; index < grants.size(); ++index) {
+                    if (Binding::at(root[index].binding, root[index].epoch, index) != index + 17 ||
+                        !Binding::finish(root[index].binding, root[index].epoch))
+                        _exit(3);
+                    root[index] = {}; // emitted consuming cleanup
+                    if (name == "bankset-partial-finish")
+                        break;
+                }
+                if (name != "bankset-partial-finish") {
+                    if (!Binding::finish_authority(root[4].binding, root[4].epoch))
+                        _exit(3);
+                    root[4] = {};
+                }
+            }
+            _exit(name == "bankset-roundtrip" && !binding.live() ? 0 : 3);
+        }
         std::array<U64, 4> words{};
         alignas(16) Descriptor root{};
         Binding binding;
@@ -389,7 +497,7 @@ auto grant_case(const std::string &name) -> void {
     int status = 0;
     if (waitpid(child, &status, 0) != child)
         usage("grant fixture wait");
-    const bool success = name == "roundtrip";
+    const bool success = name == "roundtrip" || name == "bankset-roundtrip" || name.starts_with("layout-");
     if (success ? (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
                 : (!WIFSIGNALED(status) || WTERMSIG(status) != SIGABRT))
         usage("grant fixture did not stop before access: " + name);
@@ -1968,9 +2076,455 @@ auto service_incarnation_mode(const char *cases) -> int {
 
 #include "kernel-process-resident.hpp"
 
+// Real source lifecycle over the named physical-page test device. Cases carry
+// requests; reviewed golden values, not a second mapping policy, are the oracle.
+auto manager_mode(const char *path) -> int {
+    using namespace aurora::uefi;
+    using Device = aurora::manager_host::Device;
+    std::ifstream input(path);
+    if (!input)
+        usage("manager cases");
+    std::unique_ptr<Device> device;
+    std::array<U64, 2> epochs{}, previous{}, bases{};
+    U64 snapshot_epoch = 0;
+    std::string line;
+    while (std::getline(input, line)) {
+        std::istringstream words(line);
+        std::string verb;
+        words >> verb;
+        if (verb.empty() || verb[0] == '#')
+            continue;
+        const auto take = [&]() -> U64 {
+            std::string value;
+            if (!(words >> value))
+                usage("manager missing argument");
+            return number(value);
+        };
+        if (verb == "case") {
+            if (device)
+                usage("manager unterminated case");
+            std::string name;
+            words >> name;
+            const auto count = take();
+            std::cout << "case " << name << '\n';
+            device = std::make_unique<Device>(count);
+            epochs = previous = bases = {};
+            snapshot_epoch = 0;
+            continue;
+        }
+        if (!device)
+            usage("manager operation without case");
+        auto &host = *device;
+        if (verb == "end") {
+            const bool finished = host.finish();
+            std::cout << "  end ok=" << finished << '\n';
+            device.reset();
+        } else if (verb == "audit") {
+            const bool good = host.call(__au_runtime_manager_audit_residents, {});
+            std::cout << "  audit ok=" << good << '\n';
+        } else if (verb == "generation-boundary") {
+            // Modeled boundary reached by finite allocate/release cycles. Only
+            // free-record generations change; links, states and all live frame
+            // identities remain exact. This does not claim those cycles ran.
+            U64 count = 0;
+            for (auto &record : host.allocations)
+                if ((record & 15) == 1) {
+                    record = (record & ~U64{0xfffffff0}) | U64{0xfffffff0};
+                    ++count;
+                }
+            const auto audit = host.copied<frames::FrameAudit>(__au_runtime_manager_frames_audit, {});
+            std::cout << "  generation-boundary free=" << count << " audit=" << audit.consistent << '\n';
+        } else if (verb == "snapshot") {
+            const U64 owner = take(), bytes = take();
+            const auto epoch = host.call(__au_runtime_manager_snapshot_begin, {owner, bytes});
+            if (epoch)
+                snapshot_epoch = epoch;
+            std::cout << "  snapshot accepted=" << (epoch != 0) << " epoch=" << snapshot_epoch << '\n';
+        } else if (verb == "fill" || verb == "fill-at") {
+            const U64 offset = verb == "fill-at" ? take() : 0, count = take();
+            host.source.resize(count);
+            for (U64 at = 0; at < count; ++at)
+                host.source[at] = std::byte((at * 37 + 11) & 255);
+            const auto good = host.call(__au_runtime_manager_snapshot_fill, {snapshot_epoch, offset, count});
+            std::cout << "  fill offset=" << offset << " count=" << count << " ok=" << good << '\n';
+            host.source.clear();
+        } else if (verb == "seal" || verb == "snapshot-verify" || verb == "discard") {
+            const auto function = verb == "seal"      ? __au_runtime_manager_snapshot_seal
+                                  : verb == "discard" ? __au_runtime_manager_snapshot_discard
+                                                      : __au_runtime_manager_snapshot_verify;
+            const auto good = host.call(function, {snapshot_epoch});
+            std::cout << "  " << verb << " ok=" << good << '\n';
+        } else {
+            std::string corrupt;
+            if (verb == "corrupt")
+                words >> corrupt;
+            const U64 slot = take();
+            if (slot >= epochs.size())
+                usage("manager slot");
+            if (verb == "prepare") {
+                const U64 owner = take(), quota = take(), charge = take();
+                const auto epoch = host.call(__au_runtime_manager_prepare_load, {slot, owner, quota, charge});
+                if (epoch) {
+                    previous[slot] = epochs[slot];
+                    epochs[slot] = epoch;
+                }
+                std::cout << "  prepare slot=" << slot << " accepted=" << (epoch != 0) << " epoch=" << epochs[slot]
+                          << '\n';
+            } else if (verb == "region") {
+                const U64 first = take(), pages = take(), flags = take();
+                const std::array<U64, 10> args{slot, epochs[slot], 1, first, pages, flags, first, 0, 0, 0};
+                aurora::words::Binding::Scope scope(host.binding, aurora::words::Access::write);
+                const bool good = __au_runtime_manager_map_region(host.root.data(), args.data());
+                std::cout << "  region slot=" << slot << " ok=" << good << '\n';
+            } else if (verb == "live" || verb == "verify" || verb == "stale") {
+                const auto function =
+                    verb == "live" ? __au_runtime_manager_finish_load : __au_runtime_manager_verify_space;
+                const bool good = host.call(function, {slot, verb == "stale" ? previous[slot] : epochs[slot]});
+                std::cout << "  " << verb << " slot=" << slot << (verb == "stale" ? " verify=" : " ok=") << good
+                          << '\n';
+            } else if (verb == "map" || verb == "remap" || verb == "unmap") {
+                const U64 bytes = take();
+                ManagerResult result;
+                if (verb == "map")
+                    result = host.copied<ManagerResult>(__au_runtime_manager_map_memory, {slot, epochs[slot], bytes});
+                else if (verb == "remap") {
+                    const U64 target = take();
+                    result = host.copied<ManagerResult>(__au_runtime_manager_remap_memory,
+                                                        {slot, epochs[slot], bases[slot], bytes, target});
+                } else
+                    result = host.copied<ManagerResult>(__au_runtime_manager_unmap_memory,
+                                                        {slot, epochs[slot], bases[slot], bytes});
+                if (verb != "unmap" && result.outcome == 0 && result.value != ~U64{0} - 5)
+                    bases[slot] = result.value;
+                std::cout << "  " << verb << " slot=" << slot << " outcome=" << result.outcome
+                          << " value=" << result.value << '\n';
+            } else if (verb == "reserve-limit") {
+                const U64 count = take();
+                if (!count || count > 16385)
+                    usage("manager reservation count");
+                U64 mapped = 0, exhausted = 0;
+                for (U64 at = 0; at < count; ++at) {
+                    const auto result =
+                        host.copied<ManagerResult>(__au_runtime_manager_map_memory, {slot, epochs[slot], 4096});
+                    if (result.outcome != 0)
+                        usage("manager reservation result");
+                    if (result.value == ~U64{0} - 5)
+                        ++exhausted;
+                    else {
+                        ++mapped;
+                        bases[slot] = result.value;
+                    }
+                }
+                std::cout << "  reserve-limit slot=" << slot << " mapped=" << mapped << " exhausted=" << exhausted
+                          << '\n';
+            } else if (verb == "commit") {
+                const U64 offset = take();
+                const bool good =
+                    host.call(__au_runtime_manager_commit_fault_block, {slot, epochs[slot], bases[slot] + offset});
+                std::cout << "  commit slot=" << slot << " ok=" << good << '\n';
+            } else if (verb == "commit-rollback") {
+                const U64 offset = take();
+                const auto mappings = host.mappings, incoming = host.incoming, allocations = host.allocations;
+                // Semantic reservations/regions/shared evidence, excluding the
+                // private unpublished staging tail whose dead bytes may differ.
+                const std::vector<U64> reservations(host.reservations.begin(), host.reservations.begin() + 98700);
+                std::array<std::byte, 312> owner_state{};
+                std::copy_n(host.root.begin() + 160, owner_state.size(), owner_state.begin());
+                const U64 published = host.publishes, cleared = host.clears, anchor = host.anchor;
+                const auto before = host.copied<frames::FrameAudit>(__au_runtime_manager_frames_audit, {});
+                const bool committed =
+                    host.call(__au_runtime_manager_commit_fault_block, {slot, epochs[slot], bases[slot] + offset});
+                const auto after = host.copied<frames::FrameAudit>(__au_runtime_manager_frames_audit, {});
+                bool identities = true;
+                for (std::size_t index = 0; index < allocations.size(); ++index)
+                    if ((allocations[index] & 15) == 2 && allocations[index] != host.allocations[index])
+                        identities = false;
+                const bool unchanged =
+                    identities && mappings == host.mappings && incoming == host.incoming &&
+                    std::equal(reservations.begin(), reservations.end(), host.reservations.begin()) &&
+                    std::equal(owner_state.begin(), owner_state.end(), host.root.begin() + 160) &&
+                    host.publishes == published && host.clears == cleared && host.anchor == anchor &&
+                    host.scalar(472) == 0 && host.scalar(488) == 0 && !host.window &&
+                    before.allocated == after.allocated;
+                std::cout << "  commit-rollback slot=" << slot << " refused=" << !committed
+                          << " unchanged=" << unchanged << " audit=" << after.consistent << '\n';
+            } else if (verb == "fail-commit") {
+                const U64 boundaries = take();
+                if (!boundaries || boundaries > 19)
+                    usage("manager publication boundary count");
+                auto *marker = static_cast<volatile U64 *>(
+                    mmap(nullptr, sizeof(U64), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0));
+                if (marker == MAP_FAILED)
+                    usage("manager publication marker");
+                U64 stopped = 0;
+                for (U64 boundary = 1; boundary <= boundaries; ++boundary) {
+                    *marker = 0;
+                    std::cout.flush();
+                    const auto child = fork();
+                    if (child < 0)
+                        usage("manager publication fork");
+                    if (child == 0) {
+                        host.fail_after_publish = host.publishes + boundary;
+                        host.publication_marker = marker;
+                        static_cast<void>(
+                            host.call(__au_runtime_manager_commit_fault_block, {slot, epochs[slot], bases[slot]}));
+                        _exit(77); // Returning after a visible failed effect is forbidden.
+                    }
+                    int status = 0;
+                    if (waitpid(child, &status, 0) != child)
+                        usage("manager publication wait");
+                    if (WIFSIGNALED(status) && WTERMSIG(status) == SIGILL && *marker == host.publishes + boundary)
+                        ++stopped;
+                }
+                if (munmap(const_cast<U64 *>(marker), sizeof(U64)))
+                    usage("manager publication unmap");
+                std::cout << "  fail-commit slot=" << slot << " boundaries=" << boundaries << " stopped=" << stopped
+                          << '\n';
+            } else if (verb == "retire") {
+                const auto released = host.call(__au_runtime_manager_retire_space, {slot, epochs[slot]});
+                std::cout << "  retire slot=" << slot << " released=" << released << '\n';
+            } else if (verb == "corrupt") {
+                const U64 address = take();
+                const auto entry =
+                    host.copied<ManagerEntry>(__au_runtime_manager_space_entry, {slot, epochs[slot], address, 1});
+                if (!entry.valid)
+                    usage("manager corruption location");
+                const U64 table = host.index(entry.table);
+                if (table == Device::invalid || entry.slot >= 512)
+                    usage("manager corruption physical location");
+                U64 *target = &host.physical_page(table)[entry.slot], changed = 0;
+                const U64 leaf = *target;
+                if (corrupt == "missing")
+                    changed = 0;
+                else if (corrupt == "extra") {
+                    if (entry.slot == 511)
+                        usage("manager extra slot");
+                    target = &host.physical_page(table)[entry.slot + 1];
+                    changed = leaf;
+                } else if (corrupt == "alias")
+                    changed = (leaf & ~Device::address_mask) | host.physical(table);
+                else if (corrupt == "flags")
+                    changed = leaf ^ (U64{1} << 63);
+                else if (corrupt == "count") {
+                    target = &host.mappings[table];
+                    changed = *target + 16;
+                } else if (corrupt == "owner" || corrupt == "generation") {
+                    const U64 root = host.call(__au_runtime_manager_space_value, {slot, epochs[slot], 1}) & 0xffffffff;
+                    target = &host.allocations[root];
+                    changed = *target ^ (corrupt == "owner" ? (U64{1} << 32) : (U64{1} << 4));
+                } else
+                    usage("manager corruption kind");
+                const U64 before = *target;
+                *target = changed;
+                const bool good = host.call(__au_runtime_manager_verify_space, {slot, epochs[slot]});
+                *target = before;
+                std::cout << "  corrupt kind=" << corrupt << " slot=" << slot << " verify=" << good << '\n';
+            } else
+                usage("manager operation");
+        }
+    }
+    if (device)
+        usage("manager missing terminal end");
+    return 0;
+}
+
+// FRAME_BENCHMARK_BEGIN
+// Quiet timing of the actual retained frame facade. No duplicate allocator
+// oracle: terminal consistency is checked by the source owner's own audit.
+// Fixed workload sizes make old/new runs comparable; timings are not goldens.
+auto frame_benchmark(U64 count) -> int {
+    constexpr U64 iterations = 1000000, audit_iterations = 64, occupied = 4096;
+    if (count != 65536 && count != 1048576)
+        usage("benchmark frame count must be 65536 or 1048576");
+    frames::Ranges ranges;
+    if (!ranges.add(0x1000, count))
+        usage("benchmark frame inventory");
+    const auto plan = aurora::uefi::KernelSpace::plan(count, 0, 0);
+    if (!plan)
+        usage("benchmark metadata plan");
+    std::vector<U64> records(count);
+    frames::Table table;
+    if (!table.bind(records, ranges, plan->tables, plan->metadata))
+        usage("benchmark frame bind");
+    std::vector<frames::Frame> held;
+    held.reserve(occupied);
+    for (U64 index = 0; index < occupied; ++index) {
+        const auto frame = table.allocate(frames::first_owner);
+        if (!frame)
+            usage("benchmark initial allocation");
+        held.push_back(*frame);
+    }
+    const auto initial = table.audit();
+    if (!initial.consistent || initial.allocated != occupied)
+        usage("benchmark initial audit");
+    std::cout << "benchmark frames=" << count << " occupied=" << occupied << " reserved=" << table.reserved()
+              << " iterations=" << iterations << " audit_iterations=" << audit_iterations << '\n';
+    const auto measure = [](const char *name, U64 operations, auto work) {
+        const auto start = std::chrono::steady_clock::now();
+        const U64 checksum = work();
+        const auto elapsed =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
+        std::cout << name << " operations=" << operations << " elapsed_ns=" << elapsed << " checksum=" << checksum
+                  << '\n';
+    };
+    measure("record", iterations, [&] {
+        U64 checksum = 0;
+        for (U64 index = 0; index < iterations; ++index)
+            checksum += table.record((index * 65537) % count);
+        return checksum;
+    });
+    measure("identity", iterations, [&] {
+        U64 checksum = 0;
+        for (U64 index = 0; index < iterations; ++index) {
+            const U64 position = (index * 65537) % count;
+            const auto physical = table.address(position);
+            const auto roundtrip = physical ? ranges.index(*physical) : std::nullopt;
+            if (!roundtrip || *roundtrip != position)
+                usage("benchmark identity translation");
+            const U64 record = table.record(*roundtrip);
+            checksum += frames::state(record) + frames::generation(record) + frames::word(record);
+        }
+        return checksum;
+    });
+    measure("allocate_release_pair", iterations, [&] {
+        U64 checksum = 0;
+        for (U64 index = 0; index < iterations; ++index) {
+            const auto frame = table.allocate(frames::first_owner + 1);
+            if (!frame)
+                usage("benchmark allocate");
+            checksum += frame->index + frame->generation;
+            if (table.release(*frame, frames::first_owner + 1) != frames::Rejection::none)
+                usage("benchmark release");
+        }
+        return checksum;
+    });
+    measure("full_audit", audit_iterations, [&] {
+        U64 checksum = 0;
+        for (U64 index = 0; index < audit_iterations; ++index) {
+            const auto audit = table.audit();
+            if (!audit.consistent || audit.allocated != initial.allocated || audit.free != initial.free ||
+                audit.kernel != initial.kernel || audit.retired != initial.retired)
+                usage("benchmark audit");
+            checksum += audit.free + audit.allocated + audit.kernel + audit.retired;
+        }
+        return checksum;
+    });
+    for (const auto frame : held)
+        if (table.release(frame, frames::first_owner) != frames::Rejection::none)
+            usage("benchmark terminal release");
+    const auto final = table.audit();
+    if (!final.consistent || final.allocated || final.free + final.kernel + final.retired != count || !table.finish())
+        usage("benchmark terminal audit");
+    std::cout << "benchmark terminal consistent=1 allocated=0 finished=1\n";
+    return 0;
+}
+// FRAME_BENCHMARK_END
+
+// The measured loops below intentionally match frame_benchmark: only bank/root
+// setup changes. Keeping the old path permits separately identifying generic
+// Binding overhead instead of mislabeling old FrameAllocator costs as the manager.
+auto manager_frame_benchmark(U64 count) -> int {
+    constexpr U64 iterations = 1000000, audit_iterations = 64, occupied = 4096;
+    if (count != 65536 && count != 1048576)
+        usage("benchmark frame count must be 65536 or 1048576");
+    frames::Ranges ranges;
+    if (!ranges.add(0x1000, count))
+        usage("benchmark frame inventory");
+    const auto plan = aurora::uefi::KernelSpace::plan(count, 0, 0);
+    if (!plan)
+        usage("benchmark metadata plan");
+    // No simulated PTE operations: exercise the production manager facade and
+    // source allocation ABI before attaching its privileged hardware authority.
+    // The hosted scope permits only terminal authority consumption; all named
+    // hardware effects still require the separate Device and fail without one.
+    aurora::manager_host::FrameBenchmarkScope hosted;
+    std::vector<U64> records(count), mappings(count), reservations(98816), scratch(512);
+    aurora::uefi::MemoryManager table;
+    if (!table.bind(records, mappings, reservations, scratch, ranges, plan->tables, plan->metadata))
+        usage("benchmark manager bind");
+    std::cout << "benchmark implementation=MemoryManager hardware_authority=unattached physical_effects=none\n";
+    std::vector<frames::Frame> held;
+    held.reserve(occupied);
+    for (U64 index = 0; index < occupied; ++index) {
+        const auto frame = table.allocate(frames::first_owner);
+        if (!frame)
+            usage("benchmark initial allocation");
+        held.push_back(*frame);
+    }
+    const auto initial = table.audit();
+    if (!initial.consistent || initial.allocated != occupied)
+        usage("benchmark initial audit");
+    std::cout << "benchmark frames=" << count << " occupied=" << occupied << " reserved=" << table.reserved()
+              << " iterations=" << iterations << " audit_iterations=" << audit_iterations << '\n';
+    const auto measure = [](const char *name, U64 operations, auto work) {
+        const auto start = std::chrono::steady_clock::now();
+        const U64 checksum = work();
+        const auto elapsed =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
+        std::cout << name << " operations=" << operations << " elapsed_ns=" << elapsed << " checksum=" << checksum
+                  << '\n';
+    };
+    measure("record", iterations, [&] {
+        U64 checksum = 0;
+        for (U64 index = 0; index < iterations; ++index)
+            checksum += table.record((index * 65537) % count);
+        return checksum;
+    });
+    measure("identity", iterations, [&] {
+        U64 checksum = 0;
+        for (U64 index = 0; index < iterations; ++index) {
+            const U64 position = (index * 65537) % count;
+            const auto physical = table.address(position);
+            const auto roundtrip = physical ? ranges.index(*physical) : std::nullopt;
+            if (!roundtrip || *roundtrip != position)
+                usage("benchmark identity translation");
+            const U64 record = table.record(*roundtrip);
+            checksum += frames::state(record) + frames::generation(record) + frames::word(record);
+        }
+        return checksum;
+    });
+    measure("allocate_release_pair", iterations, [&] {
+        U64 checksum = 0;
+        for (U64 index = 0; index < iterations; ++index) {
+            const auto frame = table.allocate(frames::first_owner + 1);
+            if (!frame)
+                usage("benchmark allocate");
+            checksum += frame->index + frame->generation;
+            if (table.release(*frame, frames::first_owner + 1) != frames::Rejection::none)
+                usage("benchmark release");
+        }
+        return checksum;
+    });
+    measure("full_audit", audit_iterations, [&] {
+        U64 checksum = 0;
+        for (U64 index = 0; index < audit_iterations; ++index) {
+            const auto audit = table.audit();
+            if (!audit.consistent || audit.allocated != initial.allocated || audit.free != initial.free ||
+                audit.kernel != initial.kernel || audit.retired != initial.retired)
+                usage("benchmark audit");
+            checksum += audit.free + audit.allocated + audit.kernel + audit.retired;
+        }
+        return checksum;
+    });
+    for (const auto frame : held)
+        if (table.release(frame, frames::first_owner) != frames::Rejection::none)
+            usage("benchmark terminal release");
+    const auto final = table.audit();
+    if (!final.consistent || final.allocated || final.free + final.kernel + final.retired != count || !table.finish())
+        usage("benchmark terminal audit");
+    std::cout << "benchmark terminal consistent=1 allocated=0 finished=1\n";
+    return 0;
+}
+
 } // namespace
 
 auto main(int argc, char **argv) -> int {
+    if (argc == 3 && std::string{argv[1]} == "manager-frame-benchmark")
+        return manager_frame_benchmark(number(argv[2]));
+    if (argc == 3 && std::string{argv[1]} == "manager")
+        return manager_mode(argv[2]);
+    if (argc == 3 && std::string{argv[1]} == "benchmark")
+        return frame_benchmark(number(argv[2]));
     if (argc == 3 && std::string{argv[1]} == "resident")
         return resident_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "bootstrap")
@@ -1991,5 +2545,6 @@ auto main(int argc, char **argv) -> int {
         return events_mode(argv[2]);
     if (argc == 4 && std::string{argv[1]} == "files")
         return files_mode(argv[2], argv[3]);
-    usage("usage: kernel-process frames CASES | volumes BUNDLE | events CASES | files VOLUME CASES | budget CASES");
+    usage("usage: kernel-process frames CASES | volumes BUNDLE | events CASES | files VOLUME CASES | budget CASES | "
+          "manager CASES | benchmark FRAMES | manager-frame-benchmark FRAMES");
 }

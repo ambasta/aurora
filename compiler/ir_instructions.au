@@ -2491,7 +2491,7 @@ export namespace compiler_ir_instructions {
         const i64 method = call_value(store, instruction, 2);
         if (method < 0 || method >= compiler_catalog::resource_method_count(kind)
             || compiler_catalog::resource_method_parameters(kind, method) < 0
-            || compiler_catalog::resource_method_parameters(kind, method) > 2) {
+            || compiler_catalog::resource_method_parameters(kind, method) > 4) {
             return fail(store, InstructionError::service_resource_shape);
         }
         const i64 effect = compiler_catalog::resource_method_effect(kind, method);

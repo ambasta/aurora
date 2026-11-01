@@ -1,0 +1,121 @@
+module kernel_memory_manager;
+import kernel.memory_manager;
+import kernel.frame_allocator;
+import kernel.process_space;
+
+auto manager_frames_initialize(kernel::MemoryManager& allocator, u64 tables, u64 metadata) -> bool {
+    return allocator.initialize(tables, metadata);
+}
+auto manager_frames_allocate(kernel::MemoryManager& allocator, u64 owner) -> kernel::FrameAllocation {
+    const kernel::FrameAllocation result = allocator.allocate(owner);
+    return result;
+}
+auto manager_frames_release(kernel::MemoryManager& allocator, u64 index, u64 generation, u64 owner) -> u64 {
+    return allocator.release(index, generation, owner);
+}
+auto manager_frames_record(const kernel::MemoryManager& allocator, u64 index) -> u64 {
+    return allocator.record(index);
+}
+auto manager_frames_frames(const kernel::MemoryManager& allocator) -> u64 {
+    return allocator.frames();
+}
+auto manager_frames_reserved(const kernel::MemoryManager& allocator) -> u64 {
+    return allocator.reserved();
+}
+auto manager_frames_free(const kernel::MemoryManager& allocator) -> u64 {
+    return allocator.free();
+}
+auto manager_frames_allocated(const kernel::MemoryManager& allocator) -> u64 {
+    return allocator.allocated();
+}
+auto manager_frames_owner_allocated(const kernel::MemoryManager& allocator, u64 owner) -> u64 {
+    return allocator.owner_allocated(owner);
+}
+auto manager_frames_poisoned(const kernel::MemoryManager& allocator) -> bool {
+    return allocator.poisoned();
+}
+auto manager_frames_audit(const kernel::MemoryManager& allocator) -> kernel::FrameAudit {
+    const kernel::FrameAudit result = allocator.audit();
+    return result;
+}
+
+auto manager_attach_shared(kernel::MemoryManager& manager) -> bool {
+    return manager.attach_shared();
+}
+auto manager_prepare_load(kernel::MemoryManager& manager, u64 slot, u64 owner, u64 requested, u64 charge) -> u64 {
+    return manager.prepare_load(slot, owner, requested, charge);
+}
+auto manager_map_region(kernel::MemoryManager& manager, u64 slot, u64 epoch, kernel::ProcessRegion region,
+    u64 source_kind) -> bool {
+    return manager.map_region(slot, epoch, region, source_kind);
+}
+auto manager_finish_load(kernel::MemoryManager& manager, u64 slot, u64 epoch) -> bool {
+    return manager.finish_load(slot, epoch);
+}
+auto manager_space_value(const kernel::MemoryManager& manager, u64 slot, u64 epoch, u64 selector) -> u64 {
+    return manager.space_value(slot, epoch, selector);
+}
+auto manager_map_memory(kernel::MemoryManager& manager, u64 slot, u64 epoch, u64 bytes) -> kernel::MemoryResult {
+    const kernel::MemoryResult result = manager.map_memory(slot, epoch, bytes);
+    return result;
+}
+auto manager_remap_memory(kernel::MemoryManager& manager, u64 slot, u64 epoch, u64 base, u64 bytes,
+    u64 target) -> kernel::MemoryResult {
+    const kernel::MemoryResult result = manager.remap_memory(slot, epoch, base, bytes, target);
+    return result;
+}
+auto manager_unmap_memory(kernel::MemoryManager& manager, u64 slot, u64 epoch, u64 base,
+    u64 bytes) -> kernel::MemoryResult {
+    const kernel::MemoryResult result = manager.unmap_memory(slot, epoch, base, bytes);
+    return result;
+}
+auto manager_fault_access(const kernel::MemoryManager& manager, u64 slot, u64 epoch, u64 address, u64 error) -> u64 {
+    return manager.fault_access(slot, epoch, address, error);
+}
+auto manager_commit_fault_block(kernel::MemoryManager& manager, u64 slot, u64 epoch, u64 address) -> bool {
+    return manager.commit_fault_block(slot, epoch, address);
+}
+auto manager_validate_access(kernel::MemoryManager& manager, u64 slot, u64 epoch, u64 address, u64 length,
+    bool write) -> u64 {
+    return manager.validate_access(slot, epoch, address, length, write);
+}
+auto manager_verify_space(kernel::MemoryManager& manager, u64 slot, u64 epoch) -> bool {
+    return manager.verify_space(slot, epoch);
+}
+auto manager_retire_space(kernel::MemoryManager& manager, u64 slot, u64 epoch) -> u64 {
+    return manager.retire_space(slot, epoch);
+}
+auto manager_space_contains(const kernel::MemoryManager& manager, u64 slot, u64 epoch, u64 address,
+    u64 length) -> bool {
+    return manager.space_contains(slot, epoch, address, length);
+}
+auto manager_space_executable(const kernel::MemoryManager& manager, u64 slot, u64 epoch, u64 address,
+    u64 length) -> bool {
+    return manager.space_executable(slot, epoch, address, length);
+}
+auto manager_space_entry(kernel::MemoryManager& manager, u64 slot, u64 epoch, u64 address,
+    u64 level) -> kernel::MemoryEntry {
+    const kernel::MemoryEntry result = manager.space_entry(slot, epoch, address, level);
+    return result;
+}
+auto manager_snapshot_begin(kernel::MemoryManager& manager, u64 owner, u64 bytes) -> u64 {
+    return manager.begin_snapshot(owner, bytes);
+}
+auto manager_snapshot_fill(kernel::MemoryManager& manager, u64 epoch, u64 offset, u64 count) -> bool {
+    return manager.fill_snapshot(epoch, offset, count);
+}
+auto manager_snapshot_seal(kernel::MemoryManager& manager, u64 epoch) -> bool {
+    return manager.seal_snapshot(epoch);
+}
+auto manager_snapshot_discard(kernel::MemoryManager& manager, u64 epoch) -> bool {
+    return manager.discard_snapshot(epoch);
+}
+auto manager_snapshot_verify(kernel::MemoryManager& manager, u64 epoch) -> bool {
+    return manager.verify_snapshot(epoch);
+}
+auto manager_snapshot_value(const kernel::MemoryManager& manager, u64 epoch, u64 selector) -> u64 {
+    return manager.snapshot_value(epoch, selector);
+}
+auto manager_audit_residents(kernel::MemoryManager& manager) -> bool {
+    return manager.audit_residents();
+}

@@ -544,7 +544,7 @@ namespace compiler_parser {
             133> names9 =
             "ServiceBootstrapEffects;ServiceBootstrapLease;BootstrapPreparation;BootstrapEffect;BootstrapProgress;BootstrapFinish;BootstrapResult;";
         const builtin::span<const u8> words9 = borrow_bytes(names9);
-        const array<u8, 57> names10 = "ResidentSlot;ResidentRunResult;ResidentStatus;OwnedWords;";
+        const array<u8, 74> names10 = "ResidentSlot;ResidentRunResult;ResidentStatus;OwnedWords;MappingAuthority;";
         const builtin::span<const u8> words10 = borrow_bytes(names10);
         return word_list_matches(source, token, words10) || word_list_matches(source, token, words9)
             || word_list_matches(source, token, words8) || word_list_matches(source, token, words7)
@@ -3209,9 +3209,9 @@ namespace compiler_parser {
         if (word_list_matches(source, token, lexical_owner_words)) {
             return AdmissionType(AdmissionKind::owner, 0, token);
         }
-        const array<u8, 10> words_owner = "OwnedWords";
+        const array<u8, 28> words_owner = "OwnedWords;MappingAuthority;";
         const builtin::span<const u8> words_owner_word = borrow_bytes(words_owner);
-        if (word_matches(source, token, words_owner_word, 0, 10)) {
+        if (word_list_matches(source, token, words_owner_word)) {
             return AdmissionType(AdmissionKind::owner, 0, token);
         }
         const array<u8, 12> resident_owner = "ResidentSlot";

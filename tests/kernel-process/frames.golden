@@ -202,6 +202,19 @@ grant stale -> denied
 grant bounds -> denied
 grant root-overlap -> denied
 grant root-overflow -> denied
+grant bankset-roundtrip -> passed
+grant bankset-overlap -> denied
+grant bankset-field-alias -> denied
+grant bankset-swapped-fields -> denied
+grant bankset-authority-as-bank -> denied
+grant bankset-bank-as-authority -> denied
+grant bankset-readonly-effect -> denied
+grant bankset-partial-resume -> denied
+grant bankset-partial-finish -> denied
+grant layout-minimum -> passed
+grant layout-table-boundary -> passed
+grant layout-slot-bounds -> passed
+grant layout-forged-plan -> passed
 word-borrow roundtrip -> passed
 word-borrow no-scope -> denied before publication
 word-borrow detached -> denied before publication

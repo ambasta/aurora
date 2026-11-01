@@ -286,6 +286,11 @@ public:
     PolicySpan records;
     U64 count, address, error;
 };
+class MemoryLoadArguments final {
+public:
+    PolicySpan image;
+    U64 arguments, slots;
+};
 class MemoryBudgetArguments final {
 public:
     PolicySpan image;
@@ -339,6 +344,8 @@ auto memory_unmap(const MemoryUnmapArguments *, MemoryDecision *) -> void asm("_
 auto memory_find(const MemoryFindArguments *) -> U64 asm("__au_runtime_process_memory_find")
     __attribute__((visibility("hidden")));
 auto memory_fault(const MemoryFaultArguments *) -> U64 asm("__au_runtime_process_memory_fault")
+    __attribute__((visibility("hidden")));
+auto memory_load_charge(const MemoryLoadArguments *) -> U64 asm("__au_runtime_process_memory_load_charge")
     __attribute__((visibility("hidden")));
 auto memory_budget(const MemoryBudgetArguments *, MemoryBudget *) -> void asm("__au_runtime_process_memory_budget")
     __attribute__((visibility("hidden")));
@@ -634,6 +641,10 @@ public:
 }
 // A loaded process's quota and initial charge, or a quota refusal; nullopt for
 // a malformed result.
+[[nodiscard]] inline auto memory_load_charge(std::span<const std::byte> image, U64 arguments, U64 slots) -> U64 {
+    const MemoryLoadArguments call{PolicySpan{image}, arguments, slots};
+    return bridge::memory_load_charge(&call);
+}
 [[nodiscard]] inline auto
 memory_budget(std::span<const std::byte> image, U64 arguments, U64 slots, U64 requested, U64 free)
     -> std::optional<MemoryBudget> {

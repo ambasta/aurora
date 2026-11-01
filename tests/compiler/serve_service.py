@@ -1138,17 +1138,74 @@ __au_runtime_group_entry:
         invalid["words-set-extra-value"] = words_class.replace("data.set(index,value)", "data.set(index,value,value)")
         invalid["words-resize"] = words_class.replace("data.set(index,value)", "data.resize(index,value)")
         invalid["words-native-finish-borrow"] = words_class + "auto f(Words& root)->bool{return move(root).finish();}"
+        authority = "builtin::MappingAuthority"
+        bank_fields = "".join(f"{words} {name};" for name in ("allocation", "mapping", "reservations", "scratch"))
+        bank_inputs = ",".join(f"{words} {name}" for name in ("a", "m", "r", "s"))
+        bank_init = (
+            "allocation(move(a)),mapping(move(m)),reservations(move(r)),scratch(move(s)),authority(move(effect))"
+        )
+        bank_finish = (
+            "auto finish() && ->bool{allocation.finish();mapping.finish();"
+            "reservations.finish();scratch.finish();return authority.finish();}"
+        )
+        bank_head = (
+            "class Banks{" + bank_fields + f"{authority} authority;u64 marker;public:"
+            f"Banks({bank_inputs},{authority} effect,u64 value):{bank_init},marker(value){{}}"
+        )
+        bank_effect = "auto observe(u64 ticket)->bool{return authority.observe_table(ticket);}"
+        bank_publish = (
+            "auto publish(u64 table,u64 slot,u64 entry,u64 child)->bool{"
+            "return authority.publish_empty_entry(table,slot,entry,child);}"
+        )
+        bank_class = bank_head + bank_effect + bank_publish + bank_finish + "};"
+        source.write_text("module bank_admitted;" + bank_class + "auto witness()->u64{return 0u64;}")
+        result = run([compiler, "--check", source])
+        need(result.returncode == 0, f"bank-set-admitted: {result.stderr!r}")
+        invalid["mapping-source-mint"] = f"auto f()->u64{{{authority} a={authority}();return 0u64;}}"
+        invalid["mapping-direct-input"] = f"auto f({authority} a)->bool{{return a.observe_table(0u64);}}"
+        invalid["mapping-singleton"] = (
+            f"class Wrong{{{authority} a;public:Wrong({authority} input):a(move(input)){{}}"
+            "auto finish() && ->bool{return a.finish();}};"
+        )
+        invalid["mapping-missing-bank"] = bank_class.replace(f"{words} reservations;", "")
+        invalid["mapping-swapped-banks"] = bank_class.replace(
+            "allocation(move(a)),mapping(move(m))", "allocation(move(m)),mapping(move(a))"
+        )
+        invalid["mapping-copy-authority"] = bank_class.replace("authority(move(effect))", "authority(effect)")
+        invalid["mapping-public-authority"] = bank_class.replace(
+            f"{authority} authority;", f"public:{authority} authority;private:"
+        )
+        invalid["mapping-const-effect"] = bank_class.replace("observe(u64 ticket)->", "observe(u64 ticket) const->")
+        invalid["mapping-consume-before-banks"] = bank_class.replace(
+            bank_finish, "auto finish() && ->bool{return authority.finish();}"
+        )
+        invalid["mapping-missing-authority-finish"] = bank_class.replace("return authority.finish();", "return true;")
+        invalid["mapping-effect-with-sibling-view"] = bank_class.replace(
+            "return authority.observe_table(ticket);",
+            f"const {word_span} view=borrow_words(allocation);authority.observe_table(ticket);return view.size()>0;",
+        )
+        invalid["mapping-effect-with-copied-view"] = bank_class.replace(
+            "return authority.observe_table(ticket);",
+            f"const {word_span} view=borrow_words(mapping);const {word_span} copy=view;"
+            "authority.observe_table(ticket);return copy.size()>0;",
+        )
+        invalid["mapping-helper-effect-with-view"] = bank_class.replace(
+            "return authority.observe_table(ticket);",
+            f"const {word_span} view=borrow_words(scratch);publish(ticket,0u64,0u64,ticket);return view.size()>0;",
+        )
         for label, code in invalid.items():
             if label.startswith("words-view-"):
                 code = word_helpers + code
-            if label.startswith(("resident-", "command-", "words-")):
+            if label.startswith(("resident-", "command-", "words-", "mapping-")):
                 code += "auto witness()->u64{return 0u64;}"
             source.write_text("module rejected;" + code)
             target = ["--target", "aurora"] if label.startswith(("writer-", "readonly-")) else []
             result = run([compiler, *target, "--check", source])
             need(result.returncode == 1 and b"error AU" in result.stderr, f"{label}: {result.stderr!r}")
             if (
-                label.startswith(("bootstrap-", "resident-", "command-", "words-", "require-", "lease-parameter-"))
+                label.startswith(
+                    ("bootstrap-", "resident-", "command-", "words-", "mapping-", "require-", "lease-parameter-")
+                )
                 or label == "execution-cross-issue"
             ):
                 need(b"error AU9001" not in result.stderr, f"{label}: internal failure is not semantic rejection")

@@ -1,0 +1,168 @@
+; CASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-OK
+; RUN: emit
+; CHECK: __au_runtime_mapping_publish_empty_entry
+; CHECK: __au_runtime_mapping_observe_table
+; CHECK: __au_runtime_mapping_finish
+; RUN: stack-facts
+; CHECK-JSON: functions.mapping_publish.service_abi.calls {"__au_runtime_mapping_publish_empty_entry":{"sysv_arguments":6,"result_max":1}}
+layout BankOwner []
+fields BankOwner [((26 __au_owned_words) 0 0 false)*4 ((26 __au_mapping_authority) 0 0 false)]
+storage BankOwner [] [0 16 32 48 64] 80 16 80
+function bank_constructor
+  result i64
+  params [(26 __au_owned_words)*4 (26 __au_mapping_authority)]
+  frame 80
+  receiver BankOwner true true
+  service_resource 16 __au_owned_words true
+  service_resource 32 __au_owned_words true
+  service_resource 48 __au_owned_words true
+  service_resource 64 __au_owned_words true
+  service_resource 80 __au_mapping_authority true
+    BindRetainedResourceParameter 0 16 3
+    BindRetainedResourceParameter 1 32 3
+    BindRetainedResourceParameter 2 48 3
+    BindRetainedResourceParameter 3 64 3
+    BindRetainedResourceParameter 4 80 4
+    InitializeBytesField 0 0 16
+    InitializeBytesField 0 1 32
+    InitializeBytesField 0 2 48
+    InitializeBytesField 0 3 64
+    InitializeBytesField 0 4 80
+    Constant
+    Return
+end
+function mapping_publish
+  result bool
+  params []
+  frame 0
+  receiver BankOwner true false
+    Constant 17 u64
+    Push
+    Constant 2 u64
+    Push
+    Constant 4099 u64
+    Push
+    Constant 33 u64
+    Push
+    RetainedFieldOperation 0 4 2 0 4
+    Return
+end
+function mapping_observe
+  result bool
+  params []
+  frame 64
+  receiver BankOwner true false
+  span 56
+  spanvalues 56 (28)
+    Constant 17 u64
+    RetainedFieldOperation 0 4 0 0 4
+    Return
+end
+function mapping_finish
+  result bool
+  params []
+  frame 0
+  receiver BankOwner true false true true
+    RetainedFieldOperation 0 0 3 0 3
+    RetainedFieldOperation 0 1 3 0 3
+    RetainedFieldOperation 0 2 3 0 3
+    RetainedFieldOperation 0 3 3 0 3
+    RetainedFieldOperation 0 4 23 0 4
+    Return
+end
+
+; CASE: bank constructor cannot swap same-type grant provenance
+; BASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-ERROR: resource field initialization owner nominal type mismatch
+@@ -19,2 +19,2 @@
+-    InitializeBytesField 0 0 16
+-    InitializeBytesField 0 1 32
++    InitializeBytesField 0 0 32
++    InitializeBytesField 0 1 16
+
+; CASE: bank constructor cannot omit grant
+; BASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -21 +20,0 @@
+-    InitializeBytesField 0 2 48
+
+; CASE: bank constructor cannot consume input twice
+; BASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-ERROR: constructor resource field initialized more than once
+@@ -20 +20 @@
+-    InitializeBytesField 0 1 32
++    InitializeBytesField 0 1 16
+
+; CASE: authority cannot consume before banks
+; BASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-ERROR: service resource issuer or nominal provenance mismatch
+@@ -59 +58,0 @@
+-    RetainedFieldOperation 0 0 3 0 3
+
+; CASE: authority terminal consumption cannot be omitted
+; BASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-ERROR: normal return requires explicit service resource finalization
+@@ -63 +62,0 @@
+-    RetainedFieldOperation 0 4 23 0 4
+
+; CASE: authority effect cannot borrow const receiver
+; BASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -31 +31 @@
+-  receiver BankOwner true false
++  receiver BankOwner false false
+@@ -47 +47 @@
+-  receiver BankOwner true false
++  receiver BankOwner false false
+
+; CASE: authority effect rejects forged field
+; BASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-ERROR: invalid service resource operation shape
+@@ -40 +40 @@
+-    RetainedFieldOperation 0 4 2 0 4
++    RetainedFieldOperation 0 0 2 0 4
+
+; CASE: authority publish requires all four scalar operands
+; BASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-ERROR: value stack underflow
+@@ -38,2 +37,0 @@
+-    Constant 33 u64
+-    Push
+
+; CASE: authority publish rejects signed ticket
+; BASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-ERROR: service scalar argument mismatch
+@@ -32 +32 @@
+-    Constant 17 u64
++    Constant 17 i64
+@@ -50 +50 @@
+-    Constant 17 u64
++    Constant 17 i64
+
+; CASE: authority observation excludes sibling bank loan
+; BASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-ERROR: word borrow requires a closed readonly call graph
+@@ -49,0 +50 @@
++    BorrowWordsSpan 0 0 56
+@@ -51,0 +53 @@
++    EndSpan 56
+
+; CASE: partially consumed bank set cannot perform another physical effect
+; BASE: atomic banks and synchronous mapping authority
+; RUN: verify
+; EXPECT-ERROR: service resource issuer or nominal provenance mismatch
+@@ -59,0 +60,2 @@
++    Constant 17 u64
++    RetainedFieldOperation 0 4 0 0 4

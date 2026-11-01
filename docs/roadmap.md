@@ -35,19 +35,19 @@ separate from parsing/presentation; production now retains its private note and
 named-file state in the same external Aurora owner as process files.
 
 The kernel is to become entirely Aurora. The [process image](../kernel/uefi/process.md)
-already uses Aurora policies for memory-map/frame admission, ELF and address-space
-layout, faults, kernel calls and memory quotas. A separate Aurora program owns
-file state. The retained source FrameAllocator owns its checked word backing and
-complete allocation ledger; native code authenticates backing reachability across
-metadata detach/reattach without mirroring allocator policy. Native code still
-owns privileged execution, physical mapping descriptors, page-table effects and
-process/IPC transport; this is not an all-Aurora kernel.
+already uses Aurora policies for memory admission, ELF layout, faults and kernel
+calls. A separate Aurora program owns file state. The retained source MemoryManager
+owns the allocation and mapping ledgers, reservation banks, cross-resident quota
+admission, fixed two-slot address-space lifecycle and loader snapshot lifecycle.
+Native code authenticates backing reachability and synchronous hardware effects
+across metadata detach/reattach; it retains privileged execution, volatile
+page-table access and process/IPC transport. This is not an all-Aurora kernel.
 Retiring those components needs these language and bridge capabilities, each a
 milestone with its own consumer:
 
 - further kernel-side Aurora state that persists across bridge calls: retained
-  budget, service-incarnation and frame-allocation roots now exist, while physical
-  mapping descriptors and run state still live in C++;
+  budget, service-incarnation and memory-manager roots now exist; privileged
+  execution and process/IPC transport remain native;
 - broader checked mutable memory views and data copies: boot-admitted OwnedWords
   provides fixed-extent scalar access and lexical readonly u64 borrowing for the
   frame ledger, not general allocation, mutable views, resizing, pointer adoption

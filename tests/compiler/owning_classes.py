@@ -609,6 +609,25 @@ class OwningSuite(Suite):
             self.run(unaligned, max(512, length), length, 0, 42, 2, 1, release_order=[1, 2])
 
     def cases(self):
+        literal_box = BOX.replace(
+            "    auto ok() const -> bool",
+            "    auto literal() const -> u64 { return 42u64; }\n    auto ok() const -> bool",
+        )
+        literal = self.compile(
+            "literal-receiver-keeps-owner-cleanup", program(CREATE + "return i64(box.literal());", literal_box)
+        )
+        self.run(literal, 3, 3, 0, 42, 1, 1, release_order=[1])
+        self.reject(
+            "literal-receiver-after-move",
+            program(CREATE + "Box moved=move(box);return i64(box.literal());", literal_box),
+        )
+        self.reject(
+            "literal-receiver-during-exclusive-argument-loan",
+            program(
+                CREATE + "return i64(exclusive(box,box.literal()));",
+                literal_box + "auto exclusive(Box& value,u64 argument)->u64{return argument;}",
+            ),
+        )
         dynamic = self.compile(
             "dynamic-private-field",
             program(

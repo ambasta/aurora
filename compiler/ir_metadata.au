@@ -319,6 +319,36 @@ export namespace compiler_ir_metadata {
     auto field_owner_kind(const MetadataStore& store, RawTypeRow type) -> bool {
         return owner_kind(type) || field_resource_kind(store, type) >= 0;
     }
+    auto mapping_bank_class(const MetadataStore& store, i64 nominal) -> bool {
+        if (nominal < 0 || nominal >= store.class_count()) {
+            return false;
+        }
+        const ClassResultRow shape = store.result_at(nominal);
+        const IndexRange fields = shape.fields();
+        if (fields.count() < 5) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < fields.count()) {
+            const FieldRow field = store.field_at(fields.begin() + at);
+            const RawTypeRow type = store.type_at(field.type());
+            if (at < 5) {
+                i64 expected = 3;
+                if (at == 4) {
+                    expected = 4;
+                }
+                if (field.array_flag() != 0 || field_resource_kind(store, type) != expected) {
+                    return false;
+                }
+            } else {
+                if (field_owner_kind(store, type)) {
+                    return false;
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
     auto retained_class(const MetadataStore& store, i64 nominal) -> bool {
         if (nominal < 0 || nominal >= store.class_count()) {
             return false;
@@ -813,6 +843,7 @@ export namespace compiler_ir_metadata {
                 bool composed = false;
                 i64 retained_fields = 0;
                 i64 byte_fields = 0;
+                bool authority_field = false;
                 i64 field_index = 0;
                 while (field_index < fields.count()) {
                     const FieldRow field = store.field_at(fields.begin() + field_index);
@@ -836,8 +867,11 @@ export namespace compiler_ir_metadata {
                             byte_fields = byte_fields + 1;
                         } else {
                             retained_fields = retained_fields + 1;
+                            if (field_resource_kind(store, type) == 4) {
+                                authority_field = true;
+                            }
                         }
-                        if (retained_fields > 1 || (retained_fields != 0 && byte_fields != 0)) {
+                        if (retained_fields != 0 && byte_fields != 0) {
                             return fail(store, MetadataError::owner_field_type);
                         }
                         if (field.array_flag() != 0 || field.length() != 0) {
@@ -912,6 +946,9 @@ export namespace compiler_ir_metadata {
                     }
                     next_leaf = next_leaf + field.length();
                     field_index = field_index + 1;
+                }
+                if ((retained_fields > 1 || authority_field) && !mapping_bank_class(store, at)) {
+                    return fail(store, MetadataError::owner_field_type);
                 }
                 if (next_leaf != range_count(row.leaves())) {
                     return fail(store, MetadataError::leaf_coverage);
@@ -2071,6 +2108,32 @@ export namespace compiler_ir_metadata {
     auto verify_resource_signature(MetadataStore& store, CallableRow row) -> bool {
         const FlagMasks masks = FlagMasks();
         if (resource_constructor(store, row)) {
+            const ReceiverShape bank_receiver = row.first_receiver();
+            const i64 bank_nominal = find_class(store, bank_receiver.name());
+            if (mapping_bank_class(store, bank_nominal)) {
+                const i64 count = row.value_parameter_count();
+                if (row.borrowed_root_count() != 0 || (count != 5 && count != 6)) {
+                    return fail(store, MetadataError::retained_signature);
+                }
+                const ClassResultRow shape = store.result_at(bank_nominal);
+                const IndexRange fields = shape.fields();
+                i64 grant = 0;
+                while (grant < 5) {
+                    const FieldRow field = store.field_at(fields.begin() + grant);
+                    if (!same_type(store, store.type_at(field.type()), store.type_at(row.value_parameter_begin()
+                        + grant))) {
+                        return fail(store, MetadataError::retained_signature);
+                    }
+                    grant = grant + 1;
+                }
+                if (count == 6) {
+                    const RawTypeRow config = store.type_at(row.value_parameter_begin() + 5);
+                    if (!scalar_value(store, config) && (config.kind() != 5 || owning_type(store, config))) {
+                        return fail(store, MetadataError::retained_signature);
+                    }
+                }
+                return true;
+            }
             if (row.borrowed_root_count() != 0 || row.value_parameter_count() != 1) {
                 return fail(store, MetadataError::retained_signature);
             }

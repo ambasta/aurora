@@ -2042,14 +2042,25 @@ export namespace compiler_lowering {
                 result_offset = local_offset(session, destination);
             }
             if (field >= 0) {
+                i64 affected = field;
+                if (resource == 4) {
+                    affected = -2;
+                }
                 if (compiler_catalog::resource_method_effect(resource, method) != 0 && !no_span_borrow(session,
-                    frame.capability_root_local(), field, source)) {
+                    frame.capability_root_local(), affected, source)) {
                     return false;
                 }
                 emit_RetainedFieldOperation(session, offset, field, method, result_offset, resource);
                 if (compiler_catalog::resource_method_effect(resource, method) == 2) {
                     const i64 receiver = object_loan_local(session, frame.capability_root_local());
-                    set_live(session, receiver, false, false);
+                    const LocalRow owner = session.local(receiver);
+                    const i64 nominal = tm(session, owner.concrete_type_id(), 1);
+                    const bool bank_set = mapping_bank_class(session, nominal);
+                    // Each bank is explicitly consumed; the authority closes
+                    // the complete atomic issuer only after all four banks.
+                    if (!bank_set || resource == 4) {
+                        set_live(session, receiver, false, false);
+                    }
                 }
             } else {
                 emit_ServiceResourceOperation(session, offset, method, result_offset, resource);
