@@ -84,3 +84,7 @@ the PR; none of these results upgrades physical-platform qualification.
 The registration/grant binding invariant proves the unique retained request/ID
 association needed for reclamation; a full typed grant/authorization theorem is
 not claimed. The existing Q artifact and its acceptance gate remain separate.
+
+The [A0 snapshot authority layer](../A/README.md) separately composes immutable
+grant/footprint metadata and conserved writer permission with this protocol.
+It does not change R's hardware, recovery or concurrency qualification.

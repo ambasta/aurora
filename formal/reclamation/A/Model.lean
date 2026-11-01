@@ -9,6 +9,11 @@ structure Extent where
 def Extent.Within (c p : Extent) : Prop := p.first ≤ c.first ∧ c.first ≤ c.limit ∧ c.limit ≤ p.limit
 def Extent.Contains (e : Extent) (cell : Nat) : Prop := e.first ≤ cell ∧ cell < e.limit
 
+instance (c p : Extent) : Decidable (c.Within p) :=
+  inferInstanceAs (Decidable (p.first ≤ c.first ∧ c.first ≤ c.limit ∧ c.limit ≤ p.limit))
+instance (e : Extent) (cell : Nat) : Decidable (e.Contains cell) :=
+  inferInstanceAs (Decidable (e.first ≤ cell ∧ cell < e.limit))
+
 structure Grant (Agent : Type) where
   issuer : Agent
   subject : Agent

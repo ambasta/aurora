@@ -215,6 +215,21 @@ acknowledgment must not mint a second owner. Immutable snapshots retain the
 required version until all consumers retire it, including GPU jobs and
 executable loaders.
 
+The [A0 snapshot-authority profile](../formal/reclamation/A/README.md) now
+mechanizes a bounded part of A: one arbitrary allocation's sequential writer
+permission moves through asynchronous request/transfer/use escrow, then drains
+before freeze and attenuated shared reads. It composes with R/Q by metadata
+erasure and proves reachable stream exclusion, grant/payload identity and rights
+attenuation, and no permitted write events in finite future extensions of a
+frozen current version. No heap bytes are modeled. Its checked snapshot
+receipt-to-freeze adapter is a contract correspondence to existing fill/seal/pin
+mechanisms, not verification of native code or current multi-reader pins.
+The whole-allocation profile defers disjoint writable extent splitting and
+cross-root composition; it is not a global-lock prescription or full A.
+R's owner-initiated published-use close now permits normal drain while Active,
+without falsely beginning whole-root reclamation. Completion semantics remain
+named primitive contracts, not physical-platform proofs.
+
 ## 4. Ordering, failure and durable effects
 
 **Hypothesis.** Specify consistency per object/protocol. Require linearizability

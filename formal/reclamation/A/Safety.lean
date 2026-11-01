@@ -65,7 +65,6 @@ theorem enabled_within_allocation (h : Invariant allocation s)
     (enabled : Enabled s i cell write) : allocation.Contains cell := by
   obtain ⟨e, g, he, hg, use, work, bounds, hw⟩ := enabled
   have outer := (grant_entry h hg he).2.2
-  unfold Extent.Contains Extent.Within at *
-  omega
+  exact ⟨Nat.le_trans outer.1 bounds.1, Nat.lt_of_lt_of_le bounds.2 outer.2.2⟩
 
 end Aurora.A
