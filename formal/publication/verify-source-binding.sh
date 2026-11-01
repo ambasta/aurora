@@ -8,6 +8,8 @@ case "$(lean --version)" in
 esac
 lake build SourceBinding SourceBinding.Tests source-binding-probe
 lake env lean SourceBinding/RuntimeTests.lean
+lake env lean SourceBinding/MethodTests.lean
+lake env lean SourceBinding/IdentityTests.lean
 output=$(mktemp)
 trap 'rm -f "$output"' EXIT
 lake env lean SourceBinding/Audit.lean | tee "$output"
@@ -31,7 +33,7 @@ for line in open(sys.argv[1]):
         count += 1
     else:
         sys.exit(f'Unexpected audit output: {line}')
-if count != 23:
-    sys.exit(f'Expected twenty-three theorem audits, got {count}')
+if count != 30:
+    sys.exit(f'Expected thirty theorem audits, got {count}')
 print(f'Checked {count} source-binding theorem dependency reports.')
 PY

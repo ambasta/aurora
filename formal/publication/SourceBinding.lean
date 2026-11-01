@@ -7,3 +7,5 @@ import SourceBinding.Declarations
 import SourceBinding.Bindings
 import SourceBinding.Graph
 import SourceBinding.Selection
+import SourceBinding.IRIdentity
+import SourceBinding.MethodSyntax

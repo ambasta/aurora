@@ -145,7 +145,7 @@ primitives, file IO, OS and acquired file identity. Hashes record provenance,
 not semantic correspondence. Resource probes establish implementation feasibility,
 not authority safety. Huge artifact constants are not compiled into Lean proofs.
 
-## Source binding: complete declaration-shell checkpoint
+## Source binding: selected guard syntax and IR identity checkpoint
 
 `SourceBinding` supplies a reusable raw-source boundary. Its independent byte
 grammar covers every byte, including trivia, with maximal words and adjacent
@@ -180,16 +180,25 @@ precedence and capture authenticity are not proved.
 `CheckedSelection` combines the graph certificate with selection by externally
 supplied module, namespace/class path and member name over **the same files**.
 Selection traverses only declarations, never opaque bodies or textual header
-matches. `FieldAt` binds names to exact field-list ordinals/types. The selected
-body is still an exact opaque token interval: **no selected typed body AST,
-source-use/IR correspondence or same-typed-field-swap rejection exists yet**.
-A source field map alone is not that semantic relation.
+matches. `FieldAt` binds names to exact field-list ordinals/types. The selected body is parsed over that exact interval, with full syntax consumption
+and an independently typed pure leading rejection guard. Tail statements are
+syntax only: resource calls, local effects and whole-body typing are not proved.
+`SelectedGuard` retains the same graph-backed selection and resolves each guard
+name to its formal index or complete field-list ordinal/type.
+
+`BoundIR` checks a non-template, non-overloaded source/linkage profile against
+the actual decoded publication: derived class/method names, receiver mode,
+visibility, all formals/result, and every ordered field type. Builtin resource
+source spellings must uniquely join the published resource/native catalogue.
+This is a checked profile convention, not a compiler layout, catalogue fidelity
+or lowering proof. **Same-typed field-use swaps remain accepted by identity
+alone; no source/IR execution correspondence or full guard proof is claimed.**
 
 Run `./verify-source-binding.sh` for the generic audit, tiny kernel fixtures and
-explicitly native shell/graph fixtures. The native driver is:
+explicitly native shell/graph, selected-guard and identity fixtures. The native driver is:
 
 ```sh
-.lake/build/bin/source-binding-probe ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...
+.lake/build/bin/source-binding-probe [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...
 ```
 
 Complete-graph native acceptance is not a concrete kernel theorem. Initial

@@ -28,8 +28,10 @@ about those bytes. Same-typed field swaps remain structurally admissible; source
 correspondence, opaque physical extents, effects and backend proofs remain open.
 A separate source-binding checkpoint checks full restricted-ASCII lexical and
 declaration-shell coverage, supplied-module graph consistency and named member/field
-binding. Opaque bodies, general type/name resolution, selected typed ASTs and
-source-use/IR correspondence remain unproved.
+binding, full selected-method syntax, pure leading-guard typing and an explicit
+source/IR signature plus complete ordered-field metadata identity profile.
+Tail typing/effects, general type/name resolution, source-use/IR execution
+correspondence and same-typed field-use swap rejection remain unproved.
 
 | Destination | Status |
 |---|---|

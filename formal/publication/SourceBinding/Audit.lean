@@ -22,3 +22,10 @@ import SourceBinding
 #print axioms Aurora.SourceBinding.selected_member_sound
 #print axioms Aurora.SourceBinding.field_at_sound
 #print axioms Aurora.SourceBinding.checked_selection_sound
+#print axioms Aurora.SourceBinding.expression_syntax_sound
+#print axioms Aurora.SourceBinding.method_syntax_sound
+#print axioms Aurora.SourceBinding.guard_method_sound
+#print axioms Aurora.SourceBinding.selected_guard_sound
+#print axioms Aurora.SourceBinding.OrderedFieldsIdentity.lookup
+#print axioms Aurora.SourceBinding.SourceIRIdentity.fields
+#print axioms Aurora.SourceBinding.bound_ir_identity

@@ -15,8 +15,11 @@ def showName (name : Name) : String :=
   String.intercalate "." (name.map String.fromUTF8!)
 
 def main (args : List String) : IO UInt32 := do
-  let root :: module :: classPath :: member :: paths := args |
-    throw (IO.userError "usage: source-binding-probe ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+  let (irPath, arguments) := match args with
+    | "--ir" :: path :: rest => (some path,rest)
+    | _ => (none,args)
+  let root :: module :: classPath :: member :: paths := arguments |
+    throw (IO.userError "usage: source-binding-probe [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
   if paths.isEmpty then throw (IO.userError "no source files")
   let start ← IO.monoMsNow
   let mut total := 0
@@ -29,15 +32,23 @@ def main (args : List String) : IO UInt32 := do
     files := files ++ [⟨bytes,result⟩]
     IO.println s!"SOURCE-SHELL module={showName h.module.name} imports={h.imports.names.map showName} bytes={bytes.size} top_declarations={result.source.shell.declarations.length}"
   let rootName := (root.splitOn ".").map String.toUTF8
-  let some checked := checkedSelection files rootName ((module.splitOn ".").map String.toUTF8)
-    ((classPath.splitOn "::").map String.toUTF8) member.toUTF8 |
-    throw (IO.userError "graph or selected member not bound")
-  let selected := checked.selected
+  let selectedModule := (module.splitOn ".").map String.toUTF8
+  let selectedPath := (classPath.splitOn "::").map String.toUTF8
+  let some guarded := selectGuard files rootName selectedModule selectedPath member.toUTF8 |
+    throw (IO.userError "graph, selected body syntax or pure leading guard rejected")
+  let selected := guarded.selected.selected
   let method := selected.method.function
   let declared := fields selected.classDecl.members
   IO.println s!"SOURCE-MEMBER class={classPath} member={member} fields={declared.length} formals={method.formals.length} body_begin={method.body.opening.span.first} body_end={method.body.closing.span.last} body_tokens={method.body.tokens.length}"
   for (field, index) in declared.zipIdx do
     IO.println s!"SOURCE-FIELD ordinal={index} name={String.fromUTF8! field.name}"
+  IO.println s!"SOURCE-GUARD body_statements={guarded.method.parsed.statements.length} tail_statements={guarded.method.tail.length + 1} pure_typed_guard=true"
+  if let some path := irPath then
+    let publication ← readSource path 16777216
+    let some bound := bindIR files rootName selectedModule selectedPath member.toUTF8 guarded.selected publication |
+      throw (IO.userError "source/publication identity rejected")
+    IO.println s!"SOURCE-IR-IDENTITY callable={bound.id} fields={declared.length} publication_bytes={publication.size}"
+    IO.println "IDENTITY ONLY: same-typed field-use swaps remain admissible; no semantic correspondence claim."
   IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
-  IO.println "NATIVE receipt only. Shell/opaque-body binding, not full Aurora admission, typed method AST, IR correspondence, capture authenticity or concrete kernel acceptance."
+  IO.println "NATIVE receipt only. Full selected body syntax + pure guard typing; tail untyped. No source/IR execution equivalence, capture/backend fidelity or concrete kernel acceptance."
   return 0
