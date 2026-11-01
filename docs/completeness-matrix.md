@@ -7,7 +7,11 @@ path is distinguished from an actual guest run of the final binary.
 The [first abstract reclamation proof](../formal/reclamation/README.md) checks
 parameterized coverage and safe reuse, a successful trace and negative controls
 in Lean. It assumes named physical completion semantics; it does not verify the
-current kernel, SMP support, hardware acknowledgments or progress.
+current kernel, SMP support, hardware acknowledgments or progress. The
+[endpoint refinement](../formal/reclamation/R/README.md) derives receipt soundness
+from modeled local close/drain state and asynchronous packet provenance and
+forward-simulates that proof. It still assumes endpoint primitives and an atomic
+per-root coordinator; it does not upgrade hardware or recovery support.
 
 | Destination | Status |
 |---|---|

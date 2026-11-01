@@ -1,6 +1,9 @@
 name = "aurora-reclamation"
 version = "0.1.0"
-defaultTargets = ["Q"]
+defaultTargets = ["Q", "R"]
 
 [[lean_lib]]
 name = "Q"
+
+[[lean_lib]]
+name = "R"
