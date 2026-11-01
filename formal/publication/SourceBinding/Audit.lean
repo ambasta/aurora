@@ -98,3 +98,17 @@ import SourceBinding
 #print axioms Aurora.SourceBinding.eval_call_arguments_ready
 #print axioms Aurora.SourceBinding.ReadyArguments.length
 #print axioms Aurora.SourceBinding.ReadyArguments.lookup
+
+#print axioms Aurora.SourceBinding.inject_ofMachine
+#print axioms Aurora.SourceBinding.ofMachine_inject
+#print axioms Aurora.SourceBinding.commit_inject
+#print axioms Aurora.SourceBinding.require_assertMachine
+#print axioms Aurora.SourceBinding.require_assertSource
+#print axioms Aurora.SourceBinding.assertion_related
+#print axioms Aurora.SourceBinding.resume_not_waiting
+#print axioms Aurora.SourceBinding.resume_shared
+#print axioms Aurora.SourceBinding.return_shared
+#print axioms Aurora.SourceBinding.return_restores
+#print axioms Aurora.SourceBinding.resume_return_protected
+#print axioms Aurora.SourceBinding.no_transition_returned
+#print axioms Aurora.SourceBinding.no_transition_trapped
