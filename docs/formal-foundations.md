@@ -20,6 +20,13 @@ named hardware semantics. It is not an implementation refinement or a proof of
 all obligations here. Other informal arguments below remain proof plans, not
 verification certificates.
 
+The [published-IR consumer](../formal/publication/README.md) is an executable
+implementation-connected prerequisite: generic kernel-checked decoder and
+restricted structural checker soundness, with native execution checks on actual
+published bytes. It does not establish source field-use correspondence, value
+semantics, external effects or compiler/backend fidelity. Native file acceptance
+is not silently promoted to a concrete kernel proof.
+
 **Definition.** A profile is a labeled transition system `(S, I, →)` plus
 permitted observable traces, hardware/compiler semantics, a fault/adversary
 model, fairness assumptions, and a cost interpretation. Safety means every

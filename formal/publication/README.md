@@ -2,9 +2,10 @@
 
 This standalone Lean project consumes the actual version-1
 [published listing](../../compiler/IR-PUBLICATION.md). The current D1 checkpoint
-checks wire syntax and the specific structural predicates below. **Selected
-instruction typing/CFG/call closure (D2) remains pending.** This is not source
-correspondence, a compiler-correctness proof or a kernel safety proof.
+checks wire syntax and the specific structural predicates below. An optional
+root selection additionally checks the `scalar-receiver-v1` instruction/type/CFG
+and call-closure profile. This is not source correspondence, a proof of complete
+Aurora verifier admission, compiler correctness or kernel safety.
 
 ## Byte-backed chain
 
@@ -47,9 +48,60 @@ claim is made for the whole consumer (class/resource grouping scans pools).
 D1 is not full metadata or global IR verification. Operand-role-dependent nested
 references, instruction forms/flags/targets, type constructors, leaf expansion,
 physical nonoverlap, receiver/frame/borrow rules and external effects are not
-proved by these range checks. Unknown numeric instruction forms outside future
-selected semantics remain raw data, not accepted executable behavior. D2 must
-establish its own supported signature/layout/operand/CFG/call obligations.
+proved by these range checks. Unknown numeric forms outside a selected closure
+remain raw data, not accepted executable behavior.
+
+## Selected scalar-receiver profile (D2)
+
+Roots are exact callable-name byte strings supplied to the consumer, not compiler
+snapshot-policy special cases. Candidate discovery is independently checked:
+`ClosedSlice` requires uniquely bound roots, unique selected IDs, checked complete
+bodies and every ordinary method callee in the selected set. `CheckedSlice` and
+`slice_sound` bind this to the same raw-byte artifact; no host-selected excerpts
+replace any stage. The result may be a closed superset, not a proved minimal set.
+
+The initial profile admits mutable receivers with scalar bool/u64 explicit
+parameters/results, no borrowed roots, constructors, local slots, array or nested
+aggregate fields. Every referenced scalar descriptor and leaf descriptor must
+have canonical empty name/tail fields. Scalar equivalence compares descriptors,
+not numerical TypeId identity. Canonical field indices are bound to their scalar
+leaf types and offsets; scalar eight-byte ranges are pairwise nonoverlapping.
+Frame offsets are eight-byte scalar **end offsets**, field offsets are **start
+offsets**. Retained kind26 nominal fields must match a unique catalogue resource.
+Its catalogue scalar/class/enum mapping is explicitly -1, not a fabricated scalar.
+Opaque resource physical extents are not published and are **not** certified.
+
+Supported forms: scalar constants/load/push, boolean not, u64 subtraction and
+comparison, receiver scalar loads/stores, ordinary method calls, labels/jumps/
+boolean branches, scalar return, parameter binding, retained-resource operations
+and Require. Operand arities/roles, unused payloads, signature/frame/receiver
+bindings and catalogue argument/result types are checked. Unsupported selected
+forms, type constructors, tails and flag bits reject. Catalogue effect categories
+are recognized identities, not trusted frame/authority guarantees.
+
+Branches must target later positions and matching unique labels; backward edges
+are an explicit consumer restriction, not a compiler-format prohibition. Adjacent
+labels are valid. Leader/fallthrough flags are recomputed. Independent predecessor
+coverage plus a strong-induction theorem establishes **syntactic normal-CFG
+reachability** for every selected position, not feasible value-level execution.
+Require additionally may fail; native/external failure behavior is not modeled.
+
+Candidate accumulator/argument-stack types are checked independently against
+`TypeTransfer`, `TypedRows` and every normal CFG edge. Joins may forget accumulator
+information but never stack types; reads require a known matching scalar, and
+an overwrite can restore information. `FlowsTo.known` proves that an incoming
+known type agrees with each predecessor. Require consumes its boolean current
+value. Retained calls with one scalar argument read current; zero/multiple-argument
+retained calls and ordinary method calls follow their separately checked scalar
+stack conventions. These are source/admission IR conventions, **not native ABI**.
+
+This profile does not reproduce ownership, permissions, initialization, lifetime
+or provenance facts from the full compiler verifier. It provides neither a
+value-level IR execution semantics nor authority/no-mutation theorems. Typed
+external occurrences are collected from every complete selected body; they may
+fail or have arbitrary effects. Recursion is not unfolded, and no call termination
+claim is made. Numeric schema/form meanings were independently reviewed against
+the compiler sources; their adequacy for compiler execution remains unproved.
 
 No source declarations are parsed. Same-typed field-use swaps cannot be detected
 by structural typing alone. Capture authenticity, publisher fidelity, source-to-IR
@@ -63,20 +115,25 @@ Use the official pinned Lean 4.24.0 release, without additional packages:
 
 ```sh
 ./verify.sh
-.lake/build/bin/publication-probe /path/to/complete-production-listing.ir
-python3 probe.py /path/to/complete-production-listing.ir
+.lake/build/bin/publication-probe /path/to/complete-production-listing.ir [ROOT_SYMBOL ...]
+python3 probe.py /path/to/complete-production-listing.ir [FILL_SNAPSHOT_SYMBOL]
 ```
 
 The generic proofs and small grammar fixtures are kernel-checked, with no
 `native_decide` or admitted-result axioms. `verify.sh` audits exported theorem
 dependencies, allowing only `propext`/`Quot.sound`. Complete-document fixtures and
 production mutations are **native execution tests, not concrete kernel proofs**.
+The optional production mutation workload addresses fill/enter records only to
+alter input bytes, never to certify them. It includes the expected acceptance of
+a same-typed field-use swap, explicitly exposing the absent source-use proof.
+Abnormal termination is a failed test, never a successful refusal.
 Attempting direct kernel reduction of complete-document acceptance was not
 viable in the first probe; it is not silently replaced by compiler-backed proof.
 
 Default framing limits: 16 MiB input, 1 MiB per line **including LF**, 300,000
 lines; tokens are additionally bounded and numerals inspect at most twenty
-digits. Arithmetic is unbounded Nat/Int followed by explicit i64/u64 bounds.
+digits. Selected bodies are limited to 4,096 instructions, selected closures to
+128 callables and discovery to 65,536 visits. Arithmetic is unbounded Nat/Int followed by explicit i64/u64 bounds.
 Exhaustion rejects; no partial success is returned. The driver acquires at most
 the byte limit plus one sentinel byte before refusing oversized input. These
 are operational ceilings, not proved output-size or native complexity bounds.

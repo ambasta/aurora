@@ -16,3 +16,10 @@ import Publication
 #print axioms Aurora.Publication.Increasing.pairwise
 #print axioms Aurora.Publication.structure_sound
 #print axioms Aurora.Publication.artifact_sound
+#print axioms Aurora.Publication.FlowsTo.known
+#print axioms Aurora.Publication.TypedRows.length
+#print axioms Aurora.Publication.function_sound
+#print axioms Aurora.Publication.AllFunctions.member
+#print axioms Aurora.Publication.slice_sound
+#print axioms Aurora.Publication.predecessors_reachable
+#print axioms Aurora.Publication.function_reachable

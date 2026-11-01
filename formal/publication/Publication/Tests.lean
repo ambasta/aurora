@@ -50,3 +50,28 @@ example : (fieldText "FF".toUTF8 ⟨0, 2⟩ .hex).isSome = false := by decide
 example : (fieldText "0".toUTF8 ⟨0, 1⟩ .hex).isSome = false := by decide
 example : (fieldText "".toUTF8 ⟨0, 0⟩ .hex).isSome = true := by decide
 example : (fieldText "".toUTF8 ⟨1, 0⟩ .hex).isSome = false := by decide
+
+-- Small kernel checks for type-information joins, not value semantics.
+example : FlowsTo ⟨some .word, []⟩ ⟨none, []⟩ := by decide
+example : ¬ FlowsTo ⟨some .word, []⟩ ⟨some .boolean, []⟩ := by decide
+example : ¬ FlowsTo ⟨some .word, [.word]⟩ ⟨none, []⟩ := by decide
+
+def formOnly (form : Int) : Record :=
+  ⟨"ir-code", ([0, 0, 1, -1, 6, 1, form] : List Int).map Field.integer, false⟩
+example : ¬ TypeTransfer (tables []) 0 (formOnly 91) {} {} := by decide
+example : ¬ TypeTransfer (tables []) 0 (formOnly 9) {} {} := by decide
+example : ¬ TypeTransfer (tables []) 0 (formOnly 42) {} {} := by decide
+example : TypeTransfer (tables []) 0 (formOnly 91) ⟨some .boolean, []⟩ ⟨none, []⟩ := by decide
+example : ¬ TypeTransfer (tables []) 0 (formOnly 91) ⟨some .boolean, []⟩ ⟨some .boolean, []⟩ := by decide
+example : (checkRows (tables []) 0 [formOnly 91, formOnly 9]
+    [(⟨some .boolean, []⟩, ⟨none, []⟩), (⟨none, []⟩, ⟨none, []⟩)]).isSome = false := by decide
+example : (checkRows (tables []) 0 [formOnly 91] [({}, {})]).isSome = false := by decide
+example : CallTransfer true [some .word] (some .boolean)
+    ⟨some .word, [.boolean]⟩ ⟨some .boolean, [.boolean]⟩ := by decide
+example : ¬ CallTransfer true [some .word] (some .boolean)
+    ⟨none, [.word]⟩ ⟨some .boolean, []⟩ := by decide
+example : CallTransfer false [some .word] (some .boolean)
+    ⟨none, [.word]⟩ ⟨some .boolean, []⟩ := by decide
+example : CallTransfer true [] (some .word) ⟨none, []⟩ ⟨some .word, []⟩ := by decide
+example : CallTransfer true [some .word, some .word] (some .boolean)
+    ⟨none, [.word, .word]⟩ ⟨some .boolean, []⟩ := by decide
