@@ -6,6 +6,36 @@ feature-status log. All six destination goals remain open. The detailed release
 inventory is in [system release requirements](system-release.md); storage and
 physical-platform requirements retain their own linked acceptance contracts.
 
+## Proof-first dependency order
+
+The [formal foundations](formal-foundations.md) owns the design models and precise
+proof obligations. Its [dependency gates](formal-foundations.md#6-dependency-ordered-acceptance)
+precede architectural claims; the functional workstreams below are not a serial
+single-core-first architecture. No theorem or hardware support is claimed by
+listing a gate.
+
+1. Specify identity, authority, access and failure semantics; mechanize the first
+   parameterized reclamation/authority slice, including counterexamples and a
+   successful reclamation trace.
+2. Establish the implemented language subset's concurrency/ownership semantics
+   and compiler/privileged-effect refinement under named memory models.
+3. Instantiate per-CPU state, scheduling authority, NUMA placement and translation
+   reclamation without imposing a global order on independent operations.
+4. Compose CPU/GPU/DMA/snapshot permissions, shared SoC backing and multiple
+   storage/persistence domains; prove reset, removal and reuse obligations.
+5. Establish authenticated distributed identity, durable fenced transfer,
+   retry-record lifetime and consistency/commit protocols, with conditional
+   progress and explicit uncertain outcomes.
+6. Derive model-specific scheduling/placement/data-movement bounds and matching
+   constructions or approximation gaps; qualify implementations and grow the
+   native ecosystem without treating measurements as design proofs.
+
+Heterogeneous and distributed counterexamples inform the semantic core from the
+start; these dependencies do not require finishing every proof before exploratory
+implementation. Existing working structures may be replaced when they contradict
+the target model. Fixed prototype capacities and compatibility are not design
+constraints; safety obligations and honest implementation qualification remain.
+
 ## Language and system co-evolution
 
 The language, kernel, userspace libraries, drivers, services and applications
@@ -66,7 +96,7 @@ milestone with its own consumer:
 The bounded native linker now links supported guest-built objects without host
 `ld`; general linking, assembly and complete native system rebuilding remain open.
 
-## 1. Protected programs and file services
+## Workstream 1: Protected programs and file services
 
 The [process runtime](../kernel/uefi/process.md) now runs static ELF programs with
 private address spaces, demand-backed quotas, owner-counted frame audits and
@@ -137,7 +167,7 @@ cleanup and real committed-but-reply-lost cases at the production boundary.
 Existing fixture contracts remain useful bounded
 references, not substitutes for production integration or a general scheduler.
 
-## 2. DMA-safe transport and persistent storage
+## Workstream 2: DMA-safe transport and persistent storage
 
 The closed emulator profiles now exercise default-deny AMD-Vi admission,
 requester invalidation with fresh completion and real NVMe DMA. The raw transport
@@ -161,7 +191,7 @@ recovery and mounted service behavior separately; offline parsing and synthetic
 sectors alone do not establish device provenance or clean-unmount history. No
 physical disk access follows from emulator qualification.
 
-## 3. Display, input, terminal and desktop
+## Workstream 3: Display, input, terminal and desktop
 
 With usable process/service boundaries, add authority-checked display/input and
 buffer lifetimes, then native terminal sessions and the tiling desktop. Serial
@@ -174,7 +204,7 @@ and reset recovery. Use the [release inventory](system-release.md) for the full
 application and accessibility requirements; functional references do not promise
 Linux binaries, configuration, wire protocols or POSIX compatibility.
 
-## 4. Language, runtime and native toolchain
+## Workstream 4: Language, runtime and native toolchain
 
 Grow the language where the above consumers need it, retaining checked values,
 private class state and explicit ownership. Runtime-capacity byte and copied-class
@@ -229,7 +259,7 @@ dropped with each frontend migration; record every change with
 [scripts/compiler-speed.py](../compiler/ARCHITECTURE.md#compile-speed). Self-hosting
 alone is not a compiler safety proof or a complete binutils/glibc/Mesa alternative.
 
-## 5. Physical qualification and production readiness
+## Workstream 5: Physical qualification and production readiness
 
 Qualify the complete [Framework Laptop 13 / Ryzen 7 7840U](framework-13-7840u.md)
 first, then only advertise tested [AMD tuples](amd-support.md). Gate: actual

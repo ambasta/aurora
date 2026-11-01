@@ -2,6 +2,22 @@
 
 Aurora is a temporary name for a clean-break language and operating-system ecosystem. This document proposes the target architecture; it does not certify the bootstrap as a safe language or a production kernel. “Must” describes a proposed contract that later implementations and conformance tests must satisfy.
 
+## Formal design foundation
+
+[Formal foundations](formal-foundations.md) is the source of truth for the target's
+computation, authority, topology, memory, failure and cost models, and the status
+of its proof obligations. This page describes subsystem boundaries and current
+implementation context; it does not supply a parallel formal contract. Ideal
+architecture, not preservation of bootstrap structures, is the objective.
+
+Multicore/NUMA, multiple GPUs and storage devices, integrated CPU/GPU shared-memory
+SoCs, and distributed machines are first-class model instances. Local borrowing,
+asynchronous ownership and uncertain remote completion remain distinct. Coherence,
+addressability, isolation, persistence and power domains are separate relations.
+Reclamation requires fenced authority and drained use obligations across every
+relevant agent; neither a local epoch increment nor timeout proves quiescence.
+These are design requirements, not claims that the current kernel implements them.
+
 ## Scope and assumptions
 
 The target assumes open, inspectable firmware and vendors willing to implement Aurora's contracts. That removes a compatibility constraint, not the need for hardware specifications, validation, isolation, or recovery. General-purpose computers, servers, phones, embedded systems, accelerators, and specialized peripherals are design targets, not supported hardware claims. The requested long-term scope includes all AMD Zen CPU generations and Navi/RDNA-and-later GPUs, with per-device qualification rather than inferred universal coverage. A self-hosted native system should eventually supply the practical stack of a Linux-based system, including toolchain, packages, services, desktop, shell, and applications, authored in Aurora; this is functional ambition, not a Linux ABI or source-compatibility promise.
@@ -83,11 +99,17 @@ See the [implemented language reference](../compiler/README.md) and
 
 Service isolation adds IPC, scheduling, and operational complexity. Copy-based IPC may lose throughput; shared buffers require a substantially harder protocol. Static ownership restricts some graph and callback patterns; explicit shared ownership and arenas improve expressiveness but complicate reasoning. Runtime reflection adds metadata, disclosure risk, and dispatch cost. Real-time predictability constrains allocation and dynamic features.
 
-These are proposed choices for an auditable general ecosystem, not a claim of a universally best kernel. Measure alternatives against attack surface, worst-case latency, throughput, power, memory use, developer effort, and recovery behavior. Keep exceptions explicit and limited to profiles whose tests demonstrate their costs.
+These are model-relative choices, not a universally best kernel. Justify them
+through explicit safety/progress obligations and theoretical limits, with
+constructive upper bounds or stated approximation gaps where applicable. A lower
+bound alone does not establish an optimal construction. Compare feasible designs
+under declared workloads, hardware/failure assumptions and objectives; retain
+tradeoffs instead of claiming one universal optimum. Measurements validate
+implementation behavior and model applicability, not the architectural proof.
 
-## Performance acceptance
+## Implementation performance qualification
 
-The C-like performance goal requires equivalent-C benchmarks with matched algorithms, semantic/error behavior, optimization settings and named platforms. Publish latency, throughput, memory and code-size results, including unfavorable outcomes. Track layout/padding, allocations, atomics, contention, dispatch, checks and reflection costs separately. Safety-check elimination requires validated reasoning; unchecked comparison baselines do not justify weakening semantics. No blanket zero-cost abstraction or no-overhead claim is part of this proposal.
+After the formal design argument, realized C-like performance claims require equivalent-C benchmarks with matched algorithms, semantic/error behavior, optimization settings and named platforms. Publish latency, throughput, memory and code-size results, including unfavorable outcomes. Track layout/padding, allocations, atomics, contention, dispatch, checks and reflection costs separately. Safety-check elimination requires validated reasoning; unchecked comparison baselines do not justify weakening semantics. No blanket zero-cost abstraction or no-overhead claim is part of this proposal.
 
 ## Current boundary and next reading
 
