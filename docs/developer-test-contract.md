@@ -10,7 +10,7 @@ no tests of tests. This page says how to run things today.
 `full` remains the union of the two for older scripts.
 
 ```sh
-./scripts/container.sh bash           # pinned GCC 16 / QEMU / OVMF environment
+# Select the pinned native tools; optional fallback: ./scripts/container.sh bash
 meson setup build/meson -Dbootstrap_compiler=... -Duefi_ld=...
 make test                            # nproc build/test jobs with memory watchdog
 make test-release                    # opt-in: releases, compiler and seed changes
@@ -77,10 +77,14 @@ image trap sites are verified again by the kernel itself at load time
 
 | When | What |
 | --- | --- |
-| Development | incremental build, focused tests; a native host build directory is fine for feedback |
-| Every merge | pinned container, final source: build, merge suite, the guest families the change touches, normal BIOS and UEFI smokes |
+| Development | incremental native build and focused tests |
+| Every merge | exact pinned tools, final source: build, merge suite, the guest families the change touches, normal BIOS and UEFI smokes |
 | Compiler or host-bridge changes | release suite in addition to the every-merge gates; guest scope remains the affected families |
 | Releases or seed changes | release suite and every guest family; the release suite builds the first compiler with the seed ([compiler/README.md](../compiler/README.md#source-bootstrap)) |
+
+Native execution is primary; the pinned container is a dependency fallback,
+not a second gate after native success. Record the actual route and tool identities.
+This changes no test scope, individual timeout, stack cap or memory reserve.
 
 Report the wall time of `make test` in a fresh build directory, at full
 concurrency, next to the previous main. Missing tools or skipped gates are reported, never passed.

@@ -197,7 +197,7 @@ workspace to read instruction and metadata owners together; the formatter
 shares append through exclusive mutable typed-buffer borrows.
 The seed, or a cached first compiler, builds current C1/C2 with convergence; execution and ABI
 tests qualify emission without a production fallback or historical-emitter dependency.
-Qualification requires final-source pinned-container `merge`, normal BIOS/UEFI
+Qualification requires final-source pinned-tool `merge`, normal BIOS/UEFI
 and affected guest gates. Compiler or host-bridge changes additionally run
 `release`, including the [seed's bootstrap check](../compiler/README.md#source-bootstrap)
 and in-guest self-host row. Every guest family is required for releases and seed

@@ -92,14 +92,17 @@ stated safety reason; more checking is not a reason by itself.
 3. Add positive, negative and regression tests in the style above. Fail closed for
    unsupported syntax/semantics.
 4. Develop with incremental builds and focused tests. Before a merge, run the
-   merge suite with GCC 16 in the pinned container on the final source, the guest
+   merge suite with the exact pinned GCC 16 tools on the final source, the guest
    families the change affects, and the normal BIOS and UEFI smokes. Changes to
    compiler/ or the host bridge table also run the release suite. The release
    suite and every guest family run before releases and seed changes.
-5. The pinned container (`scripts/container.sh`: Debian GCC 16, pinned QEMU, OVMF
-   and test tooling under /opt) is the reference for merge evidence. Native host
-   builds are fine for fast development feedback in their own build directory;
-   never share a build directory across toolchains.
+5. Native builds with the exact pinned tools and firmware are the primary
+   qualification route. The digest-pinned container (`scripts/container.sh`) is
+   a fallback for supplying those dependencies, not an additional acceptance
+   gate when native qualification passes. Record actual source/tool identities
+   and execution method; never claim a container ran when it did not. Missing
+   tools or tests still block their gates. Never share a build directory across
+   toolchains; see docs/local-development.md for the pinned inputs.
 6. Bootstrap: GCC builds the seed interpreter, which runs the compiler's sources
    to produce the first compiler X; X's output must equal the seed's, like GCC's
    stage compare. A build may instead start from a cached compiler; then C1 builds

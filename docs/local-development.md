@@ -1,17 +1,19 @@
 # Local development
 
-The digest-pinned container is the supported reproducible development route.
-Native GNU/Linux x86-64 setup is an advanced route requiring the exact pinned
-tools below; other native tool versions are unsupported. Final qualification
-still requires the GCC 16 `merge` suite, independent review, normal BIOS/UEFI boots and
+Native GNU/Linux x86-64 execution with the exact pinned tools and firmware below
+is the primary development and qualification route. Dependencies may be installed
+locally or supplied by a digest-verified extracted dependency image; record the
+actual versions, firmware and execution method. The digest-pinned container is a
+fallback when native dependencies are unavailable, not an extra gate after a
+successful native run. Final qualification still requires the GCC 16 `merge` suite, independent review, normal BIOS/UEFI boots and
 affected image/fault/recovery/restoration gates. The GitHub Actions workflow only
 packages the dependency image; it does not run product validation.
 
 ## Quick start
 
-With Docker or Podman installed, start from the repository root.
-
-Open the pinned shell with `./scripts/container.sh bash`. A build without
+Select the pinned native tools below and start from the repository root.
+For the fallback, Docker or Podman can open `./scripts/container.sh bash` instead.
+A build without
 `-Dbootstrap_compiler` makes its first compiler from source with the seed; the
 merge loop configures both current Meson graphs with a cached one
 (`-Dbootstrap_compiler`), following the
@@ -48,7 +50,7 @@ time AURORA_CPUS=0-7 MESON_BUILD_DIR=build/budget ./scripts/container.sh make te
 
 `make clean` removes products and preserves configuration.
 
-## Advanced native setup
+## Native setup
 
 Select matching real `gcc` and `g++` on PATH, plus the reviewed binutils, Python,
 Meson and Ninja. Check their actual versions; the name `g++` is not a version pin.
@@ -81,9 +83,9 @@ changing a normal boot. Explicit supervised/pinned workflows remain separate.
 ## Tools and explicit selections
 
 The setup gate requires GCC and G++ 16.2.0 or newer, binutils 2.47 or newer, and
-Meson 1.12.1 and Ninja 1.13.2 exactly. Newer GCC or binutils is for native
-development feedback; merge evidence comes from the container, which pins exactly
-GCC 16.2.0 and binutils 2.47. Required tools also include
+Meson 1.12.1 and Ninja 1.13.2 exactly. Qualification on either route uses the exact
+reviewed versions below, including GCC 16.2.0 and binutils 2.47; newer GCC or
+binutils is development feedback until separately qualified. Required tools also include
 GNU Make, Python 3, Bash, coreutils and ripgrep. Image-enabled configurations require a GNU PE
 linker with `i386pep`, including for BIOS-only selection. Select the reviewed
 linker explicitly with `UEFI_LD` or Meson's `-Duefi_ld`; do not rely on an implicit
@@ -187,9 +189,10 @@ Packaging performs no product validation; final product checks run locally.
 
 `scripts/container.sh` supports anonymous pulls of that public digest. It uses
 a container with dropped capabilities, a readonly root filesystem, a writable
-checkout mount for build outputs, and no runtime network. Advanced native
-validation uses explicitly selected exact tool versions; it does not claim
-byte-identical container execution. The container removes
+checkout mount for build outputs, and no runtime network. Native validation uses
+explicitly selected exact tool versions; it does not claim container execution
+or its isolation. An unavailable container engine does not block successful
+native qualification. The container removes
 its `/etc/mtools.conf` for the deterministic ESP contract; it never edits the host's
 configuration. The image includes the Event runtime and clean BAR/IVRS firmware.
 Their source archives, reviewed patches and build recipes remain under
