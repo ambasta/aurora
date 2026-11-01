@@ -1,7 +1,7 @@
 import A.Preservation
 namespace Aurora.A
 
-variable {Agent : Type} {allocation : Extent} {s : State Agent}
+variable {Agent : Type} {allocation : Footprint} {s : State Agent}
 
 def registeredState (s : State Agent) (r : R.RequestId) (destination : Option Agent)
     (e : R.Entry Agent) (a : Agent) (p : Payload Agent) : State Agent :=
@@ -9,8 +9,8 @@ def registeredState (s : State Agent) (r : R.RequestId) (destination : Option Ag
     (R.enqueue (R.registerId (R.issue s.protocol e.generation
       (R.requestedKind a destination)) r s.protocol.next) (.grant r s.protocol.next)))
     s.protocol.next p.grant
-  if p.grant.writable then move t p.grant.generation
-    (registerLocation destination s.protocol.next) else t
+  if p.grant.writable then move t p.grant.generation (.request r)
+    (registerLocation destination s.protocol.next) p.grant.footprint else t
 
 /-- First-registration payload binding is derived from immutable packet origin
 and its original source grant, not a handler read of remote mutable state. -/
@@ -19,7 +19,7 @@ theorem registration_binding (h : Invariant allocation s)
     (found : s.protocol.entries r.1 = some e) (gate : e.kind = .gate a)
     (payload : s.payloads r = some p) :
     p.grant.generation = e.generation ∧
-    p.grant.subject = destination.getD a ∧ p.grant.extent.Within allocation := by
+    p.grant.subject = destination.getD a ∧ p.grant.footprint.Within allocation := by
   obtain ⟨q, hq, qdest⟩ := h.protocol.2.packetsValid _ packet
   obtain ⟨q', parent, hq', hp, _, derived⟩ := h.payloadBound r p payload
   have same : q' = q := Option.some.inj (hq'.symm.trans hq)
@@ -30,7 +30,7 @@ theorem registration_binding (h : Invariant allocation s)
   · simpa [qdest, owner] using derived.2.1
   · have inner := derived.2.2.2.1
     have outer := bind.2.2
-    exact ⟨Nat.le_trans outer.1 inner.1, inner.2.1, Nat.le_trans inner.2.2 outer.2.2⟩
+    exact List.Subset.trans inner outer
 
 theorem register_preserves (h : Invariant allocation s)
     (packet : R.Packet.register r destination ∈ s.protocol.packets)
@@ -46,9 +46,12 @@ theorem register_preserves (h : Invariant allocation s)
     cases hw : p.grant.writable <;> simp [t, registeredState, hw, move, putGrant, atProtocol]
   have rt : t.payloads = s.payloads := by cases hw : p.grant.writable <;> simp [t, registeredState, hw, move, putGrant, atProtocol]
   have lt : t.readable = s.readable := by cases hw : p.grant.writable <;> simp [t, registeredState, hw, move, putGrant, atProtocol]
-  have tok : t.tokens = fun gen =>
+  have it : t.issued = s.issued := by cases hw : p.grant.writable <;> simp [t, registeredState, hw, move, putGrant, atProtocol]
+  have ret : t.returned = s.returned := by cases hw : p.grant.writable <;> simp [t, registeredState, hw, move, putGrant, atProtocol]
+  have hold : t.holdings = fun gen =>
       if p.grant.writable = true ∧ gen = p.grant.generation then
-        registerLocation destination s.protocol.next else s.tokens gen := by
+        Inventory.move (s.holdings gen) (.request r)
+          (registerLocation destination s.protocol.next) p.grant.footprint else s.holdings gen := by
     funext gen; cases hw : p.grant.writable <;> simp [t, registeredState, hw, move, putGrant, atProtocol]
   have reg : t.protocol.registrations = fun q => if q = r then some s.protocol.next else s.protocol.registrations q := by
     rw [pt]; rfl
@@ -61,6 +64,10 @@ theorem register_preserves (h : Invariant allocation s)
       (.register s.protocol r destination e a packet absent found gate)
   have binding := registration_binding h packet found gate payload
   have freshGrant := grants_fresh h (i := s.protocol.next) (Nat.le_refl _)
+  have freshReturned := returned_fresh h (i := s.protocol.next) (Nat.le_refl _)
+  have issued : s.issued p.grant.generation = true := by
+    obtain ⟨q,parent,_,hg,_,derived⟩ := h.payloadBound r p payload
+    simpa [derived.2.2.1] using h.grantsIssued _ _ hg
   have oldGrant (j : Nat) (g : Grant Agent) (hg : s.grants j = some g) : t.grants j = some g := by
     have ne : j ≠ s.protocol.next := by intro eq; subst j; simp [freshGrant] at hg
     simp [gt, ne, hg]
@@ -68,16 +75,23 @@ theorem register_preserves (h : Invariant allocation s)
     have less := Q.registered_lt h.protocol.1 (R.project_found hn)
     change j < s.protocol.next at less
     omega
-  have frozen (gen : Nat) (hf : Frozen s gen) : Frozen t gen := by
-    obtain ⟨j, hj⟩ := hf
-    refine ⟨j, ?_⟩
-    simp only [tok]
-    split
-    · rename_i hc
-      have held := h.pendingWriter r p payload hc.1 absent
-      rw [hc.2, held] at hj
-      contradiction
-    · exact hj
+  have frozenEqual (gen : Nat) : t.holdings gen .frozen = s.holdings gen .frozen := by
+    simp only [hold]; split
+    · cases destination <;> simp [registerLocation, Inventory.move]
+    · rfl
+  have gateEqual (gen j : Nat) : t.holdings gen (.gate j) = s.holdings gen (.gate j) := by
+    simp only [hold]; split
+    · cases destination <;> simp [registerLocation, Inventory.move]
+    · rfl
+  have sourceMembers (gen cell : Nat) : cell ∈ s.holdings gen (.request r) ↔
+      p.grant.generation = gen ∧ p.grant.writable = true ∧ cell ∈ p.grant.footprint := by
+    rw [h.accounted]
+    by_cases hg : p.grant.generation = gen <;> cases hw : p.grant.writable <;>
+      simp [expected,payload,absent,hg,hw]
+  have freshUse (gen cell : Nat) : cell ∉ s.holdings gen (.use s.protocol.next) := by
+    simp [h.accounted,expected,freshGrant]
+  have freshTransfer (gen cell : Nat) : cell ∉ s.holdings gen (.transfer s.protocol.next) := by
+    simp [h.accounted,expected,freshGrant]
   change Invariant allocation t
   constructor
   · exact hp
@@ -99,6 +113,12 @@ theorem register_preserves (h : Invariant allocation s)
     · subst j; exact ⟨p.grant, by simp [gt]⟩
     · obtain ⟨g, hg⟩ := h.grantsTotal j n hn
       exact ⟨g, oldGrant j g hg⟩
+  · intro j g hg
+    simp only [gt] at hg
+    split at hg
+    · have eq : g = p.grant := Option.some.inj hg.symm
+      subst g; simpa [it] using issued
+    · simpa [it] using h.grantsIssued j g hg
   · intro q data hdata
     simp only [rt] at hdata
     obtain ⟨request, parent, hr, hg, origin, derived⟩ := h.payloadBound q data hdata
@@ -115,50 +135,70 @@ theorem register_preserves (h : Invariant allocation s)
       exact ⟨p, by simpa [rt] using payload, by simp [gt]⟩
     · obtain ⟨data, hd, hg⟩ := h.registeredBound q j hj
       exact ⟨data, by simpa [rt] using hd, oldGrant _ _ hg⟩
-  · intro q data hd hw ha
-    simp only [rt] at hd
-    have neq : q ≠ r := by intro eq; subst q; simp [reg] at ha
-    have old := h.pendingWriter q data hd hw (by simpa [reg, neq] using ha)
-    simp only [tok]
+  · intro gen hi
+    simp only [it] at hi
+    simp only [hold]
     split
     · rename_i hc
-      have held := h.pendingWriter r p payload hc.1 absent
-      have same : q = r := Location.request.inj (by simpa [hc.2, held] using old.symm)
-      exact False.elim (neq same)
-    · exact old
-  · intro j g n hg hn hw hu hx
-    simp only [gt] at hg
-    split at hg
-    · rename_i same
-      subst j
-      have geq : g = p.grant := Option.some.inj hg.symm
-      subst g
-      have ne : n = ({ generation := e.generation, kind := R.requestedKind a destination } : R.Entry Agent) := by
-        simpa [ent] using hn.symm
-      subst n
-      simp [tok, hw]
-      cases destination <;> rfl
-    · rename_i neq
-      have oldfound : s.protocol.entries j = some n := by simpa [ent, neq] using hn
-      have old := h.executingWriter j g n hg oldfound hw hu hx
-      simp only [tok]
-      split
-      · rename_i hc
-        have held := h.pendingWriter r p payload hc.1 absent
-        rw [hc.2, held] at old
-        cases nk : n.kind <;> simp_all [Executing, executingLocation]
-      · exact old
+      have owned : p.grant.footprint ⊆ s.holdings gen (.request r) := by
+        intro cell member
+        exact (sourceMembers gen cell).2 ⟨hc.2.symm,hc.1,member⟩
+      apply Inventory.move_partition (h.partition gen hi) _ owned
+      cases destination <;> simp [registerLocation]
+    · exact h.partition gen hi
+  · intro gen hi loc
+    simp only [it] at hi
+    have ne : gen ≠ p.grant.generation := by intro eq; subst gen; simp [issued] at hi
+    simpa [hold,ne] using h.unissuedEmpty gen hi loc
+  · intro gen loc cell
+    cases loc with
+    | gate j => rfl
+    | frozen => rfl
+    | request q =>
+      by_cases same : q = r
+      · subst q
+        by_cases hw : p.grant.writable = true <;> by_cases heq : gen = p.grant.generation <;>
+          simp [hold,hw,heq,Inventory.move,expected,rt,payload,reg,sourceMembers,eq_comm]
+      · have old := h.accounted gen (.request q) cell
+        by_cases hc : p.grant.writable = true ∧ gen = p.grant.generation <;> cases destination <;>
+          simpa [hold,hc,Inventory.move,registerLocation,same,expected,rt,reg] using old
+    | use j =>
+      by_cases same : j = s.protocol.next
+      · subst j
+        cases destination <;> by_cases hw : p.grant.writable = true <;>
+          by_cases heq : gen = p.grant.generation <;>
+          simp [hold,hw,heq,Inventory.move,registerLocation,freshUse,expected,gt,ent,ret,
+            freshReturned,R.requestedKind,isUse,eq_comm]
+      · have old := h.accounted gen (.use j) cell
+        by_cases hc : p.grant.writable = true ∧ gen = p.grant.generation <;> cases destination <;>
+          simpa [hold,hc,Inventory.move,registerLocation,same,expected,gt,ent,ret] using old
+    | transfer j =>
+      by_cases same : j = s.protocol.next
+      · subst j
+        cases destination <;> by_cases hw : p.grant.writable = true <;>
+          by_cases heq : gen = p.grant.generation <;>
+          simp [hold,hw,heq,Inventory.move,registerLocation,freshTransfer,expected,gt,ent,
+            R.requestedKind,isTransfer,eq_comm]
+      · have old := h.accounted gen (.transfer j) cell
+        by_cases hc : p.grant.writable = true ∧ gen = p.grant.generation <;> cases destination <;>
+          simpa [hold,hc,Inventory.move,registerLocation,same,expected,gt,ent] using old
+  · intro gen j cell hc
+    obtain ⟨g,n,hg,hn,hgen,hkind,hcell⟩ := h.gateInventory gen j cell (by simpa [gateEqual] using hc)
+    exact ⟨g,n,oldGrant j g hg,by simpa [ent,oldEntry j n hn] using hn,hgen,hkind,hcell⟩
+  · intro j hj
+    obtain ⟨n,b,hn,hkind,hseal⟩ := h.returnedSound j (by simpa [ret] using hj)
+    exact ⟨n,b,by simpa [ent,oldEntry j n hn] using hn,hkind,hseal⟩
   · intro q data hd hr
-    exact frozen _ (h.readerPayload q data (by simpa [rt] using hd) hr)
+    simpa [Frozen, frozenEqual] using h.readerPayload q data (by simpa [rt] using hd) hr
   · intro j g hg hr
     simp only [gt] at hg
     split at hg
     · have eq : g = p.grant := Option.some.inj hg.symm
-      subst g; exact frozen _ (h.readerPayload r p payload hr)
-    · exact frozen _ (h.readerGrant j g hg hr)
-  · intro j hj
-    obtain ⟨g, hg, hf⟩ := h.readableSound j (by simpa [lt] using hj)
-    exact ⟨g, oldGrant _ _ hg, frozen _ hf⟩
+      subst g; simpa [Frozen,frozenEqual] using h.readerPayload r p payload hr
+    · simpa [Frozen,frozenEqual] using h.readerGrant j g hg hr
+  · intro j cell hj
+    obtain ⟨g,hg,hcell,hf⟩ := h.readableSound j cell (by simpa [lt] using hj)
+    exact ⟨g,oldGrant j g hg,hcell,by simpa [frozenEqual] using hf⟩
   · intro j g n hg hn hw
     simp only [ent] at hn
     split at hn

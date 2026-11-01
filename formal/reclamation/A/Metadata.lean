@@ -4,7 +4,7 @@ import A.Simulation
 namespace Aurora.A
 
 variable {Agent : Type} {s t : State Agent} {p q : R.State Agent}
-variable {allocation : Extent} {issuer initialSubject : Agent}
+variable {allocation : Footprint} {issuer initialSubject : Agent}
 
 /-- An endpoint-only update cannot create a new entry or extend physical work. -/
 private theorem put_entry_backward (oldFound : p.entries j = some old)
@@ -57,6 +57,26 @@ theorem passive_entry_identity (operation : Passive p q) (i : Nat) :
   cases operation <;> try rfl
   all_goals apply put_entry_identity <;> first | assumption | rfl
 
+private theorem put_receiver_identity (oldFound : p.entries j = some old)
+    (receiver : new.receiver = old.receiver) :
+    ((R.put p j new).entries i).map R.Entry.receiver =
+      (p.entries i).map R.Entry.receiver := by
+  by_cases same : i = j
+  · subst i; simp [R.put, oldFound, receiver]
+  · simp [R.put, same]
+
+/-- Passive handlers cannot resolve a transfer or change its reserved receiver. -/
+theorem passive_receiver_identity (operation : Passive p q) (i : Nat) :
+    (q.entries i).map R.Entry.receiver = (p.entries i).map R.Entry.receiver := by
+  cases operation <;> try rfl
+  all_goals apply put_receiver_identity <;> first | assumption | rfl
+
+theorem passive_receiver_same (operation : Passive p q)
+    (before : p.entries i = some e) (after : q.entries i = some n) :
+    n.receiver = e.receiver := by
+  have identity := passive_receiver_identity operation i
+  simpa [before, after] using identity
+
 theorem passive_entry_forward (operation : Passive p q) (found : p.entries i = some e) :
     ∃ after, q.entries i = some after ∧ after.generation = e.generation ∧ after.kind = e.kind := by
   have identity := passive_entry_identity operation i
@@ -108,7 +128,7 @@ theorem step_preserves_grant (h : Invariant allocation s)
     subst i
     simp [absent] at found
   cases step with
-  | root active valid available => simpa [move, putGrant, atProtocol, different] using found
+  | root active available => simpa [mint, putGrant, atProtocol, different] using found
   | request i nonce e grant destination extent writable delegates foundEntry gate granted
       published notClosed fresh within delegation attenuate permission =>
       cases writable <;> exact found

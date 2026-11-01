@@ -3,7 +3,7 @@ import A.Model
 namespace Aurora.A
 
 variable {Agent : Type} {p q : R.State Agent} {s t u v : State Agent}
-variable {issuer initialSubject : Agent} {allocation : Extent}
+variable {issuer initialSubject : Agent} {allocation : Footprint}
 
 /-- The explicit passive whitelist contains only actual protocol actions. -/
 theorem passive_erases (operation : Passive p q) : R.Step p .internal q := by
@@ -39,14 +39,14 @@ theorem passive_erases (operation : Passive p q) : R.Step p .internal q := by
 theorem step_erases (step : Step issuer initialSubject allocation s event t) :
     R.Step s.protocol (erase event) t.protocol := by
   cases step with
-  | root active valid available => exact .root s.protocol initialSubject active
-  | request i nonce e g destination extent writable delegates found gate granted
+  | root active available => exact .root s.protocol initialSubject active
+  | request i nonce e g destination footprint writable delegates found gate granted
       published notClosed fresh within delegation attenuate permission =>
       cases writable <;>
         exact R.Step.request s.protocol i nonce e g.subject destination found gate published notClosed fresh
   | register r destination e a payload packet absent found gate hasPayload =>
       cases writable : payload.grant.writable <;>
-        simpa [writable, putGrant, atProtocol, move, erase] using
+        simpa [writable, putGrant, atProtocol, move, mint, erase] using
           R.Step.register s.protocol r destination e a packet absent found gate
   | activate i e destination g packet found transfer pending granted =>
       cases writable : g.writable <;>
@@ -56,9 +56,9 @@ theorem step_erases (step : Step issuer initialSubject allocation s event t) :
       exact .submit s.protocol i e g.subject found use published notClosed
   | effect i e g cell found use granted work within =>
       exact .effect s.protocol i e g.subject found use work
-  | returnUse r i e payload registered hasPayload writer found use receipt held =>
+  | returnUse r i e payload registered hasPayload writer origin found use bound receipt fresh =>
       exact .stutter s.protocol
-  | freeze i g granted held => exact .stutter s.protocol
+  | freeze i e g footprint found gate granted within available => exact .stutter s.protocol
   | passive protocol operation => exact passive_erases operation
   | reuse quiet => exact .reuse s.protocol quiet
   | refuse => exact .stutter s.protocol

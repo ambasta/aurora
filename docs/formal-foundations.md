@@ -215,20 +215,26 @@ acknowledgment must not mint a second owner. Immutable snapshots retain the
 required version until all consumers retire it, including GPU jobs and
 executable loaders.
 
-The [A0 snapshot-authority profile](../formal/reclamation/A/README.md) now
-mechanizes a bounded part of A: one arbitrary allocation's sequential writer
-permission moves through asynchronous request/transfer/use escrow, then drains
-before freeze and attenuated shared reads. It composes with R/Q by metadata
-erasure and proves reachable stream exclusion, grant/payload identity and rights
-attenuation, and no permitted write events in finite future extensions of a
-frozen current version. No heap bytes are modeled. Its checked snapshot
-receipt-to-freeze adapter is a contract correspondence to existing fill/seal/pin
-mechanisms, not verification of native code or current multi-reader pins.
-The whole-allocation profile defers disjoint writable extent splitting and
-cross-root composition; it is not a global-lock prescription or full A.
-R's owner-initiated published-use close now permits normal drain while Active,
-without falsely beginning whole-root reclamation. Completion semantics remain
-named primitive contracts, not physical-platform proofs.
+The [backing-footprint authority layer](../formal/reclamation/A/README.md)
+generalizes the bounded A0 profile in place. One arbitrary root admits disjoint
+finite writable footprints, including scattered backing, with exact local
+subtraction, immutable request/transfer/use escrow and permanent use-ticket
+return markers. Freeze consumes only locally free cells, allowing overlapping
+immutable readers beside disjoint writers. Its partition theorem proves exact
+union and per-cell unique ownership; read copies are not exclusive claims.
+Effects consult admitted descriptors and outstanding work only. An unconditional
+accounting-erasure theorem establishes that non-gate bookkeeping cannot restrict
+operational transitions. R/Q remain unchanged and supply safe generation reuse.
+
+The checked snapshot adapter requires exact returned-plus-free coverage before
+full freeze. The serial whole-writer result is an explicit restricted-profile
+corollary, not a claim that the generalized traces satisfy A0's stronger exclusion.
+Conditional alias-image lemmas do not verify native address decoding. No heap
+bytes, native page downgrade, physical completion or compiler semantics are proved.
+Same-root protocol coordination, abstract atomic authority return, honest endpoints
+and unbounded metadata remain explicit boundaries; cross-root commutativity,
+weak memory, durable recovery and full obligation A remain open. Final-source
+qualification is recorded independently of these bounded model statements.
 
 ## 4. Ordering, failure and durable effects
 
@@ -354,6 +360,7 @@ particular obligations or restricted constructions, not the whole design.
 | Decision; rejected alternative | Evidence and exact limit | Aurora proof still needed |
 |---|---|---|
 | Adopt capability-enforced isolation and topology-local ownership; reject mandatory global mutable kernel state and unrestricted physical delegation. | [Barrelfish, SOSP 2009](https://barrelfish.org/publications/barrelfish_sosp09.pdf) demonstrates explicit inter-core protocols. [seL4 proof caveats](https://github.com/seL4/seL4/blob/master/CAVEATS.md) delimit configurations and do not confer verified SMP on Aurora. These are architecture/proof-scope examples, not an optimum theorem. | Authority conservation, isolation, delegation/revocation and compiler/hardware refinement for each admitted configuration. |
+| Admit disjoint writable backing footprints and overlapping frozen readers; reject whole-allocation serialization as a permanent rule and logical view IDs as alias evidence. | [Permissions Regions, October 2025 preprint](https://arxiv.org/abs/2508.18115v2) separates strong disjointness from compatible sharing in compositional reasoning. [Tree Borrows, PLDI 2025](https://iris-project.org/pdfs/2025-pldi-treeborrows.pdf) studies alias authority and compiler optimizations; its concurrent proof model is sequentially consistent and does not model data-race UB. Neither supplies asynchronous device completion or Aurora native alias interpretation. | Native/source refinement of the checked per-cell conservation and replay-safe split/return/freeze model, with an alias-preserving mapping from native views to canonical backing cells; weak-memory and hardware refinement remain separate. |
 | Adopt semantics that let independent operations commute; reject observable global issuance order when it serves no contract. | [Revised Scalable Commutativity Rule, 2018](https://arxiv.org/abs/1809.09550) supplies a repaired Coq-verified existence result under its model. It does not prove any particular implementation scales or meets deadlines. | Commutativity conditions and a concrete conflict-free implementation/refinement, including resource exhaustion. |
 | Use local shared primitives inside an appropriate coherence model and explicit transfer elsewhere; reject mandatory messaging everywhere and false global UMA. | [Compound Memory Models, PLDI 2023](https://www.goens.org/publications/pldi23.pdf) proves composition results for an x86TSO/PTX instance. [RustBelt Meets Relaxed Memory, POPL 2020](https://plv.mpi-sws.org/rustbelt/rbrlx/paper.pdf) demonstrates why ownership/library reasoning needs a weak-memory model. Neither proves Aurora or AMD GPU semantics. | Aurora source semantics and target-specific mappings; scoped GPU atomics, cache maintenance and DMA publication. |
 | Track actual translation/access sharers; reject frame reuse after local invalidation alone or timeout. | [Hydra, ATC 2024](https://www.usenix.org/conference/atc24/presentation/gao-bin-scalable) is a NUMA page-table replication/sharer-tracking example. [Linux DMA guide v6.17](https://origin.kernel.org/doc/html/v6.17/core-api/dma-api-howto.html) separates coherent allocation from required ordering and streaming synchronization. Neither is an Aurora reclamation proof. | Q plus sharer-set soundness, invalidation completion, reset containment and no resurrection under migration. |

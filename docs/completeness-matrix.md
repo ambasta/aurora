@@ -12,11 +12,13 @@ current kernel, SMP support, hardware acknowledgments or progress. The
 from modeled local close/drain state and asynchronous packet provenance and
 forward-simulates that proof. It still assumes endpoint primitives and an atomic
 per-root coordinator; it does not upgrade hardware or recovery support.
-The [A0 snapshot-authority layer](../formal/reclamation/A/README.md) adds checked
-whole-allocation writer conservation, attenuated shared reads, protocol
-composition and a snapshot contract adapter. Its frozen-version result excludes
-permitted write events, not verified heap-byte mutation; disjoint writers,
-source/ISA refinement, recovery and hardware qualification remain open.
+The [backing-footprint authority layer](../formal/reclamation/A/README.md) now
+admits disjoint scattered writers and overlapping frozen readers under exact
+per-cell conservation, replay-safe returns and unchanged R/Q reclamation.
+Accounting erasure, an alias-image interpretation and a full-cover snapshot
+contract adapter are checked. Frozen footprints exclude permitted write events,
+not verified heap-byte mutation. Cross-root composition, source/ISA refinement,
+weak memory, recovery and hardware qualification remain open.
 
 | Destination | Status |
 |---|---|
