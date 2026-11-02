@@ -105,7 +105,10 @@ bidirectional compatibility preserves the prior pure evaluations, faults and
 traces; its legacy scope profile still rejects newly supported `if/else` forms,
 including in unexecuted syntax. A bounded resource-step proof now connects actual
 invoke, wait and resume transitions to the same canonical call machine, preserving
-raw responses and changed shared state. Its checked catalogue and code premises
+raw responses and changed shared state. Scalar receiver access and the following
+local-store/assertion consumers are also connected to actual machine steps.
+Individual method identity and name/scoping checks do not establish expression
+typing or body-to-IR correspondence. The checked catalogue and code premises
 must still be derived for the complete method. These prerequisites do not yet bind
 the complete production `MemoryManager.release` body to canonical receiver/resource
 calls, establish the initial ledger invariant, or verify native bank admission

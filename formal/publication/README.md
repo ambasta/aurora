@@ -949,3 +949,30 @@ and conservative-catalogue results: **657 primary reports**, plus the unchanged
 **20 independent specification reports**. Complete release execution, derived
 ledger writes, lawful-response terminal classification and native bank authority
 remain separate obligations.
+
+### Resource consumers, receiver steps and identity-only admission
+
+The direct resource initializer and `require` bridges now compose the real
+invocation/resumption with the actual next local store or assertion. Pending
+and external-fault paths do not execute the consumer. Malformed/false responses
+fault at that consumer without restoring shared state; successful initialization
+uses the actual guarded source operation's value map, not a supplied store
+summary. Receiver read/store bridges cover arbitrary malformed inputs and retain
+current shared effects, exact private frames and successful store events.
+
+A mixed free-function/receiver-method identity layer checks the same source graph,
+full signatures, receiver layout, catalogue modes and source scoping. Its optional
+`--effect-method-identity` probe mode reports identity/scoping only;
+observing the selected 13 identities is not a checked 13-node call graph or body
+execution proof. Available catalogue entries are not the actually used resource
+closure. The internal effectful callee simulation interface fixes a given source
+derivation and initial shared state/response relation before arbitrary private
+continuations; its resource pairs must later be derived from all syntactically
+used calls, including dead arms, not supplied as public assumptions.
+
+This checkpoint retains all 657 prior exports and adds seven consumer, receiver
+and signature results: **664 primary dependency reports** and the unchanged
+**20 independent specification reports**. The generalized code grammar,
+closed mixed-body/rank simulation, complete release ledger-write attachment and
+completed lawful-response classification remain unproved. The old pure public
+statements and stronger shared-state/external-relation uniformity are unchanged.

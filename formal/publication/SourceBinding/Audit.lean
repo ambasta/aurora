@@ -692,3 +692,11 @@ import SourceBinding.LegacyEffectEquivalence
 #print axioms Aurora.SourceBinding.SourceResourceStep.response_run
 #print axioms Aurora.SourceBinding.ResourceDescriptorMatches.mutable_iff
 #print axioms Aurora.SourceBinding.EffectResourceMeaning.mutable_iff
+
+#print axioms Aurora.SourceBinding.SourceResourceInitialize.machine_run
+#print axioms Aurora.SourceBinding.SourceResourceAssert.machine_run
+#print axioms Aurora.SourceBinding.effect_receiver_load
+#print axioms Aurora.SourceBinding.effect_receiver_store_fault
+#print axioms Aurora.SourceBinding.effect_receiver_store_value
+#print axioms Aurora.SourceBinding.EffectCallable.parameters_exact
+#print axioms Aurora.SourceBinding.EffectCallable.result_exact

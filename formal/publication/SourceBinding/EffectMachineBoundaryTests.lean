@@ -1,4 +1,6 @@
 import SourceBinding.EffectResourceStepProof
+import SourceBinding.EffectResourceConsumerProof
+import SourceBinding.EffectReceiverStepProof
 namespace Aurora.SourceBinding.EffectMachineBoundaryTests
 
 /- Small SAME-machine controls only, not canonical method admission or native
@@ -55,5 +57,32 @@ private def expect (condition : Bool) (message : String) : IO Unit :=
     active.shared.receiver 0 == some (Value.word 88) && active.frame.pc == 1 &&
     active.frame.stack == [Value.word 99] && active.frame.locals 8 == none)
     "external fault fabricated unwind/consumer or restored old shared state"
+
+
+-- Receiver operations consume the current shared state, including prior effects.
+#eval do
+  let active : ActiveCall Nat := {initial with shared := after,frame := {initial.frame with accumulator := some (.word 55)}}
+  let readProgram : CallProgram := fun _ _ => some (.local (.pure (.receiver .word 0)))
+  let (.running read,[]) := callStep readProgram active (ExternalFault := Nat)
+    | throw (IO.userError "current receiver read failed")
+  expect (read.frame.accumulator == some (Value.word 88) && read.frame.pc == 1 &&
+    read.shared.world == 20 && read.shared.receiver 1 == some (Value.word 88)) "receiver read lost prior effects"
+  let badRead : CallProgram := fun _ _ => some (.local (.pure (.receiver .boolean 0)))
+  let (.trapped (.local (.scalar .type)) failed,[]) := callStep badRead active (ExternalFault := Nat)
+    | throw (IO.userError "receiver read accepted wrong kind")
+  expect (failed.frame.pc == 0 && failed.frame.accumulator == some (Value.word 55) &&
+    failed.shared.world == 20) "receiver read fault changed active state"
+  let storeProgram : CallProgram := fun _ _ => some (.local (.store .word 1))
+  let (.running stored,[.store event]) := callStep storeProgram active (ExternalFault := Nat)
+    | throw (IO.userError "receiver store did not emit exact successful event")
+  expect (event == (⟨1,Value.word 55⟩ : StoreEvent) && stored.shared.receiver 1 == some (Value.word 55) &&
+    stored.shared.receiver 0 == some (Value.word 88) && stored.shared.world == 20 &&
+    stored.frame.pc == 1 && stored.frame.accumulator == some (Value.word 55) && stored.frame.locals 8 == none)
+    "receiver store framing or event mismatch"
+  let invalid := {active with frame := {active.frame with accumulator := some (.boolean true)}}
+  let (.trapped (.local (.scalar .type)) failedStore,[]) := callStep storeProgram invalid (ExternalFault := Nat)
+    | throw (IO.userError "receiver store accepted wrong kind or emitted event")
+  expect (failedStore.frame.pc == 0 && failedStore.shared.receiver 1 == some (Value.word 88) &&
+    failedStore.shared.world == 20) "receiver store fault changed shared state"
 
 end Aurora.SourceBinding.EffectMachineBoundaryTests

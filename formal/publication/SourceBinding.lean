@@ -72,3 +72,8 @@ import SourceBinding.MemoryManagerReleaseGuards
 import SourceBinding.EffectMachineBoundaryFacts
 import SourceBinding.EffectResourceStepProof
 import SourceBinding.EffectCanonicalBinding
+
+import SourceBinding.EffectResourceConsumerProof
+import SourceBinding.EffectReceiverStepProof
+import SourceBinding.EffectCalleeSimulation
+import SourceBinding.EffectIdentityChecker
