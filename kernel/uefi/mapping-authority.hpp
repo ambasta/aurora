@@ -820,16 +820,20 @@ public:
             const U64 table_ticket = *table_index | (frames::generation(self.bank(0, *table_index)) << 32);
             self.authenticate_child(directory, page / 512, parent, table_ticket);
             const auto table = self.table(table_ticket);
+            require(table.snapshot && table.level == 1);
             view = self.space_->open(table.frame.physical);
             require(view);
             const U64 leaf = reinterpret_cast<volatile U64 *>(view)[page % 512];
             self.space_->close();
-            require((leaf & ~KernelSpace::address_mask & ~KernelSpace::hardware_bits) == KernelSpace::data_flags);
             const auto frame_index = self.ranges_->index(leaf & KernelSpace::address_mask);
             require(frame_index.has_value());
             const U64 frame_ticket = *frame_index | (frames::generation(self.bank(0, *frame_index)) << 32);
-            self.authenticate_child(table, page % 512, leaf, frame_ticket);
             const auto frame = self.frame(frame_ticket);
+            // Check the exact observed leaf against the same authenticated frame
+            // subsequently opened for copying. Native path/owner/generation
+            // admission and observation stability remain prerequisites.
+            require(process::snapshot_writable_leaf(
+                {leaf, frame.physical, frame.mapping, table.prefix, page % 512, self.physical_limit_}));
             const U64 offset = position % frames::page;
             const U64 amount = count - copied < frames::page - offset ? count - copied : frames::page - offset;
             view = self.space_->open(frame.physical);

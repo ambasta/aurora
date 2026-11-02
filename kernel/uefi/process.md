@@ -408,6 +408,16 @@ IRQ-off, nonreentrant single-CPU profile: no callback, endpoint exchange or CR3
 switch occurs during the fill. This is not a C++ lifetime proof, SMP/DMA exclusion,
 TLB-consistency proof or strengthening of argument-source pins. Native decoding,
 boot-inventory fidelity and absence of concurrent writers remain trusted.
+Each destination payload leaf is checked by the pure Aurora
+`snapshot_writable_leaf` policy through the existing copied-scalar process bridge.
+Native code first authenticates the snapshot L1 table and allocated frame, then
+passes the exact leaf, frame address/mapping, table prefix, slot and physical limit.
+The policy checks writable supervisor NX flags (ignoring only A/D), physical
+address agreement and the exact page mapping tag; the same authenticated frame
+is opened for copying only after the canonical true result. This replaces the
+specialized native leaf predicate, not parent/root, owner or generation checks.
+Copied argument extraction, scalar-register transport and emitted machine code
+remain trusted; numeric leaf admission does not establish A/B authority.
 Later-page failures can retain earlier payload writes; scratch-window PTE updates
 are separate control effects. Fatal `require` does not promise rollback or RAII
 cleanup. No byte-copy/native refinement or `A.Enabled` theorem is claimed.

@@ -781,10 +781,14 @@ def validate(
         after = text[text.index("AURORA_MAPPING_AUTHORITY_PROBE:") :]
         if probe >= 50:
             receipts = re.findall(r"AURORA_MAPPING_AUTHORITY_REJECT: case=(\d+) closed=(\d+) opens=(\d+)", after)
-            need(receipts == [(str(probe), "1", "0")], "Closed window and zero opens after exact hostile boundary")
+            expected_opens = "2" if probe in (80, 81) else "0"
+            need(
+                receipts == [(str(probe), "1", expected_opens)],
+                "Closed window; leaf probes allow only two table reads, all other probes zero opens",
+            )
         need(
             status == 35 and after.count("AURORA_PROCESS_FAIL: frame metadata authority") == 1,
-            "Native authority must reject before accessing backing or opening a window",
+            "Native authority must reject at the exact checked boundary before a payload window",
         )
         need(
             not any(

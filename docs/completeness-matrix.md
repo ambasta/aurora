@@ -24,7 +24,10 @@ use to one sequential copy and one stable source-loan epoch; the native request,
 physical mapping and destination-use binding remain unproved. Native loader chunk pins now admit only bounded
 coordinates in the boot-registered static endpoint buffer and recheck all source
 pages against the kernel-root boot tables and managed-frame inventory. This is
-native provenance enforcement, not source/native effect refinement; synchronous
+native provenance enforcement, not source/native effect refinement. A pure Aurora
+leaf policy now consumes the native destination observations before each payload
+page is opened; parent/frame authentication, scalar transport and backend fidelity
+remain trusted, and numeric acceptance does not grant A/B authority. Synchronous
 mapping/content stability and physical translation semantics remain trusted. Cross-root composition, source/ISA refinement,
 weak memory, recovery and hardware qualification remain open. A generic
 [typed published-IR format](../compiler/IR-PUBLICATION.md) now exposes canonical
