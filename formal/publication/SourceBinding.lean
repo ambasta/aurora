@@ -21,3 +21,5 @@ import SourceBinding.CallBinding
 import SourceBinding.CallFootprint
 import SourceBinding.CallGuardPrefix
 import SourceBinding.RequestPolicy
+import SourceBinding.LeafBinding
+import SourceBinding.ForwardPolicy

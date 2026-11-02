@@ -4,6 +4,7 @@ namespace Aurora.Publication
 structure ValueTypes where
   accumulator : Option Scalar := none
   stack : List Scalar := []
+  count12 : Bool := false
   deriving BEq, DecidableEq, Repr
 
 def catalogueScalar (kind : Int) : Option Scalar :=
@@ -23,11 +24,12 @@ def callResult (t : Tables) (code : Record) : Option Scalar :=
     This matches the supported verifier calling convention, not native ABI. -/
 def CallTransfer (resource : Bool) (args : List (Option Scalar)) (result : Option Scalar)
     (before after : ValueTypes) : Prop :=
+  before.count12 = false ∧ after.count12 = false ∧
   if resource = true ∧ args.length = 1 then
-    before.accumulator = args.head?.getD none ∧ after = ⟨result, before.stack⟩
+    before.accumulator = args.head?.getD none ∧ after = ⟨result, before.stack,false⟩
   else args.length ≤ before.stack.length ∧
     (before.stack.take args.length).map some = args.reverse ∧
-    after = ⟨result, before.stack.drop args.length⟩
+    after = ⟨result, before.stack.drop args.length,false⟩
 instance (resource : Bool) (args : List (Option Scalar)) (result : Option Scalar)
     (before after : ValueTypes) : Decidable (CallTransfer resource args result before after) := by
   unfold CallTransfer; infer_instance
@@ -35,7 +37,7 @@ instance (resource : Bool) (args : List (Option Scalar)) (result : Option Scalar
 /-- Independent abstract type transfer, NOT value-level IR execution semantics.
     Require has a checked boolean normal continuation and may fail; external
     calls have supplied result/argument types but no frame/effect guarantee. -/
-def TypeTransfer (t : Tables) (id : Int) (code : Record) (before after : ValueTypes) : Prop :=
+def ScalarTransfer (t : Tables) (id : Int) (code : Record) (before after : ValueTypes) : Prop :=
   let f := code.integer 6
   let v := operandValue t code
   if f = 45 ∨ f = 40 ∨ f = 41 then after = before
@@ -48,7 +50,7 @@ def TypeTransfer (t : Tables) (id : Int) (code : Record) (before after : ValueTy
   else if f = 11 then before.accumulator = some .boolean ∧ after = before
   else if f = 12 ∨ f = 14 then
     before.accumulator = some .word ∧ before.stack.head? = some .word ∧
-    after = ⟨some (if f = 12 then .word else .boolean), before.stack.tail⟩
+    after = ⟨some (if f = 12 then .word else .boolean), before.stack.tail,false⟩
   else if f = 33 then before.accumulator = scalarKind t (v 1) ∧ after = before
   else if f = 38 ∨ f = 89 then
     CallTransfer (f == 89) (argumentTypes t code) (callResult t code) before after
@@ -58,24 +60,38 @@ def TypeTransfer (t : Tables) (id : Int) (code : Record) (before after : ValueTy
     before.accumulator = scalarKind t ((atRow t.callables id).integer 4) ∧ before.stack = [] ∧ after = before
   else False
 instance (t : Tables) (id : Int) (code : Record) (before after : ValueTypes) :
-    Decidable (TypeTransfer t id code before after) := by
-  unfold TypeTransfer
+    Decidable (ScalarTransfer t id code before after) := by
+  unfold ScalarTransfer
   split <;> infer_instance
+
+/-- A count marker must be consumed immediately by selector8. No ordinary
+    scalar rule, control edge, push, call or store can reinterpret it as u64. -/
+def TypeTransfer (t : Tables) (id : Int) (code : Record) (before after : ValueTypes) : Prop :=
+  if SignedCount12 t code then
+    before.count12 = false ∧ after = {before with accumulator := none,count12 := true}
+  else if code.integer 6 = 12 ∧ code.integer 8 = 8 then
+    before.count12 = true ∧ before.accumulator = none ∧ before.stack.head? = some .word ∧
+    after = ⟨some .word,before.stack.tail,false⟩
+  else before.count12 = false ∧ after.count12 = false ∧ ScalarTransfer t id code before after
+instance (t : Tables) (id : Int) (code : Record) (before after : ValueTypes) :
+    Decidable (TypeTransfer t id code before after) := by
+  unfold TypeTransfer; infer_instance
 
 /-- Candidate construction is not evidence: the independent relation is checked
     below before the candidate can enter a typing certificate. -/
 def candidateTypes (t : Tables) (code : Record) (before : ValueTypes) : ValueTypes :=
   let f := code.integer 6
-  if f == 5 || f == 7 || f == 32 then { before with accumulator := scalarKind t (operandValue t code 1) }
+  if SignedCount12 t code then {before with accumulator := none,count12 := true}
+  else if f == 5 || f == 7 || f == 32 then { before with accumulator := scalarKind t (operandValue t code 1) }
   else if f == 9 then
     match before.accumulator with
     | none => before
     | some scalar => { before with stack := scalar :: before.stack }
   else if f == 12 || f == 14 then
-    ⟨some (if f == 12 then .word else .boolean), before.stack.tail⟩
+    ⟨some (if f == 12 then .word else .boolean), before.stack.tail,false⟩
   else if f == 38 || f == 89 then
     let count := (argumentTypes t code).length
-    ⟨callResult t code, if f == 89 && count == 1 then before.stack else before.stack.drop count⟩
+    ⟨callResult t code, if f == 89 && count == 1 then before.stack else before.stack.drop count,false⟩
   else if f == 91 then { before with accumulator := none }
   else before
 
@@ -83,14 +99,15 @@ def candidateTypes (t : Tables) (code : Record) (before : ValueTypes) : ValueTyp
     but cannot be used as a typed value. Stack information is never forgotten. -/
 def FlowsTo (outgoing incoming : ValueTypes) : Prop :=
   incoming.stack = outgoing.stack ∧
-  (incoming.accumulator = none ∨ incoming.accumulator = outgoing.accumulator)
+  (incoming.accumulator = none ∨ incoming.accumulator = outgoing.accumulator) ∧
+  incoming.count12 = outgoing.count12
 instance (outgoing incoming : ValueTypes) : Decidable (FlowsTo outgoing incoming) := by
   unfold FlowsTo; infer_instance
 
 theorem FlowsTo.known {outgoing incoming : ValueTypes} {scalar : Scalar}
     (edge : FlowsTo outgoing incoming) (known : incoming.accumulator = some scalar) :
     outgoing.accumulator = some scalar := by
-  rcases edge.2 with forgotten | equal
+  rcases edge.2.1 with forgotten | equal
   · rw [known] at forgotten; cases forgotten
   · exact equal.symm.trans known
 
@@ -117,9 +134,9 @@ def mergeIncoming (states : Array (Option ValueTypes)) (index : Nat) (value : Va
     match states[index]?.getD none with
     | none => return states.set! index (some value)
     | some old =>
-      if old.stack = value.stack then
+      if old.stack = value.stack ∧ old.count12 = value.count12 then
         let accumulator := if old.accumulator = value.accumulator then old.accumulator else none
-        return states.set! index (some ⟨accumulator, old.stack⟩)
+        return states.set! index (some ⟨accumulator, old.stack,old.count12⟩)
       else none
   else none
 

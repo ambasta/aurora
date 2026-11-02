@@ -3,6 +3,8 @@ import SourceBinding.SemanticBinding
 import SourceBinding.SnapshotExamples
 import SourceBinding.BodyExamples
 import SourceBinding.CallExamples
+import SourceBinding.ForwardWrapper
+import SourceBinding.LeafBinding
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -19,6 +21,9 @@ def showName (name : Name) : String :=
   String.intercalate "." (name.map String.fromUTF8!)
 
 def main (args : List String) : IO UInt32 := do
+  let (forward, args) := match args with
+    | "--forward-leaf" :: name :: rest => (some name,rest)
+    | _ => (none,args)
   let (callMode, callExamples, args) := match args with
     | "--calls" :: rest => (true,false,rest)
     | "--call-examples" :: rest => (true,true,rest)
@@ -34,7 +39,10 @@ def main (args : List String) : IO UInt32 := do
     | "--ir" :: path :: rest => (some path,rest)
     | _ => (none,args)
   let root :: module :: classPath :: member :: paths := arguments |
-    throw (IO.userError "usage: source-binding-probe [--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+    throw (IO.userError "usage: source-binding-probe [--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+  if forward.isSome && (callMode || bodyMode || examples) then
+    throw (IO.userError "forward/call/body/snapshot modes are distinct")
+  if forward.isSome && irPath.isNone then throw (IO.userError "forward mode requires --ir")
   if callMode && (bodyMode || examples) then throw (IO.userError "call/body/snapshot modes are distinct")
   if callMode && irPath.isNone then throw (IO.userError "call mode requires --ir")
   if bodyMode && examples then throw (IO.userError "body and snapshot modes are distinct")
@@ -54,6 +62,20 @@ def main (args : List String) : IO UInt32 := do
   let rootName := (root.splitOn ".").map String.toUTF8
   let selectedModule := (module.splitOn ".").map String.toUTF8
   let selectedPath := (classPath.splitOn "::").map String.toUTF8
+  if let some wrapper := forward then
+    let some path := irPath | throw (IO.userError "forward mode requires --ir")
+    let publication ← readSource path 16777216
+    let some bound := bindForwardWrapper files rootName selectedModule selectedPath
+        wrapper.toUTF8 member.toUTF8 publication |
+      throw (IO.userError "source/publication forward semantics rejected")
+    let checked := bound.checked
+    IO.println s!"SOURCE-IR-FORWARD wrapper={checked.wrapper.id} entry=0 stop={checked.callPC + 2} call={checked.callPC} leaf={checked.leaf.identified.id} leaf_stop={checked.leaf.core.stop} complete=true publication_bytes={publication.size}"
+    let some _shape := checkLeafShape checked.leaf |
+      throw (IO.userError "exact leaf policy rejected")
+    IO.println "LEAF-POLICY exact=true six_word_parameters=true"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input receipt only. Complete free/forward certificates and exact numeric policy; no concrete kernel acceptance, general D2 closure, capture/backend/native ABI or authority proof."
+    return 0
   if callMode then
     let some path := irPath | throw (IO.userError "call mode requires --ir")
     let publication ← readSource path 16777216

@@ -149,6 +149,7 @@ theorem pure_step_frame (program : Program) (state : Machine) :
       cases state.accumulator with
       | none => exact ⟨rfl,rfl⟩
       | some value => cases value <;> exact ⟨rfl,rfl⟩
+    | count12 => exact ⟨rfl,rfl⟩
     | ret => cases state.accumulator <;> exact ⟨rfl,rfl⟩
 
 /-- A supported pure step in a mixed program has exactly its old meaning. -/

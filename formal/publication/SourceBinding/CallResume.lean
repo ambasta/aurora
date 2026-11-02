@@ -22,7 +22,7 @@ theorem callStep_require (program : CallProgram) (active : ActiveCall World)
             CallFrame.ofMachine,CallShared.commit,assertActive,assertResult,EffectExecution.state,List.map_nil]
         | some value =>
           cases value with
-          | word _ => simp only [callStep,atRequire,localCallStep,effectStep,localProgram,CallFrame.inject,
+          | word _ | signedCount12 => simp only [callStep,atRequire,localCallStep,effectStep,localProgram,CallFrame.inject,
               CallFrame.ofMachine,CallShared.commit,assertActive,assertResult,EffectExecution.state,List.map_nil]
           | boolean b => cases b <;> simp only [callStep,atRequire,localCallStep,effectStep,localProgram,CallFrame.inject,
               CallFrame.ofMachine,CallShared.commit,assertActive,assertResult,EffectExecution.state,List.map_nil]
@@ -56,7 +56,7 @@ theorem WaitingContext.resume_local
     | none => exact ⟨_,run,.trapped rfl,rfl⟩
     | some value =>
       cases value with
-      | word _ => exact ⟨_,run,.trapped rfl,rfl⟩
+      | word _ | signedCount12 => exact ⟨_,run,.trapped rfl,rfl⟩
       | boolean b =>
         cases b with
         | false => exact ⟨_,run,.trapped rfl,rfl⟩

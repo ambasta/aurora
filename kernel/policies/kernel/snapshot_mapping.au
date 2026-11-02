@@ -1,0 +1,15 @@
+export module kernel.snapshot_mapping;
+
+// Numeric admission of a writable snapshot leaf. Native code supplies the
+// authenticated snapshot L1 table and allocated frame; this function neither
+// authenticates those observations nor grants authority over physical memory.
+// Masks in order: 0xfff0000000000f9f (flags except address and A/D),
+// 0x8000000000000003 (present, writable, NX), 0x000ffffffffff000 (address),
+// and 0x1fffff (the low 21 bits of an L1 table's virtual prefix).
+export namespace kernel {
+    auto snapshot_writable_leaf(u64 leaf, u64 physical, u64 mapping, u64 prefix, u64 slot, u64 physical_limit) -> bool {
+        return (leaf & 18442240474082185119u64) == 9223372036854775811u64 && (leaf & 4503599627366400u64) == physical
+            && physical != 0u64 && physical < physical_limit && (prefix & 2097151u64) == 0u64 && slot < 512u64
+            && mapping == (prefix | (slot << 12) | 3u64);
+    }
+}

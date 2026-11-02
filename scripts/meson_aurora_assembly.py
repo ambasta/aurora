@@ -262,8 +262,10 @@ def validate_native_abi(facts, source):
         ):
             raise ValueError("Protected copied record differs from its native boundary: " + source)
 
-    def entry(source, parameters, result, *, receiver=None, mode=None):
-        _, raw = abi_declaration(facts, "functions", source)
+    def entry(source, parameters, result, *, receiver=None, mode=None, scalar_root=False):
+        symbol, raw = abi_declaration(facts, "functions", source)
+        if scalar_root and symbol != source:
+            raise ValueError("Expected the compiler scalar-root entry convention: " + source)
         expected, offset = [], 0
         for kind in parameters:
             field = shape(kind)
@@ -937,6 +939,7 @@ def validate_native_abi(facts, source):
         record("kernel::FrameRange", 24, [("_status", "u64", 0), ("_first", "u64", 0), ("_pages", "u64", 0)])
         record("kernel::VolumeEntry", 24, [("_found", "u64", 0), ("_offset", "u64", 0), ("_size", "u64", 0)])
         entry("process_map_admit", ["span", "u64", "u64"], "kernel::MapVerdict")
+        entry("process_snapshot_writable_leaf", ["u64"] * 6, "bool", scalar_root=True)
         entry("process_volume_grant", ["span", "u64", "u64", "u64", "u64"], "kernel::GrantVerdict")
         entry("process_frame_range", ["span", "u64", "u64", "u64", "u64", "u64"], "kernel::FrameRange")
         entry("process_volume_admit", ["span"], "kernel::VolumeVerdict")

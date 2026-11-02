@@ -6,6 +6,7 @@ import kernel.memory_map;
 import kernel.process_events;
 import kernel.process_memory;
 import kernel.process_space;
+import kernel.snapshot_mapping;
 
 // Production-only entry selection matching production-process-entry.S.
 // Thin wrappers call the same kernel policy modules as kernel-process.au;
@@ -88,4 +89,10 @@ auto process_call(u64 operation, u64 first, u64 second, u64 third, u64 fourth) -
 
 auto process_memory_load_charge(builtin::span<const u8> image, u64 arguments, u64 slots) -> u64 {
     return kernel::memory_load_charge(image, arguments, slots);
+}
+
+// The supervisor supplies copied observations, not a transferable capability.
+auto process_snapshot_writable_leaf(u64 leaf, u64 physical, u64 mapping, u64 prefix, u64 slot,
+    u64 physical_limit) -> bool {
+    return kernel::snapshot_writable_leaf(leaf, physical, mapping, prefix, slot, physical_limit);
 }

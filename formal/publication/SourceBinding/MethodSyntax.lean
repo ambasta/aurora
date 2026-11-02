@@ -155,6 +155,12 @@ inductive TypedGuard (fieldDecls formalDecls : List Formal) : SourceExpr → {ki
       TypedGuard fieldDecls formalDecls (.not inner) (.not typed)
   | subtract : TypedGuard fieldDecls formalDecls left typedLeft → TypedGuard fieldDecls formalDecls right typedRight →
       TypedGuard fieldDecls formalDecls (.binary .subtract left right) (.sub typedLeft typedRight)
+  | bitAnd : TypedGuard fieldDecls formalDecls left typedLeft → TypedGuard fieldDecls formalDecls right typedRight →
+      TypedGuard fieldDecls formalDecls (.binary .bitAnd left right) (.bitAnd typedLeft typedRight)
+  | bitOr : TypedGuard fieldDecls formalDecls left typedLeft → TypedGuard fieldDecls formalDecls right typedRight →
+      TypedGuard fieldDecls formalDecls (.binary .bitOr left right) (.bitOr typedLeft typedRight)
+  | shift12 : TypedGuard fieldDecls formalDecls left typedLeft →
+      TypedGuard fieldDecls formalDecls (.binary .shift left .signed12) (.shift12 typedLeft)
   | compare : TypedGuard fieldDecls formalDecls left typedLeft → TypedGuard fieldDecls formalDecls right typedRight →
       TypedGuard fieldDecls formalDecls (.binary (.compare op) left right) (.compare op typedLeft typedRight)
   | and : TypedGuard fieldDecls formalDecls left typedLeft → TypedGuard fieldDecls formalDecls right typedRight →
@@ -193,6 +199,7 @@ def scalarBinding (decls : List Formal) (name : ByteArray) : Option (ScalarBindi
   else none
 
 def inferGuard (fieldDecls formalDecls : List Formal) : (source : SourceExpr) → Option (InferredGuard fieldDecls formalDecls source)
+  | .signed12 => none
   | .word value => if bound : value < 18446744073709551616 then some ⟨.word,.wordLit value,.word bound⟩ else none
   | .boolean value => some ⟨.boolean,.boolLit value,.boolean⟩
   | .name [name] =>
@@ -208,6 +215,11 @@ def inferGuard (fieldDecls formalDecls : List Formal) : (source : SourceExpr) �
     match eq : typed.kind with
     | .word => none
     | .boolean => return ⟨.boolean,.not (eq ▸ typed.expression),.not (typed.typing.cast eq)⟩
+  | .binary .shift left .signed12 => do
+    let l ← inferGuard fieldDecls formalDecls left
+    match leq : l.kind with
+    | .word => return ⟨.word,.shift12 (leq ▸ l.expression),.shift12 (l.typing.cast leq)⟩
+    | _ => none
   | .binary op left right => do
     let l ← inferGuard fieldDecls formalDecls left
     let r ← inferGuard fieldDecls formalDecls right
@@ -216,6 +228,17 @@ def inferGuard (fieldDecls formalDecls : List Formal) : (source : SourceExpr) �
       match leq : l.kind, req : r.kind with
       | .word, .word => return ⟨.word,.sub (leq ▸ l.expression) (req ▸ r.expression),
           .subtract (l.typing.cast leq) (r.typing.cast req)⟩
+      | _, _ => none
+    | .shift => none
+    | .bitAnd =>
+      match leq : l.kind, req : r.kind with
+      | .word, .word => return ⟨.word,.bitAnd (leq ▸ l.expression) (req ▸ r.expression),
+          .bitAnd (l.typing.cast leq) (r.typing.cast req)⟩
+      | _, _ => none
+    | .bitOr =>
+      match leq : l.kind, req : r.kind with
+      | .word, .word => return ⟨.word,.bitOr (leq ▸ l.expression) (req ▸ r.expression),
+          .bitOr (l.typing.cast leq) (r.typing.cast req)⟩
       | _, _ => none
     | .compare op =>
       match leq : l.kind, req : r.kind with

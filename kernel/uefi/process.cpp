@@ -4002,6 +4002,27 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
     const U64 epoch = table.begin_snapshot(frames::first_owner + 2, frames::page);
     if (!epoch || !table.fill_snapshot(epoch, 0, 64, chunk.size()))
         fail("mapping authority probe snapshot");
+    if (probe == 80 || probe == 81) {
+        // Preserve the actual frame's address, owner and generation. Change
+        // only a payload leaf permission after a successful ordinary fill.
+        const U64 directory = KernelSpace::table_view(0)[2] & KernelSpace::address_mask;
+        auto *words = space.open(directory);
+        if (!words)
+            fail("snapshot leaf probe directory");
+        const U64 table_physical = reinterpret_cast<volatile U64 *>(words)[0] & KernelSpace::address_mask;
+        space.close();
+        words = space.open(table_physical);
+        if (!words)
+            fail("snapshot leaf probe table");
+        auto &leaf = reinterpret_cast<volatile U64 *>(words)[0];
+        leaf = leaf & ~(probe == 80 ? U64{2} : (U64{1} << 63));
+        space.close();
+        // From this boundary, fill must perform two authenticated table-read
+        // windows, then reject before opening the third (payload) window.
+        arm_authority_probe(probe);
+        static_cast<void>(table.fill_snapshot(epoch, 0, 64, chunk.size()));
+        __builtin_trap();
+    }
     if (probe >= 73 && probe <= 79) {
         if (probe == 79) {
             // Exercise the last byte and every partial source page before
@@ -4467,7 +4488,7 @@ auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
         aurora::uefi::MappingAuthority::fixture_admission(selected);
         fail("mapping authority probe returned");
     }
-    if ((selected >= 50 && selected <= 62) || (selected >= 73 && selected <= 79)) {
+    if ((selected >= 50 && selected <= 62) || (selected >= 73 && selected <= 81)) {
         install_architecture(arena);
         capture_shared(arena);
         process_kernel_root = kernel_root;

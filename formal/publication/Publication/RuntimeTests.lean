@@ -24,3 +24,15 @@ open Aurora.Publication
     unless recordAdmitted text == expected do
       throw (IO.userError "v2 source-method wire fixture mismatch")
   IO.println s!"{cases.length} v2 record checks passed (not concrete kernel proofs)"
+
+#eval do
+  for text in ["array harmless 40 16", "array ir-code 0 0 1 -1 6 1 5 0 0"] do
+    match recordText text.toUTF8 ⟨0,text.toUTF8.size⟩ with
+    | none => throw (IO.userError "existing array display tag refused")
+    | some record =>
+      unless record.value.display && record.value.fields.isEmpty &&
+          (rows [record.value] "ir-code").isEmpty do
+        throw (IO.userError "array display interpreted as canonical payload")
+  unless !(recordAdmitted "ir-array harmless 40 16") && !(recordAdmitted "ir-field malformed") do
+    throw (IO.userError "malformed/unknown canonical record accepted")
+  IO.println "array display-only and canonical-refusal controls passed"

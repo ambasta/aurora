@@ -5,11 +5,11 @@ namespace Aurora.SourceBinding
 def wordLimit : Nat := 18446744073709551616
 
 inductive Value where
-  | word (value : Nat) | boolean (value : Bool)
+  | word (value : Nat) | boolean (value : Bool) | signedCount12
   deriving BEq, DecidableEq, Repr
 
 inductive Fault where
-  | type | range | underflow | unsupported
+  | type | range | underflow | overflow | unsupported
   deriving BEq, DecidableEq, Repr
 
 inductive Outcome (α : Type) where
@@ -23,10 +23,10 @@ def readScalar (kind : GuardType) : Option Value → Outcome Value
   | some (.word value) =>
     if kind = .word then if value < wordLimit then .value (.word value) else .trap .range else .trap .type
   | some (.boolean value) => if kind = .boolean then .value (.boolean value) else .trap .type
-  | none => .trap .type
+  | _ => .trap .type
 
 inductive Binary where
-  | sub | compare (operation : CompareOp)
+  | sub | bitAnd | bitOr | shift12 | compare (operation : CompareOp)
   deriving BEq, DecidableEq, Repr
 
 def compareWords (operation : CompareOp) (left right : Nat) : Bool :=
@@ -37,10 +37,19 @@ def compareWords (operation : CompareOp) (left right : Nat) : Bool :=
 /-- Independent mathematical scalar operations; subtraction never wraps or truncates below zero. -/
 def binaryValue (operation : Binary) (left right : Value) : Outcome Value :=
   match left, right with
+  | .word a, .signedCount12 =>
+    if operation = .shift12 then
+      if a < wordLimit then
+        if a * 4096 < wordLimit then .value (.word (a * 4096)) else .trap .overflow
+      else .trap .range
+    else .trap .type
   | .word a, .word b =>
     if a < wordLimit ∧ b < wordLimit then
       match operation with
       | .sub => if b ≤ a then .value (.word (a - b)) else .trap .underflow
+      | .bitAnd => .value (.word (a &&& b))
+      | .bitOr => .value (.word (a ||| b))
+      | .shift12 => .trap .type
       | .compare op => .value (.boolean (compareWords op a b))
     else .trap .range
   | _, _ => .trap .type
@@ -63,6 +72,11 @@ def evalGuard (state : SourceState) : {kind : GuardType} → GuardExpr kind → 
   | _, .not expression => (evalGuard state expression).then notValue
   | _, .sub left right => (evalGuard state left).then fun a =>
       (evalGuard state right).then fun b => binaryValue .sub a b
+  | _, .bitAnd left right => (evalGuard state left).then fun a =>
+      (evalGuard state right).then fun b => binaryValue .bitAnd a b
+  | _, .bitOr left right => (evalGuard state left).then fun a =>
+      (evalGuard state right).then fun b => binaryValue .bitOr a b
+  | _, .shift12 expression => (evalGuard state expression).then fun a => binaryValue .shift12 a .signedCount12
   | _, .compare operation left right => (evalGuard state left).then fun a =>
       (evalGuard state right).then fun b => binaryValue (.compare operation) a b
   | _, .and left right => (evalGuard state left).then fun value =>
@@ -81,7 +95,7 @@ inductive Op where
   | constant (kind : GuardType) (value : Value)
   | load (kind : GuardType) (slot : Nat)
   | receiver (kind : GuardType) (ordinal : Nat)
-  | push | negate | binary (operation : Binary)
+  | count12 | push | negate | binary (operation : Binary)
   | bind (kind : GuardType) (argument slot : Nat)
   | label | jump (target : Nat) | branchFalse (target : Nat) | ret
   deriving BEq, DecidableEq, Repr
@@ -113,14 +127,15 @@ def step (program : Program) (state : Machine) : Execution :=
   match program state.pc with
   | none => .trap .unsupported
   | some (.constant kind value) => finish state (state.pc + 1) state.stack (readScalar kind (some value))
+  | some .count12 => .next (frameState state (state.pc + 1) (some .signedCount12) state.stack)
   | some (.load kind slot) => finish state (state.pc + 1) state.stack (readScalar kind (state.locals slot))
   | some (.receiver kind ordinal) => finish state (state.pc + 1) state.stack (readScalar kind (state.receiver ordinal))
   | some .push => match state.accumulator with
     | some value => .next (frameState state (state.pc + 1) state.accumulator (value :: state.stack))
-    | none => .trap .type
+    | _ => .trap .type
   | some .negate => match state.accumulator with
     | some value => finish state (state.pc + 1) state.stack (notValue value)
-    | none => .trap .type
+    | _ => .trap .type
   | some (.binary operation) => match state.stack, state.accumulator with
     | left :: tail, some right => finish state (state.pc + 1) tail (binaryValue operation left right)
     | _, _ => .trap .type
@@ -136,7 +151,7 @@ def step (program : Program) (state : Machine) : Execution :=
     | _ => .trap .type
   | some .ret => match state.accumulator with
     | some value => .returned value
-    | none => .trap .type
+    | _ => .trap .type
 
 /-- Finite execution is not assumed for arbitrary programs (jump cycles are expressible). -/
 inductive Runs (program : Program) : Machine → Execution → Prop

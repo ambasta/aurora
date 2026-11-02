@@ -37,7 +37,7 @@ def checkGuardCode (program : Program) (slots : Nat → Nat) (guard : GuardExpr 
     propagate. A nonboolean value is a type fault, not an admission. -/
 def rejectionOutcome (base : Machine) (cut : Nat) : Outcome Value → Execution
   | .trap fault => .trap fault
-  | .value (.word _) => .trap .type
+  | .value (.word _) | .value .signedCount12 => .trap .type
   | .value (.boolean true) => .returned (.boolean false)
   | .value (.boolean false) => .next (frameState base cut (some (.boolean false)) [])
 
@@ -46,7 +46,7 @@ theorem rejection_at_exit (base : Machine) (cut : Nat) (value : Outcome Value) :
   cases value with
   | trap fault => trivial
   | value value => cases value with
-    | word n => trivial
+    | word _ | signedCount12 => trivial
     | boolean b => cases b <;> trivial
 
 variable {guard : GuardExpr .boolean}
@@ -69,7 +69,7 @@ theorem GuardCode.runs (code : GuardCode program slots guard start endExpr)
   | value value =>
     rw [result] at expression
     cases value with
-    | word n =>
+    | word _ | signedCount12 =>
       exact expression.trans (Runs.one (by simp [step,frameState,branch,rejectionOutcome]))
     | boolean b =>
       cases b with

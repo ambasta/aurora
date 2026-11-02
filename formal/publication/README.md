@@ -15,7 +15,8 @@ admission, compiler correctness or kernel safety.
 consecutive spans covering the entire input. `Words`, `Digits`, `HexRun` and
 `FieldText` specify exact token boundaries, canonical bounded integers and
 lowercase hex. `RecordText` specifies the version-2 fixed tag/arity/field-kind
-schema. Known human-display tags are nonauthoritative; unknown tags reject.
+schema. Known human-display tags (including the producer's `array` tag) are
+non-authoritative; their payload never supplies canonical fields. Unknown tags reject.
 `WireDocument` relates all decoded records to the **same input and exact spans**
 used by framing. No host parser, golden AST or digest stands in for this relation.
 
@@ -80,8 +81,9 @@ offsets**. Retained kind26 nominal fields must match a unique catalogue resource
 Its catalogue scalar/class/enum mapping is explicitly -1, not a fabricated scalar.
 Opaque resource physical extents are not published and are **not** certified.
 
-Supported forms: scalar constants/load/push, boolean not, u64 subtraction and
-comparison, receiver scalar loads/stores, ordinary method calls, labels/jumps/
+Supported forms: scalar constants/load/push, boolean not, u64 subtraction, bitwise
+AND/OR, comparison and the bounded signed-literal-12 shift profile below,
+receiver scalar loads/stores, ordinary method calls, labels/jumps/
 boolean branches, scalar return, parameter binding, retained-resource operations
 and Require. Operand arities/roles, unused payloads, signature/frame/receiver
 bindings and catalogue argument/result types are checked. Unsupported selected
@@ -207,7 +209,8 @@ alone; the semantic layer below rejects such mismatched uses.**
 closure with independent source evaluation and deterministic IR small-step rules.
 `ExprCode.simulates` connects each resolved field/formal use to its actual operand,
 stack use, comparison and short-circuit edge. Unsigned constants use their actual
-unsigned payload. Checked u64 subtraction has an explicit underflow fault.
+unsigned payload. Checked u64 subtraction has an explicit underflow fault; the
+leaf-policy extension below adds explicit shift overflow, not general signed arithmetic.
 The entry certificate checks every actual parameter bind and derives the value
 relation; the leading-if certificate checks the false constant, return and closing
 label. Its continuation is exactly the boundary after that matched lowering.
@@ -416,3 +419,69 @@ scope/pinning, backend or hardware safety theorem follows. Large actual-source/I
 acceptance and executable scenarios remain native receipts, **not concrete kernel
 acceptance proofs**. The generic Lean correspondence and local progress proofs
 are kernel-checked with audited `propext`/`Quot.sound` dependencies.
+
+### Restricted free functions and returning forwarders
+
+The free-function profile retains the same complete raw source graph, namespace
+selection, signature and published artifact. It does not synthesize a receiver
+or claim the older class-only D2 closure certificate. `LocalFreeBinding` composes
+exact free-callable identity with the existing complete local-body certificate.
+Root unqualified symbols use raw names; imported symbols use length-encoded
+module/namespace/name linkage. Callable module index zero iff source is the root
+is a restricted consumer convention, not compiler module-resolution correctness.
+
+`ForwardWrapper` checks a genuine free Call19: a direct imported, exported
+namespace function, six word parameters forwarded in declaration order, bool
+result, and complete entry/argument-push/call/return coverage. It uses the original
+`ParsedMethod` and certifies the callee in the SAME graph and decoded tables.
+`ForwardWrapper.returned_run` is an internal conditional helper; the exact-policy
+`ForwardWrapper.numeric_run` discharges its premises using the SAME `LeafShape`,
+for both true and false bounded inputs. `accepted_true` applies to arbitrary
+actual modeled true-returning runs, not only the constructed run. Local termination
+excludes infinite local running steps, not environmental liveness. Acquisition,
+lowering, backend instructions, copied-record scalar ABI and authority remain
+outside this theorem.
+
+Complete unselected source coverage additionally admits one opaque quoted token
+containing printable ASCII without backslashes. Both quotes and every interior
+byte occur in the independent lexical relation. Escapes, controls, non-ASCII and
+unterminated strings reject; quoted braces/comment markers cannot create
+declarations. Selected string expressions still reject. The nonauthoritative
+producer display tag `array` conveys no structural or semantic payload authority.
+
+Use the existing driver on either complete process-root capture:
+
+```sh
+.lake/build/bin/source-binding-probe --forward-leaf process_snapshot_writable_leaf \
+  --ir FULL_IR ROOT_MODULE kernel.snapshot_mapping kernel snapshot_writable_leaf SOURCE...
+python3 probe-source-leaf.py FULL_IR ROOT_MODULE SOURCE...
+```
+
+Generic forward correspondence and exact policy shape are reported separately.
+A coherently weakened source/IR policy may satisfy only the former. The runner
+retains hashes of every full source input and artifact and uses D1, not the
+unsupported class-only D2 entry point. Executions are native receipts, not kernel
+certificates for concrete multi-megabyte inputs.
+
+The optional `LeafShape` certificate checks the actual free function's entire
+typed body against the snapshot leaf predicate, using its six actual `u64`
+formal names and positions. Generic correspondence alone does not establish
+this policy: coherent source/IR policy changes must still pass the exact shape
+check. `LeafShape.evaluates` derives total evaluation from the bounded actual
+argument map; `executes_numeric` constructs the complete canonical IR run;
+`accepted_true` derives `LeafAccepted` for any same-entry run returning true.
+The numerical facts include flags modulo accessed/dirty bits, physical address
+identity/alignment/nonzero/52-bit width/limit, prefix alignment and slot bound,
+and the no-carry identity `prefix | (slot<<12) |3 = prefix + slot*4096 +3`.
+Shift non-overflow follows on the checked `slot < 512` continuation, rather than
+being a caller premise. The fixed low-21-bit mask proof is constructive.
+
+Bitwise AND/OR act on bounded unsigned words. The only signed value admitted is
+the literal shift count `12`, represented by a distinct transient marker, never
+as a `u64`. Its next checked instruction must consume it as the checked left
+shift: it cannot be pushed, stored, returned, called with, or carried across
+control flow. Overflow traps are explicit. This is not general signed arithmetic.
+The source/published-IR numerical result does not prove native scalar transport,
+backend lowering, page-table authenticity, mapping stability, A/B authority,
+or payload-copy effects. Large captured-input acceptance is a native receipt,
+not a concrete kernel reduction of the entire source graph/publication.

@@ -905,6 +905,11 @@ auto events_mode(const char *path) -> int {
             else
                 std::cout << call_names[call->action] << " value=" << hex(call->value) << " length=" << call->length
                           << " base=" << hex(call->base) << " record=" << hex(call->record) << "\n";
+        } else if (verb == "snapshot_leaf" && values.size() == 6) {
+            const process::SnapshotLeafArguments arguments{
+                values[0], values[1], values[2], values[3], values[4], values[5]};
+            std::cout << text << " -> " << (process::snapshot_writable_leaf(arguments) ? "accepted" : "rejected")
+                      << "\n";
         } else if ((verb == "map" && values.size() == 5) || (verb == "remap" && values.size() == 9) ||
                    (verb == "unmap" && values.size() == 8)) {
             const process::MemoryState state{values[0], values[1], values[2], values[3]};

@@ -16,6 +16,15 @@ inductive ExprCode (program : Program) (slots : Nat → Nat) :
   | sub : ExprCode program slots left start leftEnd → program leftEnd = some .push →
       ExprCode program slots right (leftEnd + 1) rightEnd → program rightEnd = some (.binary .sub) →
       ExprCode program slots (.sub left right) start (rightEnd + 1)
+  | bitAnd : ExprCode program slots left start leftEnd → program leftEnd = some .push →
+      ExprCode program slots right (leftEnd + 1) rightEnd → program rightEnd = some (.binary .bitAnd) →
+      ExprCode program slots (.bitAnd left right) start (rightEnd + 1)
+  | bitOr : ExprCode program slots left start leftEnd → program leftEnd = some .push →
+      ExprCode program slots right (leftEnd + 1) rightEnd → program rightEnd = some (.binary .bitOr) →
+      ExprCode program slots (.bitOr left right) start (rightEnd + 1)
+  | shift12 : ExprCode program slots child start middle → program middle = some .push →
+      program (middle + 1) = some .count12 → program (middle + 2) = some (.binary .shift12) →
+      ExprCode program slots (.shift12 child) start (middle + 3)
   | compare : ExprCode program slots left start leftEnd → program leftEnd = some .push →
       ExprCode program slots right (leftEnd + 1) rightEnd → program rightEnd = some (.binary (.compare operation)) →
       ExprCode program slots (.compare operation left right) start (rightEnd + 1)
@@ -55,6 +64,31 @@ def checkExprCode (program : Program) (slots : Nat → Nat) : {kind : GuardType}
       let r ← checkExprCode program slots right (l.stop + 1)
       if binary : program r.stop = some (.binary .sub) then
         return ⟨r.stop + 1,.sub l.grammar push r.grammar binary⟩
+      else none
+    else none
+  | _, .bitAnd left right, start => do
+    let l ← checkExprCode program slots left start
+    if push : program l.stop = some .push then
+      let r ← checkExprCode program slots right (l.stop + 1)
+      if binary : program r.stop = some (.binary .bitAnd) then
+        return ⟨r.stop + 1,.bitAnd l.grammar push r.grammar binary⟩
+      else none
+    else none
+  | _, .bitOr left right, start => do
+    let l ← checkExprCode program slots left start
+    if push : program l.stop = some .push then
+      let r ← checkExprCode program slots right (l.stop + 1)
+      if binary : program r.stop = some (.binary .bitOr) then
+        return ⟨r.stop + 1,.bitOr l.grammar push r.grammar binary⟩
+      else none
+    else none
+  | _, .shift12 child, start => do
+    let c ← checkExprCode program slots child start
+    if push : program c.stop = some .push then
+      if count : program (c.stop + 1) = some .count12 then
+        if binary : program (c.stop + 2) = some (.binary .shift12) then
+          return ⟨c.stop + 3,.shift12 c.grammar push count binary⟩
+        else none
       else none
     else none
   | _, .compare operation left right, start => do
@@ -152,7 +186,7 @@ theorem and_simulation (program : Program) (base : Machine) (start middle stop :
   | trap fault => exact leftRun
   | value value =>
     cases value with
-    | word n =>
+    | word _ | signedCount12 =>
       exact leftRun.trans (Runs.one (by simp [step,frameState,branch,finish,Outcome.then]))
     | boolean b =>
       cases b with
@@ -180,7 +214,7 @@ theorem or_simulation (program : Program) (base : Machine) (start middle stop : 
   | trap fault => exact leftRun
   | value value =>
     cases value with
-    | word n =>
+    | word _ | signedCount12 =>
       exact leftRun.trans (Runs.one (by simp [step,frameState,branch,finish,Outcome.then]))
     | boolean b =>
       cases b with
@@ -227,6 +261,20 @@ theorem ExprCode.simulates {program : Program} {slots : Nat → Nat} {kind : Gua
   | sub left push right binary leftIH rightIH =>
     exact binary_simulation program base _ _ _ accumulator stack .sub _ _
       (leftIH accumulator stack) push (fun value => rightIH (some value) (value :: stack)) binary
+  | bitAnd left push right binary leftIH rightIH =>
+    exact binary_simulation program base _ _ _ accumulator stack .bitAnd _ _
+      (leftIH accumulator stack) push (fun value => rightIH (some value) (value :: stack)) binary
+  | bitOr left push right binary leftIH rightIH =>
+    exact binary_simulation program base _ _ _ accumulator stack .bitOr _ _
+      (leftIH accumulator stack) push (fun value => rightIH (some value) (value :: stack)) binary
+  | @shift12 childExpr begin middle child push count binary ih =>
+    have counted (value : Value) : Runs program
+        (frameState base (middle + 1) (some value) (value :: stack))
+        (finish base (middle + 2) (value :: stack) (.value .signedCount12)) :=
+      Runs.one (by simp [step,frameState,count,finish])
+    simpa only [evalGuard,Outcome.then,Nat.add_assoc] using
+      binary_simulation program base begin middle (middle + 2) accumulator stack .shift12
+        (evalGuard source childExpr) (.value .signedCount12) (ih accumulator stack) push counted binary
   | compare left push right binary leftIH rightIH =>
     exact binary_simulation program base _ _ _ accumulator stack _ _ _
       (leftIH accumulator stack) push (fun value => rightIH (some value) (value :: stack)) binary

@@ -52,29 +52,29 @@ example : (fieldText "".toUTF8 ⟨0, 0⟩ .hex).isSome = true := by decide
 example : (fieldText "".toUTF8 ⟨1, 0⟩ .hex).isSome = false := by decide
 
 -- Small kernel checks for type-information joins, not value semantics.
-example : FlowsTo ⟨some .word, []⟩ ⟨none, []⟩ := by decide
-example : ¬ FlowsTo ⟨some .word, []⟩ ⟨some .boolean, []⟩ := by decide
-example : ¬ FlowsTo ⟨some .word, [.word]⟩ ⟨none, []⟩ := by decide
+example : FlowsTo ⟨some .word, [],false⟩ ⟨none, [],false⟩ := by decide
+example : ¬ FlowsTo ⟨some .word, [],false⟩ ⟨some .boolean, [],false⟩ := by decide
+example : ¬ FlowsTo ⟨some .word, [.word],false⟩ ⟨none, [],false⟩ := by decide
 
 def formOnly (form : Int) : Record :=
   ⟨"ir-code", ([0, 0, 1, -1, 6, 1, form] : List Int).map Field.integer, false⟩
 example : ¬ TypeTransfer (tables []) 0 (formOnly 91) {} {} := by decide
 example : ¬ TypeTransfer (tables []) 0 (formOnly 9) {} {} := by decide
 example : ¬ TypeTransfer (tables []) 0 (formOnly 42) {} {} := by decide
-example : TypeTransfer (tables []) 0 (formOnly 91) ⟨some .boolean, []⟩ ⟨none, []⟩ := by decide
-example : ¬ TypeTransfer (tables []) 0 (formOnly 91) ⟨some .boolean, []⟩ ⟨some .boolean, []⟩ := by decide
+example : TypeTransfer (tables []) 0 (formOnly 91) ⟨some .boolean, [],false⟩ ⟨none, [],false⟩ := by decide
+example : ¬ TypeTransfer (tables []) 0 (formOnly 91) ⟨some .boolean, [],false⟩ ⟨some .boolean, [],false⟩ := by decide
 example : (checkRows (tables []) 0 [formOnly 91, formOnly 9]
-    [(⟨some .boolean, []⟩, ⟨none, []⟩), (⟨none, []⟩, ⟨none, []⟩)]).isSome = false := by decide
+    [(⟨some .boolean, [],false⟩, ⟨none, [],false⟩), (⟨none, [],false⟩, ⟨none, [],false⟩)]).isSome = false := by decide
 example : (checkRows (tables []) 0 [formOnly 91] [({}, {})]).isSome = false := by decide
 example : CallTransfer true [some .word] (some .boolean)
-    ⟨some .word, [.boolean]⟩ ⟨some .boolean, [.boolean]⟩ := by decide
+    ⟨some .word, [.boolean],false⟩ ⟨some .boolean, [.boolean],false⟩ := by decide
 example : ¬ CallTransfer true [some .word] (some .boolean)
-    ⟨none, [.word]⟩ ⟨some .boolean, []⟩ := by decide
+    ⟨none, [.word],false⟩ ⟨some .boolean, [],false⟩ := by decide
 example : CallTransfer false [some .word] (some .boolean)
-    ⟨none, [.word]⟩ ⟨some .boolean, []⟩ := by decide
-example : CallTransfer true [] (some .word) ⟨none, []⟩ ⟨some .word, []⟩ := by decide
+    ⟨none, [.word],false⟩ ⟨some .boolean, [],false⟩ := by decide
+example : CallTransfer true [] (some .word) ⟨none, [],false⟩ ⟨some .word, [],false⟩ := by decide
 example : CallTransfer true [some .word, some .word] (some .boolean)
-    ⟨none, [.word, .word]⟩ ⟨some .boolean, []⟩ := by decide
+    ⟨none, [.word, .word],false⟩ ⟨some .boolean, [],false⟩ := by decide
 
 -- Version-2 source method identity is exact wire data, not a resolver proof.
 def recordAdmitted (text : String) : Bool :=
@@ -105,3 +105,7 @@ example : ¬ resourceRanges (nameTables [methodFixture 0 0 "finish"])
     (resourceFixture 0 2) := by decide
 example : ¬ resourceRanges (nameTables [methodFixture 0 0 "finish", methodFixture 0 0 "start"])
     (resourceFixture 0 2) := by decide
+
+-- Existing producer display tag, never canonical payload.
+example : "array" ∈ displayTags := by decide
+example : "ir-array" ∉ displayTags := by decide

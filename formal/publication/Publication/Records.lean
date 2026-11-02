@@ -26,7 +26,7 @@ def schema : String → Option (List FieldKind)
 /-- Display tags are not permitted to introduce authoritative records. -/
 def displayTags : List String :=
   ["class", "enum", "callable", "slot", "origin", "body", "code", "object",
-   "span", "spanvalues", "service_resource", "retained"]
+   "array", "span", "spanvalues", "service_resource", "retained"]
 
 inductive FieldListText (input : ByteArray) : List Span → List FieldKind → List Field → Prop
   | nil : FieldListText input [] [] []

@@ -18,7 +18,7 @@ def operandsOf (t : Tables) (code : Record) : Array Record :=
 def Selectors (row : Record) : Prop :=
   row.integer 5 = 1 ∧ row.integer 10 = 0 ∧
   (if row.integer 6 = 11 then row.integer 7 = 1 ∧ row.integer 8 = 0 ∧ row.integer 9 = 0
-   else if row.integer 6 = 12 then row.integer 7 = 0 ∧ row.integer 8 = 1 ∧ row.integer 9 = 0
+   else if row.integer 6 = 12 then row.integer 7 = 0 ∧ (row.integer 8 = 1 ∨ row.integer 8 = 5 ∨ row.integer 8 = 6 ∨ row.integer 8 = 8) ∧ row.integer 9 = 0
    else if row.integer 6 = 14 then row.integer 7 = 0 ∧ row.integer 8 = 0 ∧ 0 ≤ row.integer 9 ∧ row.integer 9 ≤ 5
    else row.integer 7 = 0 ∧ row.integer 8 = 0 ∧ row.integer 9 = 0)
 instance (row : Record) : Decidable (Selectors row) := by unfold Selectors; infer_instance
@@ -55,6 +55,17 @@ def ResourceBinding (t : Tables) (id : Int) (code : Record) : Prop :=
 instance (t : Tables) (id : Int) (code : Record) : Decidable (ResourceBinding t id code) := by
   unfold ResourceBinding; infer_instance
 
+/-- The only admitted signed scalar literal is a transient shift count, never
+    a word-valued source argument, local, return, or stored field. -/
+def SignedCount12 (t : Tables) (code : Record) : Prop :=
+  code.integer 6 = 5 ∧ operandRoles t code = [10,12] ∧ operandValue t code 0 = 12 ∧
+  Index (operandValue t code 1) t.types.size ∧
+  (atRow t.types (operandValue t code 1)).integer 1 = 0 ∧
+  (atRow t.types (operandValue t code 1)).integer 3 = 0 ∧
+  PlainTail (atRow t.types (operandValue t code 1))
+instance (t : Tables) (code : Record) : Decidable (SignedCount12 t code) := by
+  unfold SignedCount12; infer_instance
+
 /-- Supported operand/type/callee relationships, not value execution or effects. -/
 def InstructionBinding (t : Tables) (id : Int) (code : Record) : Prop :=
   let v := operandValue t code
@@ -62,10 +73,10 @@ def InstructionBinding (t : Tables) (id : Int) (code : Record) : Prop :=
   (if f = 5 then operandRoles t code = [10, 12] ∨ operandRoles t code = [11, 12]
    else rolesFor f = some (operandRoles t code)) ∧ Selectors code ∧
   AllRows (operandsOf t code) (OperandPayload t) ∧
-  (if f = 5 then ScalarType t (v 1) ∧
+  (if f = 5 then SignedCount12 t code ∨ (ScalarType t (v 1) ∧
       ((scalarKind t (v 1) = some .boolean ∧ (operand t code 0).integer 1 = 10 ∧
         0 ≤ v 0 ∧ v 0 ≤ 1) ∨
-       (scalarKind t (v 1) = some .word ∧ (operand t code 0).integer 1 = 11))
+       (scalarKind t (v 1) = some .word ∧ (operand t code 0).integer 1 = 11)))
    else if f = 7 then MatchingSlot t id (v 0) (v 1)
    else if f = 11 then ScalarType t (v 0) ∧ scalarKind t (v 0) = some .boolean
    else if f = 12 ∨ f = 14 then ScalarType t (v 0) ∧ scalarKind t (v 0) = some .word

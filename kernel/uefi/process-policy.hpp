@@ -5,6 +5,8 @@
 // mapped; the build checks every record, enum and result layout against the
 // compiler's ABI facts (scripts/meson_aurora_assembly.py PROCESS_POLICY_ABI).
 // Decoders reject any result outside the closed encodings before it is used.
+// Scalar-only source roots unpack the copied record into six argument registers;
+// aggregate source entries instead use R11.
 #include <cstddef>
 #include <cstdint>
 #include <array>
@@ -101,6 +103,11 @@ public:
     PolicySpan volume;
     U64 index;
 };
+class SnapshotLeafArguments final {
+public:
+    U64 leaf, physical, mapping, prefix, slot, physical_limit;
+};
+static_assert(sizeof(SnapshotLeafArguments) == 48 && alignof(SnapshotLeafArguments) == 8);
 static_assert(sizeof(MapArguments) == 72 && sizeof(GrantArguments) == 88 && sizeof(RangeArguments) == 96 &&
               sizeof(VolumeArguments) == 56 && sizeof(FindArguments) == 112 && sizeof(EntryArguments) == 64 &&
               sizeof(FrameRange) == 24 && sizeof(VolumeEntry) == 24);
@@ -306,6 +313,8 @@ static_assert(sizeof(MemoryState) == 32 && sizeof(MemoryRecord) == 24 && sizeof(
 inline constexpr U64 file_path_limit = 4095, file_chunk = 504, file_output_limit = U64{1} << 26;
 
 namespace bridge {
+auto snapshot_writable_leaf(const SnapshotLeafArguments *) -> U64 asm("__au_runtime_process_snapshot_writable_leaf")
+    __attribute__((visibility("hidden")));
 auto map_admit(const MapArguments *) -> U64 asm("__au_runtime_process_map_admit") __attribute__((visibility("hidden")));
 auto volume_grant(const GrantArguments *) -> U64 asm("__au_runtime_process_volume_grant")
     __attribute__((visibility("hidden")));
@@ -351,6 +360,11 @@ auto memory_budget(const MemoryBudgetArguments *, MemoryBudget *) -> void asm("_
     __attribute__((visibility("hidden")));
 auto path_text(U64 value) -> U64 asm("__au_runtime_process_path_text") __attribute__((visibility("hidden")));
 } // namespace bridge
+
+// Only the canonical true encoding admits a leaf; malformed results fail closed.
+[[nodiscard]] inline auto snapshot_writable_leaf(const SnapshotLeafArguments &arguments) -> bool {
+    return bridge::snapshot_writable_leaf(&arguments) == 1;
+}
 
 // A closed enum result, or nullopt for an encoding outside it.
 template <class Enum, U64 Last> [[nodiscard]] inline auto verdict(U64 raw) -> std::optional<Enum> {

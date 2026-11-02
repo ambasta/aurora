@@ -33,7 +33,7 @@ theorem eval_body_supported (body : EffectBody) (state : SourceState) :
   | require condition =>
     apply expression_body_supported _ _ _ (eval_supported state condition)
     intro value; cases value with
-    | word _ => trivial
+    | word _ | signedCount12 => trivial
     | boolean b => cases b <;> trivial
   | returnValue kind value =>
     apply expression_body_supported _ _ _ (eval_supported state value)
@@ -41,7 +41,7 @@ theorem eval_body_supported (body : EffectBody) (state : SourceState) :
   | branch condition body ih =>
     apply expression_body_supported _ _ _ (eval_supported state condition)
     intro value; cases value with
-    | word _ => trivial
+    | word _ | signedCount12 => trivial
     | boolean b => cases b with
       | false => trivial
       | true => exact ih state
@@ -86,13 +86,13 @@ theorem eval_body_parameters (body : EffectBody) (state : SourceState) :
   | require condition =>
     apply expression_parameters
     intro value; cases value with
-    | word _ => rfl
+    | word _ | signedCount12 => rfl
     | boolean b => cases b <;> rfl
   | returnValue kind value => apply expression_parameters; intro scalar; rfl
   | branch condition body ih =>
     apply expression_parameters
     intro value; cases value with
-    | word _ => rfl
+    | word _ | signedCount12 => rfl
     | boolean b => cases b with
       | false => rfl
       | true => exact ih state
