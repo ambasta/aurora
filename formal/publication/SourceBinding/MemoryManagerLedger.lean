@@ -2,8 +2,8 @@ import SourceBinding.FramePolicySpec
 
 namespace Aurora.SourceBinding.MemoryManagerRelease
 
-/-! Mathematical definitions only; preservation and actual-source attachment
-are not yet proved.
+/-! Mathematical definitions only. Separate mathematical preservation and guard
+lemmas do not establish actual method execution or source/store attachment.
 Finite-bank abstraction for the COMPLETE production MemoryManager.release.
 There is no policy evaluator here: all policy decisions reuse FramePolicy.
 Actual source/IR field/resource identity and primitive effects are separate

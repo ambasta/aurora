@@ -63,3 +63,8 @@ import SourceBinding.FramePolicyReflection
 import SourceBinding.EffectSourceBinding
 import SourceBinding.OwnedWordsFacts
 import SourceBinding.ResourceStatementFacts
+
+import SourceBinding.MemoryManagerLedgerFacts
+import SourceBinding.MemoryManagerReleaseFacts
+import SourceBinding.MemoryManagerReleasePreservation
+import SourceBinding.MemoryManagerReleaseGuards

@@ -95,7 +95,11 @@ native ABI/backend correctness or an ABA guarantee.
 
 Allocator-bookkeeping refinement has begun with an explicit finite-bank model,
 structural ledger invariants, primitive write/framing laws and raw resource-response
-consumption rules. These prerequisites do not yet prove the complete production
+consumption rules. Internal mathematical results preserve the complete invariant
+and retired cells under the specified release update, and derive consistency
+guards from a healthy ledger and the proved numerical policy result. The actual
+method must still be shown to perform that update. These prerequisites do not yet
+prove the complete production
 `MemoryManager.release` body, establish the initial ledger invariant, or verify
 native bank admission and writes.
 

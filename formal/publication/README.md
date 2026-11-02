@@ -852,3 +852,37 @@ The strict audit retains all 571 earlier primary exports and adds these 17:
 **588 primary reports**, plus the unchanged separately counted **20 specification
 reports**. Tiny controls exercise primitive cells, framing, partial-response
 poststates and waiting; they are not full-method or native acceptance evidence.
+
+
+### Internal finite-bank release mathematics (not method execution)
+
+`MemoryManagerLedgerFacts`, `MemoryManagerReleaseFacts`,
+`MemoryManagerReleasePreservation` and `MemoryManagerReleaseGuards` use the
+same finite `Bank` and the existing independent `FramePolicy.ResultSpec`.
+Their twelve exports prove constructive one-cell census balances and bounds,
+complete free-chain prepend/retention, accepted-release input facts, and
+bit-for-bit preservation of old retired cells. The internal implication from
+`LedgerInv before` and `ReleaseSuccess before after ...` restores **every**
+ledger-invariant clause, including exact owner counts, no orphan allocations,
+reserved prefix and complete acyclic one-based free-chain coverage. It also
+preserves the optional canonical-retired strengthening.
+
+The source-facing guard lemma instead starts from a healthy ledger, an admitted
+finite index, bounded policy inputs, the existing exact policy result, and its
+nonzero low-state branch. It derives priority-preserving owner-slot selection,
+positive held/allocated counts, free-room and link constraints, and all relevant
+counter bounds including the late `index + 1`. It has **no** `ReleaseDelta`,
+after-state, successful-store or assumed helper-return premise.
+
+These are internal mathematical implications, not an execution proof for
+`MemoryManager.release`. The complete checked source/IR method must still
+establish its actual bank requests, retained failure prefixes, ordered stores,
+and `ReleaseSuccess`; no theorem may substitute a caller-supplied final ledger
+or successful-store summary. Initial invariant establishment, native primitive
+refinement, and arbitrary allocation histories remain separate obligations.
+
+The strict audit retains the previous 588 primary exports and adds these 12:
+**600 primary dependency reports**, plus the unchanged separately counted
+**20 specification reports**. Only `propext` and `Quot.sound` are permitted.
+This math-only checkpoint does not include the ongoing effectful source-relation
+migration or claim that migration preserves the old closure yet.

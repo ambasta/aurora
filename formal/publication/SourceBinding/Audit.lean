@@ -617,3 +617,17 @@ import SourceBinding.LegacyLeafCompatibility
 #print axioms Aurora.SourceBinding.SourceResourceAssert.retains_response
 #print axioms Aurora.SourceBinding.SourceResourceAssert.false_retains_poststate
 #print axioms Aurora.SourceBinding.SourceResourceAssert.missing_retains_poststate
+
+-- Internal finite-bank mathematics; actual complete release remains separate.
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.OneCellReplacement.state_count_balance
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.OneCellReplacement.owner_count_balance
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.stateCount_le
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.ownerCount_le
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.LedgerInv.head_bound
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.CompleteFreeChain.prepend
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.CompleteFreeChain.retain
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.release_result_inputs
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.ReleaseSuccess.retired_preserved
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.ReleaseSuccess.canonical_retired
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.ReleaseSuccess.preserves
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.release_consistency_guards

@@ -51,7 +51,7 @@ import re
 import sys
 allowed = {'propext', 'Quot.sound'}
 for path, expected, label, prefix in [
-    (sys.argv[1], 588, 'source-binding', 'Aurora.SourceBinding.'),
+    (sys.argv[1], 600, 'source-binding', 'Aurora.SourceBinding.'),
     (sys.argv[2], 20, 'independent frame-policy specification', 'Aurora.SourceBinding.FramePolicy.'),
 ]:
     count = 0
