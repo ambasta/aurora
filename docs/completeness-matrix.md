@@ -85,9 +85,13 @@ PC0-to-terminal root source/canonical-machine correspondence, including possible
 faults. An additional exact policy profile checks all ten source bodies, signatures
 and nominal enum declarations. Universal source-evaluation lemmas now characterize
 all nine helpers, including partial packing with checked overflow, nominal
-rejection encoding and record validation. The root lifecycle result remains to be
-attached; allocator ledger updates and persistent retirement also remain unproved
-obligations.
+rejection encoding and record validation. The exact root profile now derives the
+prioritized lifecycle result for every source evaluation on bounded typed inputs
+and constructs the matching completed canonical-machine run. Accepted allocation
+preserves generation; accepted release increments it below the limit or returns
+the canonical retired record at the limit, and subsequent policy invocations on that record reject. These
+are invocation-level results, not allocator ledger updates, persistent retirement,
+native ABI/backend correctness or an ABA guarantee.
 
 | Destination | Status |
 |---|---|

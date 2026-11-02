@@ -569,3 +569,33 @@ import SourceBinding.LegacyLeafCompatibility
 #print axioms Aurora.SourceBinding.FramePolicyAttachment.root_reject_value
 #print axioms Aurora.SourceBinding.FramePolicyAttachment.root_reject
 #print axioms Aurora.SourceBinding.FramePolicyAttachment.root_compare
+
+-- Exact full-root source result, real DAG execution, and lifecycle invocation results.
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.root_parameter_slot_ne
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.RootInputState.initialized
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.root_formal_binding_at_cursor
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.root_formal_result_at_cursor
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.RootInputState.operation_result_at_cursor
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.RootInputState.record_result_at_cursor
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.RootInputState.owner_result_at_cursor
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.RootInputState.generation_result_at_cursor
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.RootInputState.link_result_at_cursor
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.operation_case_at_cursor
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.operation_constant_result_at_cursor
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.rejection_case_at_cursor
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.rejection_constant_result_at_cursor
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.root_const_declaration
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.root_const_context
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.root_two_local_contexts
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.initialization_result
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.root_prefix_result
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.source_result
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.executes
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.executes_spec
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.allocate_preserves_generation
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.release_increments
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.release_retires
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.retired_refuses
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.terminal_correspondence
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.not_locally_diverges
+#print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.retired_input_refuses

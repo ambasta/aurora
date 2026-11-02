@@ -51,3 +51,11 @@ import SourceBinding.FramePolicyReject
 import SourceBinding.FramePolicyValid
 import SourceBinding.FramePolicyRootInputs
 import SourceBinding.FramePolicyRootCalls
+
+import SourceBinding.FramePolicyRootInputUpdates
+import SourceBinding.FramePolicyRootLocalContext
+import SourceBinding.FramePolicyInitialize
+import SourceBinding.FramePolicyRootPrefix
+import SourceBinding.FramePolicyRoot
+import SourceBinding.FramePolicyExecution
+import SourceBinding.FramePolicyReflection

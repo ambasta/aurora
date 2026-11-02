@@ -733,8 +733,8 @@ faults retain their actual active machine frames, including nested callees.
 The input premise is `RuntimeReadyArguments` for the exact ordered runtime
 signature. This is constructive finite source/canonical-machine correspondence,
 not arbitrary-source derivation uniqueness, native execution correctness, or the
-frame lifecycle result specification. The independent `FramePolicySpec` remains
-unattached; generation/retirement policy claims require that next attachment.
+frame lifecycle result specification by itself. At this 462-report checkpoint,
+`FramePolicySpec` remained unattached; the attachment is established below.
 The primary audit is **462 reports** (all previous 456 plus six), with the same
 separate **20 independent specification reports** and unchanged axiom allowlist.
 
@@ -751,17 +751,16 @@ binding while failing this optional exact profile.
 Nominal operation embedding, five-case coverage and bounded root-argument
 readiness are proved from the selected declarations. Constructive decoding
 lemmas connect masks/shifts to the independent numerical field definitions.
-Universal source-derivation contracts currently establish the five constant
-helpers and `kernel_owner`. Shared inversion/composition lemmas preserve exact
+At the profile-prerequisite checkpoint, universal source-derivation contracts
+established the five constant helpers and `kernel_owner`. Shared inversion/composition lemmas preserve exact
 runtime types, first faults, short-circuiting and initialized formal/scope reads;
 they characterize actual derivations and do not constitute another evaluator.
 The modular call-result lemma is internal: its helper contract must be proved,
 not supplied as a public frame-policy premise.
 
-At this checkpoint the exact profile and helper prerequisites are nonvacuous,
-but the partial packing, rejection, record-validity and root result proofs are
-still pending. In particular, no `FramePolicySpec` attachment or root no-fault
-claim is made. The primary audit retains all 462 reports and adds 46: **508
+At that checkpoint the exact profile and helper prerequisites were nonvacuous,
+but packing, rejection, record-validity and root result proofs were pending.
+No `FramePolicySpec` attachment or root no-fault claim was made there. The primary audit retains all 462 reports and adds 46: **508
 primary reports**, with **20 separate independent specification reports**, under
 the unchanged axiom allowlist and default limits.
 
@@ -782,8 +781,46 @@ same expression outcomes and traces, including nested calls, under exact resolve
 read equivalence. Root-input facts are derived from the actual ordered formal
 seed and selected nominal cases; they are not extra public root premises.
 
-The full root `source_result`/`ResultSpec` attachment remains pending. In-progress
-root initialization and release-suffix proofs are excluded from this checkpoint;
-no root no-fault or lifecycle-result claim is made here. The audit preserves all
+At the nine-helper checkpoint, the full root `source_result`/`ResultSpec`
+attachment remained pending. In-progress root proofs were excluded, and no root
+no-fault or lifecycle-result claim was made at that stage. The audit preserves all
 508 preceding reports and adds 35: **543 primary reports**, plus the same **20
 independent specification reports**, with unchanged axioms and default limits.
+
+
+### Attached exact frame-policy result and lifecycle invocation guarantees
+
+`ExactProfile.source_result` proves that **every actual source derivation** of
+this exact checked root, for its named operation and four bounded word inputs,
+returns `FramePolicy.encode (FramePolicy.transition ...)`. It derives the first
+four guards, both real const declarations and their initialized private cells,
+and the complete remaining branch order. Formal reads, context validity, packing
+bounds and helper contracts are proved internally; no successful evaluation,
+continuation, desired result or helper summary is a public premise.
+
+`ExactProfile.executes` composes that characterization with the complete checked
+DAG theorem. It constructs actual source and canonical-machine runs from PC0 to
+the real root return, with the exact independent `ResultSpec`, no trap, ordered
+related traces and preserved shared state. Source outcomes/traces precede the
+arbitrary shared and external-relation contexts. The separate
+`terminal_correspondence` theorem forces **any** canonical run reaching a boundary
+to that same returned result; `not_locally_diverges` excludes local divergence.
+Both reuse the existing deterministic local-prefix machinery rather than assuming
+that constructive existence implies reflection.
+
+The attached invocation corollaries establish allocation generation preservation,
+matching release increment below the limit, and canonical retirement at the limit
+(after the actual link guard). Every operation on any bounded copied record whose decoded state is retired
+returns a refusal, without assuming record validity. The canonical retirement
+result has its sharper reason formula; malformed retired inputs can instead fail
+record validation, and earlier operation/initialization/owner guards also retain
+their priority. The reason is therefore not always `retired`. These are policy invocation
+results, **not** proofs that a native ledger stores the result, that retirement
+persists, or that physical-frame reuse, ABA, A/B ownership or backend/ABI transport
+is safe. The general packing helper remains partial outside its proved bounds.
+
+The audit retains all 543 earlier exports and adds 28: **571 primary dependency
+reports**, plus the same separately labeled **20 independent specification
+reports**. The specification is now connected by the attachment theorems, while
+its standalone audit remains separately counted. Axiom restrictions and default
+proof limits are unchanged.

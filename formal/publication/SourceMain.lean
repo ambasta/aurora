@@ -11,6 +11,7 @@ import SourceBinding.RuntimeCallFormalBinding
 import SourceBinding.RuntimeBodyPublic
 import SourceBinding.RuntimeDAGPublic
 import SourceBinding.FramePolicyChecker
+import SourceBinding.FramePolicyExecution
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -117,7 +118,7 @@ def main (args : List String) : IO UInt32 := do
       throw (IO.userError "exact frame policy profile rejected")
     IO.println s!"SOURCE-FRAME-POLICY exact_profile=true nodes={checked.checked.shape.nodes.length} publication_bytes={publication.size}"
     IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
-    IO.println "NATIVE full-input exact ten-body/nominal policy profile receipt. Generic DAG execution theorem applies; lifecycle source-result attachment pending. No concrete kernel acceptance, capture/backend/native ABI, ledger mutation or authority proof."
+    IO.println "NATIVE full-input exact ten-body/nominal policy profile receipt. Checked profile attaches total source/canonical-IR execution and exact ResultSpec for bounded typed inputs, including normal refusal results. No concrete kernel acceptance, capture/backend/native ABI, ledger mutation or authority proof."
     return 0
   if runtimeDAG then
     let some path := irPath | throw (IO.userError "runtime DAG requires --ir")
