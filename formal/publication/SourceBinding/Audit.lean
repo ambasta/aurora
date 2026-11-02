@@ -682,3 +682,13 @@ import SourceBinding.LegacyEffectEquivalence
 #print axioms Aurora.SourceBinding.PureRuntimeStatementEvaluation.assignment_cases
 #print axioms Aurora.SourceBinding.PureRuntimeStatementEvaluation.return_cases
 #print axioms Aurora.SourceBinding.PureRuntimeStatementEvaluation.branch_cases
+
+#print axioms Aurora.SourceBinding.SourceShared.toCall_injective
+#print axioms Aurora.SourceBinding.SourceExternalOutcome.toCall_injective
+#print axioms Aurora.SourceBinding.EffectExternalRelated.empty
+#print axioms Aurora.SourceBinding.EffectStopResult.shared
+#print axioms Aurora.SourceBinding.EffectExpressionResult.shared
+#print axioms Aurora.SourceBinding.EffectBodyResult.shared
+#print axioms Aurora.SourceBinding.SourceResourceStep.response_run
+#print axioms Aurora.SourceBinding.ResourceDescriptorMatches.mutable_iff
+#print axioms Aurora.SourceBinding.EffectResourceMeaning.mutable_iff

@@ -918,3 +918,34 @@ suffixes. This layer does **not** yet bind the complete canonical
 metadata writes. The internal ledger-preservation mathematics still needs that
 source/IR attachment; initial ledger invariants and native bank admission remain
 separate obligations.
+
+### Effect-aware machine boundary and resource primitive
+
+The source shared state is now associated exactly with the existing call
+machine's receiver/world state. Internal result relations retain the actual
+active frame on faults, the frozen request and continuation on finite waits,
+and the AFTER shared state on values. Body returns still require execution of
+the checked pending `ret`; these relations alone are not a complete-method proof.
+
+A proved resource-step bridge executes the actual resource instruction and,
+when a response is supplied, its actual resume transition. It preserves ordered
+arguments, raw optional results, external faults and the complete postresponse
+shared state. Its instruction, argument-collection and identity premises are
+internal obligations for the later complete checked grammar, not assumed bank
+writes. External relations agree pointwise only on paired checked requests;
+empty inventories impose no restriction on the old pure APIs. Finite waiting
+remains legal even when a response is available.
+
+Minimal same-graph receiver/resource certificates retain source scope, method
+mode, full fields/signatures and catalogue identity. The shared catalogue check
+admits the declared readonly or mutable effect; the old mutable-only check and
+raw retained-call convention remain exact specializations. No complete receiver
+method decoder or 13-node execution certificate is claimed yet. Tiny existing
+Lean-machine controls cover changed-shared-state false/missing/wrong-kind
+responses, actual store/assert consumers and external faults without rollback.
+
+The strict gate retains the 648 prior exports and adds nine boundary/primitive
+and conservative-catalogue results: **657 primary reports**, plus the unchanged
+**20 independent specification reports**. Complete release execution, derived
+ledger writes, lawful-response terminal classification and native bank authority
+remain separate obligations.

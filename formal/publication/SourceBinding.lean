@@ -68,3 +68,7 @@ import SourceBinding.MemoryManagerLedgerFacts
 import SourceBinding.MemoryManagerReleaseFacts
 import SourceBinding.MemoryManagerReleasePreservation
 import SourceBinding.MemoryManagerReleaseGuards
+
+import SourceBinding.EffectMachineBoundaryFacts
+import SourceBinding.EffectResourceStepProof
+import SourceBinding.EffectCanonicalBinding

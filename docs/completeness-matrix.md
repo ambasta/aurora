@@ -103,8 +103,11 @@ receiver and world state through expressions and statements, with raw resource
 responses consumed only at the modeled declaration or assertion boundary. Exact
 bidirectional compatibility preserves the prior pure evaluations, faults and
 traces; its legacy scope profile still rejects newly supported `if/else` forms,
-including in unexecuted syntax. These semantic prerequisites do not yet bind the
-complete production `MemoryManager.release` body to canonical receiver/resource
+including in unexecuted syntax. A bounded resource-step proof now connects actual
+invoke, wait and resume transitions to the same canonical call machine, preserving
+raw responses and changed shared state. Its checked catalogue and code premises
+must still be derived for the complete method. These prerequisites do not yet bind
+the complete production `MemoryManager.release` body to canonical receiver/resource
 calls, establish the initial ledger invariant, or verify native bank admission
 and writes.
 

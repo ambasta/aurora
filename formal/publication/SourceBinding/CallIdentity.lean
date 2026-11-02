@@ -113,8 +113,8 @@ def bindOrdinaryCall (t : Tables) (module path : Name) (members : List Declarati
 
 /-- Exact catalogue join. Effect 1 is only a profile restriction, not a frame or
     liveness fact. Changed native bytes may denote a different valid interface. -/
-def ResourceDescriptorMatches (t : Tables) (caller : Int) (sourceType : Name)
-    (target : ResourceDescriptor) : Prop :=
+def ResourceCatalogueMatches (t : Tables) (caller : Int) (sourceType : Name)
+    (target : ResourceDescriptor) (expectedEffect : Int) : Prop :=
   Index (Int.ofNat target.fieldOrdinal) (functionFields t caller).size ∧
   ResourceTypeIdentity t sourceType ((fieldOf t caller (Int.ofNat target.fieldOrdinal)).integer 2) ∧
   Index target.resource t.resources.size ∧ target.sourceType = sourceType ∧
@@ -126,12 +126,24 @@ def ResourceDescriptorMatches (t : Tables) (caller : Int) (sourceType : Name)
   method.blob 9 = target.sourceMethod ∧
   ((Aurora.Publication.group t.methods target.resource).filter (fun row => row.blob 9 == target.sourceMethod)).size = 1 ∧
   method.integer 2 = target.resultCatalog ∧ method.integer 5 = target.parameterCatalog ∧
-  method.integer 7 = target.effect ∧ target.effect = 1 ∧
+  method.integer 7 = target.effect ∧ target.effect = expectedEffect ∧
   method.blob 8 = target.native ∧ 0 < target.native.size ∧
   catalogueScalar (method.integer 3) = some target.result ∧
   0 ≤ method.integer 4 ∧ method.integer 4 ≤ 64 ∧
   target.parameters.length = (method.integer 4).toNat ∧
   target.parameters.map some = List.replicate (method.integer 4).toNat (catalogueScalar (method.integer 6))
+instance (t : Tables) (caller : Int) (sourceType : Name) (target : ResourceDescriptor)
+    (expectedEffect : Int) : Decidable (ResourceCatalogueMatches t caller sourceType target expectedEffect) := by
+  unfold ResourceCatalogueMatches; infer_instance
+
+/-- The original mutable-only catalogue profile is definitionally unchanged. -/
+def ResourceDescriptorMatches (t : Tables) (caller : Int) (sourceType : Name)
+    (target : ResourceDescriptor) : Prop := ResourceCatalogueMatches t caller sourceType target 1
+
+theorem ResourceDescriptorMatches.mutable_iff :
+    ResourceDescriptorMatches t caller sourceType target ↔
+      ResourceCatalogueMatches t caller sourceType target 1 := Iff.rfl
+
 instance (t : Tables) (caller : Int) (sourceType : Name) (target : ResourceDescriptor) :
     Decidable (ResourceDescriptorMatches t caller sourceType target) := by
   unfold ResourceDescriptorMatches; infer_instance
