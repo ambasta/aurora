@@ -14,12 +14,42 @@ def CallMeaning (t : Tables) (caller : Int) (row : Record) : CallTarget → Prop
     InstructionBinding t caller row ∧ CodeEdges t caller row ∧ row.integer 0 = caller ∧ row.integer 6 = 38 ∧
     Index target.id t.callables.size ∧ (callee t row).integer 0 = target.id ∧
     callName t row = nameBytes t (atRow t.callables target.id) 1 ∧
-    argumentTypes t row = target.parameters.map some ∧ callResult t row = some target.result
+    (argumentTypes t row).map (Option.map RuntimeType.scalar) = target.parameters.map some ∧
+    (callResult t row).map RuntimeType.scalar = some target.result
   | .resource target =>
     InstructionBinding t caller row ∧ CodeEdges t caller row ∧ row.integer 0 = caller ∧ row.integer 6 = 89 ∧
     operandValue t row 1 = Int.ofNat target.fieldOrdinal ∧ operandValue t row 2 = target.method ∧
     operandValue t row 4 = target.resource ∧ ResourceDescriptorMatches t caller target.sourceType target ∧
     argumentTypes t row = target.parameters.map some ∧ callResult t row = some target.result
+theorem scalar_signature_exact (types : List (Option GuardType)) (kinds : List GuardType) :
+    types.map (Option.map RuntimeType.scalar) = (kinds.map RuntimeType.scalar).map some ↔
+      types = kinds.map some := by
+  have injective : ∀ a b : Option GuardType,
+      a.map RuntimeType.scalar = b.map RuntimeType.scalar → a = b := by
+    intro a b same
+    cases a <;> cases b <;> simp only [Option.map_none,Option.map_some,reduceCtorEq,Option.some.injEq,
+      RuntimeType.scalar.injEq] at same ⊢
+    all_goals first | contradiction | exact same | rfl
+  rw [← List.map_inj_right injective]
+  simp only [List.map_map]
+  rfl
+
+theorem scalar_result_exact (value : Option GuardType) (kind : GuardType) :
+    value.map RuntimeType.scalar = some (.scalar kind) ↔ value = some kind := by
+  cases value <;> simp only [Option.map_none,Option.map_some,reduceCtorEq,Option.some.injEq,
+    RuntimeType.scalar.injEq]
+
+/-- The old MethodCall profile admits exactly the same scalar signatures. The
+    runtime descriptor extension neither coerces nor drops a nominal type. -/
+theorem CallMeaning.scalar_profile (t : Tables) (caller : Int) (row : Record) (target : ScalarOrdinary) :
+    CallMeaning t caller row (.ordinary target.descriptor) ↔
+      InstructionBinding t caller row ∧ CodeEdges t caller row ∧ row.integer 0 = caller ∧ row.integer 6 = 38 ∧
+      Index target.id t.callables.size ∧ (callee t row).integer 0 = target.id ∧
+      callName t row = nameBytes t (atRow t.callables target.id) 1 ∧
+      argumentTypes t row = target.parameters.map some ∧ callResult t row = some target.result := by
+  simp only [CallMeaning,target.parameters_exact,target.result_exact,scalar_signature_exact,scalar_result_exact,
+    ScalarOrdinary.id]
+
 instance (t : Tables) (caller : Int) (row : Record) (target : CallTarget) :
     Decidable (CallMeaning t caller row target) := by cases target <;> unfold CallMeaning <;> infer_instance
 
@@ -33,7 +63,7 @@ instance (t : Tables) (caller : Int) (pc : Nat) (target : CallTarget) :
 inductive CallPieceCode (t : Tables) (caller : Int) (slots : Nat → Nat) : CallPiece → Nat → Nat → Prop
   | localBody : BodyCode (canonicalEffects t caller) slots body start stop →
       CallPieceCode t caller slots (.localBody body) start stop
-  | ordinary {target : OrdinaryDescriptor} {arguments : CallArguments target.parameters} : ArgumentsCode (pureView (canonicalEffects t caller)) slots false arguments start middle →
+  | ordinary {target : ScalarOrdinary} {arguments : CallArguments target.parameters} : ArgumentsCode (pureView (canonicalEffects t caller)) slots false arguments start middle →
       InvocationAt t caller middle (.ordinary target) →
       CallPieceCode t caller slots (.invoke (.ordinary target arguments)) start (middle + 1)
   | resourceAssert {target : ResourceDescriptor} {arguments : CallArguments target.parameters} : ArgumentsCode (pureView (canonicalEffects t caller)) slots true arguments start middle →

@@ -51,7 +51,7 @@ theorem ReachesRequest.rejection {guard : GuardExpr .boolean}
     exact False.elim (ReachesRequest.not_trapped later)
   | value value =>
     cases value with
-    | word _ | signedCount12 =>
+    | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ =>
       simp only [sourceCallStep,evalBody,sourceExpression,evaluated,sourceBodyResult] at later
       exact False.elim (ReachesRequest.not_trapped later)
     | boolean boolean =>
@@ -66,7 +66,7 @@ theorem ReachesRequest.rejection {guard : GuardExpr .boolean}
 /-- Reaching a subsequent request forces an actual ordinary return, not an
     assumed assertion truth or successful callee summary. -/
 theorem ReachesRequest.ordinary {parameters : Nat → Option Value}
-    {target : OrdinaryDescriptor} {arguments : CallArguments target.parameters}
+    {target : ScalarOrdinary} {arguments : CallArguments target.parameters}
     (reached : ReachesRequest bodies (.running ⟨.invoke (.ordinary target arguments) :: rest,parameters,shared⟩ :
       SourceCallPhase World ExternalFault) request) :
     ∃ values body value final,

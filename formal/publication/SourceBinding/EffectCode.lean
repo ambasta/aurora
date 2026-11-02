@@ -1,7 +1,15 @@
 import SourceBinding.BodySyntax
 import SourceBinding.Stateful
+import SourceBinding.EnumBinding
 namespace Aurora.SourceBinding
 open Aurora.Publication
+
+def RuntimeRow (t : Tables) (id : Int) (row : Record) (roles : List Int) : Prop :=
+  CodeEdges t id row ∧ row.integer 0 = id ∧ row.integer 5 = 1 ∧
+  row.integer 7 = 0 ∧ row.integer 8 = 0 ∧ row.integer 10 = 0 ∧
+  operandRoles t row = roles ∧ AllRows (operandsOf t row) (OperandPayload t)
+instance (t : Tables) (id : Int) (row : Record) (roles : List Int) :
+    Decidable (RuntimeRow t id row roles) := by unfold RuntimeRow; infer_instance
 
 /-- Independent complete record-to-effect meaning. Stores and assertion checks
     are checked forms, never inferred from textual descriptions or treated as pure. -/
@@ -11,6 +19,24 @@ def EffectMeaning (t : Tables) (id : Int) (row : Record) : EffectOp → Prop
       row.integer 0 = id ∧ row.integer 6 = 33 ∧ operandValue t row 0 = Int.ofNat ordinal ∧
       scalarKind t (operandValue t row 1) = some kind
   | .require => InstructionBinding t id row ∧ CodeEdges t id row ∧ row.integer 0 = id ∧ row.integer 6 = 91
+  | .enumConstant identity ordinal => CodeEdges t id row ∧ row.integer 0 = id ∧
+      EnumConstantIdentity t row identity ordinal
+  | .enumLoad identity slot => RuntimeRow t id row [2,12] ∧ row.integer 9 = 0 ∧
+      row.integer 6 = 7 ∧ operandValue t row 0 = Int.ofNat slot ∧
+      RuntimeMatchingSlot t id (Int.ofNat slot) (operandValue t row 1) (.nominal identity)
+  | .enumBind identity argument slot => RuntimeRow t id row [1,2,12] ∧ row.integer 9 = 0 ∧
+      row.integer 6 = 45 ∧ operandValue t row 0 = Int.ofNat argument ∧
+      operandValue t row 1 = Int.ofNat slot ∧ row.integer 1 = Int.ofNat argument ∧
+      Index (Int.ofNat argument) ((atRow t.callables id).integer 5 - 1).toNat ∧
+      slot = 8 * (argument + 1) ∧
+      RuntimeMatchingSlot t id (Int.ofNat slot) (operandValue t row 2) (.nominal identity) ∧
+      NominalTypeIdentity t ((atRow t.callables id).integer 4 + Int.ofNat argument + 1) identity
+  | .enumCompare identity equal => RuntimeRow t id row [14] ∧ row.integer 6 = 14 ∧
+      row.integer 9 = (if equal then 0 else 1) ∧
+      NominalTypeIdentity t (operandValue t row 0) identity
+  | .localStore kind slot => RuntimeRow t id row [2,12] ∧ row.integer 9 = 0 ∧
+      row.integer 6 = 8 ∧ operandValue t row 0 = Int.ofNat slot ∧
+      RuntimeMatchingSlot t id (Int.ofNat slot) (operandValue t row 1) kind
 instance (t : Tables) (id : Int) (row : Record) (operation : EffectOp) :
     Decidable (EffectMeaning t id row operation) := by
   cases operation <;> dsimp [EffectMeaning] <;> infer_instance
@@ -19,9 +45,37 @@ structure MeaningfulEffect (t : Tables) (id : Int) (row : Record) where
   operation : EffectOp
   meaning : EffectMeaning t id row operation
 
+/-- Only a candidate: exact nominal cardinality and slot/type facts are checked
+    by EffectMeaning, including the SAME table's unique nominal row. -/
+def runtimeTypeCandidate (t : Tables) (typ : Int) : Option RuntimeType :=
+  match scalarKind t typ with
+  | some scalar => some (.scalar scalar)
+  | none =>
+    if (atRow t.types typ).integer 1 = 9 then
+      let name := nameBytes t (atRow t.types typ) 2
+      let rows := t.enums.filter (fun row => nameBytes t row 1 == name)
+      some (.nominal ⟨name,(atRow rows 0).integer 3 |>.toNat⟩)
+    else none
+
+def nominalCandidate (t : Tables) (typ : Int) : Option NominalIdentity := do
+  match (← runtimeTypeCandidate t typ) with
+  | .nominal identity => some identity
+  | .scalar _ => none
+
 /-- Candidate extraction is untrusted; independent meaning is checked afterward. -/
 def effectCandidate (t : Tables) (row : Record) : Option EffectOp := do
-  if row.integer 6 = 33 then
+  if row.integer 6 = 6 then
+    return .enumConstant (← nominalCandidate t (operandValue t row 0)) (operandValue t row 1).toNat
+  else if row.integer 6 = 8 then
+    return .localStore (← runtimeTypeCandidate t (operandValue t row 1)) (operandValue t row 0).toNat
+  else if row.integer 6 = 7 ∧ (scalarKind t (operandValue t row 1)).isNone then
+    return .enumLoad (← nominalCandidate t (operandValue t row 1)) (operandValue t row 0).toNat
+  else if row.integer 6 = 45 ∧ (scalarKind t (operandValue t row 2)).isNone then
+    return .enumBind (← nominalCandidate t (operandValue t row 2))
+      (operandValue t row 0).toNat (operandValue t row 1).toNat
+  else if row.integer 6 = 14 ∧ (scalarKind t (operandValue t row 0)).isNone then
+    return .enumCompare (← nominalCandidate t (operandValue t row 0)) (row.integer 9 == 0)
+  else if row.integer 6 = 33 then
     return .store (← scalarKind t (operandValue t row 1)) (operandValue t row 0).toNat
   else if row.integer 6 = 91 then return .require
   else return .pure (← operationCandidate t row)

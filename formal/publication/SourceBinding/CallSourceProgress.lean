@@ -2,7 +2,7 @@ import SourceBinding.CallSource
 namespace Aurora.SourceBinding
 
 theorem source_ordinary_running_tail (bodies : SourceCallProgram) (source : SourceCallActive World)
-    (rest : List CallPiece) (target : OrdinaryDescriptor) (arguments : List Value)
+    (rest : List CallPiece) (target : ScalarOrdinary) (arguments : List Value)
     (step : sourceOrdinary (ExternalFault := ExternalFault) bodies source rest target arguments = (.running next,events)) :
     next.pieces = rest := by
   unfold sourceOrdinary at step

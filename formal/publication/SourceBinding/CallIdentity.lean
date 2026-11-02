@@ -1,3 +1,4 @@
+import SourceBinding.RuntimeTypes
 import SourceBinding.BodySyntax
 import SourceBinding.IRIdentity
 namespace Aurora.SourceBinding
@@ -7,9 +8,59 @@ open Aurora.Publication
 structure OrdinaryDescriptor where
   member : ByteArray
   id : Int
+  parameters : List RuntimeType
+  result : RuntimeType
+  deriving BEq, DecidableEq
+
+/-- The old scalar source profile is a checked refinement of the ONE runtime
+    descriptor, never a lossy conversion of nominal types to machine words. -/
+structure ScalarOrdinaryView (target : OrdinaryDescriptor) where
   parameters : List GuardType
   result : GuardType
-  deriving BEq, DecidableEq
+  parameters_exact : target.parameters = parameters.map RuntimeType.scalar
+  result_exact : target.result = .scalar result
+  deriving DecidableEq
+
+structure ScalarOrdinary where
+  descriptor : OrdinaryDescriptor
+  view : ScalarOrdinaryView descriptor
+  deriving DecidableEq
+
+instance : Coe ScalarOrdinary OrdinaryDescriptor := ⟨ScalarOrdinary.descriptor⟩
+instance : BEq ScalarOrdinary := ⟨fun a b => a.descriptor == b.descriptor⟩
+def ScalarOrdinary.member (target : ScalarOrdinary) : ByteArray := target.descriptor.member
+def ScalarOrdinary.id (target : ScalarOrdinary) : Int := target.descriptor.id
+def ScalarOrdinary.parameters (target : ScalarOrdinary) : List GuardType := target.view.parameters
+def ScalarOrdinary.result (target : ScalarOrdinary) : GuardType := target.view.result
+
+def ScalarOrdinary.ofScalars (member : ByteArray) (id : Int)
+    (parameters : List GuardType) (result : GuardType) : ScalarOrdinary :=
+  ⟨⟨member,id,parameters.map RuntimeType.scalar,.scalar result⟩,⟨parameters,result,rfl,rfl⟩⟩
+
+@[simp] theorem ScalarOrdinary.parameters_exact (target : ScalarOrdinary) :
+    target.descriptor.parameters = target.parameters.map RuntimeType.scalar := target.view.parameters_exact
+@[simp] theorem ScalarOrdinary.result_exact (target : ScalarOrdinary) :
+    target.descriptor.result = .scalar target.result := target.view.result_exact
+@[simp] theorem ScalarOrdinary.arity (target : ScalarOrdinary) :
+    target.descriptor.parameters.length = target.parameters.length := by
+  rw [target.parameters_exact,List.length_map]
+
+theorem ScalarOrdinary.descriptor_injective {a b : ScalarOrdinary}
+    (same : a.descriptor = b.descriptor) : a = b := by
+  cases a with
+  | mk descriptor left =>
+    cases b with
+    | mk other right =>
+      cases same
+      cases left with
+      | mk parameters result paramsEq resultEq =>
+        cases right with
+        | mk others otherResult othersEq otherResultEq =>
+          have params : parameters = others := (List.map_inj_right (fun _ _ h => RuntimeType.scalar.inj h)).mp (paramsEq.symm.trans othersEq)
+          have results : result = otherResult := RuntimeType.scalar.inj (resultEq.symm.trans otherResultEq)
+          subst others; subst otherResult
+          rfl
+
 structure ResourceDescriptor where
   fieldName : ByteArray
   fieldOrdinal : Nat
@@ -28,7 +79,7 @@ structure ResourceDescriptor where
 
 /-- Unqualified self calls resolve in the SAME full source class. -/
 structure OrdinaryCallIdentity (t : Tables) (module path : Name) (members : List Declaration)
-    (target : OrdinaryDescriptor) where
+    (target : ScalarOrdinary) where
   found : FoundFunction members target.member
   visible : Bool
   visibility : VisibilityAt false members target.member visible
@@ -40,7 +91,7 @@ def sourceScalarKind (type : SourceType) : Option GuardType :=
   if type == guardSourceType .word then some .word
   else if type == guardSourceType .boolean then some .boolean else none
 structure BoundOrdinaryCall (t : Tables) (module path : Name) (members : List Declaration) (name : ByteArray) where
-  target : OrdinaryDescriptor
+  target : ScalarOrdinary
   named : target.member = name
   identity : OrdinaryCallIdentity t module path members target
 
@@ -55,7 +106,7 @@ def bindOrdinaryCall (t : Tables) (module path : Name) (members : List Declarati
   if identity : SourceIRIdentity t id module path name members found.function visibility.val then
     if params : found.function.formals.map (·.type) = parameters.map guardSourceType then
       if resultType : found.function.result = guardSourceType result then
-        return ⟨⟨name,id,parameters,result⟩,rfl,⟨found,visibility.val,visibility.property,identity,params,resultType⟩⟩
+        return ⟨ScalarOrdinary.ofScalars name id parameters result,rfl,⟨found,visibility.val,visibility.property,identity,params,resultType⟩⟩
       else none
     else none
   else none

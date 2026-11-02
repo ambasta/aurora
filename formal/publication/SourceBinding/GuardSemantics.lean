@@ -1,4 +1,4 @@
-import SourceBinding.GuardExpr
+import SourceBinding.RuntimeTypes
 namespace Aurora.SourceBinding
 
 /-- Mathematical values, not native registers; words are checked against this bound. -/
@@ -6,7 +6,18 @@ def wordLimit : Nat := 18446744073709551616
 
 inductive Value where
   | word (value : Nat) | boolean (value : Bool) | signedCount12
-  deriving BEq, DecidableEq, Repr
+  | signedCount4 | signedCount32
+  | nominal (name : ByteArray) (ordinal : Nat)
+  deriving BEq, DecidableEq
+
+instance : Repr Value where
+  reprPrec value _ := match value with
+    | .word n => "word " ++ repr n
+    | .boolean b => "boolean " ++ repr b
+    | .signedCount4 => "signedCount4"
+    | .signedCount12 => "signedCount12"
+    | .signedCount32 => "signedCount32"
+    | .nominal name ordinal => "nominal " ++ repr name.data ++ " " ++ repr ordinal
 
 inductive Fault where
   | type | range | underflow | overflow | unsupported
@@ -26,7 +37,7 @@ def readScalar (kind : GuardType) : Option Value → Outcome Value
   | _ => .trap .type
 
 inductive Binary where
-  | sub | bitAnd | bitOr | shift12 | compare (operation : CompareOp)
+  | sub | add | bitAnd | bitOr | leftShift | rightShift | compare (operation : CompareOp)
   deriving BEq, DecidableEq, Repr
 
 def compareWords (operation : CompareOp) (left right : Nat) : Bool :=
@@ -34,22 +45,38 @@ def compareWords (operation : CompareOp) (left right : Nat) : Bool :=
   | .eq => left == right | .ne => left != right | .lt => left < right
   | .le => left ≤ right | .gt => left > right | .ge => left ≥ right
 
+def SignedLiteralCount.runtimeValue : SignedLiteralCount → Value
+  | .four => .signedCount4 | .twelve => .signedCount12 | .thirtyTwo => .signedCount32
+
+/-- Count literals are signed compiler values. A word with the same numeric value
+    is not a count, and the supported profile does not include arbitrary i64s. -/
+def signedLiteralCount : Value → Option SignedLiteralCount
+  | .signedCount4 => some .four | .signedCount12 => some .twelve
+  | .signedCount32 => some .thirtyTwo | _ => none
+
+def checkedShift (left : Bool) (word : Nat) (count : SignedLiteralCount) : Outcome Value :=
+  if word < wordLimit then
+    if left then
+      if word * 2^count.value < wordLimit then .value (.word (word * 2^count.value))
+      else .trap .overflow
+    else .value (.word (word / 2^count.value))
+  else .trap .range
+
 /-- Independent mathematical scalar operations; subtraction never wraps or truncates below zero. -/
 def binaryValue (operation : Binary) (left right : Value) : Outcome Value :=
-  match left, right with
-  | .word a, .signedCount12 =>
-    if operation = .shift12 then
-      if a < wordLimit then
-        if a * 4096 < wordLimit then .value (.word (a * 4096)) else .trap .overflow
-      else .trap .range
-    else .trap .type
+  if operation = .leftShift ∨ operation = .rightShift then
+    match left, signedLiteralCount right with
+    | .word a, some count => checkedShift (if operation = .leftShift then true else false) a count
+    | _, _ => .trap .type
+  else match left, right with
   | .word a, .word b =>
     if a < wordLimit ∧ b < wordLimit then
       match operation with
       | .sub => if b ≤ a then .value (.word (a - b)) else .trap .underflow
+      | .add => if a + b < wordLimit then .value (.word (a + b)) else .trap .overflow
       | .bitAnd => .value (.word (a &&& b))
       | .bitOr => .value (.word (a ||| b))
-      | .shift12 => .trap .type
+      | .leftShift | .rightShift => .trap .type
       | .compare op => .value (.boolean (compareWords op a b))
     else .trap .range
   | _, _ => .trap .type
@@ -76,7 +103,7 @@ def evalGuard (state : SourceState) : {kind : GuardType} → GuardExpr kind → 
       (evalGuard state right).then fun b => binaryValue .bitAnd a b
   | _, .bitOr left right => (evalGuard state left).then fun a =>
       (evalGuard state right).then fun b => binaryValue .bitOr a b
-  | _, .shift12 expression => (evalGuard state expression).then fun a => binaryValue .shift12 a .signedCount12
+  | _, .shift12 expression => (evalGuard state expression).then fun a => binaryValue .leftShift a .signedCount12
   | _, .compare operation left right => (evalGuard state left).then fun a =>
       (evalGuard state right).then fun b => binaryValue (.compare operation) a b
   | _, .and left right => (evalGuard state left).then fun value =>
@@ -95,7 +122,7 @@ inductive Op where
   | constant (kind : GuardType) (value : Value)
   | load (kind : GuardType) (slot : Nat)
   | receiver (kind : GuardType) (ordinal : Nat)
-  | count12 | push | negate | binary (operation : Binary)
+  | count12 | count4 | count32 | push | negate | binary (operation : Binary)
   | bind (kind : GuardType) (argument slot : Nat)
   | label | jump (target : Nat) | branchFalse (target : Nat) | ret
   deriving BEq, DecidableEq, Repr
@@ -128,6 +155,8 @@ def step (program : Program) (state : Machine) : Execution :=
   | none => .trap .unsupported
   | some (.constant kind value) => finish state (state.pc + 1) state.stack (readScalar kind (some value))
   | some .count12 => .next (frameState state (state.pc + 1) (some .signedCount12) state.stack)
+  | some .count4 => .next (frameState state (state.pc + 1) (some .signedCount4) state.stack)
+  | some .count32 => .next (frameState state (state.pc + 1) (some .signedCount32) state.stack)
   | some (.load kind slot) => finish state (state.pc + 1) state.stack (readScalar kind (state.locals slot))
   | some (.receiver kind ordinal) => finish state (state.pc + 1) state.stack (readScalar kind (state.receiver ordinal))
   | some .push => match state.accumulator with

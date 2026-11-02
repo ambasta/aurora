@@ -20,7 +20,7 @@ def checkParameterArguments : (start : Nat) → {kinds : List GuardType} →
   | _, _, .cons _ _ => none
 
 /-- Actual ordinary free Call19, not a fabricated receiver MethodCall38. -/
-def FreeInvocationAt (t : Tables) (caller : Int) (pc : Nat) (target : OrdinaryDescriptor) : Prop :=
+def FreeInvocationAt (t : Tables) (caller : Int) (pc : Nat) (target : ScalarOrdinary) : Prop :=
   match (functionCode t caller)[pc]? with
   | none => False
   | some row =>
@@ -32,17 +32,17 @@ def FreeInvocationAt (t : Tables) (caller : Int) (pc : Nat) (target : OrdinaryDe
     (namedCallables t (callName t row)).size = 1 ∧
     ((signature t (atRow t.callables target.id)).drop 1).map (scalarKind t) = target.parameters.map some ∧
     scalarKind t ((atRow t.callables target.id).integer 4) = some target.result
-instance (t : Tables) (caller : Int) (pc : Nat) (target : OrdinaryDescriptor) :
+instance (t : Tables) (caller : Int) (pc : Nat) (target : ScalarOrdinary) :
     Decidable (FreeInvocationAt t caller pc target) := by
   unfold FreeInvocationAt; split <;> infer_instance
 
 /-- Local-first projection; only the independently checked free call can fill a gap. -/
-def freeCalls (t : Tables) (target : OrdinaryDescriptor) : CallProgram := fun caller pc =>
+def freeCalls (t : Tables) (target : ScalarOrdinary) : CallProgram := fun caller pc =>
   match canonicalEffects t caller pc with
   | some operation => some (.local operation)
   | none => if FreeInvocationAt t caller pc target then some (.ordinary target) else none
 
-theorem free_calls_local (t : Tables) (target : OrdinaryDescriptor) (caller : Int) :
+theorem free_calls_local (t : Tables) (target : ScalarOrdinary) (caller : Int) :
     localProgram (freeCalls t target) caller = canonicalEffects t caller := by
   funext pc
   simp only [localProgram,freeCalls]
@@ -77,7 +77,7 @@ structure ForwardWrapper (t : Tables) (files : List SourceFile) (root targetModu
   callPC : Nat
   argumentCode : PushedArgumentsCode (pureView (canonicalEffects t wrapper.id)) (parameterSlot bindings)
     arguments wrapper.selected.function.function.formals.length callPC
-  invocation : FreeInvocationAt t wrapper.id callPC ⟨targetName,leaf.identified.id,List.replicate 6 .word,.boolean⟩
+  invocation : FreeInvocationAt t wrapper.id callPC (ScalarOrdinary.ofScalars targetName leaf.identified.id (List.replicate 6 .word) .boolean)
   notLocal : canonicalEffects t wrapper.id callPC = none
   returning : canonicalEffects t wrapper.id (callPC + 1) = some (.pure .ret)
   complete : (functionCode t wrapper.id).size = callPC + 2
@@ -107,7 +107,7 @@ def checkForwardWrapper (t : Tables) (files : List SourceFile) (root targetModul
              let entry ← checkEntry (pureView (canonicalEffects t wrapper.id)) wrapper.selected.function.function.formals
              let code ← checkPushedArguments (pureView (canonicalEffects t wrapper.id)) (parameterSlot entry.bindings)
                arguments.values wrapper.selected.function.function.formals.length
-             if invocation : FreeInvocationAt t wrapper.id code.stop ⟨targetName,leaf.identified.id,List.replicate 6 .word,.boolean⟩ then
+             if invocation : FreeInvocationAt t wrapper.id code.stop (ScalarOrdinary.ofScalars targetName leaf.identified.id (List.replicate 6 .word) .boolean) then
               if notLocal : canonicalEffects t wrapper.id code.stop = none then
                if returning : canonicalEffects t wrapper.id (code.stop + 1) = some (.pure .ret) then
                 if complete : (functionCode t wrapper.id).size = code.stop + 2 then

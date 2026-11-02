@@ -65,7 +65,7 @@ theorem leaf_evaluation
   · have wordBound := eval_word_bound slot es
     have shifted : s * 4096 < wordLimit := by unfold wordLimit; omega
     have shift : evalGuard state (.shift12 slot) = .value (.word (s * 4096)) := by
-      simp [evalGuard,es,Outcome.then,binaryValue,wordBound,shifted]
+      simp [evalGuard,es,Outcome.then,binaryValue,signedLiteralCount,checkedShift,SignedLiteralCount.value,wordBound,shifted]
     have last := eval_compare_values (op := .eq) em
       (eval_bitOr_values (eval_bitOr_values eb shift) (lit 3 (by decide)))
     simpa only [leafGuard,leafNumeric,compareWords] using eval_and_values before last

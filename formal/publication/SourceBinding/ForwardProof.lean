@@ -5,7 +5,7 @@ namespace Aurora.SourceBinding
 open Aurora.Publication
 
 def ForwardWrapper.target (checked : ForwardWrapper t files root targetModule targetPath wrapperName targetName) :
-    OrdinaryDescriptor := ⟨targetName,checked.leaf.identified.id,List.replicate 6 .word,.boolean⟩
+    ScalarOrdinary := ScalarOrdinary.ofScalars targetName checked.leaf.identified.id (List.replicate 6 .word) .boolean
 def ForwardWrapper.program (checked : ForwardWrapper t files root targetModule targetPath wrapperName targetName) :
     CallProgram := freeCalls t checked.target
 
@@ -141,10 +141,10 @@ theorem ForwardWrapper.returned_run
       (.running (activeAt checked.target.id [saved] world calleeBase),
         [.ordinaryInvoke checked.target values]) := by
     have count : checked.target.parameters.length = 6 := rfl
-    simp only [callStep,activeAt,CallFrame.ofMachine,before,frameState,checked.call_at,count]
+    simp only [callStep,activeAt,CallFrame.ofMachine,before,frameState,checked.call_at,ScalarOrdinary.arity,count]
     simp only [frameState,CallFrame.ofMachine] at collected
     simp only [collected,continuation,saved,calleeBase,CallFrame.ofMachine,before,
-      frameState,freshCallFrame,CallFrame.inject,prepared_receiver]
+      frameState,freshCallFrame,CallFrame.inject,prepared_receiver,ScalarOrdinary.id]
   have invoked := prefixRun.trans (LocalCallRuns.step called .reflexive)
   have leafReady : EntryArguments checked.leaf.core.bindings calleeBase.arguments :=
     checked.leaf.core.entry.evaluated_arguments

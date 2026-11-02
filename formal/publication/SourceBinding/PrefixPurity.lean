@@ -50,8 +50,8 @@ theorem OperationMeaning.pure_form (meaning : OperationMeaning t id row operatio
   rcases meaning with ⟨_,_,_,meaning⟩
   cases operation
   all_goals first
-    | (split at meaning <;> simp_all [PurePrefixForm, Aurora.Publication.SignedCount12])
-    | simp_all [PurePrefixForm, Aurora.Publication.SignedCount12]
+    | (split at meaning <;> simp_all [PurePrefixForm, Aurora.Publication.SignedCount12, SignedCount])
+    | simp_all [PurePrefixForm, Aurora.Publication.SignedCount12, SignedCount]
 
 /-- Decoder-present canonical positions carry both exact-row provenance and the
     independent no-call/store form fact. No missing/default instruction is read. -/

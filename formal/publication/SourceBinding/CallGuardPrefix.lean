@@ -7,7 +7,7 @@ open Aurora.Publication
     asserted resource invocation. No names, ordinals or instruction PCs are fixed. -/
 structure GuardedCallPrefix (checked : CallBinding files root module path member bytes) where
   guard : GuardExpr .boolean
-  target : OrdinaryDescriptor
+  target : ScalarOrdinary
   arguments : CallArguments target.parameters
   resource : ResourceDescriptor
   resourceArguments : CallArguments resource.parameters

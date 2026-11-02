@@ -77,6 +77,18 @@ theorem require_simulates {program : EffectProgram} {slots : Nat → Nat}
       refine ⟨.trap (.scalar .type) (frameState base middle (some .signedCount12) stack),?_,?_⟩
       · simpa [evalBody,sourceExpression,evaluated,effectStep,frameState,require] using run.trans last
       · simp [evalBody,sourceExpression,evaluated,BodyResultRelated,frameState,funext context.fields]
+    | signedCount4 =>
+      refine ⟨.trap (.scalar .type) (frameState base middle (some .signedCount4) stack),?_,?_⟩
+      · simpa [evalBody,sourceExpression,evaluated,effectStep,frameState,require] using run.trans last
+      · simp [evalBody,sourceExpression,evaluated,BodyResultRelated,frameState,funext context.fields]
+    | signedCount32 =>
+      refine ⟨.trap (.scalar .type) (frameState base middle (some .signedCount32) stack),?_,?_⟩
+      · simpa [evalBody,sourceExpression,evaluated,effectStep,frameState,require] using run.trans last
+      · simp [evalBody,sourceExpression,evaluated,BodyResultRelated,frameState,funext context.fields]
+    | nominal name ordinal =>
+      refine ⟨.trap (.scalar .type) (frameState base middle (some (.nominal name ordinal)) stack),?_,?_⟩
+      · simpa [evalBody,sourceExpression,evaluated,effectStep,frameState,require] using run.trans last
+      · simp [evalBody,sourceExpression,evaluated,BodyResultRelated,frameState,funext context.fields]
     | boolean b =>
       cases b with
       | false =>
@@ -161,6 +173,18 @@ theorem branch_simulates {program : EffectProgram} {slots : Nat → Nat}
       · simp [evalBody,sourceExpression,evaluated,BodyResultRelated,frameState,funext context.fields]
     | signedCount12 =>
       refine ⟨.trap (.scalar .type) (frameState base conditionEnd (some .signedCount12) stack),?_,?_⟩
+      · simpa [evalBody,sourceExpression,evaluated,effectStep,frameState,branch,pureView,step,retainState] using run.trans test
+      · simp [evalBody,sourceExpression,evaluated,BodyResultRelated,frameState,funext context.fields]
+    | signedCount4 =>
+      refine ⟨.trap (.scalar .type) (frameState base conditionEnd (some .signedCount4) stack),?_,?_⟩
+      · simpa [evalBody,sourceExpression,evaluated,effectStep,frameState,branch,pureView,step,retainState] using run.trans test
+      · simp [evalBody,sourceExpression,evaluated,BodyResultRelated,frameState,funext context.fields]
+    | signedCount32 =>
+      refine ⟨.trap (.scalar .type) (frameState base conditionEnd (some .signedCount32) stack),?_,?_⟩
+      · simpa [evalBody,sourceExpression,evaluated,effectStep,frameState,branch,pureView,step,retainState] using run.trans test
+      · simp [evalBody,sourceExpression,evaluated,BodyResultRelated,frameState,funext context.fields]
+    | nominal name ordinal =>
+      refine ⟨.trap (.scalar .type) (frameState base conditionEnd (some (.nominal name ordinal)) stack),?_,?_⟩
       · simpa [evalBody,sourceExpression,evaluated,effectStep,frameState,branch,pureView,step,retainState] using run.trans test
       · simp [evalBody,sourceExpression,evaluated,BodyResultRelated,frameState,funext context.fields]
     | boolean b =>

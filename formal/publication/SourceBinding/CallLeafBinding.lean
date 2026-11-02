@@ -6,7 +6,7 @@ open Aurora.Publication
 /-- A selected ordinary invocation is backed by its actual call-free source and
     complete code in the root's SAME tables. This is not a callee summary. -/
 structure CheckedCallLeaf (shape : CallShapeBinding files root module path member bytes)
-    (target : OrdinaryDescriptor) where
+    (target : ScalarOrdinary) where
   identity : OrdinaryCallIdentity (tables shape.ir.publication.artifact.document.reversed.reverse)
     module path shape.selected.selected.classDecl.members target
   source : BodyMethod shape.selected.selected.file.file.bytes identity.found.function
@@ -14,7 +14,7 @@ structure CheckedCallLeaf (shape : CallShapeBinding files root module path membe
   body : LocalBodyCertificate (tables shape.ir.publication.artifact.document.reversed.reverse) target.id source
   selected : target.id ∈ shape.ir.publication.slice.selected
 
-def checkCallLeaf (shape : CallShapeBinding files root module path member bytes) (target : OrdinaryDescriptor) :
+def checkCallLeaf (shape : CallShapeBinding files root module path member bytes) (target : ScalarOrdinary) :
     Option (CheckedCallLeaf shape target) := do
   let bound ← bindOrdinaryCall (tables shape.ir.publication.artifact.document.reversed.reverse)
     module path shape.selected.selected.classDecl.members target.member
@@ -33,7 +33,7 @@ def checkCallLeaf (shape : CallShapeBinding files root module path member bytes)
 inductive CallLeaves (shape : CallShapeBinding files root module path member bytes) : List CallPiece → Type
   | nil : CallLeaves shape []
   | localBody : CallLeaves shape rest → CallLeaves shape (.localBody body :: rest)
-  | ordinary {target : OrdinaryDescriptor} {arguments : CallArguments target.parameters} :
+  | ordinary {target : ScalarOrdinary} {arguments : CallArguments target.parameters} :
       CheckedCallLeaf shape target → CallLeaves shape rest →
       CallLeaves shape (.invoke (.ordinary target arguments) :: rest)
   | resourceAssert {target : ResourceDescriptor} {arguments : CallArguments target.parameters} :

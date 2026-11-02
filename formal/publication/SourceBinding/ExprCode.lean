@@ -23,7 +23,7 @@ inductive ExprCode (program : Program) (slots : Nat → Nat) :
       ExprCode program slots right (leftEnd + 1) rightEnd → program rightEnd = some (.binary .bitOr) →
       ExprCode program slots (.bitOr left right) start (rightEnd + 1)
   | shift12 : ExprCode program slots child start middle → program middle = some .push →
-      program (middle + 1) = some .count12 → program (middle + 2) = some (.binary .shift12) →
+      program (middle + 1) = some .count12 → program (middle + 2) = some (.binary .leftShift) →
       ExprCode program slots (.shift12 child) start (middle + 3)
   | compare : ExprCode program slots left start leftEnd → program leftEnd = some .push →
       ExprCode program slots right (leftEnd + 1) rightEnd → program rightEnd = some (.binary (.compare operation)) →
@@ -86,7 +86,7 @@ def checkExprCode (program : Program) (slots : Nat → Nat) : {kind : GuardType}
     let c ← checkExprCode program slots child start
     if push : program c.stop = some .push then
       if count : program (c.stop + 1) = some .count12 then
-        if binary : program (c.stop + 2) = some (.binary .shift12) then
+        if binary : program (c.stop + 2) = some (.binary .leftShift) then
           return ⟨c.stop + 3,.shift12 c.grammar push count binary⟩
         else none
       else none
@@ -186,7 +186,7 @@ theorem and_simulation (program : Program) (base : Machine) (start middle stop :
   | trap fault => exact leftRun
   | value value =>
     cases value with
-    | word _ | signedCount12 =>
+    | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ =>
       exact leftRun.trans (Runs.one (by simp [step,frameState,branch,finish,Outcome.then]))
     | boolean b =>
       cases b with
@@ -214,7 +214,7 @@ theorem or_simulation (program : Program) (base : Machine) (start middle stop : 
   | trap fault => exact leftRun
   | value value =>
     cases value with
-    | word _ | signedCount12 =>
+    | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ =>
       exact leftRun.trans (Runs.one (by simp [step,frameState,branch,finish,Outcome.then]))
     | boolean b =>
       cases b with
@@ -273,7 +273,7 @@ theorem ExprCode.simulates {program : Program} {slots : Nat → Nat} {kind : Gua
         (finish base (middle + 2) (value :: stack) (.value .signedCount12)) :=
       Runs.one (by simp [step,frameState,count,finish])
     simpa only [evalGuard,Outcome.then,Nat.add_assoc] using
-      binary_simulation program base begin middle (middle + 2) accumulator stack .shift12
+      binary_simulation program base begin middle (middle + 2) accumulator stack .leftShift
         (evalGuard source childExpr) (.value .signedCount12) (ih accumulator stack) push counted binary
   | compare left push right binary leftIH rightIH =>
     exact binary_simulation program base _ _ _ accumulator stack _ _ _

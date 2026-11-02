@@ -89,6 +89,23 @@ theorem effect_step_frame (program : EffectProgram) (state : Machine) :
     | pure op =>
       simp only [effectStep,code,applyStores]
       exact ⟨(pure_step_frame (pureView program) state).1.symm,(pure_step_frame (pureView program) state).2⟩
+    | enumConstant identity ordinal | enumLoad identity ordinal =>
+      simp only [effectStep,code,applyStores]
+      exact ⟨(finish_retains_frame _ _ _ _).1.symm,(finish_retains_frame _ _ _ _).2⟩
+    | enumBind identity argument slot =>
+      simp only [effectStep,code]
+      cases readRuntime (.nominal identity) (state.arguments argument) <;> exact ⟨rfl,rfl⟩
+    | localStore kind slot =>
+      simp only [effectStep,code]
+      cases readRuntime kind state.accumulator <;> exact ⟨rfl,rfl⟩
+    | enumCompare identity equal =>
+      simp only [effectStep,code]
+      cases state.stack with
+      | nil => exact ⟨rfl,rfl⟩
+      | cons left tail =>
+        cases state.accumulator with
+        | none => exact ⟨rfl,rfl⟩
+        | some right => exact ⟨(finish_retains_frame _ _ _ _).1.symm,(finish_retains_frame _ _ _ _).2⟩
     | store kind ordinal =>
       simp only [effectStep,code]
       cases readScalar kind state.accumulator <;> exact ⟨rfl,rfl⟩
@@ -98,7 +115,7 @@ theorem effect_step_frame (program : EffectProgram) (state : Machine) :
       | none => exact ⟨rfl,rfl⟩
       | some value =>
         cases value with
-        | word _ | signedCount12 => exact ⟨rfl,rfl⟩
+        | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => exact ⟨rfl,rfl⟩
         | boolean b => cases b <;> exact ⟨rfl,rfl⟩
 
 theorem EffectRuns.store_frame {program : EffectProgram} {initial : Machine}

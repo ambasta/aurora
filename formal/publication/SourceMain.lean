@@ -5,6 +5,13 @@ import SourceBinding.BodyExamples
 import SourceBinding.CallExamples
 import SourceBinding.ForwardWrapper
 import SourceBinding.LeafBinding
+import SourceBinding.NominalFreeIdentity
+import SourceBinding.RuntimeReturnBinding
+import SourceBinding.RuntimeCallFormalBinding
+import SourceBinding.RuntimeBodyPublic
+import SourceBinding.RuntimeDAGPublic
+import SourceBinding.FramePolicyChecker
+import SourceBinding.FramePolicyExecution
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -21,6 +28,24 @@ def showName (name : Name) : String :=
   String.intercalate "." (name.map String.fromUTF8!)
 
 def main (args : List String) : IO UInt32 := do
+  let (framePolicy, args) := match args with
+    | "--frame-policy" :: rest => (true,rest)
+    | _ => (false,args)
+  let (runtimeDAG, args) := match args with
+    | "--runtime-dag" :: rest => (true,rest)
+    | _ => (false,args)
+  let (runtimeBody, args) := match args with
+    | "--runtime-body" :: rest => (true,rest)
+    | _ => (false,args)
+  let (runtimeCall, args) := match args with
+    | "--runtime-call-expression" :: path :: start :: rest => (some (path,start),rest)
+    | _ => (none,args)
+  let (runtimeExpression, args) := match args with
+    | "--runtime-expression" :: rest => (true,rest)
+    | _ => (false,args)
+  let (runtimeIdentity, args) := match args with
+    | "--runtime-identity" :: rest => (true,rest)
+    | _ => (false,args)
   let (forward, args) := match args with
     | "--forward-leaf" :: name :: rest => (some name,rest)
     | _ => (none,args)
@@ -39,7 +64,25 @@ def main (args : List String) : IO UInt32 := do
     | "--ir" :: path :: rest => (some path,rest)
     | _ => (none,args)
   let root :: module :: classPath :: member :: paths := arguments |
-    throw (IO.userError "usage: source-binding-probe [--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+    throw (IO.userError "usage: source-binding-probe [--frame-policy|--runtime-dag|--runtime-body|--runtime-call-expression PATH START|--runtime-expression|--runtime-identity|--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+  if framePolicy && (runtimeDAG || runtimeBody || runtimeCall.isSome || runtimeExpression || runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
+    throw (IO.userError "frame policy and other modes are distinct")
+  if framePolicy && irPath.isNone then throw (IO.userError "frame policy requires --ir")
+  if runtimeDAG && (runtimeBody || runtimeCall.isSome || runtimeExpression || runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
+    throw (IO.userError "runtime DAG and other modes are distinct")
+  if runtimeDAG && irPath.isNone then throw (IO.userError "runtime DAG requires --ir")
+  if runtimeBody && (runtimeCall.isSome || runtimeExpression || runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
+    throw (IO.userError "runtime body and other modes are distinct")
+  if runtimeBody && irPath.isNone then throw (IO.userError "runtime body requires --ir")
+  if runtimeCall.isSome && (runtimeExpression || runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
+    throw (IO.userError "runtime call interval and other modes are distinct")
+  if runtimeCall.isSome && irPath.isNone then throw (IO.userError "runtime call interval requires --ir")
+  if runtimeExpression && (runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
+    throw (IO.userError "runtime expression and other modes are distinct")
+  if runtimeExpression && irPath.isNone then throw (IO.userError "runtime expression requires --ir")
+  if runtimeIdentity && (forward.isSome || callMode || bodyMode || examples) then
+    throw (IO.userError "runtime identity and semantic modes are distinct")
+  if runtimeIdentity && irPath.isNone then throw (IO.userError "runtime identity requires --ir")
   if forward.isSome && (callMode || bodyMode || examples) then
     throw (IO.userError "forward/call/body/snapshot modes are distinct")
   if forward.isSome && irPath.isNone then throw (IO.userError "forward mode requires --ir")
@@ -62,6 +105,77 @@ def main (args : List String) : IO UInt32 := do
   let rootName := (root.splitOn ".").map String.toUTF8
   let selectedModule := (module.splitOn ".").map String.toUTF8
   let selectedPath := (classPath.splitOn "::").map String.toUTF8
+  if framePolicy then
+    if selectedModule != FramePolicyAttachment.frameModule || selectedPath != FramePolicyAttachment.framePath || member.toUTF8 != FramePolicyAttachment.rootName then
+      throw (IO.userError "frame policy selection rejected")
+    let some path := irPath | throw (IO.userError "frame policy requires --ir")
+    let publication ← readSource path 16777216
+    let some checked := bindRuntimeDAG files rootName FramePolicyAttachment.frameModule
+        FramePolicyAttachment.framePath FramePolicyAttachment.rootName publication |
+      throw (IO.userError "source/runtime DAG correspondence rejected")
+    IO.println "SOURCE-FRAME-POLICY generic_dag=true"
+    let some _profile := FramePolicyAttachment.checkFramePolicy checked |
+      throw (IO.userError "exact frame policy profile rejected")
+    IO.println s!"SOURCE-FRAME-POLICY exact_profile=true nodes={checked.checked.shape.nodes.length} publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input exact ten-body/nominal policy profile receipt. Checked profile attaches total source/canonical-IR execution and exact ResultSpec for bounded typed inputs, including normal refusal results. No concrete kernel acceptance, capture/backend/native ABI, ledger mutation or authority proof."
+    return 0
+  if runtimeDAG then
+    let some path := irPath | throw (IO.userError "runtime DAG requires --ir")
+    let publication ← readSource path 16777216
+    let some checked := bindRuntimeDAG files rootName selectedModule selectedPath member.toUTF8 publication |
+      throw (IO.userError "source/runtime DAG correspondence rejected")
+    let t := Aurora.Publication.tables checked.artifact.document.reversed.reverse
+    let shape := checked.checked.shape
+    let rows := shape.nodes.map fun node => (Aurora.Publication.functionCode t node.target.id).size
+    IO.println s!"SOURCE-RUNTIME-DAG root={shape.rootNode.target.id} entry=0 stop={(Aurora.Publication.functionCode t shape.rootNode.target.id).size} complete=true nodes={shape.nodes.length} rows={rows.foldl (· + ·) 0} ids={shape.nodes.map (·.target.id)} ranks={shape.nodes.map (fun node => shape.rank node.source.key)} publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input exact source closure/whole-node certificate receipt. Generic theorem derives complete root PC0 execution for typed ordered arguments, matching source outcome and ordered call traces, including faults. No lifecycle ResultSpec, no-fault, concrete kernel acceptance, capture/backend/native ABI or authority proof."
+    return 0
+  if runtimeBody then
+    let some path := irPath | throw (IO.userError "runtime body requires --ir")
+    let publication ← readSource path 16777216
+    let some checked := bindRuntimeBody files rootName selectedModule selectedPath member.toUTF8 publication |
+      throw (IO.userError "source/runtime body correspondence rejected")
+    let t := Aurora.Publication.tables checked.bound.artifact.document.reversed.reverse
+    IO.println s!"SOURCE-RUNTIME-BODY callable={checked.bound.checked.id} entry=0 stop={(Aurora.Publication.functionCode t checked.bound.checked.id).size} complete=true leaves={checked.body.leaves.map (fun leaf => leaf.identified.id)} publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input complete body certificate receipt. Generic theorem derives actual PC0 execution for typed arguments, matching source outcome and ordered call trace, including faults. No general closed DAG, lifecycle ResultSpec, concrete kernel acceptance, capture/backend/native ABI or authority proof."
+    return 0
+  if let some (sourcePath,startText) := runtimeCall then
+    let some indices := (sourcePath.splitOn ",").mapM String.toNat? |
+      throw (IO.userError "invalid source statement path")
+    let some startPC := startText.toNat? | throw (IO.userError "invalid interval start")
+    let some path := irPath | throw (IO.userError "runtime call interval requires --ir")
+    let publication ← readSource path 16777216
+    let some checked := bindRuntimeFormalCallInterval files rootName selectedModule selectedPath member.toUTF8
+        indices startPC publication | throw (IO.userError "source/runtime call interval rejected")
+    let interval := checked.checked.interval
+    IO.println s!"SOURCE-RUNTIME-CALL-INTERVAL formal_entry=true callable={checked.bound.checked.id} source_path={indices} start={interval.start} stop={interval.code.stop} leaves={interval.leaves.map (fun leaf => leaf.identified.id)} publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input contextual interval/callee certificate receipt only. Candidate PC is checked, not proved reachable or correctly placed for the lexical branch. No complete caller/DAG/lifecycle, concrete kernel acceptance, native ABI or backend claim."
+    return 0
+  if runtimeExpression then
+    let some path := irPath | throw (IO.userError "runtime expression requires --ir")
+    let publication ← readSource path 16777216
+    let some checked := bindRuntimeReturn files rootName selectedModule selectedPath member.toUTF8 publication |
+      throw (IO.userError "source/runtime return correspondence rejected")
+    IO.println s!"SOURCE-RUNTIME-EXPRESSION callable={checked.bound.checked.id} entry=0 expression={checked.body.parameters.kinds.length} stop={checked.body.stop + 1} complete=true publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input receipt only. Complete single-return source/IR certificate for typed initial arguments, matching values OR faults; no ten-helper DAG, lifecycle ResultSpec, concrete kernel acceptance, capture/backend/native ABI or authority proof."
+    return 0
+  if runtimeIdentity then
+    let some path := irPath | throw (IO.userError "runtime identity requires --ir")
+    let publication ← readSource path 16777216
+    let some bound := bindRuntimeFree files rootName selectedModule selectedPath member.toUTF8 publication |
+      throw (IO.userError "source/runtime identity rejected")
+    let checked := bound.checked
+    let t := Aurora.Publication.tables bound.artifact.document.reversed.reverse
+    let declarations := checked.details.lexical.lexical.declaredItems
+    IO.println s!"SOURCE-RUNTIME-IDENTITY callable={checked.id} rows={(Aurora.Publication.functionCode t checked.id).size} nominal_signature={hasNominal checked.details.types.kinds} locals={declarations.length} local_slots={declarations.map (fun (item : SourceLocal) => item.slot)} publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input identity/scope/complete-slot receipt only. No expression/call/body execution certificate, concrete kernel acceptance, native enum conversion, producer/backend or lifecycle authority proof."
+    return 0
   if let some wrapper := forward then
     let some path := irPath | throw (IO.userError "forward mode requires --ir")
     let publication ← readSource path 16777216

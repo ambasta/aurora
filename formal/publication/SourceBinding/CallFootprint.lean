@@ -47,7 +47,7 @@ theorem evalBody_store_footprint (body : EffectBody) (state : SourceState) :
     cases evalGuard state condition with
     | trap fault => simp
     | value scalar => cases scalar with
-      | word _ | signedCount12 => simp
+      | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => simp
       | boolean value => cases value <;> simp
   | returnValue kind value =>
     simp only [evalBody,sourceExpression]
@@ -57,7 +57,7 @@ theorem evalBody_store_footprint (body : EffectBody) (state : SourceState) :
     cases evalGuard state condition with
     | trap fault => simp
     | value scalar => cases scalar with
-      | word _ | signedCount12 => simp
+      | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => simp
       | boolean value => cases value with
         | false => simp
         | true => exact ih state

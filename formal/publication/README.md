@@ -476,8 +476,8 @@ and the no-carry identity `prefix | (slot<<12) |3 = prefix + slot*4096 +3`.
 Shift non-overflow follows on the checked `slot < 512` continuation, rather than
 being a caller premise. The fixed low-21-bit mask proof is constructive.
 
-Bitwise AND/OR act on bounded unsigned words. The only signed value admitted is
-the literal shift count `12`, represented by a distinct transient marker, never
+Bitwise AND/OR act on bounded unsigned words. The earlier leaf/scalar profile
+admits only the signed literal shift count `12`, represented by a distinct transient marker, never
 as a `u64`. Its next checked instruction must consume it as the checked left
 shift: it cannot be pushed, stored, returned, called with, or carried across
 control flow. Overflow traps are explicit. This is not general signed arithmetic.
@@ -485,3 +485,342 @@ The source/published-IR numerical result does not prove native scalar transport,
 backend lowering, page-table authenticity, mapping stability, A/B authority,
 or payload-copy effects. Large captured-input acceptance is a native receipt,
 not a concrete kernel reduction of the entire source graph/publication.
+
+## Frame-lifecycle prerequisites (Stage 1)
+
+The shared mathematical machine now supports closed nominal enum values, private
+local stores, checked u64 addition, and signed literal shift counts 4, 12 and 32.
+Enums retain their canonical nominal name and ordinal; `readRuntime` checks the
+same checked declaration's case cardinality. They are not coerced to u64 or bool.
+`Publication.Scalar`, `GuardType` and `readScalar` retain the old bool/u64 profile.
+The existing canonical effect decoder checks the additional raw operand roles,
+nominal types, slots and CFG facts. This does **not** turn the earlier D2 scalar
+checker into a complete nominal/local-variable verifier.
+
+Selector 8 has one context-independent checked left-shift semantics; selector 9
+is zero-filling right shift. Counts are signed literal markers, not numerically
+equal u64 operands. The old signed-12 numerical equation is recovered exactly
+by `leftShift_twelve`, and the existing source/IR proofs retain their statements.
+Checked addition and left shift trap on overflow rather than wrapping.
+
+`RuntimeLocals` separates declared type, source mutability, lexical scope and
+initialization from the machine's raw private slots. Fresh monotone scope IDs
+and unique active scopes prevent a departed scope from being re-entered.
+Well-formedness is preserved by scope entry/exit, initialization and assignment.
+`local_initialization_simulates` and `local_assignment_simulates` relate one
+accepted source-local operation to the actual shared machine's local store,
+with the RHS already evaluated. The step preserves receiver, arguments, stack
+and accumulator and emits no receiver-store event. Source constness is **not**
+inferred from canonical slot mutability flags.
+
+The source metadata certificate selects from the SAME complete byte-backed graph:
+actual enum declarations and case ordinals, nominal signature types, source
+local initialization order, constness, lexical scope and visible names. It checks
+the complete formal/private-local slot metadata and genuine `__au_v` linkage for
+nominal signatures (including its precedence over the root-entry convention).
+`--runtime-identity` exposes this metadata-only stage. `ExpressionNames` is a
+scope relation, not expression typing: initializer typing, source-use to `Load`
+correspondence, nested call execution and whole-body execution are not established
+by accepting that mode.
+
+These are reusable primitive and declaration/slot-binding prerequisites. They
+do not yet establish execution correspondence for the complete `frame_transition`
+helper DAG, root totality, or its lifecycle policy. Nested value-returning call
+composition and attachment of the numeric result specification are separate
+obligations. No ledger update, persistent retirement, ABA freedom, native enum
+cast, ABI/backend correctness, or A/B authority theorem follows from this stage.
+
+`FramePolicySpec` is a **separate independent numerical specification**, with its
+own 20-export audit (distinct from the primary source-binding/primitive audit).
+It models prioritized rejection, canonical packed results, allocation-generation
+preservation, matching release increment or retirement, and rejection when the
+retired record is supplied again. Packing bounds and no-carry OR identities are
+proved mathematically. These results are not yet attached to the actual source
+or its 10-helper execution. They do not prove that a caller stores the result or
+retains a retired record; earlier guards may reject with a reason other than
+`retired`. The complete source/IR lifecycle correspondence remains outstanding.
+
+### Generic runtime expressions and single-return free functions
+
+The next bounded slice uses the **same raw `SourceExpr` and canonical effect
+machine**, not a second policy AST or interpreter. `RuntimeExprTyped` and
+`RuntimeExpressionCode` independently check exact formal/local/enum declaration
+identity, private-slot uses, scalar/nominal types, signed literal shift counts,
+operator order and short-circuit control flow. Counts are transient shift
+operands, never variable, argument or return types. This slice admits no calls
+inside expressions and no local declarations or assignments in its complete-body
+endpoint.
+
+`RuntimeEvaluates` is an independent inductive source judgement using the shared
+scalar and nominal primitives. Reads check the exact retained declaration and
+active scope before inspecting its value. Missing and malformed values remain
+faults. `TypedGuard.runtime_compatible` embeds the entire earlier field-free
+scalar fragment **including faults**, without requiring successful or bounded
+formal inputs. `RuntimeExpressionCode.evaluates_and_runs` constructively derives
+one source outcome and a matching canonical run for every caller accumulator and
+residual stack. `RuntimeArgumentsCode.evaluates_and_runs` preserves left-to-right
+first-fault behavior and reversed argument pushes over that residual stack.
+Successful expressions restore their caller stack; faults retain the actual
+terminal machine rather than fabricating a restored PC/stack. Both outcomes
+preserve private locals, receiver and arguments and emit no receiver stores.
+These generic expression APIs expose their local declaration/scope relation;
+they do not independently establish its selected-function provenance.
+
+`RuntimeReturnCertificate` closes that provenance obligation for a **complete
+single-return free function**. It uses the same byte-backed selected declaration,
+nominal/scalar signature and canonical tables, requires exactly one parsed return
+and no declared locals, checks actual PC0 parameter bindings, derives the
+immutable scope-zero formal environment, checks the whole expression against the
+declared result type, and requires the final return to end the entire code array.
+`executes` covers both values and expression traps from runtime-typed initial
+arguments; it assumes neither expression success nor safe packing bounds.
+`terminal_correspondence` uses deterministic machine terminal uniqueness to
+relate **any actual terminal run** to a constructed source outcome and an empty
+store trace. It is not a general source-derivation determinism or bidirectional
+source semantics theorem. The existing `--runtime-expression` consumer selects this
+bounded certificate; native acceptance of a full source/artifact input is still
+not a kernel proof over those concrete megabytes.
+
+This supports the actual arithmetic bodies of `kernel_owner` and `frame_record`
+without changing their source to fit the checker. In particular, arbitrary
+bounded arguments to `frame_record` may overflow a checked shift; the theorem
+preserves that trap rather than assuming a total successful packing function.
+At this earlier single-return checkpoint there was no nested-call simulation
+(the bounded extension below supplies that); complete ten-helper/local-body
+execution, attachment to `FramePolicySpec`, allocator ledger mutation, ABA,
+A/B authority, native enum-cast and backend correctness remain unproved.
+
+The focused gate retains all 273 preceding primary exports and appends 25 for
+this slice: **298 primary reports plus 20 separate, unattached specification
+reports**, each restricted to `propext` and `Quot.sound`.
+
+## Bounded nested calls to actual single-return leaves
+
+The next contextual expression profile supports nested ordinary calls to the
+same graph/table's checked complete single-return leaves. `OrdinaryDescriptor`
+has one full `RuntimeType` signature; `ScalarOrdinary` is an exact proof-carrying
+view for the earlier scalar source profiles, not a second runtime descriptor.
+Nominal identity/cardinality remain in signatures and machine events. The old
+MethodCall38 recognizer remains scalar-only; the new free Call19 recognizer checks
+the complete runtime signature, actual target and canonical operand/CFG fields.
+Conflicting source-key/target descriptors fail closed.
+
+There is still one judgement over the existing raw `SourceExpr`:
+`RuntimeEvaluatesWith` evaluates ordered arguments, then the actual source leaf's
+parsed return expression in source-only formal storage. Its events contain source
+keys and unchanged values, not IR results. `RuntimeEvaluates` is its empty-function,
+empty-trace specialization. All earlier outcomes, including malformed/missing-value
+faults and arbitrary external responses, retain their old theorem strength.
+`RuntimeCallExpressionCode.evaluates_and_runs` constructively supplies a finite
+matching run in the existing `CallMachine`, with exact ordered source/machine
+invoke-return correspondence. Successful calls restore caller locals, arguments
+and residual stack. A fault is an actual machine terminal state: no caller frame
+is fabricated and no unwinding/return event is invented. The separate trace-stack
+algebra is **not** a theorem equating source unmatched calls with `ActiveCall.saved`.
+
+`FormalRuntimeCallInterval.executes` attaches this to the SAME complete parsed
+caller, scoped return occurrence, selected canonical interval and leaf bodies.
+The first profile requires no visible local declarations, derives the source
+formal metadata and machine formal cells from the actual signature, and checks
+actual parameter-binding rows. It starts at the selected interval with that
+constructed formal state; it does **not** prove the caller's preceding branches
+reach the PC, nor that source statement lowering places the occurrence there.
+It assumes neither expression success nor packing bounds; arbitrary initial
+formal values may fault. Successful completion is a running state at the interval
+end, not a terminal boundary. No arbitrary-run interval reflection or full caller
+execution is claimed. The existing `--runtime-call-expression PATH START` mode
+checks this optional formal-only profile, without extracting another source body.
+
+The actual selected occurrence is the initializer branch's nested
+`frame_record(frame_kernel(), 0u64, owner)` return expression. Full-input native
+binding controls remain runtime evidence, not kernel proofs over megabyte inputs.
+Synthetic same-machine overflow controls check the precise active packing callee,
+retained saved caller and residual operand, ordered invokes, and absence of a
+fabricated return. No complete ten-helper DAG, local-statement/call simulation,
+attachment to the independent lifecycle specification, native/backend correctness,
+ledger mutation or A/B authority result follows from this contextual slice.
+
+The focused primary audit retains all 298 preceding exports and adds 58:
+**356 primary reports**, plus the unchanged **20 separately labelled independent
+specification reports**, with the same `propext`/`Quot.sound` allowlist.
+
+### Complete scoped bodies with bounded leaf calls
+
+`RuntimeBodyCertificate.executes` now checks and executes complete selected
+ordinary bodies, rather than a caller-selected expression interval. The SAME
+parsed `SourceStatement` list supplies declarations, mutable assignments,
+conditionals and returns. `RuntimeStateAt` relates their lexical cursor to
+initialized, runtime-typed private storage. Skipped branches reserve only fresh
+scope identifiers: they do not initialize skipped declarations. Normal branch
+exit hides child bindings while preserving current surviving values. Return and
+fault paths retain their actual state without invented cleanup.
+
+The certificate covers the actual parameter-binding prefix, every body row and
+all source suffixes, including unreachable suffixes. Both branch layouts use
+checked targets and generic label-only suffixes. The theorem starts at PC0 with
+`RuntimeEntryArguments` (typed, bounded initial parameters), derives formal
+metadata and initialized cells, executes nested calls to actual complete
+call-free leaf certificates, and executes the actual final/early `ret`.
+It constructively produces a source outcome and matching finite `CallRuns`,
+with ordered source-key/full-descriptor call events. Expression overflow and
+callee faults remain outcomes; neither body success nor a chosen return value
+is a premise. A fault retains a genuine active machine state, possibly a nested
+callee. This theorem does not assert source determinism or arbitrary-run
+reflection, and the independent trace-stack algebra still is not an equality
+to the machine's saved-frame stack.
+
+The existing native `--runtime-body` mode accepts the complete actual
+`record_valid` (60 rows, private locals and leaf calls) and `frame_reject`
+(98 rows, nominal comparisons and mutable local assignments), over the complete
+source graph and publication. Native full-input and synthetic execution controls
+are distinct from kernel-checked generic proofs. This extends the earlier
+contextual slice, without claiming the complete ten-helper DAG, the root
+`frame_transition` lifecycle specification, ledger writes, native/backend
+correctness, or A/B ownership authority. The independent specification remains
+unattached.
+
+The primary audit retains all 356 preceding exports and adds 48 scoped-body
+exports: **404 primary reports**, plus **20 separate independent specification
+reports**, under the unchanged `propext`/`Quot.sound` allowlist.
+
+### Conservative full-source function and call-graph prerequisites
+
+The source function payload now permits its actual parsed statement list rather
+than only a singleton return. There remains one mutual operational judgement
+for raw expressions, ordered arguments, statements and statement lists; no new
+AST, arithmetic evaluator or supplied body result is introduced. The former
+leaf APIs are exact specializations. `LegacyLeafSemantics` independently freezes
+the four prior relations, and four global iff theorems prove preservation in both
+directions for arbitrary old environments, including duplicate entries, nested
+calls, malformed values, faults and skipped expression arms. These proofs impose
+no new readiness, scoping, uniqueness or rank premise. Only the audit imports this
+proof-only migration module; production semantics/checkers do not depend on it.
+
+The one expression/statement code grammar now uses checked callable identities
+with complete runtime signatures and actual private-local frame metadata. Old
+leaf profiles retain exact adapters. Uniform composition chooses its source
+outcome and ordered source/machine traces **before** all caller machine contexts,
+including receiver/world, saved frames, accumulator and residual stack. An
+internal callee-execution hypothesis refers to real source-body evaluation and
+actual fresh-entry/body runs, never a result summary. Old public leaf-profile
+exports discharge it using their existing complete certificates and retain their
+previous argument/fault guarantees.
+
+The generic DAG checker binds one source graph/publication to a closed, root-
+reachable node inventory. Every syntactic call, including unreachable suffixes,
+has a checked smaller rank. Each node has an exact direct-call inventory, while
+source evaluation and canonical machine execution retain the global environment.
+Each body certificate covers actual entry, all source/code rows and terminal
+coverage. At the prerequisite checkpoint, the global rank induction
+had **not** discharged the internal callee hypothesis for the root, and no complete
+`frame_transition` execution or lifecycle-specification attachment was claimed.
+
+The primary audit preserves all 404 preceding reports and adds 52 unique
+prerequisite exports: **456 primary reports**, plus the unchanged **20 independent
+specification reports**, with the same axiom allowlist and default Lean limits.
+
+### Complete checked DAG execution
+
+`RuntimeDAGCertificate.executes` now discharges every internal callee hypothesis
+by strong induction on the checked source-call rank. Each node derives its typed
+formal state from the actual signature, executes its actual PC0 binding rows and
+complete statement certificate, and invokes only checked lower-rank direct
+callees. No callee outcome or execution premise appears in the public theorem.
+The source outcome and both ordered traces are chosen before all receiver/world
+and external-relation contexts. The final root return executes the actual `ret`;
+faults retain their actual active machine frames, including nested callees.
+
+The input premise is `RuntimeReadyArguments` for the exact ordered runtime
+signature. This is constructive finite source/canonical-machine correspondence,
+not arbitrary-source derivation uniqueness, native execution correctness, or the
+frame lifecycle result specification by itself. At this 462-report checkpoint,
+`FramePolicySpec` remained unattached; the attachment is established below.
+The primary audit is **462 reports** (all previous 456 plus six), with the same
+separate **20 independent specification reports** and unchanged axiom allowlist.
+
+### Exact frame-policy profile and helper prerequisites
+
+The optional `--frame-policy` consumer attaches a checked, exact source-syntax
+profile to the **same** complete DAG certificate. It authenticates all ten raw
+bodies, ordered signatures, named nominal enum cases and role coverage, with the
+full supplied graph root kept independent of the selected policy module. No
+callable IDs, PCs, source hashes or assumed helper results replace these checks.
+Actual-input controls show coherent alternative policies can pass generic DAG
+binding while failing this optional exact profile.
+
+Nominal operation embedding, five-case coverage and bounded root-argument
+readiness are proved from the selected declarations. Constructive decoding
+lemmas connect masks/shifts to the independent numerical field definitions.
+At the profile-prerequisite checkpoint, universal source-derivation contracts
+established the five constant helpers and `kernel_owner`. Shared inversion/composition lemmas preserve exact
+runtime types, first faults, short-circuiting and initialized formal/scope reads;
+they characterize actual derivations and do not constitute another evaluator.
+The modular call-result lemma is internal: its helper contract must be proved,
+not supplied as a public frame-policy premise.
+
+At that checkpoint the exact profile and helper prerequisites were nonvacuous,
+but packing, rejection, record-validity and root result proofs were pending.
+No `FramePolicySpec` attachment or root no-fault claim was made there. The primary audit retains all 462 reports and adds 46: **508
+primary reports**, with **20 separate independent specification reports**, under
+the unchanged axiom allowlist and default limits.
+
+### Universal contracts for all nine frame helpers
+
+All nine non-root helper bodies now have proved contracts for **any** actual
+source evaluation in the exact checked profile. `frame_record_result` retains
+its real partial behavior: checked shifts can overflow on arbitrary typed words,
+while defined execution returns the exact bitwise OR (overlap is not a fault).
+The bounded-packing corollary derives safe shifts and arithmetic packing from
+field bounds. `frame_reject_result` covers all eleven nominal cases, including
+the default behavior for `none` and `operation`. `record_valid_result` derives
+its two actual const declarations, prioritized branches and nested helper calls.
+
+Shared statement inversion retains guarded initialization, actual entered or
+reserved scopes, and first-return/fault behavior. Read transport preserves the
+same expression outcomes and traces, including nested calls, under exact resolved
+read equivalence. Root-input facts are derived from the actual ordered formal
+seed and selected nominal cases; they are not extra public root premises.
+
+At the nine-helper checkpoint, the full root `source_result`/`ResultSpec`
+attachment remained pending. In-progress root proofs were excluded, and no root
+no-fault or lifecycle-result claim was made at that stage. The audit preserves all
+508 preceding reports and adds 35: **543 primary reports**, plus the same **20
+independent specification reports**, with unchanged axioms and default limits.
+
+
+### Attached exact frame-policy result and lifecycle invocation guarantees
+
+`ExactProfile.source_result` proves that **every actual source derivation** of
+this exact checked root, for its named operation and four bounded word inputs,
+returns `FramePolicy.encode (FramePolicy.transition ...)`. It derives the first
+four guards, both real const declarations and their initialized private cells,
+and the complete remaining branch order. Formal reads, context validity, packing
+bounds and helper contracts are proved internally; no successful evaluation,
+continuation, desired result or helper summary is a public premise.
+
+`ExactProfile.executes` composes that characterization with the complete checked
+DAG theorem. It constructs actual source and canonical-machine runs from PC0 to
+the real root return, with the exact independent `ResultSpec`, no trap, ordered
+related traces and preserved shared state. Source outcomes/traces precede the
+arbitrary shared and external-relation contexts. The separate
+`terminal_correspondence` theorem forces **any** canonical run reaching a boundary
+to that same returned result; `not_locally_diverges` excludes local divergence.
+Both reuse the existing deterministic local-prefix machinery rather than assuming
+that constructive existence implies reflection.
+
+The attached invocation corollaries establish allocation generation preservation,
+matching release increment below the limit, and canonical retirement at the limit
+(after the actual link guard). Every operation on any bounded copied record whose decoded state is retired
+returns a refusal, without assuming record validity. The canonical retirement
+result has its sharper reason formula; malformed retired inputs can instead fail
+record validation, and earlier operation/initialization/owner guards also retain
+their priority. The reason is therefore not always `retired`. These are policy invocation
+results, **not** proofs that a native ledger stores the result, that retirement
+persists, or that physical-frame reuse, ABA, A/B ownership or backend/ABI transport
+is safe. The general packing helper remains partial outside its proved bounds.
+
+The audit retains all 543 earlier exports and adds 28: **571 primary dependency
+reports**, plus the same separately labeled **20 independent specification
+reports**. The specification is now connected by the attachment theorems, while
+its standalone audit remains separately counted. Axiom restrictions and default
+proof limits are unchanged.

@@ -3,7 +3,7 @@ import SourceBinding.GuardExpr
 namespace Aurora.SourceBinding
 
 inductive SourceBinOp where
-  | subtract | bitAnd | bitOr | shift | compare (op : CompareOp) | and | or
+  | add | subtract | bitAnd | bitOr | shift | rightShift | compare (op : CompareOp) | and | or
   deriving BEq, DecidableEq, Repr
 
 def precedence : SourceBinOp → Nat
@@ -13,8 +13,8 @@ def precedence : SourceBinOp → Nat
   | .bitAnd => 4
   | .compare .eq | .compare .ne => 5
   | .compare _ => 6
-  | .shift => 7
-  | .subtract => 8
+  | .shift | .rightShift => 7
+  | .add | .subtract => 8
 
 def operatorText : SourceBinOp → String
   | .or => "||"
@@ -28,6 +28,8 @@ def operatorText : SourceBinOp → String
   | .bitAnd => "&"
   | .bitOr => "|"
   | .shift => "<<"
+  | .rightShift => ">>"
+  | .add => "+"
   | .subtract => "-"
 
 inductive Callee where
@@ -38,6 +40,7 @@ inductive Callee where
 /-- Entire selected bodies have raw syntax trees; call syntax is NOT call typing/effects. -/
 inductive SourceExpr where
   | signed12
+  | signedCount (value : Nat)
   | word (value : Nat)
   | boolean (value : Bool)
   | name (name : Name)
@@ -76,6 +79,8 @@ def calleeSyntax (input : ByteArray) (tokens : List Lexeme) : Option (ParsedCall
 mutual
   inductive ExprSyntax (input : ByteArray) : Nat → List Lexeme → SourceExpr → List Lexeme → Prop
     | signed12 : token.kind = .numeral .signed 12 → ExprSyntax input 9 (token :: rest) .signed12 rest
+    | signedCount : token.kind = .numeral .signed value → (value = 4 ∨ value = 32) →
+        ExprSyntax input 9 (token :: rest) (.signedCount value) rest
     | word : token.kind = .numeral .word value → ExprSyntax input 9 (token :: rest) (.word value) rest
     | boolean : Is input token (if value then "true" else "false") →
         ExprSyntax input 9 (token :: rest) (.boolean value) rest
@@ -112,7 +117,7 @@ structure ParsedArguments (input : ByteArray) (tokens : List Lexeme) where
   grammar : ArgumentsSyntax input tokens arguments rest
 
 def operatorCandidate (input : ByteArray) (token : Lexeme) : Option SourceBinOp :=
-  ([.or,.and,.bitOr,.bitAnd,.shift,.compare .eq,.compare .ne,.compare .lt,.compare .le,.compare .gt,.compare .ge,.subtract] : List SourceBinOp).find?
+  ([.or,.and,.bitOr,.bitAnd,.shift,.rightShift,.add,.compare .eq,.compare .ne,.compare .lt,.compare .le,.compare .gt,.compare .ge,.subtract] : List SourceBinOp).find?
     (fun op => decide (Is input token (operatorText op)))
 
 mutual
@@ -151,6 +156,10 @@ mutual
       | token :: tail => do
         match kind : token.kind with
         | .numeral .signed 12 => return ⟨.signed12,tail,.signed12 kind⟩
+        | .numeral .signed value =>
+          if supported : value = 4 ∨ value = 32 then
+            return ⟨.signedCount value,tail,.signedCount kind supported⟩
+          else none
         | .numeral .word value => return ⟨.word value,tail,.word kind⟩
         | _ =>
           if yes : Is input token "true" then return ⟨.boolean true,tail,.boolean yes⟩

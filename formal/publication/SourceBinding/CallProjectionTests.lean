@@ -12,7 +12,7 @@ example (t : Tables) (targets : List CallTarget) (id : Int) :
   let some resource := retained | throw (IO.userError "resource fixture")
   let one := CallTarget.ordinary ordinary.target
   let duplicate := [one,one]
-  let conflict := CallTarget.ordinary {ordinary.target with member := "other".toUTF8}
+  let conflict := CallTarget.ordinary {ordinary.target.descriptor with member := "other".toUTF8}
   let external := CallTarget.resource resource.target
   let candidates := [one,external]
   let cases : List (String × Bool × Bool) := [

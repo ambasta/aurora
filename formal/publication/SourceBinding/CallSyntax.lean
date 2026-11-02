@@ -31,7 +31,7 @@ def inferArguments (fields formals : List Formal) : (kinds : List GuardType) →
 /-- Resource invocation here means the exact single resource-call argument of
     builtin::require; arbitrary nested calls are not part of this profile. -/
 inductive TypedInvocation where
-  | ordinary (target : OrdinaryDescriptor) (arguments : CallArguments target.parameters)
+  | ordinary (target : ScalarOrdinary) (arguments : CallArguments target.parameters)
   | resourceAssert (target : ResourceDescriptor) (arguments : CallArguments target.parameters)
 inductive CallPiece where
   | localBody (body : EffectBody)

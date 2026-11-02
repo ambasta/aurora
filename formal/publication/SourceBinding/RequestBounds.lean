@@ -16,7 +16,7 @@ theorem eval_or_false (state : SourceState) (left right : GuardExpr .boolean)
   | trap fault => simp [evalGuard,first,Outcome.then] at evaluated
   | value value =>
     cases value with
-    | word _ | signedCount12 => simp [evalGuard,first,Outcome.then] at evaluated
+    | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => simp [evalGuard,first,Outcome.then] at evaluated
     | boolean b =>
       cases b with
       | true => simp [evalGuard,first,Outcome.then] at evaluated
@@ -37,10 +37,10 @@ theorem eval_compare_words (state : SourceState) (operation : CompareOp)
     | trap fault => simp [evalGuard,first,second,Outcome.then] at evaluated
     | value r =>
       cases l with
-      | boolean _ | signedCount12 => simp [evalGuard,first,second,Outcome.then,binaryValue] at evaluated
+      | boolean _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => simp [evalGuard,first,second,Outcome.then,binaryValue] at evaluated
       | word a =>
         cases r with
-        | boolean _ | signedCount12 => simp [evalGuard,first,second,Outcome.then,binaryValue] at evaluated
+        | boolean _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => simp [evalGuard,first,second,Outcome.then,binaryValue] at evaluated
         | word b =>
           have ab : a < wordLimit := by
             have typed := eval_value_typed state left (.word a) first
