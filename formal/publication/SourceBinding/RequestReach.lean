@@ -66,7 +66,7 @@ theorem ReachesRequest.rejection {guard : GuardExpr .boolean}
 /-- Reaching a subsequent request forces an actual ordinary return, not an
     assumed assertion truth or successful callee summary. -/
 theorem ReachesRequest.ordinary {parameters : Nat → Option Value}
-    {target : OrdinaryDescriptor} {arguments : CallArguments target.parameters}
+    {target : ScalarOrdinary} {arguments : CallArguments target.parameters}
     (reached : ReachesRequest bodies (.running ⟨.invoke (.ordinary target arguments) :: rest,parameters,shared⟩ :
       SourceCallPhase World ExternalFault) request) :
     ∃ values body value final,

@@ -51,7 +51,7 @@ theorem runtime_entry_expression_returned
       RuntimeTerminal (preparedEntry base runtimeParameterSlot kinds.length) outcome result := by
   have bound := runtime_formal_bindings (base := base) valid signature emptyVisible
   obtain ⟨outcome,evaluated,run⟩ := expression.evaluates_and_runs (formalRuntimeLocals kinds base)
-    (preparedEntry base runtimeParameterSlot kinds.length) bound (fun _ => rfl)
+    (preparedEntry base runtimeParameterSlot kinds.length) bound (formal_prepared_values kinds base)
   obtain ⟨result,actual,related⟩ := (run none []).returned returnCode
   have prepared := runtime_entry_runs entry base arguments
   rw [prepared_frame] at actual

@@ -3,7 +3,7 @@ namespace Aurora.SourceBinding
 
 /-- Call-free source bodies, later coupled to SAME-table leaf certificates.
     Evaluation executes the body; this interface supplies no result summary. -/
-abbrev SourceCallProgram := OrdinaryDescriptor → Option EffectBody
+abbrev SourceCallProgram := ScalarOrdinary → Option EffectBody
 
 structure SourceCallActive (World : Type) where
   pieces : List CallPiece
@@ -32,7 +32,7 @@ def sourceBodyResult (active : SourceCallActive World) (rest : List CallPiece)
   | .trap fault _ => .trapped (.local fault) shared
 
 def sourceOrdinary (bodies : SourceCallProgram) (active : SourceCallActive World) (rest : List CallPiece)
-    (target : OrdinaryDescriptor) (arguments : List Value) :
+    (target : ScalarOrdinary) (arguments : List Value) :
     SourceCallPhase World ExternalFault × List (CallEvent World ExternalFault) :=
   match bodies target with
   | none => (.trapped (.local (.scalar .unsupported)) active.shared,[])

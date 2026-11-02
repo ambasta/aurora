@@ -585,10 +585,61 @@ This supports the actual arithmetic bodies of `kernel_owner` and `frame_record`
 without changing their source to fit the checker. In particular, arbitrary
 bounded arguments to `frame_record` may overflow a checked shift; the theorem
 preserves that trap rather than assuming a total successful packing function.
-There is still no complete ten-helper execution theorem, nested-call/local-body
-simulation, attachment to `FramePolicySpec`, allocator ledger mutation, ABA,
-A/B authority, native enum-cast or backend correctness theorem.
+At this earlier single-return checkpoint there was no nested-call simulation
+(the bounded extension below supplies that); complete ten-helper/local-body
+execution, attachment to `FramePolicySpec`, allocator ledger mutation, ABA,
+A/B authority, native enum-cast and backend correctness remain unproved.
 
 The focused gate retains all 273 preceding primary exports and appends 25 for
 this slice: **298 primary reports plus 20 separate, unattached specification
 reports**, each restricted to `propext` and `Quot.sound`.
+
+## Bounded nested calls to actual single-return leaves
+
+The next contextual expression profile supports nested ordinary calls to the
+same graph/table's checked complete single-return leaves. `OrdinaryDescriptor`
+has one full `RuntimeType` signature; `ScalarOrdinary` is an exact proof-carrying
+view for the earlier scalar source profiles, not a second runtime descriptor.
+Nominal identity/cardinality remain in signatures and machine events. The old
+MethodCall38 recognizer remains scalar-only; the new free Call19 recognizer checks
+the complete runtime signature, actual target and canonical operand/CFG fields.
+Conflicting source-key/target descriptors fail closed.
+
+There is still one judgement over the existing raw `SourceExpr`:
+`RuntimeEvaluatesWith` evaluates ordered arguments, then the actual source leaf's
+parsed return expression in source-only formal storage. Its events contain source
+keys and unchanged values, not IR results. `RuntimeEvaluates` is its empty-function,
+empty-trace specialization. All earlier outcomes, including malformed/missing-value
+faults and arbitrary external responses, retain their old theorem strength.
+`RuntimeCallExpressionCode.evaluates_and_runs` constructively supplies a finite
+matching run in the existing `CallMachine`, with exact ordered source/machine
+invoke-return correspondence. Successful calls restore caller locals, arguments
+and residual stack. A fault is an actual machine terminal state: no caller frame
+is fabricated and no unwinding/return event is invented. The separate trace-stack
+algebra is **not** a theorem equating source unmatched calls with `ActiveCall.saved`.
+
+`FormalRuntimeCallInterval.executes` attaches this to the SAME complete parsed
+caller, scoped return occurrence, selected canonical interval and leaf bodies.
+The first profile requires no visible local declarations, derives the source
+formal metadata and machine formal cells from the actual signature, and checks
+actual parameter-binding rows. It starts at the selected interval with that
+constructed formal state; it does **not** prove the caller's preceding branches
+reach the PC, nor that source statement lowering places the occurrence there.
+It assumes neither expression success nor packing bounds; arbitrary initial
+formal values may fault. Successful completion is a running state at the interval
+end, not a terminal boundary. No arbitrary-run interval reflection or full caller
+execution is claimed. The existing `--runtime-call-expression PATH START` mode
+checks this optional formal-only profile, without extracting another source body.
+
+The actual selected occurrence is the initializer branch's nested
+`frame_record(frame_kernel(), 0u64, owner)` return expression. Full-input native
+binding controls remain runtime evidence, not kernel proofs over megabyte inputs.
+Synthetic same-machine overflow controls check the precise active packing callee,
+retained saved caller and residual operand, ordered invokes, and absence of a
+fabricated return. No complete ten-helper DAG, local-statement/call simulation,
+attachment to the independent lifecycle specification, native/backend correctness,
+ledger mutation or A/B authority result follows from this contextual slice.
+
+The focused primary audit retains all 298 preceding exports and adds 58:
+**356 primary reports**, plus the unchanged **20 separately labelled independent
+specification reports**, with the same `propext`/`Quot.sound` allowlist.

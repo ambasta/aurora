@@ -4,7 +4,7 @@ namespace Aurora.SourceBinding
 open Aurora.Publication
 
 /-- Ordinary occurrences, including unreachable suffixes. -/
-inductive OrdinaryOccurs (target : OrdinaryDescriptor) : List CallPiece → Prop
+inductive OrdinaryOccurs (target : ScalarOrdinary) : List CallPiece → Prop
   | here {arguments : CallArguments target.parameters} :
       OrdinaryOccurs target (.invoke (.ordinary target arguments) :: rest)
   | later : OrdinaryOccurs target rest → OrdinaryOccurs target (piece :: rest)
@@ -13,7 +13,7 @@ inductive OrdinaryOccurs (target : OrdinaryDescriptor) : List CallPiece → Prop
     source summary or independently decoded publication. Repeated descriptors may
     reuse the first valid certificate in the SAME root family. -/
 def CallLeaves.lookup {shape : CallShapeBinding files root module path member bytes} :
-    {pieces : List CallPiece} → CallLeaves shape pieces → (target : OrdinaryDescriptor) →
+    {pieces : List CallPiece} → CallLeaves shape pieces → (target : ScalarOrdinary) →
       Option (CheckedCallLeaf shape target)
   | _, .nil, _ => none
   | _, .localBody rest, target => rest.lookup target
@@ -76,7 +76,7 @@ theorem pieceTargets.member (pieces : List CallPiece) {call : TypedInvocation}
       | localBody _ => exact prior
       | invoke other => cases other <;> exact List.mem_cons_of_mem _ prior
 
-theorem OrdinaryOccurs.of_member {target : OrdinaryDescriptor} {arguments : CallArguments target.parameters}
+theorem OrdinaryOccurs.of_member {target : ScalarOrdinary} {arguments : CallArguments target.parameters}
     (member : .invoke (.ordinary target arguments) ∈ pieces) : OrdinaryOccurs target pieces := by
   induction member with
   | head => exact .here

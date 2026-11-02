@@ -102,7 +102,7 @@ theorem resource_piece_value
     · simpa only [waiting,continuation,Nat.add_assoc] using tail
 theorem ordinary_piece_value
     {family : CallFamilyBinding files root module path member bytes}
-    (projection : CallProjectionBinding family) {target : OrdinaryDescriptor}
+    (projection : CallProjectionBinding family) {target : ScalarOrdinary}
     {arguments : CallArguments target.parameters} {rest : List CallPiece}
     (code : ArgumentsCode (pureView (canonicalEffects
       (tables family.shape.ir.publication.artifact.document.reversed.reverse) family.shape.ir.id))
@@ -139,8 +139,8 @@ theorem ordinary_piece_value
       (.running callee,[.ordinaryInvoke target values]) := by
     simp only [callStep,active,activeAt,frame,frameState,CallFrame.ofMachine,atCall,TypedInvocation.target,
       targetOperation] at *
-    simp only [collected,callee,activeAt,saved,continuation,frame,frameState,CallFrame.ofMachine,
-      freshCallFrame,CallFrame.inject,shared]
+    simp only [ScalarOrdinary.arity,collected,callee,activeAt,saved,continuation,frame,frameState,CallFrame.ofMachine,
+      freshCallFrame,CallFrame.inject,shared,ScalarOrdinary.id]
   have invoked := run.trans (CallRuns.one (external := external) (.local called))
   obtain ⟨result,executed,related,terminal⟩ := leaf.call_executes family.program
     (canonical_calls_local _ _ _) source.shared values

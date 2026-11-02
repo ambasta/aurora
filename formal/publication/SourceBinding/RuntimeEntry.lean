@@ -1,3 +1,4 @@
+import SourceBinding.RuntimeFormals
 import SourceBinding.RuntimeExpressionProof
 import SourceBinding.RuntimeExpressionNames
 import SourceBinding.NominalFreeIdentity
@@ -53,21 +54,41 @@ theorem runtime_entry_runs (code : RuntimeEntryCode program kinds) (base : Machi
         simp only [effectStep,prepared_pc,operation,prepared_arguments,valueEq,typed,preparedEntry]
   exact go kinds.length (Nat.le_refl _)
 
-/-- Values come from actual executed entry bindings, not a fabricated total map.
-    Metadata is the immutable scope-zero formal declaration environment. -/
+/-- The source-only formal environment is instantiated with root arguments.
+    The next theorem derives its equality to actual executed private slots. -/
 def formalRuntimeLocals (kinds : List RuntimeType) (base : Machine) : RuntimeLocals :=
-  ⟨1,[0],fun slot =>
-    if slot % 8 = 0 ∧ 0 < slot then
-      (kinds[slot/8-1]?).map fun kind => ⟨kind,false,0⟩
-    else none,
-    (preparedEntry base runtimeParameterSlot kinds.length).locals⟩
+  formalSourceLocals kinds base.arguments
+
+theorem formal_prepared_values (kinds : List RuntimeType) (base : Machine) (slot : Nat) :
+    (preparedEntry base runtimeParameterSlot kinds.length).locals slot =
+      (formalRuntimeLocals kinds base).values slot := by
+  unfold formalRuntimeLocals formalSourceLocals
+  dsimp only
+  split
+  next valid =>
+    have equal : runtimeParameterSlot (slot/8-1) = slot := by
+      unfold runtimeParameterSlot; omega
+    conv => lhs; rw [← equal]
+    apply prepared_parameter base runtimeParameterSlot kinds.length kinds.length (slot/8-1)
+    · intro i hi j hj same
+      unfold runtimeParameterSlot at same
+      omega
+    · exact Nat.le_refl _
+    · exact valid.2.2
+  next invalid =>
+    apply prepared_empty_slot
+    intro index bound same
+    apply invalid
+    unfold runtimeParameterSlot at same
+    subst slot
+    refine ⟨?_,?_,?_⟩ <;> omega
 
 theorem formal_runtime_declared (present : kinds[index]? = some kind) :
     (formalRuntimeLocals kinds base).declarations (runtimeParameterSlot index) = some ⟨kind,false,0⟩ := by
   have remainder : runtimeParameterSlot index % 8 = 0 := by unfold runtimeParameterSlot; omega
   have positive : 0 < runtimeParameterSlot index := by unfold runtimeParameterSlot; omega
   have quotient : runtimeParameterSlot index / 8 - 1 = index := by unfold runtimeParameterSlot; omega
-  simp only [formalRuntimeLocals,remainder,positive,and_self,if_pos,quotient,present,Option.map_some]
+  simp only [formalRuntimeLocals,formalSourceLocals,remainder,positive,and_self,if_pos,quotient,present,Option.map_some]
 
 theorem RuntimeSignature.lookup {index : Nat} {sourceType : SourceType} (signature : RuntimeSignature t members module path first sources kinds)
     (present : sources[index]? = some sourceType) :
@@ -99,7 +120,7 @@ theorem runtime_formal_bindings (valid : RuntimeContextValid context)
     obtain ⟨kind,kindAt,declaredType⟩ := signature.lookup sourceAt
     have same := typ.unique valid.scope declaredType
     subst kind
-    exact ⟨formal_runtime_declared kindAt,by simp only [formalRuntimeLocals,List.mem_singleton]⟩
+    exact ⟨formal_runtime_declared kindAt,by simp only [formalRuntimeLocals,formalSourceLocals,List.mem_singleton]⟩
   | localValue present named clear => simp only [emptyVisible,List.not_mem_nil] at present
 
 end Aurora.SourceBinding

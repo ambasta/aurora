@@ -128,7 +128,7 @@ example : CallReturns [.localBody (.returnValue .boolean (.boolLit true))] := .h
   unless limited.stop == 1 do throw (IO.userError "label fuel ignored")
   let some ordinary := ordinary | throw (IO.userError "ordinary descriptor absent")
   unless decide (InvocationAt ordinaryTables 0 0 (.ordinary ordinary.target)) do throw (IO.userError "ordinary row identity")
-  unless !(decide (InvocationAt ordinaryTables 0 0 (.ordinary { ordinary.target with id := 1 }))) do
+  unless !(decide (InvocationAt ordinaryTables 0 0 (.ordinary { ordinary.target.descriptor with id := 1 }))) do
     throw (IO.userError "wrong callable accepted")
   let some resource := retained | throw (IO.userError "resource descriptor absent")
   unless decide (InvocationAt resourceTables 0 0 (.resource resource.target)) do throw (IO.userError "resource row identity")

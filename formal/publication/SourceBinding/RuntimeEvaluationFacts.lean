@@ -47,9 +47,11 @@ theorem runtime_word_operator_typed (operator : RuntimeWordOperator op primitive
   rw [runtime_scalar_outcome]
   cases operator <;> exact binary_typed _ _ _
 
-theorem RuntimeEvaluates.outcome_typed (evaluated : RuntimeEvaluates context state raw kind outcome) :
+theorem RuntimeEvaluatesWith.outcome_typed
+    (evaluated : RuntimeEvaluatesWith functions context state raw kind outcome events) :
     RuntimeOutcomeTyped kind outcome := by
-  induction evaluated with
+  induction evaluated using RuntimeEvaluatesWith.rec
+      (motive_2 := fun _ _ _ _ _ _ _ => True) with
   | word => rw [runtime_scalar_outcome]; exact read_typed _ _
   | boolean => rfl
   | readVariable binding => exact RuntimeLocals.readBound_typed _ _
@@ -77,6 +79,13 @@ theorem RuntimeEvaluates.outcome_typed (evaluated : RuntimeEvaluates context sta
   | andFault | orFault => trivial
   | andStop | orStop => rfl
   | andContinue _ _ _ right | orContinue _ _ _ right => exact right
+  | callArgumentsFault => trivial
+  | callValue _ _ _ _ _ bodyTyped => exact bodyTyped
+  | callFault => trivial
+  | nil | fault | cons => trivial
+
+theorem RuntimeEvaluates.outcome_typed (evaluated : RuntimeEvaluates context state raw kind outcome) :
+    RuntimeOutcomeTyped kind outcome := RuntimeEvaluatesWith.outcome_typed evaluated
 
 /-- Every admitted call-free expression has an operational result, possibly a
     fault. This is not a successful-evaluation assumption or a no-overflow claim. -/

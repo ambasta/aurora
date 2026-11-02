@@ -6,7 +6,7 @@ case "$(lean --version)" in
   'Lean (version 4.24.0, '*'commit 797c613eb9b6d4ec95db23e3e00af9ac6657f24b, Release)') ;;
   *) echo 'Wrong Lean toolchain' >&2; exit 1 ;;
 esac
-lake build SourceBinding SourceBinding.Tests SourceBinding.CallProjectionTests SourceBinding.BitTests SourceBinding.LeafTests SourceBinding.StringTests SourceBinding.FreeTests SourceBinding.RuntimePrimitiveTests SourceBinding.LocalBindingTests SourceBinding.FramePolicySpec SourceBinding.RuntimeExpressionTests SourceBinding.RuntimeEvaluationTests SourceBinding.RuntimeEntryTests source-binding-probe
+lake build SourceBinding SourceBinding.Tests SourceBinding.CallProjectionTests SourceBinding.BitTests SourceBinding.LeafTests SourceBinding.StringTests SourceBinding.FreeTests SourceBinding.RuntimePrimitiveTests SourceBinding.LocalBindingTests SourceBinding.FramePolicySpec SourceBinding.RuntimeExpressionTests SourceBinding.RuntimeEvaluationTests SourceBinding.RuntimeEntryTests SourceBinding.RuntimeCallTests SourceBinding.RuntimeNestedCallTests source-binding-probe
 lake env lean SourceBinding/RuntimeTests.lean
 lake env lean SourceBinding/MethodTests.lean
 lake env lean SourceBinding/IdentityTests.lean
@@ -34,6 +34,8 @@ lake env lean SourceBinding/LocalBindingTests.lean
 lake env lean SourceBinding/RuntimeExpressionTests.lean
 lake env lean SourceBinding/RuntimeEvaluationTests.lean
 lake env lean SourceBinding/RuntimeEntryTests.lean
+lake env lean SourceBinding/RuntimeCallTests.lean
+lake env lean SourceBinding/RuntimeNestedCallTests.lean
 output=$(mktemp)
 spec_output=$(mktemp)
 trap 'rm -f "$output" "$spec_output"' EXIT
@@ -44,7 +46,7 @@ import re
 import sys
 allowed = {'propext', 'Quot.sound'}
 for path, expected, label, prefix in [
-    (sys.argv[1], 298, 'source-binding', 'Aurora.SourceBinding.'),
+    (sys.argv[1], 356, 'source-binding', 'Aurora.SourceBinding.'),
     (sys.argv[2], 20, 'independent frame-policy specification', 'Aurora.SourceBinding.FramePolicy.'),
 ]:
     count = 0

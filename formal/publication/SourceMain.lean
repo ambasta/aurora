@@ -7,6 +7,7 @@ import SourceBinding.ForwardWrapper
 import SourceBinding.LeafBinding
 import SourceBinding.NominalFreeIdentity
 import SourceBinding.RuntimeReturnBinding
+import SourceBinding.RuntimeCallFormalBinding
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -23,6 +24,9 @@ def showName (name : Name) : String :=
   String.intercalate "." (name.map String.fromUTF8!)
 
 def main (args : List String) : IO UInt32 := do
+  let (runtimeCall, args) := match args with
+    | "--runtime-call-expression" :: path :: start :: rest => (some (path,start),rest)
+    | _ => (none,args)
   let (runtimeExpression, args) := match args with
     | "--runtime-expression" :: rest => (true,rest)
     | _ => (false,args)
@@ -47,7 +51,10 @@ def main (args : List String) : IO UInt32 := do
     | "--ir" :: path :: rest => (some path,rest)
     | _ => (none,args)
   let root :: module :: classPath :: member :: paths := arguments |
-    throw (IO.userError "usage: source-binding-probe [--runtime-expression|--runtime-identity|--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+    throw (IO.userError "usage: source-binding-probe [--runtime-call-expression PATH START|--runtime-expression|--runtime-identity|--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+  if runtimeCall.isSome && (runtimeExpression || runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
+    throw (IO.userError "runtime call interval and other modes are distinct")
+  if runtimeCall.isSome && irPath.isNone then throw (IO.userError "runtime call interval requires --ir")
   if runtimeExpression && (runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
     throw (IO.userError "runtime expression and other modes are distinct")
   if runtimeExpression && irPath.isNone then throw (IO.userError "runtime expression requires --ir")
@@ -76,6 +83,19 @@ def main (args : List String) : IO UInt32 := do
   let rootName := (root.splitOn ".").map String.toUTF8
   let selectedModule := (module.splitOn ".").map String.toUTF8
   let selectedPath := (classPath.splitOn "::").map String.toUTF8
+  if let some (sourcePath,startText) := runtimeCall then
+    let some indices := (sourcePath.splitOn ",").mapM String.toNat? |
+      throw (IO.userError "invalid source statement path")
+    let some startPC := startText.toNat? | throw (IO.userError "invalid interval start")
+    let some path := irPath | throw (IO.userError "runtime call interval requires --ir")
+    let publication ← readSource path 16777216
+    let some checked := bindRuntimeFormalCallInterval files rootName selectedModule selectedPath member.toUTF8
+        indices startPC publication | throw (IO.userError "source/runtime call interval rejected")
+    let interval := checked.checked.interval
+    IO.println s!"SOURCE-RUNTIME-CALL-INTERVAL formal_entry=true callable={checked.bound.checked.id} source_path={indices} start={interval.start} stop={interval.code.stop} leaves={interval.leaves.map (fun leaf => leaf.identified.id)} publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input contextual interval/callee certificate receipt only. Candidate PC is checked, not proved reachable or correctly placed for the lexical branch. No complete caller/DAG/lifecycle, concrete kernel acceptance, native ABI or backend claim."
+    return 0
   if runtimeExpression then
     let some path := irPath | throw (IO.userError "runtime expression requires --ir")
     let publication ← readSource path 16777216

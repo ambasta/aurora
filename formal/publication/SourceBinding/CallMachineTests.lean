@@ -2,7 +2,7 @@ import SourceBinding.CallMachine
 open Aurora.SourceBinding
 namespace CallMachineFixtures
 -- Bounded synthetic machine controls, not source/IR binding or production policy proofs.
-def ordinary : OrdinaryDescriptor := ⟨"callee".toUTF8,7,[.word,.boolean],.boolean⟩
+def ordinary : OrdinaryDescriptor := ⟨"callee".toUTF8,7,[.scalar .word,.scalar .boolean],.scalar .boolean⟩
 def resource (kinds : List GuardType := [.word,.word]) : ResourceDescriptor :=
   ⟨"authority".toUTF8,3,0,["builtin".toUTF8,"Resource".toUTF8],0,0,"foreign".toUTF8,
     kinds,.boolean,1,2,1,"__foreign".toUTF8⟩

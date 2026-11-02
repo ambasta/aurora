@@ -68,10 +68,15 @@ enum case order and binds formal/local frame metadata. A further single-return
 profile derives actual parameter entry and complete expression/return coverage
 from the same selected source and publication. It constructs matching source and
 canonical-machine outcomes, including checked arithmetic faults, for typed entry
-arguments; it does not assume successful packing. This is not execution
-correspondence for the existing ten-helper `frame_transition` closure. Nested
-call composition, the exact lifecycle result, allocator ledger updates and
-persistent retirement remain separate unproved obligations.
+arguments; it does not assume successful packing. A contextual nested-call
+profile additionally executes selected return-expression intervals with exact
+ordered call traces and actual same-graph single-return callee bodies. Its formal
+cells are derived from the checked signature; calls can fail in the actual callee
+without a fabricated return or unwind. This does not prove caller-PC reachability,
+correct placement in surrounding control flow, or complete execution of the
+ten-helper `frame_transition` closure. General statement/call-DAG composition,
+the exact lifecycle result, allocator ledger updates and persistent retirement
+remain separate unproved obligations.
 
 | Destination | Status |
 |---|---|
