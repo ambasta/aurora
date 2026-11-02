@@ -55,7 +55,7 @@ theorem require_assertMachine (program : EffectProgram) (machine : Machine)
   cases machine.accumulator with
   | none => rfl
   | some value => cases value with
-    | word _ => rfl
+    | word _ | signedCount12 => rfl
     | boolean b => cases b <;> rfl
 
 theorem require_assertSource (state : SourceState) (condition : GuardExpr .boolean) :
@@ -65,7 +65,7 @@ theorem require_assertSource (state : SourceState) (condition : GuardExpr .boole
   cases evalGuard state condition with
   | trap fault => rfl
   | value value => cases value with
-    | word _ => rfl
+    | word _ | signedCount12 => rfl
     | boolean b => cases b <;> rfl
 
 theorem assertion_related (frame : CallFrame) (shared : CallShared World) (source : SourceState)
@@ -77,7 +77,7 @@ theorem assertion_related (frame : CallFrame) (shared : CallShared World) (sourc
     cases accumulator with
     | none => exact ⟨rfl,funext context.fields⟩
     | some value => cases value with
-      | word _ => exact ⟨rfl,funext context.fields⟩
+      | word _ | signedCount12 => exact ⟨rfl,funext context.fields⟩
       | boolean b => cases b with
         | false => exact ⟨rfl,funext context.fields⟩
         | true => exact ⟨rfl,rfl,context.fields,context.parameters⟩

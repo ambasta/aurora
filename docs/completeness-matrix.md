@@ -26,7 +26,10 @@ coordinates in the boot-registered static endpoint buffer and recheck all source
 pages against the kernel-root boot tables and managed-frame inventory. This is
 native provenance enforcement, not source/native effect refinement. A pure Aurora
 leaf policy now consumes the native destination observations before each payload
-page is opened; parent/frame authentication, scalar transport and backend fidelity
+page is opened. A checked free-function and returning-wrapper profile connects
+its complete selected source bodies and canonical IR to the numeric result from
+the six actual scalar arguments, including checked shift and no-carry mapping
+arithmetic. Parent/frame authentication, scalar transport and backend fidelity
 remain trusted, and numeric acceptance does not grant A/B authority. Synchronous
 mapping/content stability and physical translation semantics remain trusted. Cross-root composition, source/ISA refinement,
 weak memory, recovery and hardware qualification remain open. A generic

@@ -5,8 +5,8 @@ namespace Aurora.SourceBinding
 /-- Conservative syntactic reads, including both short-circuit arms. -/
 def guardReads : {kind : GuardType} → GuardExpr kind → List Nat
   | _, .field _ _ ordinal => [ordinal]
-  | _, .not value => guardReads value
-  | _, .sub left right | _, .compare _ left right | _, .and left right | _, .or left right =>
+  | _, .not value | _, .shift12 value => guardReads value
+  | _, .sub left right | _, .bitAnd left right | _, .bitOr left right | _, .compare _ left right | _, .and left right | _, .or left right =>
     guardReads left ++ guardReads right
   | _, _ => []
 
@@ -26,8 +26,8 @@ theorem evalGuard_read_congr {kind : GuardType} (expression : GuardExpr kind)
   | boolLit value => rfl
   | parameter kind name index => simp only [evalGuard,parameters]
   | field kind name ordinal => simp only [evalGuard,fields ordinal (by simp [guardReads])]
-  | not value ih => simp only [evalGuard,ih fields]
-  | sub a b ia ib | compare op a b ia ib | and a b ia ib | or a b ia ib =>
+  | not value ih | shift12 value ih => simp only [evalGuard,ih fields]
+  | sub a b ia ib | bitAnd a b ia ib | bitOr a b ia ib | compare op a b ia ib | and a b ia ib | or a b ia ib =>
     have ha := ia (fun index member => fields index (List.mem_append_left _ member))
     have hb := ib (fun index member => fields index (List.mem_append_right _ member))
     simp only [evalGuard,ha,hb]
@@ -47,7 +47,7 @@ theorem evalBody_store_footprint (body : EffectBody) (state : SourceState) :
     cases evalGuard state condition with
     | trap fault => simp
     | value scalar => cases scalar with
-      | word value => simp
+      | word _ | signedCount12 => simp
       | boolean value => cases value <;> simp
   | returnValue kind value =>
     simp only [evalBody,sourceExpression]
@@ -57,7 +57,7 @@ theorem evalBody_store_footprint (body : EffectBody) (state : SourceState) :
     cases evalGuard state condition with
     | trap fault => simp
     | value scalar => cases scalar with
-      | word value => simp
+      | word _ | signedCount12 => simp
       | boolean value => cases value with
         | false => simp
         | true => exact ih state

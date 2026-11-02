@@ -3,15 +3,18 @@ import SourceBinding.GuardExpr
 namespace Aurora.SourceBinding
 
 inductive SourceBinOp where
-  | subtract | compare (op : CompareOp) | and | or
+  | subtract | bitAnd | bitOr | shift | compare (op : CompareOp) | and | or
   deriving BEq, DecidableEq, Repr
 
 def precedence : SourceBinOp → Nat
   | .or => 1
   | .and => 2
-  | .compare .eq | .compare .ne => 3
-  | .compare _ => 4
-  | .subtract => 5
+  | .bitOr => 3
+  | .bitAnd => 4
+  | .compare .eq | .compare .ne => 5
+  | .compare _ => 6
+  | .shift => 7
+  | .subtract => 8
 
 def operatorText : SourceBinOp → String
   | .or => "||"
@@ -22,6 +25,9 @@ def operatorText : SourceBinOp → String
   | .compare .le => "<="
   | .compare .gt => ">"
   | .compare .ge => ">="
+  | .bitAnd => "&"
+  | .bitOr => "|"
+  | .shift => "<<"
   | .subtract => "-"
 
 inductive Callee where
@@ -31,6 +37,7 @@ inductive Callee where
 
 /-- Entire selected bodies have raw syntax trees; call syntax is NOT call typing/effects. -/
 inductive SourceExpr where
+  | signed12
   | word (value : Nat)
   | boolean (value : Bool)
   | name (name : Name)
@@ -64,21 +71,22 @@ def calleeSyntax (input : ByteArray) (tokens : List Lexeme) : Option (ParsedCall
     else return ⟨.named name.name,name.rest,.named name.grammar⟩
   | _ => return ⟨.named name.name,name.rest,.named name.grammar⟩
 
-/- Levels 1..6 encode the supported C++ precedence; same-level operators compose
+/- Levels 1..9 encode the supported C++ precedence; same-level operators compose
     on the left, and right operands enter the strictly higher precedence level. -/
 mutual
   inductive ExprSyntax (input : ByteArray) : Nat → List Lexeme → SourceExpr → List Lexeme → Prop
-    | word : token.kind = .numeral .word value → ExprSyntax input 6 (token :: rest) (.word value) rest
+    | signed12 : token.kind = .numeral .signed 12 → ExprSyntax input 9 (token :: rest) .signed12 rest
+    | word : token.kind = .numeral .word value → ExprSyntax input 9 (token :: rest) (.word value) rest
     | boolean : Is input token (if value then "true" else "false") →
-        ExprSyntax input 6 (token :: rest) (.boolean value) rest
-    | name : CalleeSyntax input tokens (.named name) rest → ExprSyntax input 6 tokens (.name name) rest
+        ExprSyntax input 9 (token :: rest) (.boolean value) rest
+    | name : CalleeSyntax input tokens (.named name) rest → ExprSyntax input 9 tokens (.name name) rest
     | call : CalleeSyntax input tokens callee (opening :: args) → Is input opening "(" →
-        ArgumentsSyntax input args arguments rest → ExprSyntax input 6 tokens (.call callee arguments) rest
+        ArgumentsSyntax input args arguments rest → ExprSyntax input 9 tokens (.call callee arguments) rest
     | parenthesized : Is input opening "(" → ExprSyntax input 1 tokens inner (closing :: rest) →
-        Is input closing ")" → ExprSyntax input 6 (opening :: tokens) inner rest
-    | not : Is input token "!" → ExprSyntax input 6 tokens inner rest →
-        ExprSyntax input 6 (token :: tokens) (.not inner) rest
-    | raise : 1 ≤ level → level < 6 → ExprSyntax input (level + 1) tokens inner rest →
+        Is input closing ")" → ExprSyntax input 9 (opening :: tokens) inner rest
+    | not : Is input token "!" → ExprSyntax input 9 tokens inner rest →
+        ExprSyntax input 9 (token :: tokens) (.not inner) rest
+    | raise : 1 ≤ level → level < 9 → ExprSyntax input (level + 1) tokens inner rest →
         ExprSyntax input level tokens inner rest
     | binary : ExprSyntax input level tokens left (token :: middle) →
         Is input token (operatorText op) → precedence op = level →
@@ -104,7 +112,7 @@ structure ParsedArguments (input : ByteArray) (tokens : List Lexeme) where
   grammar : ArgumentsSyntax input tokens arguments rest
 
 def operatorCandidate (input : ByteArray) (token : Lexeme) : Option SourceBinOp :=
-  ([.or,.and,.compare .eq,.compare .ne,.compare .lt,.compare .le,.compare .gt,.compare .ge,.subtract] : List SourceBinOp).find?
+  ([.or,.and,.bitOr,.bitAnd,.shift,.compare .eq,.compare .ne,.compare .lt,.compare .le,.compare .gt,.compare .ge,.subtract] : List SourceBinOp).find?
     (fun op => decide (Is input token (operatorText op)))
 
 mutual
@@ -112,9 +120,9 @@ mutual
       Option (ParsedExpr input level tokens)
     | 0, _, _ => none
     | fuel + 1, level, tokens =>
-      if atomic : level = 6 then atomic ▸ atomSyntax input fuel tokens
+      if atomic : level = 9 then atomic ▸ atomSyntax input fuel tokens
       else if low : 1 ≤ level then
-        if high : level < 6 then do
+        if high : level < 9 then do
           let inner ← expressionSyntax input fuel (level + 1) tokens
           expressionTail input fuel level tokens inner.expression inner.rest (.raise low high inner.grammar)
         else none
@@ -136,12 +144,13 @@ mutual
                 (.binary prior actual atLevel right.grammar)
             else none
           else some ⟨left,token :: tail,prior⟩
-  def atomSyntax (input : ByteArray) : (fuel : Nat) → (tokens : List Lexeme) → Option (ParsedExpr input 6 tokens)
+  def atomSyntax (input : ByteArray) : (fuel : Nat) → (tokens : List Lexeme) → Option (ParsedExpr input 9 tokens)
     | 0, _ => none
     | fuel + 1, tokens => match tokens with
       | [] => none
       | token :: tail => do
         match kind : token.kind with
+        | .numeral .signed 12 => return ⟨.signed12,tail,.signed12 kind⟩
         | .numeral .word value => return ⟨.word value,tail,.word kind⟩
         | _ =>
           if yes : Is input token "true" then return ⟨.boolean true,tail,.boolean yes⟩

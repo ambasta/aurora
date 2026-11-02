@@ -9,6 +9,7 @@ def Letter (b : Nat) : Prop := (65 ≤ b ∧ b ≤ 90) ∨ (97 ≤ b ∧ b ≤ 1
 def Digit (b : Nat) : Prop := 48 ≤ b ∧ b ≤ 57
 def Word (b : Nat) : Prop := Letter b ∨ Digit b
 def CommentByte (b : Nat) : Prop := b ≠ 10 ∧ ((9 ≤ b ∧ b ≤ 13) ∨ (32 ≤ b ∧ b ≤ 126))
+def StringByte (b : Nat) : Prop := 32 ≤ b ∧ b ≤ 126 ∧ b ≠ 34 ∧ b ≠ 92
 def Punctuation (b : Nat) : Prop := b ∈ ([40,41,123,125,91,93,58,59,44,61,43,45,42,47,37,60,62,33,46,38,124,94,126] : List Nat)
 def Pair (a b : Nat) : Prop := (a,b) ∈ ([(45,62),(61,61),(33,61),(60,61),(62,61),(58,58),(60,60),(62,62),(38,38),(124,124)] : List (Nat × Nat))
 instance (b : Nat) : Decidable (Space b) := by unfold Space; infer_instance
@@ -16,6 +17,7 @@ instance (b : Nat) : Decidable (Letter b) := by unfold Letter; infer_instance
 instance (b : Nat) : Decidable (Digit b) := by unfold Digit; infer_instance
 instance (b : Nat) : Decidable (Word b) := by unfold Word; infer_instance
 instance (b : Nat) : Decidable (CommentByte b) := by unfold CommentByte; infer_instance
+instance (b : Nat) : Decidable (StringByte b) := by unfold StringByte; infer_instance
 instance (b : Nat) : Decidable (Punctuation b) := by unfold Punctuation; infer_instance
 instance (a b : Nat) : Decidable (Pair a b) := by unfold Pair; infer_instance
 
@@ -88,7 +90,7 @@ def number (input : ByteArray) (span : Span) : Option (ParsedNumber input span) 
   numberKind input span .signed <|> numberKind input span .word <|> numberKind input span .octet
 
 inductive Kind where
-  | whitespace | comment | identifier | numeral (kind : NumberKind) (value : Nat) | punctuation
+  | whitespace | comment | stringLiteral | identifier | numeral (kind : NumberKind) (value : Nat) | punctuation
   deriving BEq, DecidableEq, Repr
 
 structure Lexeme where
@@ -97,7 +99,8 @@ structure Lexeme where
   deriving BEq, DecidableEq, Repr
 
 /-- Independent lexical rules; maximal words/pairs cannot be split into prefixes.
-    Quotes, block comments, invalid bytes and malformed numerals have no rule. -/
+    Escapes, block comments, invalid bytes and malformed numerals have no rule.
+    Quoted printable ASCII is one opaque token, not a source expression. -/
 inductive Lexical (input : ByteArray) : Nat → Nat → Kind → Prop
   | whitespace : start < input.size → Space (byte input start) →
       Lexical input start (start + 1) .whitespace
@@ -105,6 +108,9 @@ inductive Lexical (input : ByteArray) : Nat → Nat → Kind → Prop
       Run input CommentByte (start + 2) stop →
       (stop = input.size ∨ (stop < input.size ∧ byte input stop = 10)) →
       Lexical input start stop .comment
+  | stringLiteral : start < input.size → byte input start = 34 →
+      Run input StringByte (start + 1) close → close < input.size → byte input close = 34 →
+      Lexical input start (close + 1) .stringLiteral
   | identifier : start < stop → start < input.size → Letter (byte input start) →
       Run input Word start stop →
       (stop = input.size ∨ (stop < input.size ∧ ¬ Word (byte input stop))) →
@@ -136,6 +142,16 @@ def lexOne (input : ByteArray) (fuel start : Nat) : Option (Piece input start) :
         if ending : tail.stop = input.size ∨ (tail.stop < input.size ∧ byte input tail.stop = 10) then
           if progress : start < tail.stop then
             return ⟨tail.stop, .comment, progress, .comment second comment.1 comment.2 tail.run ending⟩
+          else none
+        else none
+      else none
+    else if quoted : byte input start = 34 then
+      let tail ← scan input StringByte (start + 1) fuel (start + 1) .empty
+      if closeBound : tail.stop < input.size then
+        if closeQuote : byte input tail.stop = 34 then
+          if progress : start < tail.stop + 1 then
+            return ⟨tail.stop + 1, .stringLiteral, progress,
+              .stringLiteral bound quoted tail.run closeBound closeQuote⟩
           else none
         else none
       else none
@@ -221,6 +237,7 @@ theorem Lexical.interval {input : ByteArray} {start stop : Nat} {kind : Kind}
   | comment bound _ _ run _ =>
     exact ⟨Nat.lt_of_lt_of_le (Nat.lt_add_of_pos_right (by decide : 0 < 2)) run.ordered,
       run.bounded (Nat.succ_le_of_lt bound)⟩
+  | stringLiteral _ _ run bound _ => have ordered := run.ordered; constructor <;> omega
   | identifier progress bound _ run _ => exact ⟨progress, run.bounded (Nat.le_of_lt bound)⟩
   | numeral progress bound _ run _ _ => exact ⟨progress, run.bounded (Nat.le_of_lt bound)⟩
   | pair bound _ => exact ⟨Nat.lt_add_of_pos_right (by decide : 0 < 2), Nat.succ_le_of_lt bound⟩

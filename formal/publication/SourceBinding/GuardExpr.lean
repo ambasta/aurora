@@ -16,6 +16,9 @@ inductive GuardExpr : GuardType → Type where
   | field (kind : GuardType) (name : ByteArray) (ordinal : Nat) : GuardExpr kind
   | not : GuardExpr .boolean → GuardExpr .boolean
   | sub : GuardExpr .word → GuardExpr .word → GuardExpr .word
+  | bitAnd : GuardExpr .word → GuardExpr .word → GuardExpr .word
+  | bitOr : GuardExpr .word → GuardExpr .word → GuardExpr .word
+  | shift12 : GuardExpr .word → GuardExpr .word
   | compare : CompareOp → GuardExpr .word → GuardExpr .word → GuardExpr .boolean
   | and : GuardExpr .boolean → GuardExpr .boolean → GuardExpr .boolean
   | or : GuardExpr .boolean → GuardExpr .boolean → GuardExpr .boolean

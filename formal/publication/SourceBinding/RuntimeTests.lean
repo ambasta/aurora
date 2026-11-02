@@ -9,7 +9,7 @@ def cases : List (String × Bool) := [
   ("module real; // class Forged {}", true),
   ("\r\n\tmodule root;\r\n", true),
   ("module root; /* class Forged {} */", false),
-  ("module root; \"class Forged {}\"", false),
+  ("module root; \"class Forged {}\"", true),
   ("module root; '\\n'", false),
   ("module r; // nonascii: é", false),
   ("module r; #define x", false),
@@ -67,7 +67,7 @@ def shellCases : List (String × Bool) := [
   ("module r; auto f(builtin::span<const u8> x) -> bool { return true; }", true),
   ("module r; class C { auto f() -> bool { (] } };", false),
   ("module r; class C { auto f() -> bool { // } class Fake {\nreturn true; } };", true),
-  ("module r; class C { auto f() -> bool { \"} class Fake {\" } };", false),
+  ("module r; class C { auto f() -> bool { \"} class Fake {\" } };", true),
   ("module r; class C { u64 x; C(u64 a) : x(a } };", false),
   ("module r; enum class E { a, b };", true),
   ("module r; enum class E { a, a };", false)]

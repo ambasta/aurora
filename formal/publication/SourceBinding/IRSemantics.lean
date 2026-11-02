@@ -22,6 +22,7 @@ def OperationMeaning (t : Tables) (id : Int) (row : Record) (operation : Op) : P
       scalarKind t (operandValue t row 1) = some .boolean ∧
       (operand t row 0).integer 1 = 10 ∧ operandValue t row 0 = (if value then 1 else 0)
   | .constant _ _ => False
+  | .count12 => SignedCount12 t row
   | .load kind slot => row.integer 6 = 7 ∧ operandValue t row 0 = Int.ofNat slot ∧
       scalarKind t (operandValue t row 1) = some kind
   | .receiver kind ordinal => row.integer 6 = 32 ∧ operandValue t row 0 = Int.ofNat ordinal ∧
@@ -29,6 +30,9 @@ def OperationMeaning (t : Tables) (id : Int) (row : Record) (operation : Op) : P
   | .push => row.integer 6 = 9
   | .negate => row.integer 6 = 11 ∧ row.integer 7 = 1
   | .binary .sub => row.integer 6 = 12 ∧ row.integer 8 = 1
+  | .binary .bitAnd => row.integer 6 = 12 ∧ row.integer 8 = 5
+  | .binary .bitOr => row.integer 6 = 12 ∧ row.integer 8 = 6
+  | .binary .shift12 => row.integer 6 = 12 ∧ row.integer 8 = 8
   | .binary (.compare comparison) => row.integer 6 = 14 ∧ row.integer 9 = comparisonCode comparison
   | .bind kind argument slot => row.integer 6 = 45 ∧ operandValue t row 0 = Int.ofNat argument ∧
       operandValue t row 1 = Int.ofNat slot ∧ scalarKind t (operandValue t row 2) = some kind
@@ -46,6 +50,7 @@ def operationCandidate (t : Tables) (row : Record) : Option Op := do
   let v := operandValue t row
   match row.integer 6 with
   | 5 =>
+    if SignedCount12 t row then return .count12
     let kind ← scalarKind t (v 1)
     match kind with
     | .word => return .constant .word (.word ((operand t row 0).integer 3).toNat)
@@ -54,7 +59,12 @@ def operationCandidate (t : Tables) (row : Record) : Option Op := do
   | 32 => return .receiver (← scalarKind t (v 1)) (v 0).toNat
   | 9 => return .push
   | 11 => return .negate
-  | 12 => return .binary .sub
+  | 12 => match row.integer 8 with
+    | 1 => return .binary .sub
+    | 5 => return .binary .bitAnd
+    | 6 => return .binary .bitOr
+    | 8 => return .binary .shift12
+    | _ => none
   | 14 => return .binary (.compare (← comparisonOf (row.integer 9)))
   | 45 => return .bind (← scalarKind t (v 2)) (v 0).toNat (v 1).toNat
   | 40 => return .label

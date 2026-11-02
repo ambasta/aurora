@@ -7,15 +7,14 @@ theorem read_supported (kind : GuardType) (input : Option Value) : SupportedOutc
   cases input with
   | none => simp [SupportedOutcome,readScalar]
   | some value =>
-    cases value <;> simp only [readScalar]
-    all_goals split <;> simp_all [SupportedOutcome]
-    split <;> simp
+    cases value <;> simp [readScalar,SupportedOutcome]
+    all_goals split <;> try simp_all
+    all_goals split <;> try simp_all
 
 theorem binary_supported (operation : Binary) (left right : Value) : SupportedOutcome (binaryValue operation left right) := by
-  cases operation <;> cases left <;> cases right <;> simp only [binaryValue,SupportedOutcome]
-  all_goals try simp
+  cases operation <;> cases left <;> cases right <;> simp [binaryValue,SupportedOutcome]
   all_goals split <;> try simp_all
-  split <;> simp_all
+  all_goals split <;> try simp_all
 
 theorem not_supported (value : Value) : SupportedOutcome (notValue value) := by
   cases value <;> simp [SupportedOutcome,notValue]
@@ -34,19 +33,20 @@ theorem eval_supported (state : SourceState) {kind : GuardType} (expression : Gu
   | boolLit value => simp [evalGuard,SupportedOutcome]
   | parameter kind name index | field kind name index => exact read_supported _ _
   | not child ih => exact then_supported _ _ ih not_supported
-  | sub left right leftIH rightIH =>
+  | sub left right leftIH rightIH | bitAnd left right leftIH rightIH | bitOr left right leftIH rightIH =>
     exact then_supported _ _ leftIH (fun a => then_supported _ _ rightIH (fun b => binary_supported _ a b))
+  | shift12 child ih => exact then_supported _ _ ih (fun value => binary_supported .shift12 value .signedCount12)
   | compare operation left right leftIH rightIH =>
     exact then_supported _ _ leftIH (fun a => then_supported _ _ rightIH (fun b => binary_supported _ a b))
   | and left right leftIH rightIH =>
     apply then_supported _ _ leftIH
     intro value; cases value with
-    | word _ => simp [SupportedOutcome]
+    | word _ | signedCount12 => simp [SupportedOutcome]
     | boolean b => cases b <;> first | exact rightIH | simp [SupportedOutcome]
   | or left right leftIH rightIH =>
     apply then_supported _ _ leftIH
     intro value; cases value with
-    | word _ => simp [SupportedOutcome]
+    | word _ | signedCount12 => simp [SupportedOutcome]
     | boolean b => cases b <;> first | exact rightIH | simp [SupportedOutcome]
 
 /-- Successful expression completion has an exact frame. Fault completion keeps

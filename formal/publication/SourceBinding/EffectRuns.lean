@@ -98,7 +98,7 @@ theorem effect_step_frame (program : EffectProgram) (state : Machine) :
       | none => exact ⟨rfl,rfl⟩
       | some value =>
         cases value with
-        | word _ => exact ⟨rfl,rfl⟩
+        | word _ | signedCount12 => exact ⟨rfl,rfl⟩
         | boolean b => cases b <;> exact ⟨rfl,rfl⟩
 
 theorem EffectRuns.store_frame {program : EffectProgram} {initial : Machine}

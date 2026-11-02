@@ -13,6 +13,7 @@ theorem read_typed (kind : GuardType) (input : Option Value) :
   | none => trivial
   | some value =>
     cases value with
+    | signedCount12 => trivial
     | boolean b => cases kind <;> simp [TypedOutcome,readScalar]
     | word n =>
       cases kind with
@@ -26,22 +27,35 @@ theorem not_typed (value : Value) : TypedOutcome .boolean (notValue value) := by
   cases value <;> simp [TypedOutcome,notValue,readScalar]
 
 def Binary.resultKind : Binary → GuardType
-  | .sub => .word
+  | .sub | .bitAnd | .bitOr | .shift12 => .word
   | .compare _ => .boolean
 
 theorem binary_typed (operation : Binary) (left right : Value) :
     TypedOutcome operation.resultKind (binaryValue operation left right) := by
   cases left with
-  | boolean _ => cases right <;> trivial
+  | boolean _ | signedCount12 => cases right <;> trivial
   | word a =>
     cases right with
     | boolean _ => trivial
+    | signedCount12 =>
+      by_cases input : a < wordLimit
+      · by_cases shifted : a * 4096 < wordLimit
+        · cases operation <;> simp [binaryValue,TypedOutcome,Binary.resultKind,readScalar,input,shifted]
+        · cases operation <;> simp [binaryValue,TypedOutcome,input,shifted]
+      · cases operation <;> simp [binaryValue,TypedOutcome,input]
     | word b =>
       simp only [binaryValue]
       split
       next bounds =>
         cases operation with
         | compare op => simp [TypedOutcome,Binary.resultKind,readScalar]
+        | bitAnd =>
+          have bound : a &&& b < wordLimit := Nat.lt_of_le_of_lt Nat.and_le_left bounds.1
+          simp [TypedOutcome,Binary.resultKind,readScalar,bound]
+        | bitOr =>
+          have bound : a ||| b < wordLimit := Nat.or_lt_two_pow (n := 64) bounds.1 bounds.2
+          simp [TypedOutcome,Binary.resultKind,readScalar,bound]
+        | shift12 => trivial
         | sub =>
           simp only [Binary.resultKind]
           split
@@ -66,19 +80,24 @@ theorem eval_typed (state : SourceState) (expression : GuardExpr kind) :
   | not child ih => exact then_typed _ _ not_typed
   | sub left right leftIH rightIH =>
     exact then_typed _ _ (fun a => then_typed _ _ (fun b => binary_typed .sub a b))
+  | bitAnd left right leftIH rightIH =>
+    exact then_typed _ _ (fun a => then_typed _ _ (fun b => binary_typed .bitAnd a b))
+  | bitOr left right leftIH rightIH =>
+    exact then_typed _ _ (fun a => then_typed _ _ (fun b => binary_typed .bitOr a b))
+  | shift12 child ih => exact then_typed _ _ (fun a => binary_typed .shift12 a .signedCount12)
   | compare op left right leftIH rightIH =>
     exact then_typed _ _ (fun a => then_typed _ _ (fun b => binary_typed (.compare op) a b))
   | and left right leftIH rightIH =>
     apply then_typed
     intro value
     cases value with
-    | word _ => trivial
+    | word _ | signedCount12 => trivial
     | boolean b => cases b <;> first | exact rightIH | simp [TypedOutcome,readScalar]
   | or left right leftIH rightIH =>
     apply then_typed
     intro value
     cases value with
-    | word _ => trivial
+    | word _ | signedCount12 => trivial
     | boolean b => cases b <;> first | exact rightIH | simp [TypedOutcome,readScalar]
 
 theorem eval_value_typed (state : SourceState) (expression : GuardExpr kind)

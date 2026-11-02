@@ -20,8 +20,8 @@ def LeavesReady (state : SourceState) : {kind : GuardType} → GuardExpr kind �
   | _, .wordLit _ | _, .boolLit _ => True
   | _, .parameter kind _ index => ReadReady kind (state.parameters index)
   | _, .field kind _ ordinal => ReadReady kind (state.fields ordinal)
-  | _, .not expression => LeavesReady state expression
-  | _, .sub left right | _, .compare _ left right => LeavesReady state left ∧ LeavesReady state right
+  | _, .not expression | _, .shift12 expression => LeavesReady state expression
+  | _, .sub left right | _, .bitAnd left right | _, .bitOr left right | _, .compare _ left right => LeavesReady state left ∧ LeavesReady state right
   | _, .and left right | _, .or left right => LeavesReady state left ∧ LeavesReady state right
 
 /-- Independent total scalar fragment. Subtraction intentionally has no rule. -/
@@ -47,7 +47,7 @@ def checkSimple : {kind : GuardType} → (expression : GuardExpr kind) → Optio
   | _, .compare _ left right => do return ⟨.compare (← checkSimple left).simple (← checkSimple right).simple⟩
   | _, .and left right => do return ⟨.and (← checkSimple left).simple (← checkSimple right).simple⟩
   | _, .or left right => do return ⟨.or (← checkSimple left).simple (← checkSimple right).simple⟩
-  | _, .sub _ _ => none
+  | _, .sub _ _ | _, .bitAnd _ _ | _, .bitOr _ _ | _, .shift12 _ => none
 
 theorem read_ready (kind : GuardType) (value : Value) (ready : ScalarReady kind value) :
     readScalar kind (some value) = .value value := by
@@ -68,34 +68,34 @@ theorem simple_total {kind : GuardType} {expression : GuardExpr kind}
   | not child ih =>
     obtain ⟨value,bound,eq⟩ := ih ready
     cases value with
-    | word n => contradiction
+    | word _ | signedCount12 => contradiction
     | boolean b => exact ⟨.boolean (!b),True.intro,by simp [evalGuard,eq,Outcome.then,notValue]⟩
   | @compare leftExpr rightExpr op left right leftIH rightIH =>
     obtain ⟨a,ha,ea⟩ := leftIH ready.1
     obtain ⟨b,hb,eb⟩ := rightIH ready.2
     cases a with
-    | boolean _ => contradiction
+    | boolean _ | signedCount12 => contradiction
     | word a =>
       cases b with
-      | boolean _ => contradiction
+      | boolean _ | signedCount12 => contradiction
       | word b => exact ⟨.boolean (compareWords op a b),True.intro,by simp only [ScalarReady] at ha hb; simp [evalGuard,ea,eb,Outcome.then,binaryValue,ha,hb]⟩
   | and left right leftIH rightIH =>
     obtain ⟨a,ha,ea⟩ := leftIH ready.1
     obtain ⟨b,hb,eb⟩ := rightIH ready.2
     cases a with
-    | word _ => contradiction
+    | word _ | signedCount12 => contradiction
     | boolean a =>
       cases b with
-      | word _ => contradiction
+      | word _ | signedCount12 => contradiction
       | boolean b => exact ⟨.boolean (a && b),True.intro,by cases a <;> simp [evalGuard,ea,eb,Outcome.then]⟩
   | or left right leftIH rightIH =>
     obtain ⟨a,ha,ea⟩ := leftIH ready.1
     obtain ⟨b,hb,eb⟩ := rightIH ready.2
     cases a with
-    | word _ => contradiction
+    | word _ | signedCount12 => contradiction
     | boolean a =>
       cases b with
-      | word _ => contradiction
+      | word _ | signedCount12 => contradiction
       | boolean b => exact ⟨.boolean (a || b),True.intro,by cases a <;> simp [evalGuard,ea,eb,Outcome.then]⟩
 
 /-- A generic checked range-guard idiom. Operands are actual typed expressions;
@@ -131,7 +131,7 @@ theorem simple_word {expression : GuardExpr .word} (simple : SimpleGuard express
     ∃ n, n < wordLimit ∧ evalGuard state expression = .value (.word n) := by
   obtain ⟨value,bound,eq⟩ := simple_total simple state ready
   cases value with
-  | boolean _ => contradiction
+  | boolean _ | signedCount12 => contradiction
   | word n => exact ⟨n,bound,eq⟩
 
 theorem simple_boolean {expression : GuardExpr .boolean} (simple : SimpleGuard expression)
@@ -139,7 +139,7 @@ theorem simple_boolean {expression : GuardExpr .boolean} (simple : SimpleGuard e
     ∃ b, evalGuard state expression = .value (.boolean b) := by
   obtain ⟨value,bound,eq⟩ := simple_total simple state ready
   cases value with
-  | word _ => contradiction
+  | word _ | signedCount12 => contradiction
   | boolean b => exact ⟨b,eq⟩
 
 /-- The ordinary subtraction is used only in the final branch. Its safety is
@@ -209,8 +209,8 @@ theorem typed_guard_leaves {fieldDecls formalDecls : List Formal} {source : Sour
   | boolean => trivial
   | parameter declaration _ type => exact parameters _ _ _ declaration type
   | field declaration _ type => exact fields _ _ _ declaration type
-  | not _ ih => exact ih
-  | subtract _ _ left right => exact ⟨left,right⟩
+  | not _ ih | shift12 _ ih => exact ih
+  | subtract _ _ left right | bitAnd _ _ left right | bitOr _ _ left right => exact ⟨left,right⟩
   | compare _ _ left right => exact ⟨left,right⟩
   | and _ _ left right => exact ⟨left,right⟩
   | or _ _ left right => exact ⟨left,right⟩
