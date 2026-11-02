@@ -6,7 +6,9 @@ case "$(lean --version)" in
   'Lean (version 4.24.0, '*'commit 797c613eb9b6d4ec95db23e3e00af9ac6657f24b, Release)') ;;
   *) echo 'Wrong Lean toolchain' >&2; exit 1 ;;
 esac
-lake build SourceBinding SourceBinding.Tests SourceBinding.CallProjectionTests SourceBinding.BitTests SourceBinding.LeafTests SourceBinding.StringTests SourceBinding.FreeTests SourceBinding.RuntimePrimitiveTests SourceBinding.LocalBindingTests SourceBinding.FramePolicySpec SourceBinding.RuntimeExpressionTests SourceBinding.RuntimeEvaluationTests SourceBinding.RuntimeEntryTests SourceBinding.RuntimeCallTests SourceBinding.RuntimeNestedCallTests SourceBinding.RuntimeStatementTests SourceBinding.RuntimeBodyExecutionTests source-binding-probe
+# Audit-only migration proofs are deliberately absent from the production root.
+# Build their dependency closure explicitly so this gate also works from clean caches.
+lake build SourceBinding.LegacyLeafCompatibility SourceBinding SourceBinding.Tests SourceBinding.CallProjectionTests SourceBinding.BitTests SourceBinding.LeafTests SourceBinding.StringTests SourceBinding.FreeTests SourceBinding.RuntimePrimitiveTests SourceBinding.LocalBindingTests SourceBinding.FramePolicySpec SourceBinding.RuntimeExpressionTests SourceBinding.RuntimeEvaluationTests SourceBinding.RuntimeEntryTests SourceBinding.RuntimeCallTests SourceBinding.RuntimeNestedCallTests SourceBinding.RuntimeStatementTests SourceBinding.RuntimeBodyExecutionTests source-binding-probe
 lake env lean SourceBinding/RuntimeTests.lean
 lake env lean SourceBinding/MethodTests.lean
 lake env lean SourceBinding/IdentityTests.lean
