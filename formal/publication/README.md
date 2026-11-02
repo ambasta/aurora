@@ -824,3 +824,31 @@ reports**, plus the same separately labeled **20 independent specification
 reports**. The specification is now connected by the attachment theorems, while
 its standalone audit remains separately counted. Axiom restrictions and default
 proof limits are unchanged.
+
+
+### OwnedWords primitive prerequisites (not complete release refinement)
+
+The next selected method is the actual retained production `MemoryManager.release`,
+not the independently declared `FrameAllocator` methods whose bodies are absent
+from this artifact. Its source/canonical-IR bookkeeping proof is **not yet attached**.
+
+The new finite-bank model defines exact `size`, `at`, and one-cell `set` responses,
+framing the receiver, other banks and unrelated world data. Seventeen primitive
+laws connect the concrete update to the ledger's sole one-cell replacement relation
+and preserve abstract admission. The ledger invariant records complete free-list
+coverage, exact two-owner counts with no orphan allocations, and bounded valid
+records; these are mathematical definitions, not established native invariants.
+Native binding/access/extent admission remains an explicit trust boundary.
+
+Direct resource initializer/require boundary rules retain raw optional responses
+until the actual typed store/assertion consumer, including changed poststate on
+false, absent or external-fault responses. A finite waiting observation remains
+valid even when a response is available; it is neither a completed refusal nor
+divergence. The old arbitrary external-relation APIs are unchanged. No generalized
+effectful source-body simulation, release-store ordering, persistent retirement,
+transactional rollback, native-bank refinement or allocator-history claim is made.
+
+The strict audit retains all 571 earlier primary exports and adds these 17:
+**588 primary reports**, plus the unchanged separately counted **20 specification
+reports**. Tiny controls exercise primitive cells, framing, partial-response
+poststates and waiting; they are not full-method or native acceptance evidence.

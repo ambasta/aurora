@@ -59,3 +59,7 @@ import SourceBinding.FramePolicyRootPrefix
 import SourceBinding.FramePolicyRoot
 import SourceBinding.FramePolicyExecution
 import SourceBinding.FramePolicyReflection
+
+import SourceBinding.EffectSourceBinding
+import SourceBinding.OwnedWordsFacts
+import SourceBinding.ResourceStatementFacts

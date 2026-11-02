@@ -599,3 +599,21 @@ import SourceBinding.LegacyLeafCompatibility
 #print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.terminal_correspondence
 #print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.not_locally_diverges
 #print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.retired_input_refuses
+
+#print axioms Aurora.SourceBinding.OwnedWordsBank.write_size
+#print axioms Aurora.SourceBinding.OwnedWordsBank.write_same
+#print axioms Aurora.SourceBinding.OwnedWordsBank.write_other
+#print axioms Aurora.SourceBinding.OwnedWordsBank.write_valid
+#print axioms Aurora.SourceBinding.OwnedWordsWorld.write_same
+#print axioms Aurora.SourceBinding.OwnedWordsWorld.write_other_bank
+#print axioms Aurora.SourceBinding.OwnedWordsWorld.write_other
+#print axioms Aurora.SourceBinding.OwnedWordsResponse.receiver_frame
+#print axioms Aurora.SourceBinding.OwnedWordsResponse.other_frame
+#print axioms Aurora.SourceBinding.OwnedWordsResponse.bank_frame
+#print axioms Aurora.SourceBinding.OwnedWordsResponse.preserves_admission
+#print axioms Aurora.SourceBinding.OwnedWordsBank.write_replacement
+#print axioms Aurora.SourceBinding.SourceResourceStep.waiting_before
+#print axioms Aurora.SourceBinding.SourceResourceInitialize.retains_response
+#print axioms Aurora.SourceBinding.SourceResourceAssert.retains_response
+#print axioms Aurora.SourceBinding.SourceResourceAssert.false_retains_poststate
+#print axioms Aurora.SourceBinding.SourceResourceAssert.missing_retains_poststate
