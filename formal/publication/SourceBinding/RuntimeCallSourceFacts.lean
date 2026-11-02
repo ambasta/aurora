@@ -8,50 +8,18 @@ theorem RuntimeEvaluation.weaken
     (evaluated : RuntimeEvaluation functions context state raw kind outcome events)
     (included : ∀ leaf, leaf ∈ functions → leaf ∈ larger) :
     RuntimeEvaluation larger context state raw kind outcome events := by
-  induction evaluated using RuntimeEvaluation.rec
-      (motive_2 := fun context state raws kinds outcome events _ =>
-        RuntimeArgumentEvaluation larger context state raws kinds outcome events)
-      (motive_3 := fun members module path formals result before state raw after outcome events _ =>
-        RuntimeStatementEvaluation larger members module path formals result before state raw after outcome events)
-      (motive_4 := fun members module path formals result before state raws after outcome events _ =>
-        RuntimeStatementsEvaluation larger members module path formals result before state raws after outcome events) with
-  | word => exact .word
-  | boolean => exact .boolean
-  | readVariable binding => exact .readVariable binding
-  | enumValue binding => exact .enumValue binding
-  | not _ ih => exact .not ih
-  | wordBinaryFault operator _ ih => exact .wordBinaryFault operator ih
-  | wordBinary operator _ _ left right => exact .wordBinary operator left right
-  | enumCompareFault _ ih => exact .enumCompareFault ih
-  | enumCompare _ _ left right => exact .enumCompare left right
-  | shiftLeft _ count ih => exact .shiftLeft ih count
-  | shiftRight _ count ih => exact .shiftRight ih count
-  | andFault _ ih => exact .andFault ih
-  | andStop _ ih => exact .andStop ih
-  | andContinue _ _ left right => exact .andContinue left right
-  | orFault _ ih => exact .orFault ih
-  | orStop _ ih => exact .orStop ih
-  | orContinue _ _ left right => exact .orContinue left right
-  | callArgumentsFault member resolves _ ih => exact .callArgumentsFault (included _ member) resolves ih
-  | callValue member resolves _ _ args body => exact .callValue (included _ member) resolves args body
-  | callFault member resolves _ _ args body => exact .callFault (included _ member) resolves args body
-  | fault _ ih => exact .fault ih
-  | cons _ _ first rest => exact .cons first rest
-  | declarationFault scope _ ih => exact .declarationFault scope ih
-  | declarationValue scope _ initialized ih => exact .declarationValue scope ih initialized
-  | assignmentFault member named mutable _ ih => exact .assignmentFault member named mutable ih
-  | assignmentValue member named mutable _ assigned ih => exact .assignmentValue member named mutable ih assigned
-  | returnFault _ ih => exact .returnFault ih
-  | returnValue _ ih => exact .returnValue ih
-  | branchFault scope _ ih => exact .branchFault scope ih
-  | branchFalse scope _ reserved ih => exact .branchFalse scope ih reserved
-  | branchTrueContinue scope _ entered _ reserved first body => exact .branchTrueContinue scope first entered body reserved
-  | branchTrueReturn scope _ entered _ first body => exact .branchTrueReturn scope first entered body
-  | branchTrueFault scope _ entered _ first body => exact .branchTrueFault scope first entered body
-  | next _ _ first rest => exact .next first rest
-  | returned _ scope ih => exact .returned ih scope
-  | trapped _ scope ih => exact .trapped ih scope
-  | _ => intros; exact .nil
+  apply PureRuntimeEvaluation.induct evaluated
+  exact { pureRuntimeAlgebra larger with
+    expression_callArgumentsFault := by
+      intro leaf context name state sources fault events member resolves args
+      exact .callArgumentsFault (included leaf member) resolves args
+    expression_callValue := by
+      intro leaf context name state sources values argumentEvents after value finished bodyEvents member resolves args body
+      exact .callValue (included leaf member) resolves args body
+    expression_callFault := by
+      intro leaf context name state sources values argumentEvents after fault finished bodyEvents member resolves args body
+      exact .callFault (included leaf member) resolves args body
+  }
 
 theorem RuntimeEvaluatesWith.weaken
     (evaluated : RuntimeEvaluatesWith functions context state raw kind outcome events)
@@ -101,16 +69,27 @@ def RuntimeArgumentsOutcomeTyped (kinds : List RuntimeType) : Outcome (List Valu
 theorem RuntimeArgumentEvaluation.outcome_typed
     (evaluated : RuntimeArgumentEvaluation functions context state raws kinds outcome events) :
     RuntimeArgumentsOutcomeTyped kinds outcome := by
-  induction evaluated using RuntimeArgumentEvaluation.rec
-      (motive_1 := fun _ _ _ _ _ _ _ => True)
-      (motive_3 := fun _ _ _ _ _ _ _ _ _ _ _ _ => True)
-      (motive_4 := fun _ _ _ _ _ _ _ _ _ _ _ _ => True) with
-  | fault => trivial
-  | @cons context state first kind value firstEvents rest kinds outcome restEvents firstEval restEval firstIH restIH =>
-    cases outcome with
-    | trap fault => trivial
-    | value tail => exact .cons firstEval.outcome_typed restIH
-  | _ => all_goals intros; first | exact True.intro | exact RuntimeReadyArguments.nil
+  have checked := (evaluated PUnit PUnit (fun _ _ _ => False)
+    (⟨fun _ => none, PUnit.unit⟩ : SourceShared PUnit)).checked
+  cases outcome with
+  | trap fault => trivial
+  | value values =>
+    change checkSourceArguments kinds values = .value () at checked
+    change RuntimeReadyArguments kinds values
+    clear evaluated
+    induction kinds generalizing values with
+    | nil => cases values with
+      | nil => exact .nil
+      | cons value rest => cases checked
+    | cons kind kinds ih => cases values with
+      | nil => cases checked
+      | cons value rest =>
+        cases read : readRuntime kind (some value) with
+        | trap fault => simp only [checkSourceArguments, read] at checked; cases checked
+        | value actual =>
+          have same := readRuntime_preserves kind (some value) actual read
+          cases Option.some.inj same
+          exact .cons read (ih rest (by simpa only [checkSourceArguments, read] using checked))
 
 theorem RuntimeArgumentsEvaluateWith.outcome_typed
     (evaluated : RuntimeArgumentsEvaluateWith functions context state raws kinds outcome events) :

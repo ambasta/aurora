@@ -886,3 +886,35 @@ The strict audit retains the previous 588 primary exports and adds these 12:
 **20 specification reports**. Only `propext` and `Quot.sound` are permitted.
 This math-only checkpoint does not include the ongoing effectful source-relation
 migration or claim that migration preserves the old closure yet.
+
+### Conservative effect-aware source semantics
+
+The same raw source AST now admits `if`/`else`. A single four-way source
+judgment threads receiver/world state through expressions, ordered arguments,
+statements and statement lists. Its receiver profile includes scalar fields,
+ordinary calls and the selected resource statement forms: direct local
+initializers and direct `require` calls. Resource responses remain raw until
+that actual store or assertion consumes them. Faults retain current shared
+state; waiting is a finite outstanding-request observation, not divergence or
+proof that a response is unavailable. Ordinary invocation precedes the fresh
+callee's parameter checks. General resource expressions remain unsupported.
+
+The original pure APIs are uniform specializations over arbitrary shared
+states and external relations. Global bidirectional proofs cover all four old
+relations, including arbitrary old function records, nested calls, malformed
+values, faults and unexecuted syntax. The frozen reference is proof-only and
+imported by the audit, never the production semantic/checker/execution root.
+The original scope profile still rejects new `if`/`else` syntax, including in
+dead arms or suffixes; its admissions have not silently widened. Pure outcomes
+and traces retain their original stronger quantifier order.
+
+The strict gate retains all 600 prior primary exports and adds 48 migration
+exports: **648 primary dependency reports**, with the separate **20 independent
+specification reports** unchanged. Existing frame-policy execution and result
+statements remain intact. New scope controls distinguish capability admission
+from legacy refusal; the syntax-call inventory traverses both arms and dead
+suffixes. This layer does **not** yet bind the complete canonical
+`MemoryManager.release` receiver/resource closure or prove its actual bank and
+metadata writes. The internal ledger-preservation mathematics still needs that
+source/IR attachment; initial ledger invariants and native bank admission remain
+separate obligations.

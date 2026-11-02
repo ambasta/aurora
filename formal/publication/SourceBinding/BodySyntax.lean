@@ -48,6 +48,7 @@ mutual
       Nat → (source : SourceStatement) → Option (InferredStatement fieldDecls formalDecls result source)
     | 0, _ => none
     | _ + 1, .localDecl _ _ => none
+    | _ + 1, .ifElse _ _ _ => none
     | fuel + 1, .ifThen condition statements => do
       let typed ← inferGuard fieldDecls formalDecls condition
       match eq : typed.kind with

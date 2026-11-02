@@ -138,6 +138,7 @@ def checkRuntimeStatement (program : CallProgram) (caller : Int)
             | _ => none
           else none
       else none
+    | .ifElse _ _ _ => none
     | .call _ _ => none
 end
 

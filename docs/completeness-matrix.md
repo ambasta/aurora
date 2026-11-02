@@ -98,10 +98,15 @@ structural ledger invariants, primitive write/framing laws and raw resource-resp
 consumption rules. Internal mathematical results preserve the complete invariant
 and retired cells under the specified release update, and derive consistency
 guards from a healthy ledger and the proved numerical policy result. The actual
-method must still be shown to perform that update. These prerequisites do not yet
-prove the complete production
-`MemoryManager.release` body, establish the initial ledger invariant, or verify
-native bank admission and writes.
+method must still be shown to perform that update. The source semantics now thread
+receiver and world state through expressions and statements, with raw resource
+responses consumed only at the modeled declaration or assertion boundary. Exact
+bidirectional compatibility preserves the prior pure evaluations, faults and
+traces; its legacy scope profile still rejects newly supported `if/else` forms,
+including in unexecuted syntax. These semantic prerequisites do not yet bind the
+complete production `MemoryManager.release` body to canonical receiver/resource
+calls, establish the initial ledger invariant, or verify native bank admission
+and writes.
 
 | Destination | Status |
 |---|---|

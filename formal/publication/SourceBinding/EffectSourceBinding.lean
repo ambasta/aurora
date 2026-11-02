@@ -36,10 +36,10 @@ def CheckedEffectReceiver.receiver (checked : CheckedEffectReceiver files root m
     checked.selected.method.function.mode⟩
 
 def CheckedEffectReceiver.context (checked : CheckedEffectReceiver files root module namespacePath className member)
-    (cursor : LocalContext) : EffectContext :=
+    (cursor : LocalContext) (resources : List RuntimeSourceResource := []) : EffectContext :=
   ⟨⟨checked.selected.classDecl.members,module,namespacePath ++ [className],
       checked.selected.method.function.formals,cursor.visible⟩,
-    some checked.receiver,[⟨module,namespacePath,checked.enclosing.members⟩],checked.imports.map (·.source)⟩
+    some checked.receiver,[⟨module,namespacePath,checked.enclosing.members⟩],checked.imports.map (·.source),.receiverEffects,resources⟩
 
 /-- Actual receiver declaration mode gates the source operation. These are
     permission checks, not resource success or frame guarantees. -/
@@ -49,6 +49,7 @@ def ReceiverAllowsResource (receiver : RuntimeReceiverContext) (mode : RuntimeRe
 /-- Source receiver and retained-field identity are exact. Actual catalogue
     kind/method/signature/flags and emitted operands are joined separately. -/
 structure EffectResourceResolved (context : EffectContext) (resource : RuntimeSourceResource) where
+  member : resource ∈ context.resources
   receiver : RuntimeReceiverContext
   current : context.receiver = some receiver
   sameScope : resource.receiver = receiver.scope

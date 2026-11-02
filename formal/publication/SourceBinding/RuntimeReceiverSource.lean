@@ -1,4 +1,5 @@
 import SourceBinding.RuntimeSourceFunction
+import SourceBinding.ScopeProfile
 namespace Aurora.SourceBinding
 
 /-- Source identity only: an actual class path, never a fabricated class for a
@@ -60,8 +61,10 @@ structure EffectContext where
   receiver : Option RuntimeReceiverContext
   enclosing : List RuntimeNamespaceScope
   imported : List RuntimeNamespaceScope
+  profile : ScopeProfile
+  resources : List RuntimeSourceResource
 
 def EffectContext.pure (context : RuntimeExprContext) : EffectContext :=
-  ⟨context,none,[],[]⟩
+  ⟨context,none,[],[],.legacy,[]⟩
 
 end Aurora.SourceBinding

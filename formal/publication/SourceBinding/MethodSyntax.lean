@@ -3,6 +3,7 @@ namespace Aurora.SourceBinding
 
 inductive SourceStatement where
   | ifThen (condition : SourceExpr) (body : List SourceStatement)
+  | ifElse (condition : SourceExpr) (yes no : List SourceStatement)
   | returnValue (value : SourceExpr)
   | call (callee : Callee) (arguments : List SourceExpr)
   | localDecl (declaration : Formal) (value : SourceExpr)
@@ -16,6 +17,13 @@ mutual
         Is input closing ")" → Is input brace "{" →
         StatementsSyntax input true afterCondition body (endBrace :: rest) → Is input endBrace "}" →
         StatementSyntax input (keyword :: opening :: tokens) (.ifThen condition body) rest
+    | ifElse : Is input keyword "if" → Is input opening "(" →
+        ExprSyntax input 1 tokens condition (closing :: brace :: afterCondition) →
+        Is input closing ")" → Is input brace "{" →
+        StatementsSyntax input true afterCondition yes (endYes :: otherwise :: noBrace :: afterElse) →
+        Is input endYes "}" → Is input otherwise "else" → Is input noBrace "{" →
+        StatementsSyntax input true afterElse no (endNo :: rest) → Is input endNo "}" →
+        StatementSyntax input (keyword :: opening :: tokens) (.ifElse condition yes no) rest
     | returnValue : Is input keyword "return" → ExprSyntax input 1 tokens value (semicolon :: rest) →
         Is input semicolon ";" → StatementSyntax input (keyword :: tokens) (.returnValue value) rest
     | localDecl {declaration : Formal} : FormalSyntax input tokens declaration (equal :: afterEqual) → Is input equal "=" →
@@ -119,9 +127,29 @@ mutual
                   match restEq : body.rest with
                   | endBrace :: remaining =>
                     if endBody : Is input endBrace "}" then
-                      return ⟨.ifThen condition.expression body.statements,remaining,
-                        .ifThen conditional paren (eq ▸ condition.grammar) endParen beginBody
-                          (restEq ▸ body.grammar) endBody⟩
+                      match remainingEq : remaining with
+                      | otherwise :: noBrace :: afterElse =>
+                        if isElse : Is input otherwise "else" then
+                          if openElse : Is input noBrace "{" then
+                            let no ← statementsSyntax input fuel true afterElse
+                            match noEq : no.rest with
+                            | endNo :: afterNo =>
+                              if closeElse : Is input endNo "}" then
+                                return ⟨.ifElse condition.expression body.statements no.statements,afterNo,
+                                  .ifElse conditional paren (eq ▸ condition.grammar) endParen beginBody
+                                    (restEq ▸ body.grammar) endBody isElse openElse
+                                    (noEq ▸ no.grammar) closeElse⟩
+                              else none
+                            | [] => none
+                          else none
+                        else
+                          return ⟨.ifThen condition.expression body.statements,remaining,
+                            .ifThen conditional paren (eq ▸ condition.grammar) endParen beginBody
+                              (by simpa only [remainingEq] using (restEq ▸ body.grammar)) endBody⟩
+                      | _ =>
+                        return ⟨.ifThen condition.expression body.statements,remaining,
+                          .ifThen conditional paren (eq ▸ condition.grammar) endParen beginBody
+                            (by simpa only [remainingEq] using (restEq ▸ body.grammar)) endBody⟩
                     else none
                   | [] => none
                 else none

@@ -12,6 +12,15 @@ def sourceStatementDecidableEq (left right : SourceStatement) : Decidable (left 
       | .isTrue rest => .isTrue (by cases same; cases rest; rfl)
       | .isFalse different => .isFalse (fun equal => different (SourceStatement.ifThen.inj equal).2)
     else .isFalse (fun equal => same (SourceStatement.ifThen.inj equal).1)
+  | .ifElse a xs zs,.ifElse b ys ws =>
+    if same : a = b then
+      match sourceStatementsDecidableEq xs ys with
+      | .isFalse different => .isFalse (fun equal => different (SourceStatement.ifElse.inj equal).2.1)
+      | .isTrue yes =>
+        match sourceStatementsDecidableEq zs ws with
+        | .isFalse different => .isFalse (fun equal => different (SourceStatement.ifElse.inj equal).2.2)
+        | .isTrue no => .isTrue (by cases same; cases yes; cases no; rfl)
+    else .isFalse (fun equal => same (SourceStatement.ifElse.inj equal).1)
   | .returnValue a,.returnValue b =>
     if same : a = b then .isTrue (by cases same; rfl)
     else .isFalse (fun equal => same (SourceStatement.returnValue.inj equal))
@@ -30,6 +39,7 @@ def sourceStatementDecidableEq (left right : SourceStatement) : Decidable (left 
       if rest : x = y then .isTrue (by cases same; cases rest; rfl)
       else .isFalse (fun equal => rest (SourceStatement.assign.inj equal).2)
     else .isFalse (fun equal => same (SourceStatement.assign.inj equal).1)
+  | .ifElse ..,.ifThen .. | .ifElse ..,.returnValue .. | .ifElse ..,.call .. | .ifElse ..,.localDecl .. | .ifElse ..,.assign .. | .ifThen ..,.ifElse .. | .returnValue ..,.ifElse .. | .call ..,.ifElse .. | .localDecl ..,.ifElse .. | .assign ..,.ifElse .. => .isFalse (by intro same; cases same)
   | .ifThen ..,.returnValue .. | .ifThen ..,.call .. | .ifThen ..,.localDecl .. | .ifThen ..,.assign .. | .returnValue ..,.ifThen .. | .returnValue ..,.call .. | .returnValue ..,.localDecl .. | .returnValue ..,.assign .. | .call ..,.ifThen .. | .call ..,.returnValue .. | .call ..,.localDecl .. | .call ..,.assign .. | .localDecl ..,.ifThen .. | .localDecl ..,.returnValue .. | .localDecl ..,.call .. | .localDecl ..,.assign .. | .assign ..,.ifThen .. | .assign ..,.returnValue .. | .assign ..,.call .. | .assign ..,.localDecl .. => .isFalse (by intro same; cases same)
   termination_by sizeOf left
 

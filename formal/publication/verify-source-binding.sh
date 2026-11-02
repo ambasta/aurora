@@ -8,7 +8,7 @@ case "$(lean --version)" in
 esac
 # Audit-only migration proofs are deliberately absent from the production root.
 # Build their dependency closure explicitly so this gate also works from clean caches.
-lake build SourceBinding.LegacyLeafCompatibility SourceBinding SourceBinding.Tests SourceBinding.CallProjectionTests SourceBinding.BitTests SourceBinding.LeafTests SourceBinding.StringTests SourceBinding.FreeTests SourceBinding.RuntimePrimitiveTests SourceBinding.LocalBindingTests SourceBinding.FramePolicySpec SourceBinding.RuntimeExpressionTests SourceBinding.RuntimeEvaluationTests SourceBinding.RuntimeEntryTests SourceBinding.RuntimeCallTests SourceBinding.RuntimeNestedCallTests SourceBinding.RuntimeStatementTests SourceBinding.RuntimeBodyExecutionTests SourceBinding.OwnedWordsTests source-binding-probe
+lake build SourceBinding.LegacyLeafCompatibility SourceBinding.LegacyEffectEquivalence SourceBinding SourceBinding.Tests SourceBinding.CallProjectionTests SourceBinding.BitTests SourceBinding.LeafTests SourceBinding.StringTests SourceBinding.FreeTests SourceBinding.RuntimePrimitiveTests SourceBinding.LocalBindingTests SourceBinding.FramePolicySpec SourceBinding.RuntimeExpressionTests SourceBinding.RuntimeEvaluationTests SourceBinding.RuntimeEntryTests SourceBinding.RuntimeCallTests SourceBinding.RuntimeNestedCallTests SourceBinding.RuntimeStatementTests SourceBinding.RuntimeBodyExecutionTests SourceBinding.OwnedWordsTests SourceBinding.EffectScopeTests source-binding-probe
 lake env lean SourceBinding/RuntimeTests.lean
 lake env lean SourceBinding/MethodTests.lean
 lake env lean SourceBinding/IdentityTests.lean
@@ -41,6 +41,7 @@ lake env lean SourceBinding/RuntimeBodyExecutionTests.lean
 lake env lean SourceBinding/RuntimeCallTests.lean
 lake env lean SourceBinding/RuntimeNestedCallTests.lean
 lake env lean SourceBinding/OwnedWordsTests.lean
+lake env lean SourceBinding/EffectScopeTests.lean
 output=$(mktemp)
 spec_output=$(mktemp)
 trap 'rm -f "$output" "$spec_output"' EXIT
@@ -51,7 +52,7 @@ import re
 import sys
 allowed = {'propext', 'Quot.sound'}
 for path, expected, label, prefix in [
-    (sys.argv[1], 600, 'source-binding', 'Aurora.SourceBinding.'),
+    (sys.argv[1], 648, 'source-binding', 'Aurora.SourceBinding.'),
     (sys.argv[2], 20, 'independent frame-policy specification', 'Aurora.SourceBinding.FramePolicy.'),
 ]:
     count = 0
