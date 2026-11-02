@@ -83,10 +83,11 @@ edges, root reachability and decreasing ranks. Rank induction discharges the
 internal callee-execution hypothesis: typed ordered arguments now yield complete
 PC0-to-terminal root source/canonical-machine correspondence, including possible
 faults. An additional exact policy profile checks all ten source bodies, signatures
-and nominal enum declarations. Universal source-evaluation lemmas characterize
-the constant helpers and `kernel_owner`; packing, rejection, record validation and
-the root lifecycle result remain to be attached. Allocator ledger updates and
-persistent retirement also remain unproved obligations.
+and nominal enum declarations. Universal source-evaluation lemmas now characterize
+all nine helpers, including partial packing with checked overflow, nominal
+rejection encoding and record validation. The root lifecycle result remains to be
+attached; allocator ledger updates and persistent retirement also remain unproved
+obligations.
 
 | Destination | Status |
 |---|---|

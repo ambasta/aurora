@@ -764,3 +764,26 @@ still pending. In particular, no `FramePolicySpec` attachment or root no-fault
 claim is made. The primary audit retains all 462 reports and adds 46: **508
 primary reports**, with **20 separate independent specification reports**, under
 the unchanged axiom allowlist and default limits.
+
+### Universal contracts for all nine frame helpers
+
+All nine non-root helper bodies now have proved contracts for **any** actual
+source evaluation in the exact checked profile. `frame_record_result` retains
+its real partial behavior: checked shifts can overflow on arbitrary typed words,
+while defined execution returns the exact bitwise OR (overlap is not a fault).
+The bounded-packing corollary derives safe shifts and arithmetic packing from
+field bounds. `frame_reject_result` covers all eleven nominal cases, including
+the default behavior for `none` and `operation`. `record_valid_result` derives
+its two actual const declarations, prioritized branches and nested helper calls.
+
+Shared statement inversion retains guarded initialization, actual entered or
+reserved scopes, and first-return/fault behavior. Read transport preserves the
+same expression outcomes and traces, including nested calls, under exact resolved
+read equivalence. Root-input facts are derived from the actual ordered formal
+seed and selected nominal cases; they are not extra public root premises.
+
+The full root `source_result`/`ResultSpec` attachment remains pending. In-progress
+root initialization and release-suffix proofs are excluded from this checkpoint;
+no root no-fault or lifecycle-result claim is made here. The audit preserves all
+508 preceding reports and adds 35: **543 primary reports**, plus the same **20
+independent specification reports**, with unchanged axioms and default limits.

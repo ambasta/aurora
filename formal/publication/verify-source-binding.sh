@@ -48,11 +48,14 @@ import re
 import sys
 allowed = {'propext', 'Quot.sound'}
 for path, expected, label, prefix in [
-    (sys.argv[1], 508, 'source-binding', 'Aurora.SourceBinding.'),
+    (sys.argv[1], 543, 'source-binding', 'Aurora.SourceBinding.'),
     (sys.argv[2], 20, 'independent frame-policy specification', 'Aurora.SourceBinding.FramePolicy.'),
 ]:
     count = 0
-    for line in open(path):
+    # Lean wraps long dependency lists after commas. Normalize only that
+    # whitespace; the complete report grammar, count, and allowlist stay strict.
+    reports = re.sub(r",\n[ \t]+", ", ", open(path).read())
+    for line in reports.splitlines():
         line = line.strip()
         if not line:
             continue
