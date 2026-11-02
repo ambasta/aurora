@@ -30,3 +30,5 @@ import SourceBinding.RuntimeArgumentsProof
 import SourceBinding.RuntimeReturnProof
 import SourceBinding.RuntimeReturnBinding
 import SourceBinding.RuntimeCallPublic
+
+import SourceBinding.RuntimeBodyPublic

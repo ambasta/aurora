@@ -643,3 +643,42 @@ ledger mutation or A/B authority result follows from this contextual slice.
 The focused primary audit retains all 298 preceding exports and adds 58:
 **356 primary reports**, plus the unchanged **20 separately labelled independent
 specification reports**, with the same `propext`/`Quot.sound` allowlist.
+
+### Complete scoped bodies with bounded leaf calls
+
+`RuntimeBodyCertificate.executes` now checks and executes complete selected
+ordinary bodies, rather than a caller-selected expression interval. The SAME
+parsed `SourceStatement` list supplies declarations, mutable assignments,
+conditionals and returns. `RuntimeStateAt` relates their lexical cursor to
+initialized, runtime-typed private storage. Skipped branches reserve only fresh
+scope identifiers: they do not initialize skipped declarations. Normal branch
+exit hides child bindings while preserving current surviving values. Return and
+fault paths retain their actual state without invented cleanup.
+
+The certificate covers the actual parameter-binding prefix, every body row and
+all source suffixes, including unreachable suffixes. Both branch layouts use
+checked targets and generic label-only suffixes. The theorem starts at PC0 with
+`RuntimeEntryArguments` (typed, bounded initial parameters), derives formal
+metadata and initialized cells, executes nested calls to actual complete
+call-free leaf certificates, and executes the actual final/early `ret`.
+It constructively produces a source outcome and matching finite `CallRuns`,
+with ordered source-key/full-descriptor call events. Expression overflow and
+callee faults remain outcomes; neither body success nor a chosen return value
+is a premise. A fault retains a genuine active machine state, possibly a nested
+callee. This theorem does not assert source determinism or arbitrary-run
+reflection, and the independent trace-stack algebra still is not an equality
+to the machine's saved-frame stack.
+
+The existing native `--runtime-body` mode accepts the complete actual
+`record_valid` (60 rows, private locals and leaf calls) and `frame_reject`
+(98 rows, nominal comparisons and mutable local assignments), over the complete
+source graph and publication. Native full-input and synthetic execution controls
+are distinct from kernel-checked generic proofs. This extends the earlier
+contextual slice, without claiming the complete ten-helper DAG, the root
+`frame_transition` lifecycle specification, ledger writes, native/backend
+correctness, or A/B ownership authority. The independent specification remains
+unattached.
+
+The primary audit retains all 356 preceding exports and adds 48 scoped-body
+exports: **404 primary reports**, plus **20 separate independent specification
+reports**, under the unchanged `propext`/`Quot.sound` allowlist.

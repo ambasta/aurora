@@ -72,11 +72,14 @@ arguments; it does not assume successful packing. A contextual nested-call
 profile additionally executes selected return-expression intervals with exact
 ordered call traces and actual same-graph single-return callee bodies. Its formal
 cells are derived from the checked signature; calls can fail in the actual callee
-without a fabricated return or unwind. This does not prove caller-PC reachability,
-correct placement in surrounding control flow, or complete execution of the
-ten-helper `frame_transition` closure. General statement/call-DAG composition,
-the exact lifecycle result, allocator ledger updates and persistent retirement
-remain separate unproved obligations.
+without a fabricated return or unwind. That interval profile does not prove
+caller-PC reachability or placement in surrounding control flow. A subsequent
+complete-body profile checks initialized locals, assignments, branches and all
+source/IR suffixes, then executes actual parameter entry through a terminal
+return or fault. It covers the complete `record_valid` and `frame_reject` bodies
+under typed entry arguments and actual certified single-return callees. The full
+ten-helper call-DAG composition, exact lifecycle result, allocator ledger updates
+and persistent retirement remain separate unproved obligations.
 
 | Destination | Status |
 |---|---|
