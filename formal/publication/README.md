@@ -476,8 +476,8 @@ and the no-carry identity `prefix | (slot<<12) |3 = prefix + slot*4096 +3`.
 Shift non-overflow follows on the checked `slot < 512` continuation, rather than
 being a caller premise. The fixed low-21-bit mask proof is constructive.
 
-Bitwise AND/OR act on bounded unsigned words. The only signed value admitted is
-the literal shift count `12`, represented by a distinct transient marker, never
+Bitwise AND/OR act on bounded unsigned words. The earlier leaf/scalar profile
+admits only the signed literal shift count `12`, represented by a distinct transient marker, never
 as a `u64`. Its next checked instruction must consume it as the checked left
 shift: it cannot be pushed, stored, returned, called with, or carried across
 control flow. Overflow traps are explicit. This is not general signed arithmetic.
@@ -485,3 +485,57 @@ The source/published-IR numerical result does not prove native scalar transport,
 backend lowering, page-table authenticity, mapping stability, A/B authority,
 or payload-copy effects. Large captured-input acceptance is a native receipt,
 not a concrete kernel reduction of the entire source graph/publication.
+
+## Frame-lifecycle prerequisites (Stage 1)
+
+The shared mathematical machine now supports closed nominal enum values, private
+local stores, checked u64 addition, and signed literal shift counts 4, 12 and 32.
+Enums retain their canonical nominal name and ordinal; `readRuntime` checks the
+same checked declaration's case cardinality. They are not coerced to u64 or bool.
+`Publication.Scalar`, `GuardType` and `readScalar` retain the old bool/u64 profile.
+The existing canonical effect decoder checks the additional raw operand roles,
+nominal types, slots and CFG facts. This does **not** turn the earlier D2 scalar
+checker into a complete nominal/local-variable verifier.
+
+Selector 8 has one context-independent checked left-shift semantics; selector 9
+is zero-filling right shift. Counts are signed literal markers, not numerically
+equal u64 operands. The old signed-12 numerical equation is recovered exactly
+by `leftShift_twelve`, and the existing source/IR proofs retain their statements.
+Checked addition and left shift trap on overflow rather than wrapping.
+
+`RuntimeLocals` separates declared type, source mutability, lexical scope and
+initialization from the machine's raw private slots. Fresh monotone scope IDs
+and unique active scopes prevent a departed scope from being re-entered.
+Well-formedness is preserved by scope entry/exit, initialization and assignment.
+`local_initialization_simulates` and `local_assignment_simulates` relate one
+accepted source-local operation to the actual shared machine's local store,
+with the RHS already evaluated. The step preserves receiver, arguments, stack
+and accumulator and emits no receiver-store event. Source constness is **not**
+inferred from canonical slot mutability flags.
+
+The source metadata certificate selects from the SAME complete byte-backed graph:
+actual enum declarations and case ordinals, nominal signature types, source
+local initialization order, constness, lexical scope and visible names. It checks
+the complete formal/private-local slot metadata and genuine `__au_v` linkage for
+nominal signatures (including its precedence over the root-entry convention).
+`--runtime-identity` exposes this metadata-only stage. `ExpressionNames` is a
+scope relation, not expression typing: initializer typing, source-use to `Load`
+correspondence, nested call execution and whole-body execution are not established
+by accepting that mode.
+
+These are reusable primitive and declaration/slot-binding prerequisites. They
+do not yet establish execution correspondence for the complete `frame_transition`
+helper DAG, root totality, or its lifecycle policy. Nested value-returning call
+composition and attachment of the numeric result specification are separate
+obligations. No ledger update, persistent retirement, ABA freedom, native enum
+cast, ABI/backend correctness, or A/B authority theorem follows from this stage.
+
+`FramePolicySpec` is a **separate independent numerical specification**, with its
+own 20-export audit (distinct from the 273 source-binding/primitive exports).
+It models prioritized rejection, canonical packed results, allocation-generation
+preservation, matching release increment or retirement, and rejection when the
+retired record is supplied again. Packing bounds and no-carry OR identities are
+proved mathematically. These results are not yet attached to the actual source
+or its 10-helper execution. They do not prove that a caller stores the result or
+retains a retired record; earlier guards may reject with a reason other than
+`retired`. The complete source/IR lifecycle correspondence remains outstanding.

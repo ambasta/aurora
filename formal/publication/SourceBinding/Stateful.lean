@@ -1,4 +1,5 @@
 import SourceBinding.IRSemantics
+import SourceBinding.RuntimePrimitives
 namespace Aurora.SourceBinding
 
 /-- A failed assertion is distinct from malformed scalar input. -/
@@ -17,6 +18,11 @@ inductive EffectOp where
   | pure (operation : Op)
   | store (kind : GuardType) (ordinal : Nat)
   | require
+  | enumConstant (identity : NominalIdentity) (ordinal : Nat)
+  | enumLoad (identity : NominalIdentity) (slot : Nat)
+  | enumBind (identity : NominalIdentity) (argument slot : Nat)
+  | enumCompare (identity : NominalIdentity) (equal : Bool)
+  | localStore (kind : RuntimeType) (slot : Nat)
   deriving BEq, DecidableEq, Repr
 abbrev EffectProgram := Nat → Option EffectOp
 
@@ -45,6 +51,29 @@ def pureView (program : EffectProgram) : Program := fun pc =>
 
 def effectStep (program : EffectProgram) (state : Machine) : EffectStep :=
   match program state.pc with
+  | some (.enumConstant identity ordinal) =>
+    ⟨retainState state (finish state (state.pc + 1) state.stack
+      (readRuntime (.nominal identity) (some (.nominal identity.name ordinal)))),[]⟩
+  | some (.enumLoad identity slot) =>
+    ⟨retainState state (finish state (state.pc + 1) state.stack
+      (readRuntime (.nominal identity) (state.locals slot))),[]⟩
+  | some (.enumBind identity argument slot) =>
+    match readRuntime (.nominal identity) (state.arguments argument) with
+    | .trap fault => ⟨.trap (.scalar fault) state,[]⟩
+    | .value value => ⟨.next {state with
+        pc := state.pc + 1
+        locals := fun i => if i = slot then some value else state.locals i},[]⟩
+  | some (.enumCompare identity equal) =>
+    match state.stack,state.accumulator with
+    | left :: tail,some right =>
+      ⟨retainState state (finish state (state.pc + 1) tail (compareNominal identity equal left right)),[]⟩
+    | _,_ => ⟨.trap (.scalar .type) state,[]⟩
+  | some (.localStore kind slot) =>
+    match readRuntime kind state.accumulator with
+    | .trap fault => ⟨.trap (.scalar fault) state,[]⟩
+    | .value value => ⟨.next {state with
+        pc := state.pc + 1
+        locals := fun i => if i = slot then some value else state.locals i},[]⟩
   | some (.store kind ordinal) =>
     match readScalar kind state.accumulator with
     | .trap fault => ⟨.trap (.scalar fault) state,[]⟩
@@ -149,7 +178,7 @@ theorem pure_step_frame (program : Program) (state : Machine) :
       cases state.accumulator with
       | none => exact ⟨rfl,rfl⟩
       | some value => cases value <;> exact ⟨rfl,rfl⟩
-    | count12 => exact ⟨rfl,rfl⟩
+    | count12 | count4 | count32 => exact ⟨rfl,rfl⟩
     | ret => cases state.accumulator <;> exact ⟨rfl,rfl⟩
 
 /-- A supported pure step in a mixed program has exactly its old meaning. -/
@@ -162,7 +191,8 @@ theorem supported_pure_step (program : EffectProgram) (state : Machine)
     cases operation with
     | pure op => simp only [effectStep,code]
     | store kind ordinal => simp [step,pureView,code] at supported
-    | require => simp [step,pureView,code] at supported
+    | require | enumConstant _ _ | enumLoad _ _ | enumBind _ _ _ | enumCompare _ _ | localStore _ _ =>
+      simp [step,pureView,code] at supported
 
 /-- Conservative lift retains a terminal frame existentially; old erased
     terminals do not determine its PC, accumulator or stack. -/

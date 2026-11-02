@@ -6,7 +6,7 @@ case "$(lean --version)" in
   'Lean (version 4.24.0, '*'commit 797c613eb9b6d4ec95db23e3e00af9ac6657f24b, Release)') ;;
   *) echo 'Wrong Lean toolchain' >&2; exit 1 ;;
 esac
-lake build SourceBinding SourceBinding.Tests SourceBinding.CallProjectionTests SourceBinding.BitTests SourceBinding.LeafTests SourceBinding.StringTests SourceBinding.FreeTests source-binding-probe
+lake build SourceBinding SourceBinding.Tests SourceBinding.CallProjectionTests SourceBinding.BitTests SourceBinding.LeafTests SourceBinding.StringTests SourceBinding.FreeTests SourceBinding.RuntimePrimitiveTests SourceBinding.LocalBindingTests SourceBinding.FramePolicySpec source-binding-probe
 lake env lean SourceBinding/RuntimeTests.lean
 lake env lean SourceBinding/MethodTests.lean
 lake env lean SourceBinding/IdentityTests.lean
@@ -29,30 +29,38 @@ lake env lean SourceBinding/BitTests.lean
 lake env lean SourceBinding/LeafTests.lean
 lake env lean SourceBinding/StringTests.lean
 lake env lean SourceBinding/FreeTests.lean
+lake env lean SourceBinding/RuntimePrimitiveTests.lean
+lake env lean SourceBinding/LocalBindingTests.lean
 output=$(mktemp)
-trap 'rm -f "$output"' EXIT
+spec_output=$(mktemp)
+trap 'rm -f "$output" "$spec_output"' EXIT
 lake env lean SourceBinding/Audit.lean | tee "$output"
-python3 - "$output" <<'PY'
+lake env lean SourceBinding/FramePolicyAudit.lean | tee "$spec_output"
+python3 - "$output" "$spec_output" <<'PY'
 import re
 import sys
 allowed = {'propext', 'Quot.sound'}
-count = 0
-for line in open(sys.argv[1]):
-    line = line.strip()
-    if not line:
-        continue
-    empty = re.fullmatch(r"'Aurora\.SourceBinding\.[^']+' does not depend on any axioms", line)
-    deps = re.fullmatch(r"'Aurora\.SourceBinding\.[^']+' depends on axioms: \[(.*)\]", line)
-    if empty:
-        count += 1
-    elif deps:
-        actual = set(filter(None, deps[1].split(', ')))
-        if actual - allowed:
-            sys.exit(f'Unapproved dependencies: {actual - allowed}')
-        count += 1
-    else:
-        sys.exit(f'Unexpected audit output: {line}')
-if count != 248:
-    sys.exit(f'Expected 248 theorem audits, got {count}')
-print(f'Checked {count} source-binding theorem dependency reports.')
+for path, expected, label, prefix in [
+    (sys.argv[1], 273, 'source-binding', 'Aurora.SourceBinding.'),
+    (sys.argv[2], 20, 'independent frame-policy specification', 'Aurora.SourceBinding.FramePolicy.'),
+]:
+    count = 0
+    for line in open(path):
+        line = line.strip()
+        if not line:
+            continue
+        empty = re.fullmatch(r"'" + re.escape(prefix) + r"[^']+' does not depend on any axioms", line)
+        deps = re.fullmatch(r"'" + re.escape(prefix) + r"[^']+' depends on axioms: \[(.*)\]", line)
+        if empty:
+            count += 1
+        elif deps:
+            actual = set(filter(None, deps[1].split(', ')))
+            if actual - allowed:
+                sys.exit(f'Unapproved {label} dependencies: {actual - allowed}')
+            count += 1
+        else:
+            sys.exit(f'Unexpected {label} audit output: {line}')
+    if count != expected:
+        sys.exit(f'Expected {expected} {label} theorem audits, got {count}')
+    print(f'Checked {count} {label} theorem dependency reports.')
 PY

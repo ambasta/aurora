@@ -23,3 +23,5 @@ import SourceBinding.CallGuardPrefix
 import SourceBinding.RequestPolicy
 import SourceBinding.LeafBinding
 import SourceBinding.ForwardPolicy
+import SourceBinding.LocalSimulation
+import SourceBinding.NominalFreeIdentity

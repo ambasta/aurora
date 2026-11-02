@@ -47,7 +47,7 @@ theorem ready_word_parameter (ready : DeclarationsReady formals state.parameters
   obtain ⟨value,valueEq,typed⟩ := ready index decl .word found kind
   cases value with
   | boolean value => cases typed
-  | signedCount12 => cases typed
+  | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => cases typed
   | word n => exact ⟨n,typed,valueEq,by simp [evalGuard,valueEq,readScalar,ScalarReady] at *; assumption⟩
 
 /-- Actual bounded input arguments derive total evaluation. Neither successful

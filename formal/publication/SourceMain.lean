@@ -5,6 +5,7 @@ import SourceBinding.BodyExamples
 import SourceBinding.CallExamples
 import SourceBinding.ForwardWrapper
 import SourceBinding.LeafBinding
+import SourceBinding.NominalFreeIdentity
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -21,6 +22,9 @@ def showName (name : Name) : String :=
   String.intercalate "." (name.map String.fromUTF8!)
 
 def main (args : List String) : IO UInt32 := do
+  let (runtimeIdentity, args) := match args with
+    | "--runtime-identity" :: rest => (true,rest)
+    | _ => (false,args)
   let (forward, args) := match args with
     | "--forward-leaf" :: name :: rest => (some name,rest)
     | _ => (none,args)
@@ -39,7 +43,10 @@ def main (args : List String) : IO UInt32 := do
     | "--ir" :: path :: rest => (some path,rest)
     | _ => (none,args)
   let root :: module :: classPath :: member :: paths := arguments |
-    throw (IO.userError "usage: source-binding-probe [--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+    throw (IO.userError "usage: source-binding-probe [--runtime-identity|--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+  if runtimeIdentity && (forward.isSome || callMode || bodyMode || examples) then
+    throw (IO.userError "runtime identity and semantic modes are distinct")
+  if runtimeIdentity && irPath.isNone then throw (IO.userError "runtime identity requires --ir")
   if forward.isSome && (callMode || bodyMode || examples) then
     throw (IO.userError "forward/call/body/snapshot modes are distinct")
   if forward.isSome && irPath.isNone then throw (IO.userError "forward mode requires --ir")
@@ -62,6 +69,18 @@ def main (args : List String) : IO UInt32 := do
   let rootName := (root.splitOn ".").map String.toUTF8
   let selectedModule := (module.splitOn ".").map String.toUTF8
   let selectedPath := (classPath.splitOn "::").map String.toUTF8
+  if runtimeIdentity then
+    let some path := irPath | throw (IO.userError "runtime identity requires --ir")
+    let publication ← readSource path 16777216
+    let some bound := bindRuntimeFree files rootName selectedModule selectedPath member.toUTF8 publication |
+      throw (IO.userError "source/runtime identity rejected")
+    let checked := bound.checked
+    let t := Aurora.Publication.tables bound.artifact.document.reversed.reverse
+    let declarations := checked.details.lexical.lexical.declaredItems
+    IO.println s!"SOURCE-RUNTIME-IDENTITY callable={checked.id} rows={(Aurora.Publication.functionCode t checked.id).size} nominal_signature={hasNominal checked.details.types.kinds} locals={declarations.length} local_slots={declarations.map (fun (item : SourceLocal) => item.slot)} publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input identity/scope/complete-slot receipt only. No expression/call/body execution certificate, concrete kernel acceptance, native enum conversion, producer/backend or lifecycle authority proof."
+    return 0
   if let some wrapper := forward then
     let some path := irPath | throw (IO.userError "forward mode requires --ir")
     let publication ← readSource path 16777216

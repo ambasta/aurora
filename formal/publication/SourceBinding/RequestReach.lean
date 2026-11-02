@@ -51,7 +51,7 @@ theorem ReachesRequest.rejection {guard : GuardExpr .boolean}
     exact False.elim (ReachesRequest.not_trapped later)
   | value value =>
     cases value with
-    | word _ | signedCount12 =>
+    | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ =>
       simp only [sourceCallStep,evalBody,sourceExpression,evaluated,sourceBodyResult] at later
       exact False.elim (ReachesRequest.not_trapped later)
     | boolean boolean =>

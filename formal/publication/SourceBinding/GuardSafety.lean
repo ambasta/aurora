@@ -68,34 +68,34 @@ theorem simple_total {kind : GuardType} {expression : GuardExpr kind}
   | not child ih =>
     obtain ⟨value,bound,eq⟩ := ih ready
     cases value with
-    | word _ | signedCount12 => contradiction
+    | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => contradiction
     | boolean b => exact ⟨.boolean (!b),True.intro,by simp [evalGuard,eq,Outcome.then,notValue]⟩
   | @compare leftExpr rightExpr op left right leftIH rightIH =>
     obtain ⟨a,ha,ea⟩ := leftIH ready.1
     obtain ⟨b,hb,eb⟩ := rightIH ready.2
     cases a with
-    | boolean _ | signedCount12 => contradiction
+    | boolean _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => contradiction
     | word a =>
       cases b with
-      | boolean _ | signedCount12 => contradiction
+      | boolean _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => contradiction
       | word b => exact ⟨.boolean (compareWords op a b),True.intro,by simp only [ScalarReady] at ha hb; simp [evalGuard,ea,eb,Outcome.then,binaryValue,ha,hb]⟩
   | and left right leftIH rightIH =>
     obtain ⟨a,ha,ea⟩ := leftIH ready.1
     obtain ⟨b,hb,eb⟩ := rightIH ready.2
     cases a with
-    | word _ | signedCount12 => contradiction
+    | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => contradiction
     | boolean a =>
       cases b with
-      | word _ | signedCount12 => contradiction
+      | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => contradiction
       | boolean b => exact ⟨.boolean (a && b),True.intro,by cases a <;> simp [evalGuard,ea,eb,Outcome.then]⟩
   | or left right leftIH rightIH =>
     obtain ⟨a,ha,ea⟩ := leftIH ready.1
     obtain ⟨b,hb,eb⟩ := rightIH ready.2
     cases a with
-    | word _ | signedCount12 => contradiction
+    | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => contradiction
     | boolean a =>
       cases b with
-      | word _ | signedCount12 => contradiction
+      | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => contradiction
       | boolean b => exact ⟨.boolean (a || b),True.intro,by cases a <;> simp [evalGuard,ea,eb,Outcome.then]⟩
 
 /-- A generic checked range-guard idiom. Operands are actual typed expressions;
@@ -131,7 +131,7 @@ theorem simple_word {expression : GuardExpr .word} (simple : SimpleGuard express
     ∃ n, n < wordLimit ∧ evalGuard state expression = .value (.word n) := by
   obtain ⟨value,bound,eq⟩ := simple_total simple state ready
   cases value with
-  | boolean _ | signedCount12 => contradiction
+  | boolean _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => contradiction
   | word n => exact ⟨n,bound,eq⟩
 
 theorem simple_boolean {expression : GuardExpr .boolean} (simple : SimpleGuard expression)
@@ -139,7 +139,7 @@ theorem simple_boolean {expression : GuardExpr .boolean} (simple : SimpleGuard e
     ∃ b, evalGuard state expression = .value (.boolean b) := by
   obtain ⟨value,bound,eq⟩ := simple_total simple state ready
   cases value with
-  | word _ | signedCount12 => contradiction
+  | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => contradiction
   | boolean b => exact ⟨b,eq⟩
 
 /-- The ordinary subtraction is used only in the final branch. Its safety is

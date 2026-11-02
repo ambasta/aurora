@@ -3,9 +3,9 @@ import SourceBinding.MethodSyntax
 import Publication.Typing
 namespace Aurora.SourceBinding
 open Aurora.Publication
-example : binaryValue .shift12 (.word 511) .signedCount12 = .value (.word 2093056) := by decide
-example : binaryValue .shift12 (.word 4503599627370496) .signedCount12 = .trap .overflow := by decide
-example : binaryValue .shift12 (.word 1) (.word 12) = .trap .type := by decide
+example : binaryValue .leftShift (.word 511) .signedCount12 = .value (.word 2093056) := by decide
+example : binaryValue .leftShift (.word 4503599627370496) .signedCount12 = .trap .overflow := by decide
+example : binaryValue .leftShift (.word 1) (.word 12) = .trap .type := by decide
 example : binaryValue .sub (.word 1) .signedCount12 = .trap .type := by decide
 example : readScalar .word (some .signedCount12) = .trap .type := by decide
 example : binaryValue .bitAnd (.word 255) (.word 96) = .value (.word 96) := by decide

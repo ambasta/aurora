@@ -5,6 +5,7 @@ inductive SourceStatement where
   | ifThen (condition : SourceExpr) (body : List SourceStatement)
   | returnValue (value : SourceExpr)
   | call (callee : Callee) (arguments : List SourceExpr)
+  | localDecl (declaration : Formal) (value : SourceExpr)
   | assign (name : ByteArray) (value : SourceExpr)
   deriving BEq
 
@@ -17,6 +18,9 @@ mutual
         StatementSyntax input (keyword :: opening :: tokens) (.ifThen condition body) rest
     | returnValue : Is input keyword "return" → ExprSyntax input 1 tokens value (semicolon :: rest) →
         Is input semicolon ";" → StatementSyntax input (keyword :: tokens) (.returnValue value) rest
+    | localDecl {declaration : Formal} : FormalSyntax input tokens declaration (equal :: afterEqual) → Is input equal "=" →
+        ExprSyntax input 1 afterEqual value (semicolon :: rest) → Is input semicolon ";" →
+        StatementSyntax input tokens (.localDecl declaration value) rest
     | assign : Identifier input name → Is input equal "=" →
         ExprSyntax input 1 tokens value (semicolon :: rest) → Is input semicolon ";" →
         StatementSyntax input (name :: equal :: tokens) (.assign (spelling input name) value) rest
@@ -42,6 +46,21 @@ structure ParsedStatements (input : ByteArray) (nested : Bool) (tokens : List Le
     The same exact token stream is consumed; malformed assignments fail closed. -/
 def plainStatementSyntax (input : ByteArray) (tokens : List Lexeme) :
     Option (ParsedStatement input tokens) := do
+  let declarationSyntax : Option (ParsedStatement input tokens) := do
+    let declaration ← formal input tokens
+    match after : declaration.rest with
+    | equal :: afterEqual =>
+      if assignment : Is input equal "=" then
+        let value ← expressionSyntax input 4096 1 afterEqual
+        match eq : value.rest with
+        | semicolon :: rest =>
+          if semi : Is input semicolon ";" then
+            return ⟨.localDecl declaration.formal value.expression,rest,
+              .localDecl (after ▸ declaration.grammar) assignment (eq ▸ value.grammar) semi⟩
+          else none
+        | [] => none
+      else none
+    | [] => none
   let callSyntax : Option (ParsedStatement input tokens) := do
     let value ← expressionSyntax input 4096 1 tokens
     match eq : value.rest with
@@ -66,8 +85,8 @@ def plainStatementSyntax (input : ByteArray) (tokens : List Lexeme) :
           else none
         | [] => none
       else none
-    else shape ▸ callSyntax
-  | _ => shape ▸ callSyntax
+    else (shape ▸ declarationSyntax).orElse fun _ => shape ▸ callSyntax
+  | _ => (shape ▸ declarationSyntax).orElse fun _ => shape ▸ callSyntax
 
 mutual
   def statementsSyntax (input : ByteArray) : (fuel : Nat) → (nested : Bool) → (tokens : List Lexeme) →
@@ -199,7 +218,7 @@ def scalarBinding (decls : List Formal) (name : ByteArray) : Option (ScalarBindi
   else none
 
 def inferGuard (fieldDecls formalDecls : List Formal) : (source : SourceExpr) → Option (InferredGuard fieldDecls formalDecls source)
-  | .signed12 => none
+  | .signed12 | .signedCount _ => none
   | .word value => if bound : value < 18446744073709551616 then some ⟨.word,.wordLit value,.word bound⟩ else none
   | .boolean value => some ⟨.boolean,.boolLit value,.boolean⟩
   | .name [name] =>
@@ -229,7 +248,7 @@ def inferGuard (fieldDecls formalDecls : List Formal) : (source : SourceExpr) �
       | .word, .word => return ⟨.word,.sub (leq ▸ l.expression) (req ▸ r.expression),
           .subtract (l.typing.cast leq) (r.typing.cast req)⟩
       | _, _ => none
-    | .shift => none
+    | .shift | .rightShift | .add => none
     | .bitAnd =>
       match leq : l.kind, req : r.kind with
       | .word, .word => return ⟨.word,.bitAnd (leq ▸ l.expression) (req ▸ r.expression),

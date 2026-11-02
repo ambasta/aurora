@@ -12,7 +12,7 @@ theorem read_supported (kind : GuardType) (input : Option Value) : SupportedOutc
     all_goals split <;> try simp_all
 
 theorem binary_supported (operation : Binary) (left right : Value) : SupportedOutcome (binaryValue operation left right) := by
-  cases operation <;> cases left <;> cases right <;> simp [binaryValue,SupportedOutcome]
+  cases operation <;> cases left <;> cases right <;> simp [binaryValue,signedLiteralCount,checkedShift,SupportedOutcome]
   all_goals split <;> try simp_all
   all_goals split <;> try simp_all
 
@@ -35,18 +35,18 @@ theorem eval_supported (state : SourceState) {kind : GuardType} (expression : Gu
   | not child ih => exact then_supported _ _ ih not_supported
   | sub left right leftIH rightIH | bitAnd left right leftIH rightIH | bitOr left right leftIH rightIH =>
     exact then_supported _ _ leftIH (fun a => then_supported _ _ rightIH (fun b => binary_supported _ a b))
-  | shift12 child ih => exact then_supported _ _ ih (fun value => binary_supported .shift12 value .signedCount12)
+  | shift12 child ih => exact then_supported _ _ ih (fun value => binary_supported .leftShift value .signedCount12)
   | compare operation left right leftIH rightIH =>
     exact then_supported _ _ leftIH (fun a => then_supported _ _ rightIH (fun b => binary_supported _ a b))
   | and left right leftIH rightIH =>
     apply then_supported _ _ leftIH
     intro value; cases value with
-    | word _ | signedCount12 => simp [SupportedOutcome]
+    | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => simp [SupportedOutcome]
     | boolean b => cases b <;> first | exact rightIH | simp [SupportedOutcome]
   | or left right leftIH rightIH =>
     apply then_supported _ _ leftIH
     intro value; cases value with
-    | word _ | signedCount12 => simp [SupportedOutcome]
+    | word _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => simp [SupportedOutcome]
     | boolean b => cases b <;> first | exact rightIH | simp [SupportedOutcome]
 
 /-- Successful expression completion has an exact frame. Fault completion keeps

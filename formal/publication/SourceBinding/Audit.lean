@@ -255,3 +255,31 @@ import SourceBinding
 #print axioms Aurora.SourceBinding.ForwardWrapper.numeric_run
 #print axioms Aurora.SourceBinding.ForwardWrapper.accepted_true
 #print axioms Aurora.SourceBinding.ForwardWrapper.not_locally_diverges
+
+-- Nominal/private-local primitives; not a complete frame-policy execution proof.
+#print axioms Aurora.SourceBinding.SignedLiteralCount.in_range
+#print axioms Aurora.SourceBinding.readRuntime_scalar
+#print axioms Aurora.SourceBinding.readScalar_nominal
+#print axioms Aurora.SourceBinding.readRuntime_nominal
+#print axioms Aurora.SourceBinding.readRuntime_preserves
+#print axioms Aurora.SourceBinding.readRuntime_typed
+#print axioms Aurora.SourceBinding.leftShift_twelve
+#print axioms Aurora.SourceBinding.checkedAdd_words
+#print axioms Aurora.SourceBinding.readRuntime_nominal_closed
+#print axioms Aurora.SourceBinding.RuntimeLocals.enter_wellFormed
+#print axioms Aurora.SourceBinding.RuntimeLocals.leave_wellFormed
+#print axioms Aurora.SourceBinding.RuntimeLocals.assign_metadata
+#print axioms Aurora.SourceBinding.RuntimeLocals.assign_wellFormed
+#print axioms Aurora.SourceBinding.RuntimeLocals.initialize_wellFormed
+#print axioms Aurora.SourceBinding.localStore_step
+#print axioms Aurora.SourceBinding.enumConstant_step
+#print axioms Aurora.SourceBinding.local_initialization_simulates
+#print axioms Aurora.SourceBinding.local_assignment_simulates
+#print axioms Aurora.SourceBinding.checkedShift_typed
+#print axioms Aurora.SourceBinding.selected_enum_sound
+#print axioms Aurora.SourceBinding.EnumCaseAt.bounded
+#print axioms Aurora.SourceBinding.identified_runtime_free_source
+
+#print axioms Aurora.SourceBinding.runtime_free_publication
+#print axioms Aurora.SourceBinding.RuntimeLocals.leave_hides
+#print axioms Aurora.SourceBinding.RuntimeLocals.leave_enter_hides

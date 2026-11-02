@@ -75,7 +75,7 @@ theorem eval_word_result (state : SourceState) (expression : GuardExpr .word) (v
     ∃ n, value = .word n ∧ n < wordLimit := by
   have typed := eval_value_typed state expression value evaluated
   cases value with
-  | boolean _ | signedCount12 => simp [readScalar] at typed
+  | boolean _ | signedCount12 | signedCount4 | signedCount32 | nominal _ _ => simp [readScalar] at typed
   | word n => exact ⟨n,rfl,by simpa [readScalar] using typed⟩
 
 /-- The request's ordered scalar values are obtained from its actual pure
