@@ -531,7 +531,7 @@ obligations. No ledger update, persistent retirement, ABA freedom, native enum
 cast, ABI/backend correctness, or A/B authority theorem follows from this stage.
 
 `FramePolicySpec` is a **separate independent numerical specification**, with its
-own 20-export audit (distinct from the 273 source-binding/primitive exports).
+own 20-export audit (distinct from the primary source-binding/primitive audit).
 It models prioritized rejection, canonical packed results, allocation-generation
 preservation, matching release increment or retirement, and rejection when the
 retired record is supplied again. Packing bounds and no-carry OR identities are
@@ -539,3 +539,56 @@ proved mathematically. These results are not yet attached to the actual source
 or its 10-helper execution. They do not prove that a caller stores the result or
 retains a retired record; earlier guards may reject with a reason other than
 `retired`. The complete source/IR lifecycle correspondence remains outstanding.
+
+### Generic runtime expressions and single-return free functions
+
+The next bounded slice uses the **same raw `SourceExpr` and canonical effect
+machine**, not a second policy AST or interpreter. `RuntimeExprTyped` and
+`RuntimeExpressionCode` independently check exact formal/local/enum declaration
+identity, private-slot uses, scalar/nominal types, signed literal shift counts,
+operator order and short-circuit control flow. Counts are transient shift
+operands, never variable, argument or return types. This slice admits no calls
+inside expressions and no local declarations or assignments in its complete-body
+endpoint.
+
+`RuntimeEvaluates` is an independent inductive source judgement using the shared
+scalar and nominal primitives. Reads check the exact retained declaration and
+active scope before inspecting its value. Missing and malformed values remain
+faults. `TypedGuard.runtime_compatible` embeds the entire earlier field-free
+scalar fragment **including faults**, without requiring successful or bounded
+formal inputs. `RuntimeExpressionCode.evaluates_and_runs` constructively derives
+one source outcome and a matching canonical run for every caller accumulator and
+residual stack. `RuntimeArgumentsCode.evaluates_and_runs` preserves left-to-right
+first-fault behavior and reversed argument pushes over that residual stack.
+Successful expressions restore their caller stack; faults retain the actual
+terminal machine rather than fabricating a restored PC/stack. Both outcomes
+preserve private locals, receiver and arguments and emit no receiver stores.
+These generic expression APIs expose their local declaration/scope relation;
+they do not independently establish its selected-function provenance.
+
+`RuntimeReturnCertificate` closes that provenance obligation for a **complete
+single-return free function**. It uses the same byte-backed selected declaration,
+nominal/scalar signature and canonical tables, requires exactly one parsed return
+and no declared locals, checks actual PC0 parameter bindings, derives the
+immutable scope-zero formal environment, checks the whole expression against the
+declared result type, and requires the final return to end the entire code array.
+`executes` covers both values and expression traps from runtime-typed initial
+arguments; it assumes neither expression success nor safe packing bounds.
+`terminal_correspondence` uses deterministic machine terminal uniqueness to
+relate **any actual terminal run** to a constructed source outcome and an empty
+store trace. It is not a general source-derivation determinism or bidirectional
+source semantics theorem. The existing `--runtime-expression` consumer selects this
+bounded certificate; native acceptance of a full source/artifact input is still
+not a kernel proof over those concrete megabytes.
+
+This supports the actual arithmetic bodies of `kernel_owner` and `frame_record`
+without changing their source to fit the checker. In particular, arbitrary
+bounded arguments to `frame_record` may overflow a checked shift; the theorem
+preserves that trap rather than assuming a total successful packing function.
+There is still no complete ten-helper execution theorem, nested-call/local-body
+simulation, attachment to `FramePolicySpec`, allocator ledger mutation, ABA,
+A/B authority, native enum-cast or backend correctness theorem.
+
+The focused gate retains all 273 preceding primary exports and appends 25 for
+this slice: **298 primary reports plus 20 separate, unattached specification
+reports**, each restricted to `propext` and `Quot.sound`.

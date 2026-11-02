@@ -283,3 +283,30 @@ import SourceBinding
 #print axioms Aurora.SourceBinding.runtime_free_publication
 #print axioms Aurora.SourceBinding.RuntimeLocals.leave_hides
 #print axioms Aurora.SourceBinding.RuntimeLocals.leave_enter_hides
+
+-- Generic raw-expression/argument and fresh-entry execution; no lifecycle theorem.
+#print axioms Aurora.SourceBinding.RuntimeSourceType.unique
+#print axioms Aurora.SourceBinding.RuntimeVariableBinding.unique
+#print axioms Aurora.SourceBinding.RuntimeEnumValue.unique
+#print axioms Aurora.SourceBinding.RuntimeEnumValue.not_singleton
+#print axioms Aurora.SourceBinding.RuntimeWordOperator.unique
+#print axioms Aurora.SourceBinding.RuntimeExpressionCode.typed
+#print axioms Aurora.SourceBinding.RuntimeArgumentsCode.typed
+#print axioms Aurora.SourceBinding.RuntimeLocals.readBound_eq
+#print axioms Aurora.SourceBinding.RuntimeEvaluates.outcome_typed
+#print axioms Aurora.SourceBinding.RuntimeExprTyped.evaluates
+#print axioms Aurora.SourceBinding.scalar_formal_evaluates
+#print axioms Aurora.SourceBinding.TypedGuard.runtime_compatible
+#print axioms Aurora.SourceBinding.RuntimeExpressionCode.evaluates_and_runs
+#print axioms Aurora.SourceBinding.RuntimeArgumentsCode.evaluates_and_runs
+#print axioms Aurora.SourceBinding.RuntimeEntryCode.at_index
+#print axioms Aurora.SourceBinding.runtime_entry_runs
+#print axioms Aurora.SourceBinding.formal_runtime_declared
+#print axioms Aurora.SourceBinding.RuntimeSignature.lookup
+#print axioms Aurora.SourceBinding.RuntimeSignature.length
+#print axioms Aurora.SourceBinding.runtime_formal_bindings
+#print axioms Aurora.SourceBinding.RuntimeRun.returned
+#print axioms Aurora.SourceBinding.RuntimeTerminal.terminal
+#print axioms Aurora.SourceBinding.runtime_entry_expression_returned
+#print axioms Aurora.SourceBinding.RuntimeReturnCertificate.executes
+#print axioms Aurora.SourceBinding.RuntimeReturnCertificate.terminal_correspondence

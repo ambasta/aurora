@@ -64,7 +64,11 @@ The next frame-lifecycle proof layer adds nominal enum identity and scoped,
 initialized private locals to the same canonical machine, alongside checked
 addition and finite literal shifts. Its primitive correspondence preserves local
 typing and scope visibility; its source identity profile retains complete source
-enum case order and binds formal/local frame metadata. These are prerequisites, not execution
+enum case order and binds formal/local frame metadata. A further single-return
+profile derives actual parameter entry and complete expression/return coverage
+from the same selected source and publication. It constructs matching source and
+canonical-machine outcomes, including checked arithmetic faults, for typed entry
+arguments; it does not assume successful packing. This is not execution
 correspondence for the existing ten-helper `frame_transition` closure. Nested
 call composition, the exact lifecycle result, allocator ledger updates and
 persistent retirement remain separate unproved obligations.

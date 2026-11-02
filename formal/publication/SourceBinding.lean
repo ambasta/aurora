@@ -25,3 +25,7 @@ import SourceBinding.LeafBinding
 import SourceBinding.ForwardPolicy
 import SourceBinding.LocalSimulation
 import SourceBinding.NominalFreeIdentity
+import SourceBinding.RuntimeCompatibility
+import SourceBinding.RuntimeArgumentsProof
+import SourceBinding.RuntimeReturnProof
+import SourceBinding.RuntimeReturnBinding
