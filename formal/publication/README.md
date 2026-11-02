@@ -711,10 +711,29 @@ reachable node inventory. Every syntactic call, including unreachable suffixes,
 has a checked smaller rank. Each node has an exact direct-call inventory, while
 source evaluation and canonical machine execution retain the global environment.
 Each body certificate covers actual entry, all source/code rows and terminal
-coverage. These are prerequisites: at this checkpoint the global rank induction
-has **not** discharged the internal callee hypothesis for the root, and no complete
-`frame_transition` execution or lifecycle-specification attachment is claimed.
+coverage. At the prerequisite checkpoint, the global rank induction
+had **not** discharged the internal callee hypothesis for the root, and no complete
+`frame_transition` execution or lifecycle-specification attachment was claimed.
 
 The primary audit preserves all 404 preceding reports and adds 52 unique
 prerequisite exports: **456 primary reports**, plus the unchanged **20 independent
 specification reports**, with the same axiom allowlist and default Lean limits.
+
+### Complete checked DAG execution
+
+`RuntimeDAGCertificate.executes` now discharges every internal callee hypothesis
+by strong induction on the checked source-call rank. Each node derives its typed
+formal state from the actual signature, executes its actual PC0 binding rows and
+complete statement certificate, and invokes only checked lower-rank direct
+callees. No callee outcome or execution premise appears in the public theorem.
+The source outcome and both ordered traces are chosen before all receiver/world
+and external-relation contexts. The final root return executes the actual `ret`;
+faults retain their actual active machine frames, including nested callees.
+
+The input premise is `RuntimeReadyArguments` for the exact ordered runtime
+signature. This is constructive finite source/canonical-machine correspondence,
+not arbitrary-source derivation uniqueness, native execution correctness, or the
+frame lifecycle result specification. The independent `FramePolicySpec` remains
+unattached; generation/retirement policy claims require that next attachment.
+The primary audit is **462 reports** (all previous 456 plus six), with the same
+separate **20 independent specification reports** and unchanged axiom allowlist.

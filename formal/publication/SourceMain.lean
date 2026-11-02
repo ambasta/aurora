@@ -9,7 +9,7 @@ import SourceBinding.NominalFreeIdentity
 import SourceBinding.RuntimeReturnBinding
 import SourceBinding.RuntimeCallFormalBinding
 import SourceBinding.RuntimeBodyPublic
-import SourceBinding.RuntimeDAGBinding
+import SourceBinding.RuntimeDAGPublic
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -107,7 +107,7 @@ def main (args : List String) : IO UInt32 := do
     let rows := shape.nodes.map fun node => (Aurora.Publication.functionCode t node.target.id).size
     IO.println s!"SOURCE-RUNTIME-DAG root={shape.rootNode.target.id} entry=0 stop={(Aurora.Publication.functionCode t shape.rootNode.target.id).size} complete=true nodes={shape.nodes.length} rows={rows.foldl (· + ·) 0} ids={shape.nodes.map (·.target.id)} ranks={shape.nodes.map (fun node => shape.rank node.source.key)} publication_bytes={publication.size}"
     IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
-    IO.println "NATIVE full-input exact source closure/whole-node code certificate receipt. DAG execution theorem pending; no lifecycle ResultSpec, no-fault, concrete kernel acceptance, capture/backend/native ABI or authority proof."
+    IO.println "NATIVE full-input exact source closure/whole-node certificate receipt. Generic theorem derives complete root PC0 execution for typed ordered arguments, matching source outcome and ordered call traces, including faults. No lifecycle ResultSpec, no-fault, concrete kernel acceptance, capture/backend/native ABI or authority proof."
     return 0
   if runtimeBody then
     let some path := irPath | throw (IO.userError "runtime body requires --ir")

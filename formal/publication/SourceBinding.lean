@@ -35,3 +35,5 @@ import SourceBinding.RuntimeBodyPublic
 
 import SourceBinding.RuntimeCallInvoke
 import SourceBinding.RuntimeDAGFacts
+
+import SourceBinding.RuntimeDAGPublic

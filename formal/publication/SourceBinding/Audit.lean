@@ -476,3 +476,11 @@ import SourceBinding.LegacyLeafCompatibility
 #print axioms Aurora.SourceBinding.RuntimeStatementsCode.simulates_uniform
 #print axioms Aurora.SourceBinding.runtime_branch_uniform
 #print axioms Aurora.SourceBinding.RuntimeCallExpressionCode.evaluates_uniform
+
+-- Complete checked DAG execution, with rank-derived callee execution.
+#print axioms Aurora.SourceBinding.RuntimeNoFallthrough.not_continued_general
+#print axioms Aurora.SourceBinding.RuntimeNoFallthrough.outcome_general
+#print axioms Aurora.SourceBinding.RuntimeNodeBodyCertificate.callee_executes
+#print axioms Aurora.SourceBinding.RuntimeDAGCertificate.node_executes
+#print axioms Aurora.SourceBinding.RuntimeDAGCertificate.root_executes
+#print axioms Aurora.SourceBinding.RuntimeDAGCertificate.executes
