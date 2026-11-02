@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Complete-input closed-DAG source/code correspondence controls. Usage: IR ROOT SOURCE...
+"""Complete-input closed-DAG source/code correspondence controls. Usage: [--policy] IR ROOT SOURCE...
 Selectors are workload fixtures, never checker logic. No lifecycle policy claim.
 """
 
@@ -10,6 +10,9 @@ import subprocess
 import sys
 import tempfile
 
+policy_mode = len(sys.argv) > 1 and sys.argv[1] == "--policy"
+if policy_mode:
+    del sys.argv[1]
 artifact = Path(sys.argv[1]).read_bytes()
 root, *sources = sys.argv[2:]
 base = Path(__file__).resolve().parent
@@ -127,6 +130,71 @@ cases = [
 ]
 
 
+if policy_mode:
+    # Coherent policy alternatives must pass the generic DAG checker first.
+    operands = {w[1]: w for line in lines if (w := line.split())[0] == b"ir-operand"}
+    types = {w[1]: w for line in lines if (w := line.split())[0] == b"ir-type"}
+    operation_edits = []
+    for line in lines:
+        c = line.split()
+        if c[0] != b"ir-code" or c[7] != b"6":
+            continue
+        typ = types[operands[str(int(c[12])).encode()][3]]
+        nominal = pool[int(typ[3]) : int(typ[3]) + int(typ[4])]
+        ordinal = operands[str(int(c[12]) + 1).encode()][3]
+        if nominal.endswith(b"FrameOperation") and ordinal in (b"1", b"2"):
+            operation_edits.append((operand(c, 1), 3, b"2" if ordinal == b"1" else b"1"))
+    assert operation_edits
+    retired = named("_d13frame_retired")
+    guard_calls = {}
+    for i, c in enumerate(root_code[:-1]):
+        if c[7] == b"19" and root_code[i + 1][7] == b"14":
+            op = operands[str(int(c[12])).encode()]
+            target = pool[int(op[5]) : int(op[5]) + int(op[6])]
+            if target.endswith(b"_d12frame_kernel"):
+                guard_calls["kernel"] = c
+            if target.endswith(b"_d13frame_retired"):
+                guard_calls["retired"] = c
+    priority_edits = []
+    for key, target in [("kernel", retired), ("retired", kernel)]:
+        priority_edits.extend([(operand(guard_calls[key]), 5, target[2]), (operand(guard_calls[key]), 6, target[3])])
+    for c in root_code:
+        if c[7] == b"6":
+            ordinal = operands[str(int(c[12]) + 1).encode()][3]
+            if ordinal in (b"7", b"8"):
+                priority_edits.append((operand(c, 1), 3, b"8" if ordinal == b"7" else b"7"))
+    first = (
+        b"        if (state == frame_kernel()) {\n            return frame_reject(FrameRejection::kernel);\n        }\n"
+    )
+    second = (
+        b"        if (state == frame_retired()) {\n"
+        b"            return frame_reject(FrameRejection::retired);\n        }\n"
+    )
+    cases = [
+        cases[0],
+        cases[8],
+        cases[13],
+        (
+            "coherent-rejection-default",
+            mutate([(operand(rc[1]), 4, b"2")]),
+            [(b"u64 code = 1u64;", b"u64 code = 2u64;")],
+            True,
+        ),
+        (
+            "coherent-operation-case-order",
+            mutate(operation_edits),
+            [
+                (
+                    b"        initialize_free,\n        initialize_kernel,",
+                    b"        initialize_kernel,\n        initialize_free,",
+                )
+            ],
+            True,
+        ),
+        ("coherent-branch-priority", mutate(priority_edits), [(first + second, second + first)], True),
+    ]
+
+
 def invoke(command):
     result = subprocess.run(command, capture_output=True, text=True, timeout=60)
     if result.returncode not in (0, 1):
@@ -168,11 +236,35 @@ with tempfile.TemporaryDirectory(prefix="aurora-runtime-dag-") as directory:
         assert result.returncode == (0 if accept else 1), (name, result.stdout, result.stderr)
         if not accept:
             assert result.stderr.strip() == error, (name, result.stderr)
+        profile_accepts = None
+        if policy_mode:
+            profile = invoke(
+                [
+                    str(probe),
+                    "--frame-policy",
+                    "--ir",
+                    str(ir),
+                    root,
+                    "kernel.frames",
+                    "kernel",
+                    "frame_transition",
+                    *actual_sources,
+                ]
+            )
+            profile_accepts = name == "original-closed-root"
+            assert profile.returncode == (0 if profile_accepts else 1), (name, profile.stdout, profile.stderr)
+            assert "SOURCE-FRAME-POLICY generic_dag=true" in profile.stdout
+            if not profile_accepts:
+                assert profile.stderr.strip() == "uncaught exception: exact frame policy profile rejected", (
+                    name,
+                    profile.stderr,
+                )
         results.append(
             {
                 "case": name,
                 "d1_accepts": True,
                 "dag_accepts": accept,
+                "exact_policy_accepts": profile_accepts,
                 "ir_bytes": len(contents),
                 "ir_sha256": hashlib.sha256(contents).hexdigest(),
                 "sources": [

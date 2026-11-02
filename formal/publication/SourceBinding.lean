@@ -37,3 +37,7 @@ import SourceBinding.RuntimeCallInvoke
 import SourceBinding.RuntimeDAGFacts
 
 import SourceBinding.RuntimeDAGPublic
+
+import SourceBinding.FramePolicyChecker
+import SourceBinding.FramePolicyHelpers
+import SourceBinding.FramePolicyCalls

@@ -737,3 +737,30 @@ frame lifecycle result specification. The independent `FramePolicySpec` remains
 unattached; generation/retirement policy claims require that next attachment.
 The primary audit is **462 reports** (all previous 456 plus six), with the same
 separate **20 independent specification reports** and unchanged axiom allowlist.
+
+### Exact frame-policy profile and helper prerequisites
+
+The optional `--frame-policy` consumer attaches a checked, exact source-syntax
+profile to the **same** complete DAG certificate. It authenticates all ten raw
+bodies, ordered signatures, named nominal enum cases and role coverage, with the
+full supplied graph root kept independent of the selected policy module. No
+callable IDs, PCs, source hashes or assumed helper results replace these checks.
+Actual-input controls show coherent alternative policies can pass generic DAG
+binding while failing this optional exact profile.
+
+Nominal operation embedding, five-case coverage and bounded root-argument
+readiness are proved from the selected declarations. Constructive decoding
+lemmas connect masks/shifts to the independent numerical field definitions.
+Universal source-derivation contracts currently establish the five constant
+helpers and `kernel_owner`. Shared inversion/composition lemmas preserve exact
+runtime types, first faults, short-circuiting and initialized formal/scope reads;
+they characterize actual derivations and do not constitute another evaluator.
+The modular call-result lemma is internal: its helper contract must be proved,
+not supplied as a public frame-policy premise.
+
+At this checkpoint the exact profile and helper prerequisites are nonvacuous,
+but the partial packing, rejection, record-validity and root result proofs are
+still pending. In particular, no `FramePolicySpec` attachment or root no-fault
+claim is made. The primary audit retains all 462 reports and adds 46: **508
+primary reports**, with **20 separate independent specification reports**, under
+the unchanged axiom allowlist and default limits.

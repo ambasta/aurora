@@ -10,6 +10,7 @@ import SourceBinding.RuntimeReturnBinding
 import SourceBinding.RuntimeCallFormalBinding
 import SourceBinding.RuntimeBodyPublic
 import SourceBinding.RuntimeDAGPublic
+import SourceBinding.FramePolicyChecker
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -26,6 +27,9 @@ def showName (name : Name) : String :=
   String.intercalate "." (name.map String.fromUTF8!)
 
 def main (args : List String) : IO UInt32 := do
+  let (framePolicy, args) := match args with
+    | "--frame-policy" :: rest => (true,rest)
+    | _ => (false,args)
   let (runtimeDAG, args) := match args with
     | "--runtime-dag" :: rest => (true,rest)
     | _ => (false,args)
@@ -59,7 +63,10 @@ def main (args : List String) : IO UInt32 := do
     | "--ir" :: path :: rest => (some path,rest)
     | _ => (none,args)
   let root :: module :: classPath :: member :: paths := arguments |
-    throw (IO.userError "usage: source-binding-probe [--runtime-dag|--runtime-body|--runtime-call-expression PATH START|--runtime-expression|--runtime-identity|--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+    throw (IO.userError "usage: source-binding-probe [--frame-policy|--runtime-dag|--runtime-body|--runtime-call-expression PATH START|--runtime-expression|--runtime-identity|--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+  if framePolicy && (runtimeDAG || runtimeBody || runtimeCall.isSome || runtimeExpression || runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
+    throw (IO.userError "frame policy and other modes are distinct")
+  if framePolicy && irPath.isNone then throw (IO.userError "frame policy requires --ir")
   if runtimeDAG && (runtimeBody || runtimeCall.isSome || runtimeExpression || runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
     throw (IO.userError "runtime DAG and other modes are distinct")
   if runtimeDAG && irPath.isNone then throw (IO.userError "runtime DAG requires --ir")
@@ -97,6 +104,21 @@ def main (args : List String) : IO UInt32 := do
   let rootName := (root.splitOn ".").map String.toUTF8
   let selectedModule := (module.splitOn ".").map String.toUTF8
   let selectedPath := (classPath.splitOn "::").map String.toUTF8
+  if framePolicy then
+    if selectedModule != FramePolicyAttachment.frameModule || selectedPath != FramePolicyAttachment.framePath || member.toUTF8 != FramePolicyAttachment.rootName then
+      throw (IO.userError "frame policy selection rejected")
+    let some path := irPath | throw (IO.userError "frame policy requires --ir")
+    let publication ← readSource path 16777216
+    let some checked := bindRuntimeDAG files rootName FramePolicyAttachment.frameModule
+        FramePolicyAttachment.framePath FramePolicyAttachment.rootName publication |
+      throw (IO.userError "source/runtime DAG correspondence rejected")
+    IO.println "SOURCE-FRAME-POLICY generic_dag=true"
+    let some _profile := FramePolicyAttachment.checkFramePolicy checked |
+      throw (IO.userError "exact frame policy profile rejected")
+    IO.println s!"SOURCE-FRAME-POLICY exact_profile=true nodes={checked.checked.shape.nodes.length} publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input exact ten-body/nominal policy profile receipt. Generic DAG execution theorem applies; lifecycle source-result attachment pending. No concrete kernel acceptance, capture/backend/native ABI, ledger mutation or authority proof."
+    return 0
   if runtimeDAG then
     let some path := irPath | throw (IO.userError "runtime DAG requires --ir")
     let publication ← readSource path 16777216
