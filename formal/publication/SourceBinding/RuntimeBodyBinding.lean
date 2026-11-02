@@ -37,7 +37,7 @@ structure RuntimeBodyCertificate (identified : IdentifiedRuntimeFree t files roo
     identified.selected.function.function.result resultKind
   resultIdentity : RuntimeTypeIdentity t ((atRow t.callables identified.id).integer 4) resultKind
   entry : RuntimeEntryCode (canonicalEffects t identified.id) parameters.kinds
-  code : RuntimeStatementsCode (canonicalRuntimeCalls t (leaves.map (·.target))) identified.id leaves
+  code : RuntimeStatementsCode (canonicalRuntimeCalls t (leaves.map (·.target))) identified.id (leaves.map (·.toCallable))
     identified.selected.scope.members identified.selected.function.function.formals resultKind
     ⟨[],0,1,identified.selected.function.function.formals.length⟩
     identified.details.lexical.parsed.statements
@@ -58,7 +58,7 @@ def checkRuntimeBody (identified : IdentifiedRuntimeFree t files root module pat
         identified.selected.function.function.result
       if resultIdentity : RuntimeTypeIdentity t ((atRow t.callables identified.id).integer 4) result.kind then
         if entry : RuntimeEntryCode (canonicalEffects t identified.id) parameters.kinds then
-          let code ← checkRuntimeStatements (canonicalRuntimeCalls t (leaves.map (·.target))) identified.id leaves
+          let code ← checkRuntimeStatements (canonicalRuntimeCalls t (leaves.map (·.target))) identified.id (leaves.map (·.toCallable))
             identified.selected.scope.members identified.selected.function.function.formals result.kind 4096
             ⟨[],0,1,identified.selected.function.function.formals.length⟩
             identified.details.lexical.parsed.statements parameters.kinds.length

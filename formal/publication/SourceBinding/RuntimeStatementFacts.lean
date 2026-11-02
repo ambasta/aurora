@@ -2,13 +2,13 @@ import SourceBinding.RuntimeBodyControl
 namespace Aurora.SourceBinding
 
 theorem RuntimeStatementCode.scope_proof
-    {leaves : List (RuntimeCallLeaf t files root module path)}
+    {leaves : List (RuntimeCallable t files root module path)}
     (code : RuntimeStatementCode program caller leaves members formals result before raw after declaredItems start stop) :
     ScopedStatement members module path formals before raw after declaredItems := by
   cases code <;> assumption
 
 theorem RuntimeStatementsCode.scope_proof
-    {leaves : List (RuntimeCallLeaf t files root module path)}
+    {leaves : List (RuntimeCallable t files root module path)}
     (code : RuntimeStatementsCode program caller leaves members formals result before raw after declaredItems start stop) :
     ScopedStatements members module path formals before raw after declaredItems := by
   induction raw generalizing before after declaredItems start stop with

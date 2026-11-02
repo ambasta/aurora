@@ -8,7 +8,7 @@ private def statementFixture (body : String) (code : List EffectOp) : Bool := Id
   let file : SourceFile := ⟨text.toUTF8,shell⟩
   let some selected := checkFreeSelection [file] ["r".toUTF8] ["r".toUTF8] ["n".toUTF8] "f".toUTF8 | return false
   let some source := scopeMethod text.toUTF8 selected.function.function selected.scope.members ["r".toUTF8] ["n".toUTF8] | return false
-  let leaves : List (RuntimeCallLeaf (tables []) [] ["r".toUTF8] ["r".toUTF8] ["n".toUTF8]) := []
+  let leaves : List (RuntimeCallable (tables []) [] ["r".toUTF8] ["r".toUTF8] ["n".toUTF8]) := []
   let program : CallProgram := fun _ pc => (code[pc]?).map CallOp.local
   let some result := checkRuntimeStatements program 0 leaves selected.scope.members [] (.scalar .word)
     4096 ⟨[],0,1,0⟩ source.parsed.statements 0 | return false

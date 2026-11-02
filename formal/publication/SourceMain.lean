@@ -9,6 +9,7 @@ import SourceBinding.NominalFreeIdentity
 import SourceBinding.RuntimeReturnBinding
 import SourceBinding.RuntimeCallFormalBinding
 import SourceBinding.RuntimeBodyPublic
+import SourceBinding.RuntimeDAGBinding
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -25,6 +26,9 @@ def showName (name : Name) : String :=
   String.intercalate "." (name.map String.fromUTF8!)
 
 def main (args : List String) : IO UInt32 := do
+  let (runtimeDAG, args) := match args with
+    | "--runtime-dag" :: rest => (true,rest)
+    | _ => (false,args)
   let (runtimeBody, args) := match args with
     | "--runtime-body" :: rest => (true,rest)
     | _ => (false,args)
@@ -55,7 +59,10 @@ def main (args : List String) : IO UInt32 := do
     | "--ir" :: path :: rest => (some path,rest)
     | _ => (none,args)
   let root :: module :: classPath :: member :: paths := arguments |
-    throw (IO.userError "usage: source-binding-probe [--runtime-body|--runtime-call-expression PATH START|--runtime-expression|--runtime-identity|--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+    throw (IO.userError "usage: source-binding-probe [--runtime-dag|--runtime-body|--runtime-call-expression PATH START|--runtime-expression|--runtime-identity|--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+  if runtimeDAG && (runtimeBody || runtimeCall.isSome || runtimeExpression || runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
+    throw (IO.userError "runtime DAG and other modes are distinct")
+  if runtimeDAG && irPath.isNone then throw (IO.userError "runtime DAG requires --ir")
   if runtimeBody && (runtimeCall.isSome || runtimeExpression || runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
     throw (IO.userError "runtime body and other modes are distinct")
   if runtimeBody && irPath.isNone then throw (IO.userError "runtime body requires --ir")
@@ -90,6 +97,18 @@ def main (args : List String) : IO UInt32 := do
   let rootName := (root.splitOn ".").map String.toUTF8
   let selectedModule := (module.splitOn ".").map String.toUTF8
   let selectedPath := (classPath.splitOn "::").map String.toUTF8
+  if runtimeDAG then
+    let some path := irPath | throw (IO.userError "runtime DAG requires --ir")
+    let publication ← readSource path 16777216
+    let some checked := bindRuntimeDAG files rootName selectedModule selectedPath member.toUTF8 publication |
+      throw (IO.userError "source/runtime DAG correspondence rejected")
+    let t := Aurora.Publication.tables checked.artifact.document.reversed.reverse
+    let shape := checked.checked.shape
+    let rows := shape.nodes.map fun node => (Aurora.Publication.functionCode t node.target.id).size
+    IO.println s!"SOURCE-RUNTIME-DAG root={shape.rootNode.target.id} entry=0 stop={(Aurora.Publication.functionCode t shape.rootNode.target.id).size} complete=true nodes={shape.nodes.length} rows={rows.foldl (· + ·) 0} ids={shape.nodes.map (·.target.id)} ranks={shape.nodes.map (fun node => shape.rank node.source.key)} publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE full-input exact source closure/whole-node code certificate receipt. DAG execution theorem pending; no lifecycle ResultSpec, no-fault, concrete kernel acceptance, capture/backend/native ABI or authority proof."
+    return 0
   if runtimeBody then
     let some path := irPath | throw (IO.userError "runtime body requires --ir")
     let publication ← readSource path 16777216

@@ -32,12 +32,18 @@ theorem runtime_nominal_compare_supported (identity : NominalIdentity) (equal : 
   intro right
   cases left <;> cases right <;> (intro h; cases h)
 
-theorem RuntimeEvaluatesWith.supported
-    (evaluated : RuntimeEvaluatesWith functions context state raw kind outcome events) :
+def RuntimeBodySupported : RuntimeBodyOutcome → Prop
+  | .trapped fault _ => SupportedOutcome (.trap fault)
+  | .continued _ | .returned _ _ => True
+
+theorem RuntimeEvaluation.supported
+    (evaluated : RuntimeEvaluation functions context state raw kind outcome events) :
     SupportedOutcome outcome := by
-  induction evaluated using RuntimeEvaluatesWith.rec
+  induction evaluated using RuntimeEvaluation.rec
       (motive_2 := fun _ _ _ _ outcome _ _ =>
-        outcome ≠ (Outcome.trap Fault.unsupported : Outcome (List Value))) with
+        outcome ≠ (Outcome.trap Fault.unsupported : Outcome (List Value)))
+      (motive_3 := fun _ _ _ _ _ _ _ _ _ outcome _ _ => RuntimeBodySupported outcome)
+      (motive_4 := fun _ _ _ _ _ _ _ _ _ outcome _ _ => RuntimeBodySupported outcome) with
   | word => exact read_supported _ _
   | boolean => intro h; cases h
   | readVariable _ => exact RuntimeLocals.readBound_supported _ _
@@ -53,9 +59,8 @@ theorem RuntimeEvaluatesWith.supported
   | callArgumentsFault _ _ _ ih =>
     intro impossible
     exact ih (Outcome.trap.inj impossible ▸ rfl)
-  | callValue _ _ _ _ _ body => exact body
+  | callValue => intro h; cases h
   | callFault _ _ _ _ _ body => exact body
-  | nil => intro h; cases h
   | fault first ih =>
     intro impossible
     exact ih (Outcome.trap.inj impossible ▸ rfl)
@@ -63,5 +68,14 @@ theorem RuntimeEvaluatesWith.supported
     cases outcome with
     | trap fault => exact restIH
     | value values => intro h; cases h
+  | declarationFault _ _ ih | assignmentFault _ _ _ _ ih | returnFault _ ih | branchFault _ _ ih => exact ih
+  | branchTrueFault _ _ _ _ _ ih => exact ih
+  | next _ _ _ ih => exact ih
+  | trapped _ _ ih => exact ih
+  | _ => all_goals intros; trivial
+
+theorem RuntimeEvaluatesWith.supported
+    (evaluated : RuntimeEvaluatesWith functions context state raw kind outcome events) :
+    SupportedOutcome outcome := RuntimeEvaluation.supported evaluated
 
 end Aurora.SourceBinding

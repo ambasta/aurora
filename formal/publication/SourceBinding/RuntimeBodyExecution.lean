@@ -1,4 +1,5 @@
 import SourceBinding.RuntimeStatementEvaluation
+import SourceBinding.RuntimeScopeReservation
 import SourceBinding.RuntimeCallExecution
 namespace Aurora.SourceBinding
 

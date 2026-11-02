@@ -50,7 +50,7 @@ theorem RuntimeCallLeaf.call_executes
   have supported := related.supported evaluated.supported
   have initial : preparedEntry base runtimeParameterSlot 0 = base := rfl
   rw [initial,← projection] at run
-  refine ⟨outcome,result,evaluated.in_environment functions,?_,related⟩
+  refine ⟨outcome,result,RuntimeEvaluates.in_environment evaluated functions,?_,related⟩
   simpa only [List.map_nil,List.nil_append] using run.call_lift supported saved shared.world external
 
 end Aurora.SourceBinding

@@ -2,13 +2,13 @@ import SourceBinding.RuntimeBodyBinding
 namespace Aurora.SourceBinding
 
 theorem RuntimeStatementCode.initial_context
-    {leaves : List (RuntimeCallLeaf t files root module path)}
+    {leaves : List (RuntimeCallable t files root module path)}
     (code : RuntimeStatementCode program caller leaves members formals result before raw after declaredItems start stop) :
     RuntimeContextValid (runtimeStatementContext members module path formals before) := by
   cases code <;> assumption
 
 theorem RuntimeStatementsCode.initial_context
-    {leaves : List (RuntimeCallLeaf t files root module path)}
+    {leaves : List (RuntimeCallable t files root module path)}
     (code : RuntimeStatementsCode program caller leaves members formals result before raw after declaredItems start stop)
     (terminal : RuntimeNoFallthrough raw) :
     RuntimeContextValid (runtimeStatementContext members module path formals before) := by

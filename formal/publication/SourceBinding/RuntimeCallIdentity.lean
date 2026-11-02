@@ -1,6 +1,7 @@
 import SourceBinding.RuntimeCallOccurrence
 import SourceBinding.CallMachine
 import SourceBinding.RuntimeSourceLeaf
+import SourceBinding.RuntimeExpressionNames
 namespace Aurora.SourceBinding
 open Aurora.Publication
 
@@ -78,7 +79,7 @@ instance (t : Tables) (target : OrdinaryDescriptor) : Decidable (RuntimeDescript
   unfold RuntimeDescriptorSignature; infer_instance
 
 /-- Exact ordinary free Call19. The enclosing leaf certificate, not this raw-row
-    predicate, supplies source selection and complete callee body semantics. -/
+    predicate, supplies source selection, COMPLETE local slots and body semantics. -/
 def RuntimeFreeInvocationAt (t : Tables) (caller : Int) (pc : Nat) (target : OrdinaryDescriptor) : Prop :=
   match (functionCode t caller)[pc]? with
   | none => False
@@ -87,11 +88,54 @@ def RuntimeFreeInvocationAt (t : Tables) (caller : Int) (pc : Nat) (target : Ord
     operandRoles t row = [100] ∧ Selectors row ∧
     (∀ operand ∈ (operandsOf t row).toList, OperandPayload t operand) ∧ CodeEdges t caller row ∧
     RuntimeDescriptorSignature t target ∧
-    RuntimeFreeShape t target.id target.parameters [] ∧
+    RuntimeFreeHeader t target.id ∧
     callName t row = nameBytes t (atRow t.callables target.id) 1 ∧
     (namedCallables t (callName t row)).size = 1
 instance (t : Tables) (caller : Int) (pc : Nat) (target : OrdinaryDescriptor) :
     Decidable (RuntimeFreeInvocationAt t caller pc target) := by
   unfold RuntimeFreeInvocationAt; split <;> infer_instance
+
+theorem RuntimeSignature.unique (scope : ScopeBindings members)
+    (left : RuntimeSignature t members module path first sources kinds)
+    (right : RuntimeSignature t members module path other sources otherKinds) : kinds = otherKinds := by
+  induction left generalizing other otherKinds with
+  | nil => cases right; rfl
+  | cons typ identity rest ih =>
+    cases right with
+    | cons otherType otherIdentity otherRest =>
+      rw [typ.unique scope otherType,ih otherRest]
+
+theorem RuntimeSignature.parameter_tail
+    (signature : RuntimeSignature t members module path first (result :: sources) kinds) :
+    RuntimeSignature t members module path (first + 1) sources kinds.tail := by
+  cases signature with
+  | cons _ _ rest => exact rest
+
+theorem RuntimeCallLeaf.empty_frame_shape (leaf : RuntimeCallLeaf t files root module path) :
+    RuntimeFreeShape t leaf.target.id leaf.target.parameters [] := by
+  have parameterSignature : RuntimeSignature t leaf.identified.selected.scope.members module path
+      ((atRow t.callables leaf.identified.id).integer 4 + 1)
+      (leaf.identified.selected.function.function.formals.map (·.type))
+      leaf.identified.details.types.kinds.tail := leaf.identified.details.types.grammar.parameter_tail
+  have same := parameterSignature.unique leaf.body.valid.scope leaf.body.parameters.grammar
+  have identity := leaf.identified.details.identity
+  unfold RuntimeFunctionIdentity at identity
+  change RuntimeFreeShape t leaf.identified.id leaf.body.parameters.kinds []
+  rw [← same,← leaf.body.noLocals]
+  exact identity.2.2.2.2.2
+
+/-- The previous leaf-only predicate is retained as an explicit compatibility
+    boundary, not asserted equal to the broadened call-row predicate globally. -/
+def RuntimeLeafInvocationAt (t : Tables) (caller : Int) (pc : Nat) (target : OrdinaryDescriptor) : Prop :=
+  RuntimeFreeInvocationAt t caller pc target ∧ RuntimeFreeShape t target.id target.parameters []
+
+theorem runtime_leaf_invocation_iff
+    (shape : RuntimeFreeShape t target.id target.parameters []) :
+    RuntimeLeafInvocationAt t caller pc target ↔ RuntimeFreeInvocationAt t caller pc target :=
+  ⟨And.left,fun call => ⟨call,shape⟩⟩
+
+theorem RuntimeCallLeaf.invocation_iff (leaf : RuntimeCallLeaf t files root module path) :
+    RuntimeLeafInvocationAt t caller pc leaf.target ↔ RuntimeFreeInvocationAt t caller pc leaf.target :=
+  runtime_leaf_invocation_iff leaf.empty_frame_shape
 
 end Aurora.SourceBinding

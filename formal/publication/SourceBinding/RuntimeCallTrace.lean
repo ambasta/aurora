@@ -1,16 +1,16 @@
-import SourceBinding.RuntimeCallIdentity
+import SourceBinding.RuntimeCallable
 namespace Aurora.SourceBinding
 
 /-- A source key is related to a machine descriptor only through membership of
-    the SAME checked source/IR leaf. Argument and result values are unchanged. -/
-inductive RuntimeCallEventRelated (leaves : List (RuntimeCallLeaf t files root module path)) :
+    the SAME checked source/IR callable. Argument and result values are unchanged. -/
+inductive RuntimeCallEventRelated (leaves : List (RuntimeCallable t files root module path)) :
     RuntimeSourceEvent → CallEvent World ExternalFault → Prop
   | invoke : leaf ∈ leaves → RuntimeCallEventRelated leaves
       (.invoke leaf.source.key values) (.ordinaryInvoke leaf.target values)
   | returned : leaf ∈ leaves → RuntimeCallEventRelated leaves
       (.returned leaf.source.key value) (.ordinaryReturn leaf.target value)
 
-inductive RuntimeCallTraceRelated (leaves : List (RuntimeCallLeaf t files root module path)) :
+inductive RuntimeCallTraceRelated (leaves : List (RuntimeCallable t files root module path)) :
     List RuntimeSourceEvent → List (CallEvent World ExternalFault) → Prop
   | nil : RuntimeCallTraceRelated leaves [] []
   | cons : RuntimeCallEventRelated leaves source target → RuntimeCallTraceRelated leaves sources targets →
@@ -30,11 +30,43 @@ theorem RuntimeCallTraceRelated.length (related : RuntimeCallTraceRelated leaves
   | nil => rfl
   | cons _ _ ih => simp only [List.length_cons,ih]
 
+theorem RuntimeCallEventRelated.weaken
+    (event : RuntimeCallEventRelated small source target)
+    (included : ∀ callable ∈ small, callable ∈ larger) : RuntimeCallEventRelated larger source target := by
+  cases event with
+  | invoke member => exact .invoke (included _ member)
+  | returned member => exact .returned (included _ member)
+
+theorem RuntimeCallTraceRelated.weaken
+    (trace : RuntimeCallTraceRelated small sources targets)
+    (included : ∀ callable ∈ small, callable ∈ larger) : RuntimeCallTraceRelated larger sources targets := by
+  induction trace with
+  | nil => exact .nil
+  | cons event rest ih => exact .cons (event.weaken included) ih
+
+/-- Exact old leaf-inventory specialization of the ONE trace relation. -/
+abbrev RuntimeLeafCallTraceRelated (leaves : List (RuntimeCallLeaf t files root module path)) :=
+  @RuntimeCallTraceRelated t files root module path (leaves.map (·.toCallable))
+
+theorem RuntimeCallLeaf.invoke_event
+    {leaves : List (RuntimeCallLeaf t files root module path)}
+    (leaf : RuntimeCallLeaf t files root module path) (member : leaf ∈ leaves) :
+    RuntimeCallEventRelated (leaves.map (·.toCallable))
+      (.invoke leaf.source.key values) (CallEvent.ordinaryInvoke leaf.target values : CallEvent World ExternalFault) :=
+  .invoke (List.mem_map_of_mem member)
+
+theorem RuntimeCallLeaf.return_event
+    {leaves : List (RuntimeCallLeaf t files root module path)}
+    (leaf : RuntimeCallLeaf t files root module path) (member : leaf ∈ leaves) :
+    RuntimeCallEventRelated (leaves.map (·.toCallable))
+      (.returned leaf.source.key value) (CallEvent.ordinaryReturn leaf.target value : CallEvent World ExternalFault) :=
+  .returned (List.mem_map_of_mem member)
+
 /-- Relative unmatched invocation stacks. A return removes exactly its own
     source key AND full machine descriptor. This is trace algebra, not an
     assumption that a fault unwinds a real saved frame. A machine simulation
     must separately connect these stacks to its actual ActiveCall.saved. -/
-inductive RuntimeCallStackTrace (leaves : List (RuntimeCallLeaf t files root module path)) :
+inductive RuntimeCallStackTrace (leaves : List (RuntimeCallable t files root module path)) :
     List RuntimeSourceKey → List OrdinaryDescriptor →
     List RuntimeSourceEvent → List (CallEvent World ExternalFault) →
     List RuntimeSourceKey → List OrdinaryDescriptor → Prop
@@ -71,7 +103,7 @@ theorem RuntimeCallStackTrace.append
 
 /-- A failed call may leave its invoke unmatched. No return or rollback event
     can be manufactured by this relation. -/
-theorem runtime_unmatched_invoke {leaf : RuntimeCallLeaf t files root module path}
+theorem runtime_unmatched_invoke {leaf : RuntimeCallable t files root module path}
     (member : leaf ∈ leaves) :
     RuntimeCallStackTrace leaves sourceStack targetStack
       [RuntimeSourceEvent.invoke leaf.source.key values]

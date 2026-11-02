@@ -4,7 +4,7 @@ namespace Aurora.SourceBinding
 deriving instance DecidableEq for LocalContext
 
 structure ParsedRuntimeStatement (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path))
+    (leaves : List (RuntimeCallable t files root module path))
     (members : List Declaration) (formals : List Formal) (result : RuntimeType)
     (before : LocalContext) (raw : SourceStatement) (start : Nat) where
   after : LocalContext
@@ -14,7 +14,7 @@ structure ParsedRuntimeStatement (program : CallProgram) (caller : Int)
   grammar : RuntimeStatementCode program caller leaves members formals result before raw after declaredItems start stop
 
 structure ParsedRuntimeStatements (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path))
+    (leaves : List (RuntimeCallable t files root module path))
     (members : List Declaration) (formals : List Formal) (result : RuntimeType)
     (before : LocalContext) (raw : List SourceStatement) (start : Nat) where
   after : LocalContext
@@ -50,7 +50,7 @@ def checkRuntimeLabels (program : CallProgram) (caller : Int) :
 
 mutual
 def checkRuntimeStatements (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path))
+    (leaves : List (RuntimeCallable t files root module path))
     (members : List Declaration) (formals : List Formal) (result : RuntimeType) :
     Nat → (before : LocalContext) → (raw : List SourceStatement) → (start : Nat) →
     Option (ParsedRuntimeStatements program caller leaves members formals result before raw start)
@@ -63,7 +63,7 @@ def checkRuntimeStatements (program : CallProgram) (caller : Int)
       .cons head.scopeProof tail.scopeProof,.cons head.grammar tail.grammar⟩
 
 def checkRuntimeStatement (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path))
+    (leaves : List (RuntimeCallable t files root module path))
     (members : List Declaration) (formals : List Formal) (result : RuntimeType) :
     Nat → (before : LocalContext) → (raw : SourceStatement) → (start : Nat) →
     Option (ParsedRuntimeStatement program caller leaves members formals result before raw start)

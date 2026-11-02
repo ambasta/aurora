@@ -16,7 +16,7 @@ theorem RuntimeBodyCertificate.executes
         ⟨[],0,1,identified.selected.function.function.formals.length⟩
         (formalRuntimeLocals checked.parameters.kinds base)
         identified.details.lexical.parsed.statements identified.details.lexical.lexical.after outcome sourceEvents ∧
-      RuntimeCallTraceRelated checked.leaves sourceEvents machineEvents ∧
+      RuntimeLeafCallTraceRelated checked.leaves sourceEvents machineEvents ∧
       CallRuns (canonicalRuntimeCalls t (checked.leaves.map (·.target))) external
         (.running (activeAt identified.id [] world (preparedEntry base runtimeParameterSlot 0))) machineEvents final ∧
       RuntimeBodyTerminal base world outcome final := by

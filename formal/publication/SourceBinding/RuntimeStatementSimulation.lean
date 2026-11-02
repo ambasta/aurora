@@ -10,7 +10,7 @@ def RuntimeStatementSimulates (program : CallProgram) (caller : Int)
   ∀ source ancestors, RuntimeStateAt members module path formals before ancestors source →
     ∃ outcome sourceEvents machineEvents,
       RuntimeStatementEvaluates (leaves.map RuntimeCallLeaf.source) members module path formals result before source raw after outcome sourceEvents ∧
-      RuntimeCallTraceRelated leaves sourceEvents machineEvents ∧
+      RuntimeLeafCallTraceRelated leaves sourceEvents machineEvents ∧
       RuntimeContinuationAt members module path formals after ancestors outcome ∧
       ∀ accumulator, RuntimeBodyRun program external caller saved world base source start stop accumulator outcome machineEvents
 
@@ -22,7 +22,7 @@ def RuntimeStatementsSimulates (program : CallProgram) (caller : Int)
   ∀ source ancestors, RuntimeStateAt members module path formals before ancestors source →
     ∃ outcome sourceEvents machineEvents,
       RuntimeStatementsEvaluate (leaves.map RuntimeCallLeaf.source) members module path formals result before source raw after outcome sourceEvents ∧
-      RuntimeCallTraceRelated leaves sourceEvents machineEvents ∧
+      RuntimeLeafCallTraceRelated leaves sourceEvents machineEvents ∧
       RuntimeContinuationAt members module path formals after ancestors outcome ∧
       ∀ accumulator, RuntimeBodyRun program external caller saved world base source start stop accumulator outcome machineEvents
 

@@ -77,9 +77,12 @@ caller-PC reachability or placement in surrounding control flow. A subsequent
 complete-body profile checks initialized locals, assignments, branches and all
 source/IR suffixes, then executes actual parameter entry through a terminal
 return or fault. It covers the complete `record_valid` and `frame_reject` bodies
-under typed entry arguments and actual certified single-return callees. The full
-ten-helper call-DAG composition, exact lifecycle result, allocator ledger updates
-and persistent retirement remain separate unproved obligations.
+under typed entry arguments and actual certified single-return callees. A further
+checked ten-helper source/code DAG binds every complete body, all syntactic call
+edges, root reachability and decreasing ranks. Its generic composition currently
+retains an internal callee-execution hypothesis; the full root execution theorem
+has not yet discharged it by rank. Exact lifecycle results, allocator ledger
+updates and persistent retirement also remain unproved obligations.
 
 | Destination | Status |
 |---|---|

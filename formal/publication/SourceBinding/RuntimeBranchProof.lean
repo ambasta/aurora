@@ -10,7 +10,7 @@ theorem runtime_branch_simulates
     {leaves : List (RuntimeCallLeaf t files root module path)}
     (scope : ScopedStatements members module path formals (enterLocalScope before) body child declaredItems)
     (valid : RuntimeContextValid (runtimeStatementContext members module path formals before))
-    (condition : RuntimeCallExpressionCode program caller leaves
+    (condition : RuntimeCallExpressionCode program caller (leaves.map (·.toCallable))
       (runtimeStatementContext members module path formals before) raw (.scalar .boolean) start conditionEnd)
     (branch : localProgram program caller conditionEnd = some (.pure (.branchFalse falsePC)))
     (falseLabels : RuntimeLabelRun program caller falsePC stop)

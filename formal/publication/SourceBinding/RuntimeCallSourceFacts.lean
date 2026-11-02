@@ -4,13 +4,17 @@ namespace Aurora.SourceBinding
 /-- Adding source functions does not alter any already witnessed evaluation.
     In particular the old empty-environment fragment embeds with its entire
     outcome (including faults) and exactly the same empty trace. -/
-theorem RuntimeEvaluatesWith.weaken
-    (evaluated : RuntimeEvaluatesWith functions context state raw kind outcome events)
+theorem RuntimeEvaluation.weaken
+    (evaluated : RuntimeEvaluation functions context state raw kind outcome events)
     (included : ∀ leaf, leaf ∈ functions → leaf ∈ larger) :
-    RuntimeEvaluatesWith larger context state raw kind outcome events := by
-  induction evaluated using RuntimeEvaluatesWith.rec
+    RuntimeEvaluation larger context state raw kind outcome events := by
+  induction evaluated using RuntimeEvaluation.rec
       (motive_2 := fun context state raws kinds outcome events _ =>
-        RuntimeArgumentsEvaluateWith larger context state raws kinds outcome events) with
+        RuntimeArgumentEvaluation larger context state raws kinds outcome events)
+      (motive_3 := fun members module path formals result before state raw after outcome events _ =>
+        RuntimeStatementEvaluation larger members module path formals result before state raw after outcome events)
+      (motive_4 := fun members module path formals result before state raws after outcome events _ =>
+        RuntimeStatementsEvaluation larger members module path formals result before state raws after outcome events) with
   | word => exact .word
   | boolean => exact .boolean
   | readVariable binding => exact .readVariable binding
@@ -31,9 +35,37 @@ theorem RuntimeEvaluatesWith.weaken
   | callArgumentsFault member resolves _ ih => exact .callArgumentsFault (included _ member) resolves ih
   | callValue member resolves _ _ args body => exact .callValue (included _ member) resolves args body
   | callFault member resolves _ _ args body => exact .callFault (included _ member) resolves args body
-  | nil => exact .nil
   | fault _ ih => exact .fault ih
   | cons _ _ first rest => exact .cons first rest
+  | declarationFault scope _ ih => exact .declarationFault scope ih
+  | declarationValue scope _ initialized ih => exact .declarationValue scope ih initialized
+  | assignmentFault member named mutable _ ih => exact .assignmentFault member named mutable ih
+  | assignmentValue member named mutable _ assigned ih => exact .assignmentValue member named mutable ih assigned
+  | returnFault _ ih => exact .returnFault ih
+  | returnValue _ ih => exact .returnValue ih
+  | branchFault scope _ ih => exact .branchFault scope ih
+  | branchFalse scope _ reserved ih => exact .branchFalse scope ih reserved
+  | branchTrueContinue scope _ entered _ reserved first body => exact .branchTrueContinue scope first entered body reserved
+  | branchTrueReturn scope _ entered _ first body => exact .branchTrueReturn scope first entered body
+  | branchTrueFault scope _ entered _ first body => exact .branchTrueFault scope first entered body
+  | next _ _ first rest => exact .next first rest
+  | returned _ scope ih => exact .returned ih scope
+  | trapped _ scope ih => exact .trapped ih scope
+  | _ => intros; exact .nil
+
+theorem RuntimeEvaluatesWith.weaken
+    (evaluated : RuntimeEvaluatesWith functions context state raw kind outcome events)
+    (included : ∀ leaf, leaf ∈ functions → leaf ∈ larger) :
+    RuntimeEvaluatesWith larger context state raw kind outcome events := by
+  apply RuntimeEvaluation.weaken evaluated
+  intro source member
+  obtain ⟨leaf,present,equal⟩ := List.mem_map.mp member
+  exact List.mem_map.mpr ⟨leaf,included leaf present,equal⟩
+
+theorem RuntimeEvaluation.in_environment
+    (evaluated : RuntimeEvaluation [] context state raw kind outcome events) (functions : List RuntimeSourceFunction) :
+    RuntimeEvaluation functions context state raw kind outcome events :=
+  evaluated.weaken (fun _ impossible => False.elim (List.not_mem_nil impossible))
 
 theorem RuntimeEvaluates.in_environment
     (evaluated : RuntimeEvaluates context state raw kind outcome) (functions : List RuntimeSourceLeaf) :
@@ -66,20 +98,23 @@ def RuntimeArgumentsOutcomeTyped (kinds : List RuntimeType) : Outcome (List Valu
 
 /-- Argument readiness is a consequence of actual ordered source evaluation,
     not a successful-callee or entry-readiness assumption. -/
-theorem RuntimeArgumentsEvaluateWith.outcome_typed
-    (evaluated : RuntimeArgumentsEvaluateWith functions context state raws kinds outcome events) :
+theorem RuntimeArgumentEvaluation.outcome_typed
+    (evaluated : RuntimeArgumentEvaluation functions context state raws kinds outcome events) :
     RuntimeArgumentsOutcomeTyped kinds outcome := by
-  induction evaluated using RuntimeArgumentsEvaluateWith.rec
-      (motive_1 := fun _ _ _ _ _ _ _ => True) with
-  | word | boolean | readVariable | enumValue | not | wordBinaryFault | wordBinary |
-    enumCompareFault | enumCompare | shiftLeft | shiftRight | andFault | andStop |
-    andContinue | orFault | orStop | orContinue | callArgumentsFault | callValue | callFault => trivial
-  | nil => exact .nil
+  induction evaluated using RuntimeArgumentEvaluation.rec
+      (motive_1 := fun _ _ _ _ _ _ _ => True)
+      (motive_3 := fun _ _ _ _ _ _ _ _ _ _ _ _ => True)
+      (motive_4 := fun _ _ _ _ _ _ _ _ _ _ _ _ => True) with
   | fault => trivial
   | @cons context state first kind value firstEvents rest kinds outcome restEvents firstEval restEval firstIH restIH =>
     cases outcome with
     | trap fault => trivial
     | value tail => exact .cons firstEval.outcome_typed restIH
+  | _ => all_goals intros; first | exact True.intro | exact RuntimeReadyArguments.nil
+
+theorem RuntimeArgumentsEvaluateWith.outcome_typed
+    (evaluated : RuntimeArgumentsEvaluateWith functions context state raws kinds outcome events) :
+    RuntimeArgumentsOutcomeTyped kinds outcome := RuntimeArgumentEvaluation.outcome_typed evaluated
 
 theorem RuntimeArgumentsEvaluateWith.ready
     (evaluated : RuntimeArgumentsEvaluateWith functions context state raws kinds (.value values) events) :

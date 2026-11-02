@@ -17,7 +17,7 @@ inductive RuntimeNoFallthrough : List SourceStatement → Prop
 
 mutual
 inductive RuntimeStatementCode (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path))
+    (leaves : List (RuntimeCallable t files root module path))
     (members : List Declaration) (formals : List Formal) (result : RuntimeType) :
     LocalContext → SourceStatement → LocalContext → List SourceLocal → Nat → Nat → Prop
   | declare {declaration : Formal} :
@@ -71,7 +71,7 @@ inductive RuntimeStatementCode (program : CallProgram) (caller : Int)
         (leaveLocalScope before child) declaredItems start stop
 
 inductive RuntimeStatementsCode (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path))
+    (leaves : List (RuntimeCallable t files root module path))
     (members : List Declaration) (formals : List Formal) (result : RuntimeType) :
     LocalContext → List SourceStatement → LocalContext → List SourceLocal → Nat → Nat → Prop
   | nil : RuntimeStatementsCode program caller leaves members formals result before [] before [] pc pc

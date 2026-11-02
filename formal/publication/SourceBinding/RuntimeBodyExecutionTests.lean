@@ -6,13 +6,13 @@ namespace Aurora.SourceBinding.RuntimeBodyExecutionTests
 example (cursor : LocalContext) (state : RuntimeLocals) :
     RuntimeStatementsEvaluate [] [] [] [] [] (.scalar .word) cursor state
       [.returnValue (.word 7)] cursor (.returned (.word 7) state) [] := by
-  apply RuntimeStatementsEvaluate.returned (middle := cursor)
+  apply RuntimeStatementsEvaluation.returned (middle := cursor)
   · exact .returnValue .word
   · exact .nil
 example (cursor : LocalContext) (state : RuntimeLocals) :
     RuntimeStatementsEvaluate [] [] [] [] [] (.scalar .word) cursor state
       [.returnValue (.binary .shift (.word 4294967296) (.signedCount 32))] cursor (.trapped .overflow state) [] := by
-  apply RuntimeStatementsEvaluate.trapped (middle := cursor)
+  apply RuntimeStatementsEvaluation.trapped (middle := cursor)
   · exact .returnFault (.shiftLeft .word .thirtyTwo)
   · exact .nil
 

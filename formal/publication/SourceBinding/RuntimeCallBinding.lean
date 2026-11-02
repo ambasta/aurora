@@ -26,7 +26,7 @@ structure RuntimeCallInterval (identified : IdentifiedRuntimeFree t files root m
   compatible : RuntimeLeavesCompatible leaves
   start : Nat
   code : ParsedRuntimeCallExpression (canonicalRuntimeCalls t (leaves.map (·.target)))
-    identified.id leaves occurrence.context occurrence.selected.raw start
+    identified.id (leaves.map (·.toCallable)) occurrence.context occurrence.selected.raw start
   resultSource : RuntimeSourceType identified.selected.scope.members module path
     identified.selected.function.function.result code.kind
   resultIdentity : RuntimeTypeIdentity t ((atRow t.callables identified.id).integer 4) code.kind
@@ -41,7 +41,7 @@ def checkRuntimeCallInterval (identified : IdentifiedRuntimeFree t files root mo
   if sourceNames : runtimeCalledNames 4096 occurrence.selected.raw = some (leaves.map (·.name)) then
     if compatible : RuntimeLeavesCompatible leaves then
       let code ← checkRuntimeCallExpressionCode (canonicalRuntimeCalls t (leaves.map (·.target)))
-        identified.id leaves occurrence.context 4096 occurrence.selected.raw start
+        identified.id (leaves.map (·.toCallable)) occurrence.context 4096 occurrence.selected.raw start
       let result ← resolveRuntimeType identified.selected.scope.members module path
         identified.selected.function.function.result
       if same : result.kind = code.kind then

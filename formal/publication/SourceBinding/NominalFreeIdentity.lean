@@ -44,17 +44,26 @@ def RuntimeFrameSlot (t : Tables) (callable : Record) (entry : RuntimeType × Na
 instance (t : Tables) (callable : Record) (entry : RuntimeType × Nat) :
     Decidable (RuntimeFrameSlot t callable entry) := by unfold RuntimeFrameSlot; infer_instance
 
-def RuntimeFreeShape (t : Tables) (id : Int) (parameters : List RuntimeType) (locals : List SourceLocal) : Prop :=
+/-- Shared ordinary free-function header; frame-slot completeness remains a
+    separate source-bound obligation, not a zero-local restriction on calls. -/
+def RuntimeFreeHeader (t : Tables) (id : Int) : Prop :=
   let c := atRow t.callables id
-  let kinds := parameters ++ locals.map (·.kind)
   Index id t.callables.size ∧ nameBytes t c 6 = ByteArray.empty ∧
   c.integer 8 = 0 ∧ c.integer 9 = 0 ∧ c.integer 10 = 0 ∧ c.integer 11 = 0 ∧ c.integer 12 = 0 ∧
-  c.integer 15 = Int.ofNat kinds.length ∧
-  (∀ entry ∈ kinds.zipIdx, RuntimeFrameSlot t c entry) ∧
-  (∀ entry ∈ locals.zipIdx, entry.1.slot = 8 * (parameters.length + entry.2 + 1)) ∧
   (Aurora.Publication.group t.bodies id).size = 1 ∧
   (atRow (Aurora.Publication.group t.bodies id) 0).integer 2 = 0 ∧
   0 < (functionCode t id).size ∧ (functionCode t id).size ≤ 4096
+instance (t : Tables) (id : Int) : Decidable (RuntimeFreeHeader t id) := by
+  unfold RuntimeFreeHeader; infer_instance
+
+def RuntimeFreeShape (t : Tables) (id : Int) (parameters : List RuntimeType) (locals : List SourceLocal) : Prop :=
+  let c := atRow t.callables id
+  let kinds := parameters ++ locals.map (·.kind)
+  RuntimeFreeHeader t id ∧
+  c.integer 15 = Int.ofNat kinds.length ∧
+  (∀ entry ∈ kinds.zipIdx, RuntimeFrameSlot t c entry) ∧
+  (∀ entry ∈ locals.zipIdx, entry.1.slot = 8 * (parameters.length + entry.2 + 1))
+
 instance (t : Tables) (id : Int) (parameters : List RuntimeType) (locals : List SourceLocal) :
     Decidable (RuntimeFreeShape t id parameters locals) := by unfold RuntimeFreeShape; infer_instance
 

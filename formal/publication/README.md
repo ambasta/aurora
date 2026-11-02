@@ -682,3 +682,39 @@ unattached.
 The primary audit retains all 356 preceding exports and adds 48 scoped-body
 exports: **404 primary reports**, plus **20 separate independent specification
 reports**, under the unchanged `propext`/`Quot.sound` allowlist.
+
+### Conservative full-source function and call-graph prerequisites
+
+The source function payload now permits its actual parsed statement list rather
+than only a singleton return. There remains one mutual operational judgement
+for raw expressions, ordered arguments, statements and statement lists; no new
+AST, arithmetic evaluator or supplied body result is introduced. The former
+leaf APIs are exact specializations. `LegacyLeafSemantics` independently freezes
+the four prior relations, and four global iff theorems prove preservation in both
+directions for arbitrary old environments, including duplicate entries, nested
+calls, malformed values, faults and skipped expression arms. These proofs impose
+no new readiness, scoping, uniqueness or rank premise. Only the audit imports this
+proof-only migration module; production semantics/checkers do not depend on it.
+
+The one expression/statement code grammar now uses checked callable identities
+with complete runtime signatures and actual private-local frame metadata. Old
+leaf profiles retain exact adapters. Uniform composition chooses its source
+outcome and ordered source/machine traces **before** all caller machine contexts,
+including receiver/world, saved frames, accumulator and residual stack. An
+internal callee-execution hypothesis refers to real source-body evaluation and
+actual fresh-entry/body runs, never a result summary. Old public leaf-profile
+exports discharge it using their existing complete certificates and retain their
+previous argument/fault guarantees.
+
+The generic DAG checker binds one source graph/publication to a closed, root-
+reachable node inventory. Every syntactic call, including unreachable suffixes,
+has a checked smaller rank. Each node has an exact direct-call inventory, while
+source evaluation and canonical machine execution retain the global environment.
+Each body certificate covers actual entry, all source/code rows and terminal
+coverage. These are prerequisites: at this checkpoint the global rank induction
+has **not** discharged the internal callee hypothesis for the root, and no complete
+`frame_transition` execution or lifecycle-specification attachment is claimed.
+
+The primary audit preserves all 404 preceding reports and adds 52 unique
+prerequisite exports: **456 primary reports**, plus the unchanged **20 independent
+specification reports**, with the same axiom allowlist and default Lean limits.

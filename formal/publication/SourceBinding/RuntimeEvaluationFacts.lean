@@ -1,4 +1,4 @@
-import SourceBinding.RuntimeEvaluation
+import SourceBinding.RuntimeSingleton
 import SourceBinding.ArgumentValues
 import SourceBinding.RuntimeFacts
 namespace Aurora.SourceBinding
@@ -47,11 +47,17 @@ theorem runtime_word_operator_typed (operator : RuntimeWordOperator op primitive
   rw [runtime_scalar_outcome]
   cases operator <;> exact binary_typed _ _ _
 
-theorem RuntimeEvaluatesWith.outcome_typed
-    (evaluated : RuntimeEvaluatesWith functions context state raw kind outcome events) :
+def RuntimeBodyOutcomeTyped (kind : RuntimeType) : RuntimeBodyOutcome → Prop
+  | .returned value _ => readRuntime kind (some value) = .value value
+  | .continued _ | .trapped _ _ => True
+
+theorem RuntimeEvaluation.outcome_typed
+    (evaluated : RuntimeEvaluation functions context state raw kind outcome events) :
     RuntimeOutcomeTyped kind outcome := by
-  induction evaluated using RuntimeEvaluatesWith.rec
-      (motive_2 := fun _ _ _ _ _ _ _ => True) with
+  induction evaluated using RuntimeEvaluation.rec
+      (motive_2 := fun _ _ _ _ _ _ _ => True)
+      (motive_3 := fun _ _ _ _ result _ _ _ _ outcome _ _ => RuntimeBodyOutcomeTyped result outcome)
+      (motive_4 := fun _ _ _ _ result _ _ _ _ outcome _ _ => RuntimeBodyOutcomeTyped result outcome) with
   | word => rw [runtime_scalar_outcome]; exact read_typed _ _
   | boolean => rfl
   | readVariable binding => exact RuntimeLocals.readBound_typed _ _
@@ -82,7 +88,15 @@ theorem RuntimeEvaluatesWith.outcome_typed
   | callArgumentsFault => trivial
   | callValue _ _ _ _ _ bodyTyped => exact bodyTyped
   | callFault => trivial
-  | nil | fault | cons => trivial
+  | returnValue _ ih => exact ih
+  | branchTrueReturn _ _ _ _ _ ih => exact ih
+  | next _ _ _ ih => exact ih
+  | returned _ _ ih => exact ih
+  | _ => intros; trivial
+
+theorem RuntimeEvaluatesWith.outcome_typed
+    (evaluated : RuntimeEvaluatesWith functions context state raw kind outcome events) :
+    RuntimeOutcomeTyped kind outcome := RuntimeEvaluation.outcome_typed evaluated
 
 theorem RuntimeEvaluates.outcome_typed (evaluated : RuntimeEvaluates context state raw kind outcome) :
     RuntimeOutcomeTyped kind outcome := RuntimeEvaluatesWith.outcome_typed evaluated

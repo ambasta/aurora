@@ -8,12 +8,15 @@ def noContext : RuntimeExprContext := ⟨[],[],[],[],[]⟩
 def localProgramOnly : CallProgram := fun _ pc =>
   if pc = 0 then some (.local (.pure (.constant .word (.word 1)))) else none
 
-def noLeaves : List (RuntimeCallLeaf (tables []) [] [] [] []) := []
+def noLeaves : List (RuntimeCallable (tables []) [] [] [] []) := []
 example : (checkRuntimeCallExpressionCode localProgramOnly 0 noLeaves noContext 8 (.word 1) 0).isSome = true := by decide
 example : (checkRuntimeCallExpressionCode localProgramOnly 0 noLeaves noContext 8 (.word 2) 0).isNone = true := by decide
 example : (checkRuntimeCallExpressionCode localProgramOnly 0 noLeaves noContext 8
     (.call (.named ["missing".toUTF8]) []) 0).isNone = true := by decide
-example : RuntimeLeavesCompatible noLeaves := by intro first present; cases present
+
+
+example : RuntimeLeavesCompatible
+    ([] : List (RuntimeCallLeaf (tables []) [] [] [] [])) := by intro first present; cases present
 
 example : (SourceExpr.call (.named ["f".toUTF8]) [.word 1,.word 2]) ≠
     (.call (.named ["f".toUTF8]) [.word 2,.word 1]) := by

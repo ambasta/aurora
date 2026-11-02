@@ -14,7 +14,7 @@ theorem FormalRuntimeCallInterval.executes
       RuntimeEvaluatesWith (checked.interval.leaves.map RuntimeCallLeaf.source)
         checked.interval.occurrence.context (formalRuntimeLocals checked.parameters base)
         checked.interval.occurrence.selected.raw checked.interval.code.kind outcome sourceEvents ∧
-      RuntimeCallTraceRelated checked.interval.leaves sourceEvents machineEvents ∧
+      RuntimeLeafCallTraceRelated checked.interval.leaves sourceEvents machineEvents ∧
       ∀ accumulator stack,
         RuntimeCallRun (canonicalRuntimeCalls t (checked.interval.leaves.map (·.target))) external
           (preparedEntry base runtimeParameterSlot checked.parameters.length) identified.id saved world

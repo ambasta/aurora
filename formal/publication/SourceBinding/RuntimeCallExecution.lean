@@ -1,10 +1,12 @@
-import SourceBinding.RuntimeCallLeafProof
+import SourceBinding.RuntimeExecution
+import SourceBinding.RuntimeCallSupport
+import SourceBinding.CallMachineProof
 namespace Aurora.SourceBinding
 
 /-- A successful expression restores the complete caller frame. A fault keeps
     the actual active frame from the call machine: it may be a callee, so no
     caller-locals/argument equality is asserted. Shared state is unchanged in
-    this call-free-leaf expression profile. -/
+    this private-local expression profile. -/
 def RuntimeCallResult (base : Machine) (caller : Int) (saved : List SavedCall)
     (world : World) (stop : Nat) (stack : List Value) :
     Outcome Value → CallPhase World ExternalFault → Prop

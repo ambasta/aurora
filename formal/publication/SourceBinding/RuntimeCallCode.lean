@@ -1,4 +1,5 @@
 import SourceBinding.RuntimeCallProjection
+import SourceBinding.RuntimeCallable
 namespace Aurora.SourceBinding
 
 deriving instance DecidableEq for CallOp
@@ -8,7 +9,7 @@ deriving instance DecidableEq for CallOp
     expression language or arithmetic semantics. -/
 mutual
 inductive RuntimeCallExpressionCode (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path)) (context : RuntimeExprContext) :
+    (leaves : List (RuntimeCallable t files root module path)) (context : RuntimeExprContext) :
     SourceExpr → RuntimeType → Nat → Nat → Prop
   | local : RuntimeExpressionCode (localProgram program caller) context raw kind start stop →
       RuntimeCallExpressionCode program caller leaves context raw kind start stop
@@ -57,7 +58,7 @@ inductive RuntimeCallExpressionCode (program : CallProgram) (caller : Int)
 
 
 inductive RuntimeCallArgumentsCode (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path)) (context : RuntimeExprContext) :
+    (leaves : List (RuntimeCallable t files root module path)) (context : RuntimeExprContext) :
     List SourceExpr → List RuntimeType → Nat → Nat → Prop
   | nil : RuntimeCallArgumentsCode program caller leaves context [] [] start start
   | cons : RuntimeCallExpressionCode program caller leaves context first kind start middle →
@@ -67,14 +68,14 @@ inductive RuntimeCallArgumentsCode (program : CallProgram) (caller : Int)
 end
 
 structure ParsedRuntimeCallExpression (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path)) (context : RuntimeExprContext)
+    (leaves : List (RuntimeCallable t files root module path)) (context : RuntimeExprContext)
     (raw : SourceExpr) (start : Nat) where
   kind : RuntimeType
   stop : Nat
   grammar : RuntimeCallExpressionCode program caller leaves context raw kind start stop
 
 structure ParsedRuntimeCallArguments (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path)) (context : RuntimeExprContext)
+    (leaves : List (RuntimeCallable t files root module path)) (context : RuntimeExprContext)
     (raw : List SourceExpr) (start : Nat) where
   kinds : List RuntimeType
   stop : Nat
@@ -92,7 +93,7 @@ mutual
 /-- Prefer the existing call-free checker; only call-containing raw syntax needs
     the compositional cases below. No source result is an input to checking. -/
 def checkRuntimeCallExpressionCode (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path)) (context : RuntimeExprContext) :
+    (leaves : List (RuntimeCallable t files root module path)) (context : RuntimeExprContext) :
     (fuel : Nat) → (raw : SourceExpr) → (start : Nat) →
     Option (ParsedRuntimeCallExpression program caller leaves context raw start)
   | 0, _, _ => none
@@ -216,7 +217,7 @@ def checkRuntimeCallExpressionCode (program : CallProgram) (caller : Int)
       | _ => none
 
 def checkRuntimeCallArgumentsCode (program : CallProgram) (caller : Int)
-    (leaves : List (RuntimeCallLeaf t files root module path)) (context : RuntimeExprContext) :
+    (leaves : List (RuntimeCallable t files root module path)) (context : RuntimeExprContext) :
     (fuel : Nat) → (raw : List SourceExpr) → (start : Nat) →
     Option (ParsedRuntimeCallArguments program caller leaves context raw start)
   | 0, _, _ => none

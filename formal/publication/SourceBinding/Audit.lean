@@ -1,4 +1,6 @@
 import SourceBinding
+-- Proof-only migration equivalence is deliberately outside the production root.
+import SourceBinding.LegacyLeafCompatibility
 #print axioms Aurora.SourceBinding.lex_sound
 #print axioms Aurora.SourceBinding.lex_oversize
 #print axioms Aurora.SourceBinding.lex_exhausted
@@ -420,3 +422,57 @@ import SourceBinding
 #print axioms Aurora.SourceBinding.RuntimeStatementsCode.initial_context
 #print axioms Aurora.SourceBinding.RuntimeBodyCertificate.initial_context
 #print axioms Aurora.SourceBinding.RuntimeBodyCertificate.executes
+
+-- Conservative full-source payload and uniform generic composition prerequisites.
+#print axioms Aurora.SourceBinding.RuntimeSignature.unique
+#print axioms Aurora.SourceBinding.RuntimeSignature.parameter_tail
+#print axioms Aurora.SourceBinding.RuntimeCallLeaf.empty_frame_shape
+#print axioms Aurora.SourceBinding.runtime_leaf_invocation_iff
+#print axioms Aurora.SourceBinding.RuntimeCallLeaf.invocation_iff
+#print axioms Aurora.SourceBinding.RuntimeEvaluation.weaken
+#print axioms Aurora.SourceBinding.RuntimeEvaluation.in_environment
+#print axioms Aurora.SourceBinding.RuntimeArgumentEvaluation.outcome_typed
+#print axioms Aurora.SourceBinding.RuntimeEvaluation.supported
+#print axioms Aurora.SourceBinding.RuntimeCallEventRelated.weaken
+#print axioms Aurora.SourceBinding.RuntimeCallTraceRelated.weaken
+#print axioms Aurora.SourceBinding.RuntimeCallLeaf.invoke_event
+#print axioms Aurora.SourceBinding.RuntimeCallLeaf.return_event
+#print axioms Aurora.SourceBinding.RuntimeEvaluation.outcome_typed
+#print axioms Aurora.SourceBinding.RuntimeExpressionCode.evaluates_uniform
+#print axioms Aurora.SourceBinding.LegacyLeafEvaluation.forward
+#print axioms Aurora.SourceBinding.LegacyLeafArguments.forward
+#print axioms Aurora.SourceBinding.LegacyLeafStatement.forward
+#print axioms Aurora.SourceBinding.LegacyLeafStatements.forward
+#print axioms Aurora.SourceBinding.legacy_singleton_return_iff
+#print axioms Aurora.SourceBinding.legacy_singleton_trap_iff
+#print axioms Aurora.SourceBinding.RuntimeEvaluatesWith.backward
+#print axioms Aurora.SourceBinding.RuntimeArgumentsEvaluateWith.backward
+#print axioms Aurora.SourceBinding.RuntimeStatementEvaluates.backward
+#print axioms Aurora.SourceBinding.RuntimeStatementsEvaluate.backward
+#print axioms Aurora.SourceBinding.legacy_expression_iff
+#print axioms Aurora.SourceBinding.legacy_arguments_iff
+#print axioms Aurora.SourceBinding.legacy_statement_iff
+#print axioms Aurora.SourceBinding.legacy_statements_iff
+#print axioms Aurora.SourceBinding.RuntimeCallLeaf.toCallable_target
+#print axioms Aurora.SourceBinding.RuntimeCallLeaf.toCallable_source
+#print axioms Aurora.SourceBinding.RuntimeCallable.parameters_exact
+#print axioms Aurora.SourceBinding.RuntimeCallable.result_exact
+#print axioms Aurora.SourceBinding.RuntimeCallable.source_key
+#print axioms Aurora.SourceBinding.RuntimeCallable.invoke_uniform
+#print axioms Aurora.SourceBinding.RuntimeDAGShape.no_self_edge
+#print axioms Aurora.SourceBinding.RuntimeDAGShape.reachable_rank
+#print axioms Aurora.SourceBinding.RuntimeDAGShape.no_cycle
+#print axioms Aurora.SourceBinding.RuntimeDAGShape.direct_decreases
+#print axioms Aurora.SourceBinding.RuntimeCallLeaf.callee_executes
+#print axioms Aurora.SourceBinding.runtime_singleton_return_iff
+#print axioms Aurora.SourceBinding.runtime_singleton_trap_iff
+#print axioms Aurora.SourceBinding.RuntimeSourceLeaf.initial_context
+#print axioms Aurora.SourceBinding.RuntimeEvaluatesWith.callValue
+#print axioms Aurora.SourceBinding.RuntimeEvaluatesWith.callFault
+#print axioms Aurora.SourceBinding.RuntimeSourceLeaf.toFunction_key
+#print axioms Aurora.SourceBinding.RuntimeSourceLeaf.toFunction_resolves
+#print axioms Aurora.SourceBinding.RuntimeSourceLeaf.toFunction_body
+#print axioms Aurora.SourceBinding.RuntimeStatementCode.simulates_uniform
+#print axioms Aurora.SourceBinding.RuntimeStatementsCode.simulates_uniform
+#print axioms Aurora.SourceBinding.runtime_branch_uniform
+#print axioms Aurora.SourceBinding.RuntimeCallExpressionCode.evaluates_uniform

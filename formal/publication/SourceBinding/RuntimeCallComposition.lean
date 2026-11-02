@@ -1,4 +1,4 @@
-import SourceBinding.RuntimeCallInvoke
+import SourceBinding.RuntimeArgumentCollection
 namespace Aurora.SourceBinding
 
 theorem RuntimeCallRun.value_run
