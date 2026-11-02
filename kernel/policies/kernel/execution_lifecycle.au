@@ -69,7 +69,7 @@ export namespace kernel {
                     }
                 }
             } else {
-                builtin::require(observed.event >= 2u64 && observed.event <= 8u64);
+                builtin::require((observed.event >= 2u64 && observed.event <= 8u64) || observed.event == 15u64);
                 // Stop accounting can exhaust even after a fault/invalid call.
                 if (observed.exhausted != 0u64) {
                     selected = 10u64;
@@ -79,7 +79,7 @@ export namespace kernel {
             state[at + 8] = observed.event;
             state[at + 9] = observed.detail;
             state[at + 10] = observed.exhausted;
-            if (selected >= 2u64 && selected <= 5u64) {
+            if ((selected >= 2u64 && selected <= 5u64) || selected == 15u64) {
                 state[at + 11] = 0u64;
                 if (selected != 2u64) {
                     state[at + 11] = selected;
@@ -177,7 +177,7 @@ export namespace kernel {
             }
             state[at] = 2u64;
             const builtin::ExecutionObservation observed = authority.activate(slot);
-            builtin::require(observed.event >= 2u64 && observed.event <= 8u64);
+            builtin::require((observed.event >= 2u64 && observed.event <= 8u64) || observed.event == 15u64);
             return accept(slot, observed);
         }
         auto force(u64 slot) -> LifecycleResult {
@@ -199,7 +199,7 @@ export namespace kernel {
                 return false;
             }
             const i64 at = i64(slot) * 16;
-            if (state[at] != 3u64 || state[at + 11] < 3u64 || state[at + 11] > 5u64) {
+            if (state[at] != 3u64 || ((state[at + 11] < 3u64 || state[at + 11] > 5u64) && state[at + 11] != 15u64)) {
                 return false;
             }
             const builtin::ExecutionObservation observed = authority.complete(slot);

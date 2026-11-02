@@ -82,6 +82,59 @@ export namespace kernel {
         }
     };
 
+    // Scalar protocol state only. Native retains the authenticated byte staging,
+    // never a second terminal-outcome decision. Counts are admitted LAPIC counts,
+    // not a wall-clock deadline; no read transition replenishes the allowance.
+    class InputSession {
+    public:
+        u64 remaining;
+        u64 status;
+        u64 count;
+        u64 after_cr;
+        InputSession(u64 allowance, u64 terminal, u64 staged, u64 carry) : remaining(allowance), status(terminal),
+            count(staged), after_cr(carry) {
+        }
+    };
+
+    // Events: 0 settle a wait slice, 1 sampled byte, 2 damaged transport,
+    // 3 committed delivery, 4 process abort. Status0 is open (data when count>0),
+    // 1 EOF, 2 channel cancelled, 3 unavailable. Abort is not a child response.
+    auto process_input(u64 remaining, u64 status, u64 count, u64 after_cr, u64 event, u64 value) -> InputSession {
+        builtin::require(status <= 3u64 && count <= 504u64 && event <= 4u64 && after_cr <= 1u64);
+        builtin::require(status < 2u64 || count == 0u64);
+        if (event == 4u64) {
+            return InputSession(0u64, 3u64, 0u64, after_cr);
+        }
+        if (event == 3u64) {
+            return InputSession(remaining, status, 0u64, after_cr);
+        }
+        if (status != 0u64) {
+            return InputSession(remaining, status, count, after_cr);
+        }
+        if (event == 0u64) {
+            if (value >= remaining) {
+                return InputSession(0u64, 3u64, 0u64, after_cr);
+            }
+            return InputSession(remaining - value, 0u64, count, after_cr);
+        }
+        if (event == 2u64 || remaining == 0u64) {
+            return InputSession(remaining, 3u64, 0u64, after_cr);
+        }
+        builtin::require(value <= 255u64 && count < 504u64);
+        if (after_cr != 0u64) {
+            if (value == 10u64) {
+                return InputSession(remaining, status, count, 0u64);
+            }
+        }
+        if (value == 3u64) {
+            return InputSession(remaining, 2u64, 0u64, 0u64);
+        }
+        if (value == 4u64) {
+            return InputSession(remaining, 1u64, count, 0u64);
+        }
+        return InputSession(remaining, 0u64, count + 1u64, 0u64);
+    }
+
     // User code 0x1b and data 0x23; RFLAGS with IF and bit 1 set, IOPL 0 and
     // only the bits CPL 3 can change (arithmetic, TF, DF, NT, RF, AC, ID).
     auto user_frame(ProcessTrap trap) -> bool {

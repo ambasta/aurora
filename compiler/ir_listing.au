@@ -181,6 +181,9 @@ export namespace compiler_ir_listing {
         return out.ok();
     }
     auto kind_text(Listing& out, const Listing& table, i64 kind) -> bool {
+        if (kind == 29) {
+            return out.word("input");
+        }
         return spelling(out, table, kind, form_count(), 22);
     }
     auto type_text(Listing& out, const Listing& table, const compiler_ir_metadata::MetadataStore& metadata,

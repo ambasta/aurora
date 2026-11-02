@@ -31,6 +31,22 @@ public:
 };
 static_assert(sizeof(PolicySpan) == 56 && alignof(PolicySpan) == 8);
 
+// Copied source-owned input protocol state; staging bytes remain native.
+class InputSession final {
+public:
+    U64 remaining = 0, status = 3, count = 0, after_cr = 0;
+};
+static_assert(sizeof(InputSession) == 32);
+extern "C" void __au_runtime_process_input(const void *, InputSession *);
+inline auto input_update(InputSession state, U64 event, U64 value = 0) -> InputSession {
+    const std::array<U64, 6> arguments{state.remaining, state.status, state.count, state.after_cr, event, value};
+    InputSession result;
+    __au_runtime_process_input(arguments.data(), &result);
+    if (result.status > 3 || result.count > 504 || result.after_cr > 1 || result.remaining > state.remaining)
+        __builtin_trap();
+    return result;
+}
+
 enum class MapVerdict : U64 {
     valid,
     version,
@@ -335,6 +351,8 @@ auto elf_admit(const VolumeArguments *) -> U64 asm("__au_runtime_process_elf_adm
 auto layout(const LayoutArguments *) -> U64 asm("__au_runtime_process_layout") __attribute__((visibility("hidden")));
 auto region(const RegionArguments *, ProcessRegion *) -> void asm("__au_runtime_process_region")
     __attribute__((visibility("hidden")));
+auto elf_input(const VolumeArguments *) -> U64 asm("__au_runtime_process_elf_input")
+    __attribute__((visibility("hidden")));
 auto elf_entry(const VolumeArguments *) -> U64 asm("__au_runtime_process_elf_entry")
     __attribute__((visibility("hidden")));
 auto trap(const ProcessTrap *) -> U64 asm("__au_runtime_process_trap") __attribute__((visibility("hidden")));
@@ -497,6 +515,10 @@ frame_range(std::span<const std::byte> map, U64 stride, U64 index, U64 arena, U6
     if (kind == RegionKind::stack)
         return result.flags == leaf_write && result.bytes == 0 ? std::optional<ProcessRegion>{result} : std::nullopt;
     return result.flags == leaf_read && result.bytes == bytes ? std::optional<ProcessRegion>{result} : std::nullopt;
+}
+[[nodiscard]] inline auto elf_input(std::span<const std::byte> image) -> bool {
+    const VolumeArguments arguments{PolicySpan{image}};
+    return bridge::elf_input(&arguments) == 1;
 }
 [[nodiscard]] inline auto elf_entry(std::span<const std::byte> image) -> U64 {
     const VolumeArguments arguments{PolicySpan{image}};

@@ -1569,6 +1569,34 @@ def main():
                 )
                 return part
 
+            def run_input(chunks, status, printed, absent=b"", launch=b"\r\n"):
+                begin = len(transcript)
+                send(b"run bin/line-echo" + launch)
+                receive(b"line-echo ready", begin)
+                for chunk in chunks:
+                    send(chunk)
+                    time.sleep(0.02)
+                receive(b"Input closed; press Enter to return to the console.", begin)
+                part = bytes(transcript[begin:]).replace(b"\r\n", b"\n")
+                need(
+                    part.count(("run: exited status=" + str(status) + "\n").encode()) == 1,
+                    "Interactive child exit status",
+                )
+                need(
+                    printed in part and (not absent or absent not in part),
+                    "Interactive child exact completed/abandoned line behavior",
+                )
+                need(
+                    b"AURORA_PROCESS_KERNEL_FAULT" not in part and b"AURORA_PROCESS_FAIL" not in part,
+                    "Input child escaped its process boundary",
+                )
+                # Ownership is returned explicitly: bytes before this delimiter
+                # are discarded, never reinterpreted as shell commands.
+                handoff = len(transcript)
+                send(b"stale-command\r\n")
+                receive(b"aurora> ", handoff)
+                need(b"Unknown command" not in transcript[handoff:], "Input handoff replayed stale bytes")
+
             def finish_session():
                 begin = len(transcript)
                 send(b"exit\n")
@@ -2197,6 +2225,11 @@ def main():
                 run_command("run sort.au", "invalid executable or arguments")
                 run_command("run bin/sort", "exited status=2", b"usage: host-sort DIRECTORY OUTPUT FILE...\n")
                 run_command("run bin/cat / copied.txt input.txt", "exited status=0", b"input.txt 17\n")
+                run_input([b"hel", b"lo\r", b"\n\nsecond\n", b"tail", b"\x04"], 0, b"hello\n\nsecond\ntail\n")
+                run_input([b"kept\n", b"abandoned", b"\x03"], 1, b"kept\n", absent=b"abandoned\n")
+                run_input([b"x" * 64 + b"\n", b"\x04"], 0, b"x" * 64 + b"\n")
+                run_input([b"z" * 65 + b"\n"], 1, b"line rejected", absent=b"z" * 65)
+                metrics["foreground_input_partial_eof_cancel_overflow"] = True
                 run_command("run bin/aurorac --emit-object --target aurora sort.au -o sort.o", "exited status=0")
                 run_command("run bin/aurorac --link-object sort.o -o sorted", "exited status=0")
                 run_command("run sorted / sorted.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")

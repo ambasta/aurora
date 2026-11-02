@@ -2621,7 +2621,7 @@ export namespace compiler_ir_instructions {
         }
         if (form == 2) { // ReleaseServiceLoan: the executed path decides which loan is live and called.
             const i64 kind = call_value(store, instruction, 1);
-            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 10) {
+            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 11) {
                 return fail(store, InstructionError::service_release);
             }
             return true;
@@ -2630,7 +2630,7 @@ export namespace compiler_ir_instructions {
             return true;
         } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || operation > 45) {
+        if (operation < 0 || (operation > 45 && operation != 52)) {
             return fail(store, InstructionError::service_operation);
         }
         i64 expected_kind = 0;
@@ -2658,6 +2658,9 @@ export namespace compiler_ir_instructions {
         if (operation > 8 && operation < 32) {
             expected_kind = 6;
         } // HostFiles: the Linux binding's session and system primitives
+        if (operation == 52) {
+            expected_kind = 11;
+        }
         const i64 kind = call_value(store, instruction, 3);
         if (kind != expected_kind) {
             return fail(store, InstructionError::service_operation_kind);
@@ -2682,6 +2685,9 @@ export namespace compiler_ir_instructions {
         }
         if (operation >= 36 && operation < 39 && !block_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);
+        }
+        if (operation == 52 && !store.kernel_target()) {
+            return fail(store, InstructionError::service_platform);
         }
         if (operation >= 36 && operation < 46 && !store.kernel_target()) {
             return fail(store, InstructionError::block_platform);
@@ -2743,7 +2749,8 @@ export namespace compiler_ir_instructions {
             == 3 && !compiler_ir_metadata::named(metadata, type.name(), "__au_iommu_event_sample")) || (operation == 5
             && !compiler_ir_metadata::named(metadata, type.name(), "__au_call_result")) || ((operation == 8 || operation
             == 32) && !compiler_ir_metadata::named(metadata, type.name(), "__au_serve_request")) || ((operation == 14
-            || operation == 30) && !compiler_ir_metadata::named(metadata, type.name(), "__au_host_chunk"))) {
+            || operation == 30) && !compiler_ir_metadata::named(metadata, type.name(), "__au_host_chunk")) || (operation
+            == 52 && !compiler_ir_metadata::named(metadata, type.name(), "__au_input_chunk"))) {
             return fail(store, InstructionError::service_sample_result);
         }
         return true;

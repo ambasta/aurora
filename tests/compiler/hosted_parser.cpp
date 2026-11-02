@@ -2660,7 +2660,8 @@ void rawInstructionAdmission() {
            release(5, 6),
            release(6, 7),
            release(7, 8),
-           release(8, 9)}}}, // Closed kinds need no matching entry or live loan here.
+           release(8, 9),
+           release(9, 11)}}}, // Closed kinds need no matching entry or live loan here.
         {{{acquire(1), release(1), acquire(1)}}},
         {{{acquire(7), acquire(7), acquire(7)}}},
         {{{acquire(1), acquire(1, 32, 1)}}, Reason::service_loan_identity},
@@ -2678,9 +2679,9 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(id)}}, Reason::service_loan_identity});
         services.push_back({{{release(id)}}, Reason::service_release});
     }
-    // Kinds 0..10 are closed; legacy service operations stop at 45.
+    // Kinds 0..11 are closed; legacy service operations stop at 45.
     // Issuance uses its own form, and retired issuer operations remain invalid.
-    for (const auto kind : {std::int64_t{-1}, std::int64_t{11}, INT64_MAX}) {
+    for (const auto kind : {std::int64_t{-1}, std::int64_t{12}, INT64_MAX}) {
         services.push_back({{{acquire(1, 16, kind)}}, Reason::service_loan_root});
         services.push_back({{{release(1, kind)}}, Reason::service_release});
         services.push_back({{{operation(1, kind)}}, Reason::service_operation_kind});

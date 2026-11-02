@@ -94,3 +94,6 @@ retire-noncanonical source:retire-noncanonical
 finish-noncanonical source:finish-noncanonical
 invalidate-noncanonical source:invalidate-noncanonical
 staged-request-expiry staged-request-expiry run:0:6:0:0 finish
+input-completion prepare:1 run:1:15:0:0 complete:1 run:1:6:0:0 finish
+input-expiry prepare:1 run:1:15:0:1 state:1 finish
+input-abort prepare:1 run:1:15:0:0 force:1:14:10:0 state:1 finish

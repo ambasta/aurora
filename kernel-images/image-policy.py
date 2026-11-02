@@ -383,6 +383,7 @@ RULES = [
                 "root": "__au_runtime_execution_authority_complete",
                 "physical": [],
                 "source_entries": [
+                    "__au_runtime_process_input",
                     "__au_runtime_endpoint_observe",
                     "__au_runtime_endpoint_delivered",
                     "__au_runtime_endpoint_complete_client",
@@ -408,6 +409,7 @@ RULES = [
                 "root": "__au_runtime_execution_authority_retire",
                 "physical": [],
                 "source_entries": [
+                    "__au_runtime_process_input",
                     "__au_runtime_endpoint_observe",
                     "__au_runtime_service_phase",
                     "__au_runtime_service_generation",
@@ -509,7 +511,7 @@ RULES = [
             "__au_runtime_manager_frames_release",
             "__au_runtime_manager_frames_audit",
         ],
-        "callbacks": ["deliver_output(=execution_output_probe("],
+        "callbacks": ["deliver_output(=execution_output_probe(", "deliver_input(=input_probe_sample("],
     },
     # Retained source accounting is a real consumer, not unused ABI scaffolding.
     {
@@ -642,12 +644,13 @@ RULES = [
     # fixture run-list/export policy and only this copied supervisor output sink.
     {
         "profiles": ["uefi/production"],
-        "callbacks": ["deliver_output(=production_output("],
+        "callbacks": ["deliver_output(=production_output(", "deliver_input(=production_input("],
         "imports:execution": [
             "__au_runtime_execution_prepare",
             "__au_runtime_execution_preparation",
             "__au_runtime_execution_advance",
             "__au_runtime_execution_output",
+            "__au_runtime_execution_input",
             "__au_runtime_execution_request",
             "__au_runtime_execution_cancel",
             "__au_runtime_execution_finish",

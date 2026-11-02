@@ -896,6 +896,11 @@ auto events_mode(const char *path) -> int {
                 values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8]};
             const auto kind = process::trap(trap);
             std::cout << text << " -> " << (kind ? trap_names[static_cast<U64>(*kind)] : "malformed") << "\n";
+        } else if (verb == "input" && values.size() == 6) {
+            const process::InputSession state{values[0], values[1], values[2], values[3]};
+            const auto next = process::input_update(state, values[4], values[5]);
+            std::cout << text << " -> remaining=" << next.remaining << " status=" << next.status
+                      << " count=" << next.count << " after_cr=" << next.after_cr << "\n";
         } else if (verb == "call" && (values.size() == 4 || values.size() == 5)) {
             const auto call =
                 process::call(values[0], values[1], values[2], values[3], values.size() == 5 ? values[4] : 0);
@@ -1251,7 +1256,7 @@ using U64 = std::uint64_t;
 constexpr const char *statuses[] = {
     "exited", "fault", "watchdog", "missing", "malformed", "quota", "unavailable", "output_failed", "cancelled"};
 constexpr const char *preparations[] = {"loaded", "refused", "service_lost"};
-constexpr const char *steps[] = {"retired", "output", "request", "parked"};
+constexpr const char *steps[] = {"retired", "output", "request", "parked", "input"};
 constexpr const char *effects[] = {"success", "failed"};
 constexpr const char *requests[] = {
     "ready", "cancelled", "service_lost", "pending", "cancel_requested", "explicit_after_expiry"};
@@ -1290,6 +1295,9 @@ public:
     };
     static auto prepare(Binding &) -> execution::Preparation;
     static auto advance(Binding &) -> execution::Observation;
+    static auto input(Binding &) -> execution::Effect {
+        return static_cast<execution::Effect>(named(next("input", 2)[1], effects));
+    }
     static auto output(Binding &) -> execution::Effect {
         return static_cast<execution::Effect>(named(next("output", 2)[1], effects));
     }
@@ -1444,6 +1452,11 @@ extern "C" auto __au_runtime_execution_advance(const void *grant,
     if (execution_fixture::preparation_reads != 1)
         usage("command progressed before constructor preparation");
     *result = execution_fixture::Session::advance(grant, generation);
+}
+extern "C" auto __au_runtime_execution_input(const void *grant, std::uint64_t generation) -> std::uint64_t {
+    if (execution_fixture::preparation_reads != 1)
+        usage("command input before constructor preparation");
+    return execution_fixture::Session::input(grant, generation);
 }
 extern "C" auto __au_runtime_execution_output(const void *grant, std::uint64_t generation) -> std::uint64_t {
     if (execution_fixture::preparation_reads != 1)

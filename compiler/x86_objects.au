@@ -1061,11 +1061,71 @@ export namespace compiler_x86 {
         emit_service_completion(w, o, symbol, arguments, maximum);
         return w.ok();
     }
+    // InputStream is not a HostFiles primitive. The first grant lane is the
+    // kernel-issued input epoch; the second is the sealed descriptor generation.
+    // The copied result is pristine before entering the kernel, then checked in
+    // full before source code can observe it, including every unused payload byte.
+    auto emit_input_operation(EmitWorkspace& w, ObjectWorkspace& o,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+        if (!w.kernel_target()) {
+            return w.fail();
+        }
+        const i64 offset = operand_value(store, instruction, 0);
+        const i64 result = operand_value(store, instruction, 2);
+        const i64 grant = w.pack_address(0, offset);
+        const i64 generation = w.pack_address(0, offset - 8);
+        const i64 status = w.pack_address(0, result);
+        const i64 count = w.pack_address(0, result - 8);
+        const i64 bytes = w.pack_address(0, result - 16);
+        emit_load(w, o, generation, Register::rax, false);
+        emit_alu_imm(w, o, AluOp::compare, 1, Register::rax);
+        emit_branch(w, o, 5, 4, 0);
+        emit_lea(w, o, status, Register::rdi);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
+        emit_mov_imm(w, o, 520, Register::rcx);
+        emit_cld(w, o);
+        emit_rep_stosb(w, o);
+        emit_lea(w, o, status, Register::rdi);
+        emit_load(w, o, grant, Register::rsi, false);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rdx, Register::rdx);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::r10, Register::r10);
+        host_kernel_call(w, o, 21);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 5, 4, 0);
+        emit_load(w, o, status, Register::rax, false);
+        host_bound(w, o, Register::rax, 3);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rdx, Register::rdx);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_set_condition(w, o, 4, Register::rdx);
+        emit_load(w, o, count, Register::rcx, false);
+        host_bound(w, o, Register::rcx, 504);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::r8, Register::r8);
+        emit_alu_rr(w, o, AluOp::test, Register::rcx, Register::rcx);
+        emit_set_condition(w, o, 5, Register::r8);
+        // status=data iff count>0; every terminal status has count=0.
+        emit_alu_rr(w, o, AluOp::compare, Register::rdx, Register::r8);
+        emit_branch(w, o, 5, 4, 0);
+        emit_lea(w, o, bytes, Register::rsi);
+        const i64 labels = w.next_division();
+        emit_bind_label(w, o, 2, labels);
+        emit_alu_imm(w, o, AluOp::compare, 504, Register::rcx);
+        emit_branch(w, o, 4, 3, labels);
+        emit_indexed_load(w, o, Register::rsi, Register::rcx, indexed_address(1, 0), true);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 5, 4, 0);
+        emit_alu_imm(w, o, AluOp::add, 1, Register::rcx);
+        emit_branch(w, o, -1, 2, labels);
+        emit_bind_label(w, o, 3, labels);
+        return w.ok();
+    }
     auto emit_service_operation(EmitWorkspace& workspace, ObjectWorkspace& object,
         const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
         const i64 offset = operand_value(store, instruction, 0);
         const i64 operation = operand_value(store, instruction, 1);
         const i64 result = operand_value(store, instruction, 2);
+        if (operation == 52) {
+            return emit_input_operation(workspace, object, store, instruction);
+        }
         if (operation >= 39 && operation < 46) {
             return emit_writer_operation(workspace, object, store, instruction);
         }

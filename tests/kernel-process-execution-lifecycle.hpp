@@ -160,8 +160,9 @@ extern "C" void __au_runtime_execution_authority_complete(
     output_storage(address, output);
     enter(binding, epoch, address, Kind::complete, slot);
     identity(slot);
-    if (current->canonical(slot, Field::phase) != 3 || current->canonical(slot, Field::pending) < 3 ||
-        current->canonical(slot, Field::pending) > 5)
+    if (current->canonical(slot, Field::phase) != 3 ||
+        ((current->canonical(slot, Field::pending) < 3 || current->canonical(slot, Field::pending) > 5) &&
+         current->canonical(slot, Field::pending) != 15))
         usage("completion has no source-owned pending operation");
     *output = observe(slot);
     current->leave();

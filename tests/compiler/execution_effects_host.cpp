@@ -54,7 +54,7 @@ extern "C" void __au_runtime_execution_advance(Word identity, Word generation, R
     *result = {1, mode == 19 ? 8u : 0u, UINT64_MAX};
     switch (mode) {
     case 7:
-        result->state = 4;
+        result->state = 5;
         break;
     case 8:
         result->state = Word{1} << 32;

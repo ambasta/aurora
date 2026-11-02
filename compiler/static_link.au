@@ -253,6 +253,9 @@ export namespace compiler_static_link {
             little(20, 1u64, 4);
             little(24, 4198400u64 + u64(entry), 8);
             little(32, 64u64, 8);
+            // profile() admitted only the known request bit. Preserve it from
+            // the source object; this advertisement does not grant authority.
+            little(48, u64(compiler_private_object::number(input, 48, 4)), 4);
             little(52, 64u64, 2);
             little(54, 56u64, 2);
             little(56, u64(segments), 2);

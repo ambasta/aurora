@@ -70,6 +70,10 @@ auto process_region(builtin::span<const u8> image, u64 index, u64 arguments) -> 
     return region;
 }
 
+auto process_elf_input(builtin::span<const u8> image) -> u64 {
+    return kernel::elf_input_requested(image);
+}
+
 auto process_elf_entry(builtin::span<const u8> image) -> u64 {
     if (kernel::elf_admit(image, kernel::image_floor(), kernel::image_limit()) != kernel::ElfVerdict::valid) {
         return 0u64;
@@ -80,6 +84,11 @@ auto process_elf_entry(builtin::span<const u8> image) -> u64 {
 // Entries from a running process: the copied frame's class and a kernel call.
 auto process_trap(kernel::ProcessTrap trap) -> kernel::TrapClass {
     return kernel::process_trap(trap);
+}
+
+auto process_input(u64 remaining, u64 status, u64 count, u64 after_cr, u64 event, u64 value) -> kernel::InputSession {
+    const kernel::InputSession result = kernel::process_input(remaining, status, count, after_cr, event, value);
+    return result;
 }
 
 auto process_call(u64 operation, u64 first, u64 second, u64 third, u64 fourth) -> kernel::KernelCall {

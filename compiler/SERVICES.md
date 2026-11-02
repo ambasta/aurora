@@ -16,10 +16,10 @@ auto receive(builtin::ConsoleSession& session) -> builtin::ConsoleSample {
 ## Source and lifetime
 
 `ConsoleSession`, `DisplaySession`, `IommuEventSession`, `CallSession`, `Com1UartGrant`, `ServeSession` and
-`HostFiles` ([below](#hosted-files)) and `ReadOnlyBlock` ([below](#read-only-block-volume)), plus `WritableBlock`
+`HostFiles` ([below](#hosted-files)), `InputStream` ([below](#foreground-input)) and `ReadOnlyBlock` ([below](#read-only-block-volume)), plus `WritableBlock`
 ([boot recovery writer](#boot-recovery-writer)), and `ExecutionEffects` ([command orchestration](#command-orchestration)), are distinct compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
-reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port, Serve, HostFiles, ReadOnlyBlock or WritableBlock or ExecutionEffects alone, Console+Display
-in either order, Event+Console in either order, Serve+ReadOnlyBlock and Serve+WritableBlock in either helper order. Call, Port, HostFiles and ExecutionEffects cannot mix with any other kind. Event+Display, duplicate kinds
+reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port, Serve, HostFiles, InputStream, ReadOnlyBlock or WritableBlock or ExecutionEffects alone, Console+Display
+in either order, Event+Console in either order, Serve+ReadOnlyBlock, Serve+WritableBlock and HostFiles+InputStream in either helper order. Call, Port and ExecutionEffects cannot mix with any other kind; HostFiles and InputStream admit only their exact pair. Event+Display, duplicate kinds
 and all triples are rejected. There is no
 by-value or const variant. It cannot be constructed, copied, moved, assigned, stored in a
 local/field/array, returned, reflected or converted. A reference is a parameter
@@ -339,19 +339,65 @@ The copied `builtin::EventIntakeCompletion` cases are `drained` (0),
 carries completion, reclamation, publication or restart authority. Ordinary
 methods consume copied observations; no mixed object/service borrowing is added.
 
+## Foreground input
+
+Foreground serial input is implemented for the Aurora target. This bounded
+contract does not imply general terminal emulation, Linux input or physical
+hardware qualification.
+
+`builtin::InputStream&` is a separate sealed input loan, not a file handle or
+authority obtained from arguments. Its only operation is
+`read() -> builtin::InputChunk`. The copied report has `InputStatus status`,
+`u64 count` and `array<u8, 504> bytes` (520 bytes total):
+
+- `data` carries 1–504 bytes; a short read is not EOF. Unused bytes are zero.
+- `eof` carries no bytes and remains sticky after all prior queued data.
+- `cancelled` closes the input channel, not the process. A still-authorized
+  child can observe this zero-byte result repeatedly and decide how to exit.
+- `unavailable` carries no bytes and is sticky, including after exhaustion of
+  the foreground input wait allowance or transport failure.
+
+The Aurora-target entry can explicitly request both `HostFiles&` and
+`InputStream&` before its argument span; the grants remain independent. Existing
+HostFiles-only entries are unchanged. Input cannot be constructed, copied,
+stored or recovered from a numeric token by source code. This initial backend
+is Aurora-only; Linux input and general service combinations are not implied.
+The direct object/static-link route carries the Aurora input-entry request bit
+`0x00000001` in ELF `e_flags`; unknown bits reject. The bit describes the entry
+ABI request, not permission or proof of a stripped executable's source type.
+The supervisor must independently authorize a live foreground input session.
+An input-requesting executable without an admitted provider refuses before
+entry. External assembly/linking is not an input-capability emission route.
+
+The first serial provider treats Ctrl-D as EOF and Ctrl-C as channel
+cancellation. These are provider policy, not byte-stream ABI or Unix signals.
+Other bytes, including NUL, are transport data; applications choose text rules.
+Actual process cancellation or a watchdog invalidates the pending request and
+retires the child without manufacturing a report or resuming it.
+
+Each command receives one nonrenewable `InputWaitAllowance` in admitted LAPIC
+count units, separate from its existing CPU fuel. Full and partial supervisor
+wait slices debit it once before delivery; another read never renews it. This
+is not elapsed seconds or a wall-clock deadline. Exhaustion takes precedence
+over a coincident byte/EOF and closes input as unavailable. Native code owns
+authenticated fixed-size staging, saved-frame validation and bounded copying;
+Aurora policy owns channel state, terminal outcomes and byte publication.
+
 ## Hosted files
 
 `builtin::HostFiles` is a sealed service kind for hosted programs. The entry is
 exactly `auto main(builtin::HostFiles& files, builtin::span<const u8> arguments)
 -> builtin::HostExit` in the root module, or the same with a
 `builtin::ByteRegion region` after `files` ([hosted memory](#hosted-memory));
-any root `main` naming HostFiles or HostExit with another signature is rejected. `arguments` is the command line as
+apart from the exact foreground-input pair described above, a root `main` naming
+HostFiles or HostExit with another signature is rejected. `arguments` is the command line as
 one readonly block of NUL-terminated arguments (data, not authority).
 `builtin::HostExit` is `success`, `failure`, `usage`, the exit status 0, 1, 2.
 The ordinary service rules apply: one leading exclusive `&` formal, no
 construction, copy, move, assignment, storage, return, reflection or conversion,
 child-loan forwarding to helpers, and a singleton group (no Console, Display,
-Event, Call, Port or Serve beside it). Its group bit is bit 0, the empty kind set,
+Event, Call, Port or Serve beside it; the exact foreground InputStream pair above
+is separately admitted). Its group bit is bit 0, the empty kind set,
 because the singleton set 64 has no bit in the 64-bit group word.
 
 Operations copy data only; `builtin::HostStatus` is `success`, `invalid_handle`,

@@ -7,6 +7,13 @@ big-endian source header - 5 1 2 reject
 executable source header - 16 2 2 reject
 wrong-machine source header - 18 2 3 reject
 entry-address source header - 24 8 1 reject
+source-no-request source header - 48 4 0 accept-preserve-flags
+source-input-request source header - 48 4 1 accept-preserve-flags
+source-unknown-request source header - 48 4 2 reject
+source-mixed-request source header - 48 4 3 reject
+source-high-request source header - 48 4 2147483648 reject
+wrapper-input-request wrapper header - 48 4 1 reject
+wrapper-unknown-request wrapper header - 48 4 2 reject
 program-headers source header - 56 2 1 reject
 extended-section-count source header - 60 2 0 reject
 bad-section-name-table source header - 62 2 99 reject

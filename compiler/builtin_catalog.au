@@ -25,7 +25,8 @@ export namespace compiler_catalog {
         ReadOnlyBlock,
         WritableBlock,
         ExecutionEffects,
-        ServiceBootstrapEffects
+        ServiceBootstrapEffects,
+        InputStream
     };
     enum class ServiceOperation {
         Next,
@@ -79,7 +80,8 @@ export namespace compiler_catalog {
         ExecutionOutput,
         ExecutionRequest,
         ExecutionFinish,
-        BootstrapBegin
+        BootstrapBegin,
+        InputRead
     };
     // Catalog extents for the host's loose resolution quota.
     class Summary {
@@ -207,14 +209,22 @@ export namespace compiler_catalog {
         return 1;
     }
 
-    // Built-in types in seeding order. Types 6..11 and 26 are the capability
-    // types in ServiceKind order. Family 0 is always seeded; families 1 (Call),
-    // 2 (Port), 3 (Serve) and 4 (HostFiles) only when admitted syntax names one
-    // of their types.
+    // Built-in types in seeding order; append new catalog identities only.
+    // Family 0 is always seeded. Optional families, including 12 (InputStream),
+    // are seeded only when admitted syntax names one of their types.
     auto type_count() -> i64 {
-        return 61;
+        return 64;
     }
     auto type_kind(i64 type) -> compiler_resolver::ResolvedTypeKind {
+        if (type == 61) {
+            return compiler_resolver::ResolvedTypeKind::input_stream;
+        }
+        if (type == 62) {
+            return compiler_resolver::ResolvedTypeKind::enum_value;
+        }
+        if (type == 63) {
+            return compiler_resolver::ResolvedTypeKind::class_value;
+        }
         if (type == 54 || type == 57 || type == 58 || type == 59) {
             return compiler_resolver::ResolvedTypeKind::service_resource;
         }
@@ -302,6 +312,9 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::invalid;
     }
     auto type_family(i64 type) -> i64 {
+        if (type >= 61 && type <= 63) {
+            return 12;
+        }
         if (type == 59 || type == 60) {
             return 11;
         }
@@ -344,6 +357,12 @@ export namespace compiler_catalog {
     }
     // Field or case count of a nominal type.
     auto member_count(i64 type) -> i64 {
+        if (type == 62) {
+            return 4;
+        }
+        if (type == 63) {
+            return 3;
+        }
         if (type == 60) {
             return 8;
         }
@@ -378,7 +397,7 @@ export namespace compiler_catalog {
             return 5;
         }
         if (type == 40) {
-            return 4;
+            return 5;
         }
         if (type == 12 || type == 19) {
             return 3;
@@ -417,6 +436,15 @@ export namespace compiler_catalog {
     }
     // Catalog type of a class field.
     auto field_type(i64 type, i64 field) -> i64 {
+        if (type == 63) {
+            if (field == 0) {
+                return 62;
+            }
+            if (field == 2) {
+                return 2;
+            }
+            return 1;
+        }
         if (type == 60) {
             return 1;
         }
@@ -471,10 +499,10 @@ export namespace compiler_catalog {
         return 25;
     }
     // Element count of an array-typed class field, or 0 for a scalar field.
-    // HostChunk carries 504 bytes: with its two leading qwords that is the
-    // whole 520-byte copied-class bound and 506 of the 513 permitted leaves.
+    // HostChunk and InputChunk each carry 504 bytes. Their two leading qwords
+    // complete the 520-byte copied-class bound and 506 of 513 permitted leaves.
     auto field_array_length(i64 type, i64 field) -> i64 {
-        if (type == 33 && field == 2) {
+        if ((type == 33 || type == 63) && field == 2) {
             return 504;
         }
         return 0;
@@ -482,6 +510,16 @@ export namespace compiler_catalog {
     // Words: full spelling, then for nominal types the native spelling and the
     // field or case names in declaration order. See use_word for begin/end.
     auto type_word(compiler_resolver::Session& session, i64 type, i64 part, i64 begin, i64 end) -> i64 {
+        if (type == 61) {
+            return use_word(session, "builtin::InputStream", part, begin, end);
+        }
+        if (type == 62) {
+            return use_word(session, "builtin::InputStatus;__au_input_status;data;eof;cancelled;unavailable", part,
+                begin, end);
+        }
+        if (type == 63) {
+            return use_word(session, "builtin::InputChunk;__au_input_chunk;status;count;bytes", part, begin, end);
+        }
         if (type == 59) {
             return use_word(session, "builtin::ExecutionAuthority", part, begin, end);
         }
@@ -618,8 +656,8 @@ export namespace compiler_catalog {
             return use_word(session, "builtin::ExecutionPrep;__au_execution_prep;state;status", part, begin, end);
         }
         if (type == 40) {
-            return use_word(session, "builtin::ExecStep;__au_exec_step;retired;output;request;parked", part, begin,
-                end);
+            return use_word(session, "builtin::ExecStep;__au_exec_step;retired;output;request;parked;input", part,
+                begin, end);
         }
         if (type == 41) {
             return use_word(session, "builtin::ExecutionStep;__au_execution_step;state;status;value", part, begin, end);
@@ -749,6 +787,9 @@ export namespace compiler_catalog {
         return kind >= 0 && kind < resource_count();
     }
     auto resource_method_count(i64 kind) -> i64 {
+        if (kind == 0) {
+            return 7;
+        }
         if (kind == 5) {
             return 7;
         }
@@ -906,6 +947,17 @@ export namespace compiler_catalog {
             }
             return 1;
         }
+        if (kind == 0) {
+            // Input is appended after finish; it borrows rather than consumes.
+            // Preserve preparation's observation and finish's stable effects.
+            if (method == 0) {
+                return 0;
+            }
+            if (method == 5) {
+                return 2;
+            }
+            return 1;
+        }
         if ((kind == 3 && method < 2) || (method == 0 && !resource_retained(kind))) {
             return 0;
         }
@@ -948,7 +1000,7 @@ export namespace compiler_catalog {
         return 1;
     }
     auto operation_admitted(i64 operation) -> bool {
-        return (operation >= 0 && operation < 47) || operation == 51;
+        return (operation >= 0 && operation < 47) || operation == 51 || operation == 52;
     }
     auto catalog_byte(builtin::span<const u8> name, i64 index) -> i64 {
         if (index == -1) {
@@ -1115,6 +1167,9 @@ export namespace compiler_catalog {
             if (method == 5) {
                 return name.assign("finish");
             }
+            if (method == 6) {
+                return name.assign("input");
+            }
         }
         if (kind == 1) {
             if (method == 0) {
@@ -1142,6 +1197,9 @@ export namespace compiler_catalog {
         return name.clear();
     }
     auto type_source_byte(i64 type, i64 index) -> i64 {
+        if (type == 61) {
+            return catalog_byte("builtin::InputStream", index);
+        }
         if (type == 59) {
             return catalog_byte("builtin::ExecutionAuthority", index);
         }
@@ -1163,6 +1221,12 @@ export namespace compiler_catalog {
         return -1;
     }
     auto type_native_byte(i64 type, i64 index) -> i64 {
+        if (type == 62) {
+            return catalog_byte("__au_input_status", index);
+        }
+        if (type == 63) {
+            return catalog_byte("__au_input_chunk", index);
+        }
         if (type == 59) {
             return catalog_byte("__au_execution_authority", index);
         }
@@ -1386,6 +1450,9 @@ export namespace compiler_catalog {
             if (method == 5) {
                 return catalog_byte("__au_runtime_execution_finish", index);
             }
+            if (method == 6) {
+                return catalog_byte("__au_runtime_execution_input", index);
+            }
         }
         if (kind == 1) {
             if (method == -1) {
@@ -1491,9 +1558,12 @@ export namespace compiler_catalog {
 
     // Sealed service operations, indexed by ServiceOperation.
     auto operation_count() -> i64 {
-        return 52;
+        return 53;
     }
     auto operation_kind(i64 operation) -> i64 {
+        if (operation == 52) {
+            return 11;
+        }
         if (operation == 51) {
             return 10;
         }
@@ -1528,6 +1598,9 @@ export namespace compiler_catalog {
     }
     // Catalog type of a capability kind.
     auto kind_type(i64 kind) -> i64 {
+        if (kind == 11) {
+            return 61;
+        }
         if (kind == 10) {
             return 47;
         }
@@ -1553,6 +1626,9 @@ export namespace compiler_catalog {
     }
     // Catalog type of the operation's result.
     auto operation_result(i64 operation) -> i64 {
+        if (operation == 52) {
+            return 63;
+        }
         if (operation == 51) {
             return 48;
         }
@@ -1621,6 +1697,9 @@ export namespace compiler_catalog {
         return 0;
     }
     auto parameter_count(i64 operation) -> i64 {
+        if (operation == 52) {
+            return 0;
+        }
         if (operation == 51) {
             return 0;
         }
@@ -1671,6 +1750,9 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::u64_value;
     }
     auto append_spelling(compiler_resolver::Session& session, i64 operation) -> i64 {
+        if (operation == 52) {
+            return use_word(session, "read", 0, -1, 0);
+        }
         if (operation == 51) {
             return use_word(session, "begin", 0, -1, 0);
         }
@@ -1775,6 +1857,24 @@ export namespace compiler_catalog {
     auto serve_writer_service_group() -> i64 {
         return 1024;
     }
+    // Input is a separate grant: neither its singleton nor the exact HostFiles
+    // pair authorizes adding InputStream to any other capability combination.
+    auto input_service_group() -> i64 {
+        return 8192;
+    }
+    auto host_input_service_group() -> i64 {
+        return 16384;
+    }
+    auto input_groups(i64 groups, bool input, bool host) -> i64 {
+        i64 result = groups;
+        if (input) {
+            result = result + input_service_group();
+            if (host) {
+                result = result + host_input_service_group();
+            }
+        }
+        return result;
+    }
     auto bootstrap_service_group() -> i64 {
         return 4096;
     }
@@ -1841,8 +1941,8 @@ export namespace compiler_catalog {
         }
         texts = texts + operation_count();
         Summary result = Summary(type_count(), texts, texts * maximum_word(), members, operation_count(), parameters);
-        result.set_policy(scalar_count(), bootstrap_groups(execution_groups(service_groups(true, true, true, true, true,
-            true), true), true));
+        result.set_policy(scalar_count(), input_groups(bootstrap_groups(execution_groups(service_groups(true, true,
+            true, true, true, true), true), true), true, true));
         return result;
     }
 }

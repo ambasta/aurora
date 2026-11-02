@@ -386,6 +386,34 @@ SNAPSHOT_LEAF_PROBES = (
 for number, mode in enumerate(SNAPSHOT_LEAF_PROBES, 80):
     PROCESS_CASES[mode] = (number, ())
 MAPPING_AUTHORITY_PROBES += SNAPSHOT_LEAF_PROBES
+# One compiled input consumer, trusted boot-selected provider/allowance cases.
+INPUT_PROBES = tuple(f"process-input-{number}" for number in range(82, 97))
+for number, mode in enumerate(INPUT_PROBES, 82):
+    PROCESS_CASES[mode] = (
+        number,
+        (
+            (64, 0, 16384, "bin/file-service", "file-service"),
+            (64, 0, 8192, "bin/input", "input"),
+        ),
+    )
+for number in range(89, 94):
+    mode = f"process-input-{number}"
+    prefix = ((64, 0, 8192, "bin/input", "input"),) if number == 90 else ()
+    PROCESS_CASES[mode] = (
+        number,
+        (
+            (64, 0, 16384, "bin/file-service", "file-service"),
+            *prefix,
+            (64, 0, 8192, "bin/input-raw", f"input-raw{number - 89}"),
+        ),
+    )
+PROCESS_CASES["process-input-96"] = (
+    96,
+    (
+        (64, 0, 16384, "bin/file-service", "file-service"),
+        (2, 0, 8192, "bin/input-raw", "input-raw5"),
+    ),
+)
 PROCESS_CASES["process-require-user"] = (
     44,
     ((8, 0, 0, "bin/hostile", "hostile require"), (8, 0, 0, "bin/hostile", "hostile")),
@@ -402,6 +430,7 @@ SELF_HOST_CASES = frozenset({6})
 # The self-host row's compiler charges about 600 MiB at its peak.
 PROCESS_MEMORY = {
     "process-run": "256M",
+    **{mode: "256M" for mode in INPUT_PROBES},
     "process-execution-authority-69": "256M",
     "process-execution-authority-71": "256M",
     "process-hostile": "256M",
@@ -1378,6 +1407,8 @@ PROCESS_RUNTIME_FILES = ("runtime/linux/aurora/host.au", "runtime/linux/aurora/m
 PROCESS_COMPILER_FILES = ("examples/host-sort.au", "runtime/aurora/aurora/host.au", *PROCESS_RUNTIME_FILES)
 PROCESS_PROGRAMS = {
     "bin/probe": "aurora:host-files-probe",
+    "bin/input": "aurora:process-input",
+    "bin/input-raw": "assembly:process-isolation-6",
     "bin/xfs-recover": "aurora:xfs-recover",
     "bin/hostile": "aurora:process-hostile",
     "bin/lifecycle": "aurora:process-lifecycle",
@@ -1413,7 +1444,7 @@ PROCESS_ELVES = {
 }
 PROCESS_ESP = {
     "volume": [word for path in PROCESS_VOLUME_FILES for word in ("--file", path)]
-    + ["--text", "aurora/empty=", "--host-files-tree"]
+    + ["--text", "aurora/empty=", "--host-files-tree", "--input-abi", "bin/input-raw"]
     + [word for path, program in PROCESS_PROGRAMS.items() for word in ("--program", path + "=" + program)]
     + [word for path, edits in PROCESS_ELVES.items() for word in ("--elf", path + "=" + edits)]
     + [
@@ -1480,13 +1511,21 @@ PRODUCTION_ESP = {
         "--program",
         "bin/sort=aurora:host-sort",
         "--program",
+        "bin/line-echo=aurora:line-echo",
+        "--program",
+        "echo.au=source:line-echo",
+        "--program",
         "sort.au=source:host-sort",
         "--program",
         "runtime/aurora/aurora/memory.au=source:aurora-memory",
         "--program",
         "input.txt=source:host-sort-input",
     ]
-    + [word for path in ("runtime/aurora/aurora/host.au", *PROCESS_RUNTIME_FILES) for word in ("--file", path)]
+    + [
+        word
+        for path in ("runtime/aurora/aurora/host.au", "library/console/line.au", *PROCESS_RUNTIME_FILES)
+        for word in ("--file", path)
+    ]
 }
 
 
@@ -1516,7 +1555,7 @@ GUEST_FAMILIES = {
     "process": "process-volume process-volume-corrupt process-volume-empty process-volume-map process-run "
     "process-hostile process-memory process-files process-compile process-lifecycle process-service "
     "process-service-hostile process-xfs process-frame-require-kernel process-frame-require-process "
-    "process-require-user process-nested-fault " + " ".join(EXECUTION_AUTHORITY_PROBES),
+    "process-require-user process-nested-fault " + " ".join((*EXECUTION_AUTHORITY_PROBES, *INPUT_PROBES)),
     # The release suite's row (tests/native/meson.build), minutes under TCG.
     "self-host": "process-self-host",
 }

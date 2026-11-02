@@ -1,0 +1,38 @@
+module process_input_probe;
+import aurora.host;
+
+// One ordinary input consumer for all boot-selected provider cases. Arguments
+// do not select supervisor authority, timer allowance, or response contents.
+auto main(builtin::HostFiles& files, builtin::InputStream& input,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    u64 reads = 0u64;
+    bool terminal = false;
+    builtin::InputStatus previous = builtin::InputStatus::data;
+    while (reads < 4u64) {
+        const builtin::InputChunk chunk = input.read();
+        const array<u8, 504> bytes = chunk.bytes;
+        if (terminal && chunk.status != previous) {
+            return builtin::HostExit::failure;
+        }
+        if (chunk.status == builtin::InputStatus::data) {
+            if (chunk.count != 1u64 || bytes[0] != 65u8) {
+                return builtin::HostExit::failure;
+            }
+        } else {
+            if (chunk.count != 0u64) {
+                return builtin::HostExit::failure;
+            }
+            terminal = true;
+        }
+        u64 index = chunk.count;
+        while (index < 504u64) {
+            if (bytes[i64(index)] != 0u8) {
+                return builtin::HostExit::failure;
+            }
+            index = index + 1u64;
+        }
+        previous = chunk.status;
+        reads = reads + 1u64;
+    }
+    return builtin::HostExit::success;
+}

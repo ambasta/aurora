@@ -151,6 +151,20 @@ def main():
         directory = Path(temporary)
         linked = directory / "sort"
         success(compiler, "--link-object", sort_object, "-o", linked)
+        if struct.unpack_from("<I", original, 48)[0] != 0 or struct.unpack_from("<I", linked.read_bytes(), 48)[0] != 0:
+            raise RuntimeError("ordinary object/executable acquired an input request")
+        # A request bit is data, not authority. Reuse the same object; this
+        # fixture checks preservation and is deliberately not executed as input.
+        requested_object, requested_program = directory / "requested.o", directory / "requested"
+        requested = bytearray(original)
+        struct.pack_into("<I", requested, 48, 1)
+        requested_object.write_bytes(requested)
+        success(compiler, "--link-object", requested_object, "-o", requested_program)
+        expected_requested = bytearray(linked.read_bytes())
+        struct.pack_into("<I", expected_requested, 48, 1)
+        if requested_program.read_bytes() != expected_requested:
+            raise RuntimeError("static linker did not preserve only the input-request flag")
+        print("PASS static linker preserves request flags 0/1 without changing executable content")
         # HostFiles deliberately creates private 0600 artifacts; executable
         # permission is a Linux caller decision, not extra guest file authority.
         admit(args.policy_driver.resolve(), linked, directory)

@@ -27,7 +27,8 @@ enum class Step : U64 {
     retired,
     output,
     request,
-    parked
+    parked,
+    input
 };
 enum class Effect : U64 {
     success,
@@ -167,6 +168,12 @@ public:
     [[nodiscard]] static auto output(const void *binding, U64 generation) -> U64 {
         enter_lease(binding, generation);
         const auto result = Transport::output(lease_.physical);
+        leave();
+        return static_cast<U64>(result);
+    }
+    [[nodiscard]] static auto input(const void *binding, U64 generation) -> U64 {
+        enter_lease(binding, generation);
+        const auto result = Transport::input(lease_.physical);
         leave();
         return static_cast<U64>(result);
     }

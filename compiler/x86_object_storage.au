@@ -298,6 +298,7 @@ export namespace compiler_x86 {
         EmitStatus outcome;
         bool objectMode;
         bool hiddenDefinitions;
+        bool inputRequest;
         bool objectNameCapture;
         i64 outputSize;
         i64 artifactLimit;
@@ -317,7 +318,7 @@ export namespace compiler_x86 {
             generatedSymbols(ObjectIndexRow_pool(region)), literalSymbols(ObjectIndexRow_pool(region)),
             trapPositions(ObjectIndexRow_pool(region)), literalBytes(region.try_allocate(0)), literalSize(0),
             literalCurrentSymbol(-1), returnPosition(-1), functionFixupStart(0), outcome(EmitStatus::pending),
-            objectMode(false), hiddenDefinitions(false), objectNameCapture(false), outputSize(0),
+            objectMode(false), hiddenDefinitions(false), inputRequest(false), objectNameCapture(false), outputSize(0),
             artifactLimit(67108864), objectNameSize(0), objectSymbolSize(0), objectLabelSize(0), objectLabelLimit(0),
             objectFixupSize(0), objectCurrentSymbol(-1), objectCaptureSymbol(-1), functionIndex(0) {
         }
@@ -341,6 +342,16 @@ export namespace compiler_x86 {
                 return false;
             }
             hiddenDefinitions = true;
+            return true;
+        }
+        // ELF e_flags bit0 is only an input REQUEST, never an authority token.
+        // The module emitter derives it from the exact kernel root signature.
+        auto set_input_request(bool requested) -> bool {
+            if (!objectMode || outcome != EmitStatus::running || outputSize != 0 || objectSymbolSize != 0
+                || hiddenDefinitions) {
+                return fail();
+            }
+            inputRequest = requested;
             return true;
         }
         auto configure_labels(i64 instructions, i64 functions, i64 descriptors) -> bool {
@@ -1562,7 +1573,11 @@ export namespace compiler_x86 {
             emit_little(0u64, 8);
             emit_little(0u64, 8);
             emit_little(u64(section_offset), 8);
-            emit_little(0u64, 4);
+            u64 requests = 0u64;
+            if (inputRequest) {
+                requests = 1u64;
+            }
+            emit_little(requests, 4);
             emit_little(64u64, 2);
             emit_little(0u64, 2);
             emit_little(0u64, 2);

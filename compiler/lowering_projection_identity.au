@@ -307,6 +307,9 @@ export namespace compiler_lowering_projection {
         if (kind == compiler_resolver::ResolvedTypeKind::serve_session) {
             return 20;
         }
+        if (kind == compiler_resolver::ResolvedTypeKind::input_stream) {
+            return 29;
+        }
         if (kind == compiler_resolver::ResolvedTypeKind::host_files) {
             return 22;
         }

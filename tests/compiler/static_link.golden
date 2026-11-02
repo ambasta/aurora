@@ -3,6 +3,9 @@ magic header 0 1 0	aurorac: error AU0000: unsupported or malformed static-link o
 machine header 18 2 3	aurorac: error AU0000: unsupported or malformed static-link object
 type header 16 2 2	aurorac: error AU0000: unsupported or malformed static-link object
 sections header 60 2 9	aurorac: error AU0000: unsupported or malformed static-link object
+unknown-request header 48 4 2	aurorac: error AU0000: unsupported or malformed static-link object
+mixed-request header 48 4 3	aurorac: error AU0000: unsupported or malformed static-link object
+high-request header 48 4 0x80000000	aurorac: error AU0000: unsupported or malformed static-link object
 section-table header 40 8 0xffffffffffffffff	aurorac: error AU0000: unsupported or malformed static-link object
 writable-text text-header 8 8 7	aurorac: error AU0000: unsupported or malformed static-link object
 overlap rodata-header 24 8 text-offset	aurorac: error AU0000: unsupported or malformed static-link object

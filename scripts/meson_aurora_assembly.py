@@ -898,7 +898,7 @@ def validate_native_abi(facts, source):
     if "# EXECUTION_POLICY_ABI:" in source:
         enum("__au_exec_status", "exited fault watchdog missing malformed quota unavailable output_failed cancelled")
         enum("__au_exec_prepared", "loaded refused service_lost")
-        enum("__au_exec_step", "retired output request parked")
+        enum("__au_exec_step", "retired output request parked input")
         enum("__au_exec_effect", "success failed")
         enum("__au_exec_request", "ready cancelled service_lost pending cancel_requested explicit_after_expiry")
         enum("__au_exec_finish", "complete output_failed cancelled service_lost cancel_requested")
@@ -975,8 +975,11 @@ def validate_native_abi(facts, source):
         entry("process_region", ["span", "u64", "u64"], "kernel::ProcessRegion")
         entry("process_memory_load_charge", ["span", "u64", "u64"], "u64")
         entry("process_elf_entry", ["span"], "u64")
+        entry("process_elf_input", ["span"], "u64")
         entry("process_trap", ["kernel::ProcessTrap"], "kernel::TrapClass")
         entry("process_call", ["u64", "u64", "u64", "u64", "u64"], "kernel::KernelCall")
+        record("kernel::InputSession", 32, [(name, "u64", 0) for name in ("remaining", "status", "count", "after_cr")])
+        entry("process_input", ["u64"] * 6, "kernel::InputSession")
         if fixture_process:
             enum(
                 "kernel::RunsVerdict", "valid truncated magic version count ticks path arguments flags padding trailing"

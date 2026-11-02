@@ -19,6 +19,7 @@ export namespace kernel {
         client,
         request,
         output,
+        input,
         cancelling,
         terminal
     };
@@ -132,29 +133,41 @@ export namespace kernel {
                 const builtin::ExecRequest requested_result = lease.request();
                 requested(requested_result);
             } else {
-                if (phase == ExecutionPhase::output) {
-                    const builtin::ExecEffect delivered = lease.output();
+                if (phase == ExecutionPhase::input) {
+                    const builtin::ExecEffect delivered = lease.input();
                     if (delivered == builtin::ExecEffect::failed) {
-                        outcome = builtin::ExecStatus::output_failed;
-                        result_value = 0u64;
-                        disposition = builtin::ExecFinish::output_failed;
-                        phase = ExecutionPhase::terminal;
                         cancel();
                     } else {
                         phase = ExecutionPhase::client;
                     }
                 } else {
-                    const builtin::ExecutionStep step = lease.advance();
-                    if (step.state == builtin::ExecStep::retired) {
-                        outcome = step.status;
-                        result_value = step.value;
-                        phase = ExecutionPhase::terminal;
-                    }
-                    if (step.state == builtin::ExecStep::output) {
-                        phase = ExecutionPhase::output;
-                    }
-                    if (step.state == builtin::ExecStep::request) {
-                        phase = ExecutionPhase::request;
+                    if (phase == ExecutionPhase::output) {
+                        const builtin::ExecEffect delivered = lease.output();
+                        if (delivered == builtin::ExecEffect::failed) {
+                            outcome = builtin::ExecStatus::output_failed;
+                            result_value = 0u64;
+                            disposition = builtin::ExecFinish::output_failed;
+                            phase = ExecutionPhase::terminal;
+                            cancel();
+                        } else {
+                            phase = ExecutionPhase::client;
+                        }
+                    } else {
+                        const builtin::ExecutionStep step = lease.advance();
+                        if (step.state == builtin::ExecStep::retired) {
+                            outcome = step.status;
+                            result_value = step.value;
+                            phase = ExecutionPhase::terminal;
+                        }
+                        if (step.state == builtin::ExecStep::output) {
+                            phase = ExecutionPhase::output;
+                        }
+                        if (step.state == builtin::ExecStep::request) {
+                            phase = ExecutionPhase::request;
+                        }
+                        if (step.state == builtin::ExecStep::input) {
+                            phase = ExecutionPhase::input;
+                        }
                     }
                 }
             }

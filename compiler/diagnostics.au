@@ -897,6 +897,10 @@ export namespace compiler_resolver {
             say(session, "builtin::ServeSession");
             return true;
         }
+        if (kind == ResolvedTypeKind::input_stream) {
+            say(session, "builtin::InputStream");
+            return true;
+        }
         if (kind == ResolvedTypeKind::host_files) {
             say(session, "builtin::HostFiles");
             return true;

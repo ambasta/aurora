@@ -237,6 +237,22 @@ if get_option('kernel_images')
           command: [aurorac, '--link-object', '@INPUT@', '-o', '@OUTPUT@'])
     endif
   endforeach
+  # Input entry requests are preserved by Aurora's checked object/static-link
+  # route; an external assembler/linker is not an input-capability emitter.
+  line_echo_object = custom_target('line-echo-aurora-object', input: 'examples/line-echo.au',
+      output: 'line-echo-aurora.o',
+      command: [aurorac, '--emit-object', '--target', 'aurora', '--module-root',
+                meson.current_source_dir() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+      depend_files: kernel_runtime_sources + files('library/console/line.au'))
+  process_programs += {'aurora:line-echo': custom_target('line-echo-aurora', input: line_echo_object,
+      output: 'line-echo-aurora', command: [aurorac, '--link-object', '@INPUT@', '-o', '@OUTPUT@'])}
+  input_probe_object = custom_target('process-input-object', input: 'tests/kernel-process/input.au',
+      output: 'process-input.o',
+      command: [aurorac, '--emit-object', '--target', 'aurora', '--module-root',
+                meson.current_source_dir() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+      depend_files: kernel_runtime_sources)
+  process_programs += {'aurora:process-input': custom_target('process-input', input: input_probe_object,
+      output: 'process-input', command: [aurorac, '--link-object', '@INPUT@', '-o', '@OUTPUT@'])}
   recurse_object = custom_target('process-recurse-object', input: 'tests/kernel-process/recurse.S',
       output: 'process-recurse.o', command: [find_program('as', native: true), '--64', '-mx86-used-note=no',
                                              '@INPUT@', '-o', '@OUTPUT@'])
@@ -262,6 +278,7 @@ process_reference_objects = [hosted_objects['host-sort'], aurorac_stage2_object]
 # Sources a volume holds as configured (the compiler's driver, which C1 compiles).
 process_sources = {'source:aurorac': compiler_driver, 'source:aurora-memory': hosted_runtime_sources[1],
                    'source:host-sort': files('examples/host-sort.au')[0],
+                   'source:line-echo': files('examples/line-echo.au')[0],
                    'source:host-sort-input': files('examples/host-sort-input.txt')[0]}
 
 # Preserve the configured compiler command (including wrappers and quoted paths)

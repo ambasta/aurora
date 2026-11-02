@@ -74,8 +74,8 @@ auto script(std::string_view text, std::size_t limit = std::numeric_limits<std::
     output_limit = limit;
     transcript.clear();
 }
-auto read_input(std::uint64_t after_cr = 0) -> Submission {
-    const aurora::program::SubmissionArgument argument{InputSession::open(), after_cr};
+auto read_input(std::uint64_t after_cr = 0, bool quarantine = false) -> Submission {
+    const aurora::program::SubmissionArgument argument{InputSession::open(), after_cr, quarantine ? 1ULL : 0ULL};
     const auto before = argument;
     alignas(16) std::array<std::byte, 120> storage;
     storage.fill(std::byte{0xa5});
@@ -89,6 +89,30 @@ auto read_input(std::uint64_t after_cr = 0) -> Submission {
     std::memcpy(result.data(), storage.data() + 16, sizeof(result));
     need(result.valid(), "reader returned a noncanonical submission");
     return result;
+}
+auto input_handoff() -> void {
+    const std::string notice = "\r\nInput closed; press Enter to return to the console.\r\n";
+    // The discarded suffix must not be echoed or parsed as a command. CRLF
+    // crosses the handoff as one delimiter, even when the old carry was set.
+    script("stale-command\r\nq\n");
+    const auto result = read_input(1, true);
+    need(result.valid() && result.action() == Action::command && result.length() == 1 && result.bytes()[0] == 'q',
+         "foreground input suffix became a console command");
+    need(sample_index == samples.size() && transcript == notice + "\r\naurora> q\r\n",
+         "quarantine delimiter/CRLF/output ownership");
+    // A damaged delimiter does not end quarantine.
+    script("old\njunk\r\nq\n");
+    samples[3].damaged = true;
+    const auto damaged = read_input(0, true);
+    need(damaged.action() == Action::command && damaged.length() == 1 && damaged.bytes()[0] == 'q' &&
+             transcript == notice + "\r\naurora> q\r\n",
+         "damaged handoff delimiter escaped quarantine");
+    // Failing the notice must not read even one queued byte or retry output.
+    script("stale\nq\n", 0);
+    const auto failed = read_input(0, true);
+    need(failed.action() == Action::output_failure && failed.length() == 0 && sample_index == 0 &&
+             output_attempts == 1 && transcript.empty(),
+         "quarantine notice failure consumed input or retried");
 }
 auto expect_input(const Submission &result, std::string_view expected, Action action, std::uint64_t carry) -> void {
     need(result.length() == expected.size() && result.action() == action && result.after_cr() == carry,
@@ -986,6 +1010,7 @@ auto main(int argc, char **argv) -> int {
     session_failures();
     session_recovery();
     program_input();
+    input_handoff();
     run_arguments();
     submission_records();
     program_response();

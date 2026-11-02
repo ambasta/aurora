@@ -1,7 +1,7 @@
 ; CASE: publication retains typed field identity signatures and full unsigned operands
 ; RUN: metadata
 ; CHECK: aurora-published-ir 2 types fields callables operands cfg resources
-; CHECK: ir-counts 24 19 1 0 2 2 10 14 0 6 61
+; CHECK: ir-counts 24 19 1 0 2 2 10 14 0 6 64
 ; CHECK: ir-name-bytes {{[0-9a-f]+}}
 ; CHECK-DAG: ir-type 4 7 5 0 0 0 0 0 0
 ; CHECK-DAG: ir-type 5 7 5 0 0 0 0 0 0
@@ -20,6 +20,7 @@
 ; CHECK-DAG: ir-resource-method 0 3 {{[0-9 -]+}} {{[0-9a-f]+}} 72657175657374{{$}}
 ; CHECK-DAG: ir-resource-method 0 4 {{[0-9 -]+}} {{[0-9a-f]+}} 63616e63656c{{$}}
 ; CHECK-DAG: ir-resource-method 0 5 {{[0-9 -]+}} {{[0-9a-f]+}} 66696e697368{{$}}
+; CHECK-DAG: ir-resource-method 0 6 {{[0-9 -]+}} {{[0-9a-f]+}} 696e707574{{$}}
 ; CHECK-DAG: ir-resource-method 1 0 {{[0-9 -]+}} {{[0-9a-f]+}} 7072657061726174696f6e{{$}}
 ; CHECK-DAG: ir-resource-method 1 1 {{[0-9 -]+}} {{[0-9a-f]+}} 626567696e5f766f6c756d65{{$}}
 ; CHECK-DAG: ir-resource-method 1 2 {{[0-9 -]+}} {{[0-9a-f]+}} 636f70795f766f6c756d65{{$}}

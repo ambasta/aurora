@@ -184,10 +184,11 @@ using ProgramInputSession = console::Session<ProgramSerial, ProgramInputPlatform
 #endif
 // The only native submission storage is the caller's result. Revoke the grant
 // before returning it to any command mutation or protected execution path.
-__attribute__((noinline)) auto program_read_input(program::Submission &input, U64 after_cr) -> void {
+__attribute__((noinline)) auto program_read_input(program::Submission &input, U64 after_cr, bool quarantine = false)
+    -> void {
     require(ProgramInputPlatform::quiet() && after_cr <= 1, "program input entry boundary");
     input.scrub();
-    const program::SubmissionArgument argument{ProgramInputSession::open(), after_cr};
+    const program::SubmissionArgument argument{ProgramInputSession::open(), after_cr, quarantine ? 1ULL : 0ULL};
     __au_runtime_program_input(&argument, input.data());
     require(input.valid(), "program closed input submission");
     ProgramInputSession::release(argument.console);
@@ -1086,7 +1087,19 @@ auto production_output(void *, bool, std::span<const std::byte> bytes) -> bool {
             return false;
     return true;
 }
-[[nodiscard]] __attribute__((noinline)) auto production_run(const program::Submission &input) -> bool {
+// Nonblocking transport only. The process input owner authenticates its parked
+// child and owns all waiting; the console's idle wait contract is not reused.
+auto production_input(void *) -> console::Sample {
+    if (root() != kernel_root || !irq_off() || !command_owned || saved_rsp || active != L::domain_count ||
+        program.running() || timer_armed || timer_draining || timer_owner || run_authority || console_waiting ||
+        LocalApicTimerIo::read(0x390) != 0 ||
+        (LocalApicTimerIo::read(0x320) & 0x700ff) != (0x10000 | LocalApicTimerIo::vector) ||
+        !LocalApicTimerIo::quiet(0x100, false) || !LocalApicTimerIo::quiet(0x200, false))
+        stop("production input ownership");
+    return ProgramSerial::next();
+}
+[[nodiscard]] __attribute__((noinline)) auto production_run(const program::Submission &input, bool &input_quarantine)
+    -> bool {
     require(ProgramInputPlatform::quiet() && terminal_mapping(), "production run entry ownership");
     program::RunArguments arguments;
     program::Response response{program::Response::Kind::file_reply};
@@ -1096,9 +1109,24 @@ auto production_output(void *, bool, std::span<const std::byte> bytes) -> bool {
         return program_write_response(response);
     }
     const auto previous_cr2 = production_process_enter();
-    const auto result =
-        run_program(arena, *handoff, arguments.path(), arguments.arguments(), production_output, nullptr);
+    const auto result = run_program(arena,
+                                    *handoff,
+                                    arguments.path(),
+                                    arguments.arguments(),
+                                    production_output,
+                                    nullptr,
+                                    production_input,
+                                    input.after_cr() != 0);
     production_process_leave(previous_cr2);
+    input_quarantine = result.input_quarantine;
+    if (input_quarantine) {
+        // Bound the physical FIFO cleanup even under continuous input. The
+        // next source console turn quarantines the remaining suffix through a
+        // delimiter; UART bytes themselves have no authenticated child epoch.
+        for (unsigned int index = 0; index < 16; ++index)
+            if (!ProgramSerial::next().present)
+                break;
+    }
     if (result.status == RunStatus::output_failed)
         return false; // Never retry output or print a prompt after transport failure.
     std::array<std::byte, 64> message{};
@@ -1187,15 +1215,17 @@ __attribute__((noinline)) auto run_program_console() -> void {
 #endif
     program::Submission copied;
     program::Response response;
+    bool input_quarantine = false;
     while (effect != Effect::exited && effect != Effect::failed) {
         switch (effect) {
         case Effect::input:
-            program_read_input(copied, session.after_cr());
+            program_read_input(copied, session.after_cr(), input_quarantine);
+            input_quarantine = false;
             effect = session.advance(Event::input, static_cast<U64>(copied.action()), copied.after_cr());
             continue;
 #ifdef AURORA_PRODUCTION
         case Effect::run:
-            effect = session.advance(Event::response, production_run(copied));
+            effect = session.advance(Event::response, production_run(copied, input_quarantine));
             copied.scrub();
             continue;
 #endif

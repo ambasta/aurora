@@ -1,0 +1,75 @@
+module line_echo;
+import aurora.host;
+import console.line;
+
+// A real foreground input consumer. The 64-byte ASCII editor is application
+// policy, not an InputStream limit: reads may contain partial or multiple lines.
+// EOF publishes a final nonempty line; cancellation/failure discards it.
+auto print_line(builtin::HostFiles& files, console::Line64 line) -> bool {
+    const i64 count = line.submission_size();
+    if (count < 0) {
+        return false;
+    }
+    array<u8,
+        64> bytes =
+        "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+    i64 index = 0;
+    while (index < count) {
+        bytes[index] = line.submission_byte(index);
+        index = index + 1;
+    }
+    const builtin::span<const u8> all = borrow_bytes(bytes);
+    const builtin::span<const u8> text = all.subspan(0, count);
+    if (files.print(builtin::HostStream::stdout, text) != builtin::HostStatus::success) {
+        return false;
+    }
+    return files.print(builtin::HostStream::stdout, "\n") == builtin::HostStatus::success;
+}
+
+auto main(builtin::HostFiles& files, builtin::InputStream& input,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    console::Line64 line = console::Line64(false);
+    if (files.print(builtin::HostStream::stdout, "line-echo ready\n") != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    while (true) {
+        const builtin::InputChunk chunk = input.read();
+        if (chunk.status == builtin::InputStatus::data) {
+            const array<u8, 504> bytes = chunk.bytes;
+            u64 index = 0u64;
+            while (index < chunk.count) {
+                const console::ConsoleEvent event = line.consume(bytes[i64(index)]);
+                if (event == console::ConsoleEvent::rejected) {
+                    files.print(builtin::HostStream::stderr, "line-echo: line rejected\n");
+                    return builtin::HostExit::failure;
+                }
+                if (event != console::ConsoleEvent::ignored && event != console::ConsoleEvent::echo && event
+                    != console::ConsoleEvent::erased) {
+                    if (!print_line(files, line)) {
+                        return builtin::HostExit::failure;
+                    }
+                }
+                index = index + 1u64;
+            }
+        } else {
+            if (chunk.status == builtin::InputStatus::eof) {
+                const console::ConsoleEvent event = line.finish_input();
+                if (event == console::ConsoleEvent::rejected) {
+                    files.print(builtin::HostStream::stderr, "line-echo: line rejected\n");
+                    return builtin::HostExit::failure;
+                }
+                if (event != console::ConsoleEvent::ignored && !print_line(files, line)) {
+                    return builtin::HostExit::failure;
+                }
+                return builtin::HostExit::success;
+            }
+            if (chunk.status == builtin::InputStatus::cancelled) {
+                files.print(builtin::HostStream::stderr, "line-echo: input cancelled\n");
+            } else {
+                files.print(builtin::HostStream::stderr, "line-echo: input unavailable\n");
+            }
+            return builtin::HostExit::failure;
+        }
+    }
+    return builtin::HostExit::failure;
+}
