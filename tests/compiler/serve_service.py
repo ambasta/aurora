@@ -315,6 +315,9 @@ __au_runtime_group_entry:
             for name in re.findall(r"^\.local\s+(\S+)", emitted, re.MULTILINE)
             if name.endswith("_d14endpoint_entry")
         )
+        input_symbol = next(
+            name for name in re.findall(r"^\.local\s+(\S+)", emitted, re.MULTILINE) if name.endswith("_d11input_entry")
+        )
         assembly.write_text(
             emitted
             + f"""\n.text
@@ -325,7 +328,13 @@ __au_runtime_group_entry:
     pushq %rbp
     movq %rsp,%rbp
     movq %rdi,%r11
+    cmpq $1,8(%rdi)
+    je .Linput_fixture
     call {endpoint_symbol}
+    jmp .Lendpoint_fixture_done
+.Linput_fixture:
+    call {input_symbol}
+.Lendpoint_fixture_done:
     leave
     ret
 .size __au_runtime_group_entry,.-__au_runtime_group_entry
@@ -354,6 +363,15 @@ __au_runtime_group_entry:
             need(
                 result.returncode == (0 if mode < 2 else -signal.SIGILL),
                 f"endpoint mode {mode}: expected canonical result/bounds gate, got {result.returncode}",
+            )
+
+        for mode in range(100, 118):
+            result = run([binary, mode])
+            need(result.stdout == b"input report injected\n", f"input mode {mode}: raw report not injected")
+            need(result.stderr == b"", f"input mode {mode}: unexpected diagnostic")
+            need(
+                result.returncode == (0 if mode <= 104 else -signal.SIGILL),
+                f"input mode {mode}: expected copied-result boundary, got {result.returncode}",
             )
 
         # Read the explicit block grant through one copied-result consumer. The
@@ -1238,7 +1256,7 @@ __au_runtime_group_entry:
                     f"{label}: expected method arity diagnostic, got {result.stderr!r}",
                 )
         print(
-            "PASS Serve: source/IR, endpoint, block, writer and execution effects, 88 hostile runtime traps, "
+            "PASS Serve: source/IR, endpoint, block, writer and execution effects, 101 hostile runtime traps, "
             f"eight catalogues, {len(invalid)} rejections"
         )
 

@@ -84,6 +84,35 @@ These integration paths require final-source native, image/stack and actual
 same-boot guest qualification; a parser or isolated process-fixture pass alone
 does not establish production launch or framebuffer recovery.
 
+## Foreground input contract
+
+The bounded serial provider is exercised by the production UEFI guest. General
+terminal emulation and physical hardware qualification remain separate work.
+
+An input-capable Aurora program requests a separate sealed `InputStream` loan.
+`run bin/line-echo` is the first consumer: it assembles partial copied chunks
+with the existing 64-byte ASCII line editor and prints completed lines. Its
+line limit, CR/LF editing and rejection policy are application code, not stream
+limits. Multiple lines may arrive in one chunk. EOF flushes a final nonempty
+line once; cancellation, unavailable input or an overlong/malformed line does
+not publish an unfinished line. A rejected line ends this example with failure.
+
+The serial provider interprets Ctrl-D as end of input and Ctrl-C as input-channel
+cancellation, not a general signal or forced kill. The child retains its
+remaining CPU budget to handle a terminal input result. Existing command abort
+and watchdog paths still retire without a delivered input result. Input waits
+use a separate cumulative LAPIC-count allowance fixed at command admission,
+never a per-read timeout refresh or a claimed wall-clock deadline.
+
+The shell does not parse input while the foreground child owns it. Native
+cleanup discards at most one bounded FIFO window; it never waits for an empty
+wire. Every input-granted command then returns through a source-owned
+quarantine turn: the console asks for Enter and discards through an undamaged
+delimiter before accepting another command. CRLF is one delimiter. This
+conservative handoff applies even after clean EOF, and prevents a leftover
+child-input suffix from becoming a shell command. Physical UART bytes are not
+epoch-tagged; only pending requests and authorized deliveries are authenticated.
+
 ## Aurora-owned console turns
 
 `console.program_input` uses the existing sealed `ConsoleSession` to own one

@@ -89,6 +89,20 @@ export namespace console {
             }
             return bytes[index];
         }
+        // An input stream can end without a delimiter. Publish a final
+        // nonempty line once; a cancelled stream must not call this operation.
+        auto finish_input() -> ConsoleEvent {
+            if (submitted) {
+                return ConsoleEvent::ignored;
+            }
+            if (rejected) {
+                return finish();
+            }
+            if (length == 0) {
+                return ConsoleEvent::ignored;
+            }
+            return finish();
+        }
         auto reject() -> bool {
             clear_submission();
             rejected = true;

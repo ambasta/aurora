@@ -44,8 +44,10 @@ process_entry __au_runtime_process_elf_admit, @process_elf_admit@
 process_entry __au_runtime_process_layout, @process_layout@
 process_result_entry __au_runtime_process_region, @process_region@
 process_entry __au_runtime_process_elf_entry, @process_elf_entry@
+process_entry __au_runtime_process_elf_input, @process_elf_input@
 process_entry __au_runtime_process_trap, @process_trap@
 process_result_entry __au_runtime_process_call, @process_call@
+process_result_entry __au_runtime_process_input, @process_input@
 process_entry __au_runtime_process_memory_load_charge, @process_memory_load_charge@
 
 # Scalar-only source roots use the compiler's six-register bootstrap ABI.

@@ -612,7 +612,8 @@ export namespace compiler_ir_verification {
                 const ValueRow result_value = ValueRow(result_type, guard);
                 return w.set_current(result_value);
             }
-            if (operation == 0 || operation == 3 || operation == 5 || operation == 8 || operation == 32) {
+            if (operation == 0 || operation == 3 || operation == 5 || operation == 8 || operation == 32 || operation
+                == 52) {
                 if ((operation == 5 || operation == 8 || operation == 32) && !transfer_current_kind(w, 7)) {
                     return false;
                 }

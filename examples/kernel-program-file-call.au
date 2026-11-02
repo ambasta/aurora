@@ -17,9 +17,10 @@ import console.program_session;
 import kernel.note_read;
 
 // A private sealed Console turn; only its ordinary copied submission returns.
-auto read_program_input(builtin::ConsoleSession& session, bool after_cr) -> console::ProgramSubmission {
+auto read_program_input(builtin::ConsoleSession& session, bool after_cr,
+    bool quarantine) -> console::ProgramSubmission {
     static_assert(size_of(console::ProgramSubmission) == 88);
-    const console::ProgramSubmission result = console::read_program_input(session, after_cr);
+    const console::ProgramSubmission result = console::read_program_input(session, after_cr, quarantine);
     return result;
 }
 

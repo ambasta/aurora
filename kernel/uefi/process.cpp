@@ -1,6 +1,7 @@
 #include "process.hpp"
 #include "acpi.hpp"
 #include "apic-timer-io.hpp"
+#include "console-context.hpp"
 #include "../retained-budget.hpp"
 #include "../retained-service.hpp"
 #include "../retained-endpoint.hpp"
@@ -298,7 +299,7 @@ public:
 class Outcome final {
 public:
     bool exited = false, watchdog = false, invalid_call = false, parked = false, exchange = false, request = false,
-         output = false, unavailable = false, cancelled = false;
+         output = false, unavailable = false, cancelled = false, input = false;
     process::TrapClass trap = process::TrapClass::kernel;
     U64 status = 0, vector = 0, error = 0, rip = 0, cr2 = 0, operation = 0;
     U64 terminal_ticks = 0, terminal_run = 0, terminal_service = 0;
@@ -318,6 +319,7 @@ constinit U64 owned_arena = 0, kernel_root = 0, kernel_table_pages = 0, physical
 constinit bool draining = false;
 constinit aurora::uefi::ProcessOutput output_sink = nullptr;
 constinit void *output_context = nullptr;
+constinit aurora::uefi::ProcessInput input_source = nullptr;
 #ifdef AURORA_PRODUCTION
 constinit bool runtime_initialized = false, runtime_detached = false;
 #endif
@@ -603,12 +605,54 @@ constinit std::array<Resident, KernelSpace::process_slots> residents;
 class ExecutionBinding final {
 public:
     U64 client = 0, service_generation = 0;
-    bool output_pending = false, request_pending = false;
+    bool output_pending = false, request_pending = false, input_pending = false;
     bool output_failed = false, request_failed = false;
     bool explicit_cancel_requested = false, expiry_preceded_cancel = false;
 };
 constinit const ExecutionBinding *forced_execution = nullptr;
 constinit const bool *completed_output = nullptr;
+
+// A single command-owned staging receipt. Source owns protocol outcomes; these
+// words bind actual mappings and saved continuation, not a second lifecycle.
+class InputPending final {
+public:
+    U64 owner = 0, sequence = 0, address = 0, generation = 0, epoch = 0, root = 0;
+    bool pending = false, completing = false, quarantine = false;
+    process::InputSession protocol;
+    std::array<std::byte, 504> bytes{};
+    std::array<U64, frame_words> frame{};
+};
+constinit InputPending input_read;
+
+// Compare the complete fixed-size saved frame inside the native effect body.
+// This word reduction avoids importing the separate assembly memcmp boundary.
+auto input_frame_equal(const std::array<U64, frame_words> &left, const std::array<U64, frame_words> &right) -> bool {
+    U64 difference = 0;
+    for (std::size_t at = 0; at < frame_words; ++at)
+        difference |= left[at] ^ right[at];
+    return difference == 0;
+}
+
+class InputWait final {
+public:
+    U64 stack = 0, armed = 0, owner = 0, sequence = 0;
+    bool active = false, expired = false;
+};
+constinit InputWait input_wait;
+extern const std::byte input_wait_begin asm("uefi_process_input_wait_begin");
+extern const std::byte input_wait_end asm("uefi_process_input_wait_end");
+constexpr U64 input_poll_count = 1250000;
+// One command's admitted count-domain allowance. Not calibrated seconds.
+constexpr U64 input_wait_allowance = 1000 * input_poll_count;
+#ifdef AURORA_PROCESS_FIXTURE
+// Trusted boot selector only. Never selected by a client argument or syscall.
+constinit U64 input_probe_case = 0, input_probe_settlements = 0;
+constinit U64 input_probe_completions = 0, input_probe_samples = 0;
+constinit bool input_probe_partial = false;
+constinit U64 input_probe_retired = 0, input_probe_lease_generation = 0;
+constinit const void *input_probe_lease = nullptr;
+auto input_probe_reenter() -> void;
+#endif
 
 // A copied synchronous endpoint, not a namespace or backing store. Exactly
 // one transaction is outstanding. Source/transaction never come from a client.
@@ -1173,6 +1217,26 @@ auto file_request(const process::KernelCall &call, volatile U64 *frame) -> bool 
 
 // One kernel call: 0 resumes the process with RAX set, 1 ends it.
 auto kernel_call(volatile U64 *frame) -> U64 {
+    if (frame[frame_rax] == 21) {
+        if (running.external && !running.service && input_read.owner == running.run && input_read.owner &&
+            frame[frame_rsi] == input_read.owner && !frame[frame_rdx] && !frame[frame_r10] && !input_read.pending &&
+            input_read.sequence != UINT64_MAX && running.continuation && user_bytes(frame[frame_rdi], 520, true)) {
+            input_read.address = frame[frame_rdi];
+            input_read.epoch = running.space->epoch();
+            input_read.root = running.space->root();
+            input_read.generation = execution_owner.canonical(1, aurora::lifecycle::Field::generation);
+            input_read.frame = *running.captured;
+            input_read.pending = true;
+            ++input_read.sequence;
+            execution_capture.event = aurora::lifecycle::Event::input;
+            save_frame(frame);
+            return 1;
+        }
+        execution_capture.event = aurora::lifecycle::Event::invalid_call;
+        execution_capture.detail = 21;
+        execution_capture.rip = frame[frame_rip];
+        return 1;
+    }
     if (frame[frame_rax] >= 17 && frame[frame_rax] <= 20) {
         const auto operation = frame[frame_rax];
         if (mounted_call(frame) || recovery_call(frame)) {
@@ -1286,6 +1350,27 @@ auto kernel_dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("uefi_process_kern
 auto kernel_dispatch(U64 vector, U64 error, U64 rip, U64 cs, U64 frame, U64) -> U64 {
     if (cs != 8)
         kernel_fault(vector, error, rip, cs);
+    if (vector == Timer::vector && input_wait.active) {
+        if (error || !Timer::irq_off() || root() != kernel_root || running.space || draining || input_wait.expired ||
+            !input_wait.armed || input_wait.owner != input_read.owner || input_wait.sequence != input_read.sequence ||
+            !input_read.pending || !aurora::uefi::ConsoleWakeContext::frame_valid(frame, owned_arena))
+            kernel_fault(vector, error, rip, cs);
+        std::array<U64, aurora::uefi::ConsoleWakeContext::word_count> words{};
+        const auto *captured = reinterpret_cast<const volatile U64 *>(frame);
+        for (std::size_t i = 0; i < words.size(); ++i)
+            words[i] = captured[i];
+        if (rip != words[17] ||
+            !aurora::uefi::ConsoleWakeContext::valid(words,
+                                                     frame,
+                                                     owned_arena,
+                                                     reinterpret_cast<U64>(&input_wait_begin),
+                                                     reinterpret_cast<U64>(&input_wait_end),
+                                                     input_wait.stack) ||
+            !Timer::acknowledge())
+            kernel_fault(vector, error, rip, cs);
+        input_wait.expired = true; // Main settlement alone subtracts allowance.
+        return 0;
+    }
     const auto begin = reinterpret_cast<U64>(&drain_begin), end = reinterpret_cast<U64>(&drain_end);
     if (vector == 64 && cs == 8 && draining && rip >= begin && rip <= end && root() == kernel_root &&
         frame >= owned_arena + Handoff::stack_bottom && frame < owned_arena + Handoff::stack_top) {
@@ -1486,7 +1571,7 @@ public:
     std::optional<process::ElfVerdict> elf;
     std::optional<process::LayoutVerdict> layout;
     U64 count = 0, entry = 0, charge = 0, snapshot_epoch = 0;
-    bool complete = false;
+    bool complete = false, input_requested = false;
 };
 auto parse_image_manifest(std::span<const std::byte> image, U64 argument_bytes, U64 snapshot_epoch) -> ImageManifest {
     ImageManifest result;
@@ -1508,6 +1593,7 @@ auto parse_image_manifest(std::span<const std::byte> image, U64 argument_bytes, 
         result.regions[result.count++] = *region;
     }
     result.entry = process::elf_entry(image);
+    result.input_requested = process::elf_input(image);
     result.charge = process::memory_load_charge(image, argument_bytes, shared.slots);
     result.complete = result.count != 0 && result.charge != 0;
     return result;
@@ -1565,6 +1651,11 @@ auto load_image(std::span<const std::byte> view,
     }
     if (!manifest.complete || manifest.snapshot_epoch != snapshot_epoch)
         fail("Aurora process manifest");
+    if (manifest.input_requested && (!external || slot != 1 || service || grant_block || grant_mounted ||
+                                     !preemptible || !input_source || input_read.owner)) {
+        load_refusal = RunStatus::unavailable;
+        return false; // Requesting an ABI never creates an input grant.
+    }
     const U64 epoch = table.prepare_load(slot, frames::first_owner + run, entry.quota, manifest.charge);
     if (!epoch) {
         refuse(run, "quota");
@@ -1668,6 +1759,22 @@ auto load_image(std::span<const std::byte> view,
                         service,
                         write_generation ? write_generation : read_generation,
                         write_generation ? write_sectors : read_sectors};
+    if (manifest.input_requested) {
+        input_read.owner = run;
+        // Conservative ownership handoff: even clean EOF/no read requires the
+        // shell's source delimiter quarantine; native never parses that line.
+        input_read.quarantine = true;
+        U64 allowance = input_wait_allowance;
+#ifdef AURORA_PROCESS_FIXTURE
+        if (input_probe_case) {
+            allowance = (input_probe_case == 83 ? 4 : 2) * input_poll_count;
+            if (!allowance || allowance > input_wait_allowance)
+                fail("input fixture allowance");
+        }
+#endif
+        input_read.protocol = {allowance, 0, 0, input_read.protocol.after_cr};
+        resident.initial[6] = run; // Independent opaque input token in R8.
+    }
     if (!resident.budget.create(entry.ticks, (entry.flags & 8) ? 1 : 0))
         fail("resident budget admission");
     resident.state = {};
@@ -1882,6 +1989,48 @@ auto complete_resident_physical(std::size_t slot) -> void {
     const auto pending = static_cast<Event>(execution_owner.canonical(slot, Field::pending));
     authenticate_stopped_frame(slot, true);
     auto &resident = residents[slot];
+    if (pending == Event::input) {
+        if (slot != 1 || !input_read.pending || !input_read.completing || input_read.owner != resident.state.run ||
+            input_read.epoch != resident.space->epoch() || input_read.root != resident.space->root() ||
+            !input_frame_equal(input_read.frame, resident.continuation) ||
+            input_read.generation != execution_owner.canonical(slot, Field::generation))
+            fail("input completion identity");
+        running = resident.state;
+        const U64 admitted_root = table.activation_root(slot, running.space->epoch());
+        asm volatile("mov %0, %%cr3" : : "r"(admitted_root) : "memory");
+        const auto destination = user_bytes(input_read.address, 520, true);
+        if (!destination)
+            fail("input parked destination");
+        const U64 count = input_read.protocol.count;
+        const U64 status = count ? 0 : input_read.protocol.status;
+        if (count > 504 || status > 3 || (!count && !status))
+            fail("input source completion");
+        for (U64 at = 0; at < 520; ++at)
+            (*destination)[at] = std::byte{0};
+        store(input_read.address, status, 8);
+        store(input_read.address + 8, count, 8);
+        for (U64 at = 0; at < count; ++at)
+            (*destination)[16 + at] = input_read.bytes[at];
+        asm volatile("mov %0, %%cr3" : : "r"(kernel_root) : "memory");
+        running.space = nullptr;
+        resident.continuation[frame_rax] = 0;
+#ifdef AURORA_PROCESS_FIXTURE
+        if (input_probe_case) {
+            ++input_probe_completions;
+            Serial::text("AURORA_INPUT_CHUNK:");
+            field("case", input_probe_case);
+            field("sequence", input_read.sequence);
+            field("status", status);
+            field("count", count);
+            field("remaining", input_read.protocol.remaining);
+            Serial::text(" copied=1\r\n");
+        }
+#endif
+        input_read.protocol = process::input_update(input_read.protocol, 3);
+        input_read.bytes = {};
+        input_read.pending = false;
+        return;
+    }
     if (pending == Event::output) {
         if (slot != 1 || !completed_output || !*completed_output || endpoint.caller ||
             resident.continuation[frame_rax] != 2 || resident.continuation[frame_rdx] != endpoint.count ||
@@ -2079,7 +2228,8 @@ auto observe_forced_execution(std::size_t slot) -> aurora::lifecycle::Observatio
         const auto &binding = *forced_execution;
         if (!binding.client || binding.client != residents[slot].state.run || !binding.service_generation ||
             binding.service_generation != endpoint.generation || binding.output_pending || binding.request_pending ||
-            binding.request_failed || (binding.expiry_preceded_cancel && !binding.explicit_cancel_requested))
+            binding.input_pending || binding.request_failed ||
+            (binding.expiry_preceded_cancel && !binding.explicit_cancel_requested))
             fail("forced command binding");
         if (phase == Phase::prepared && (!binding.explicit_cancel_requested || binding.expiry_preceded_cancel ||
                                          binding.output_failed || execution_owner.canonical(slot, Field::pending)))
@@ -2195,7 +2345,7 @@ auto run_resident(std::size_t slot) -> bool {
             fail("execution completion refused");
     const auto result = execution_owner.execute(slot);
     const auto event = static_cast<Event>(result.event);
-    const bool parked = event >= Event::timer && event <= Event::output;
+    const bool parked = (event >= Event::timer && event <= Event::output) || event == Event::input;
     const bool terminal =
         event == Event::exited || event == Event::invalid_call || event == Event::fault || event == Event::expired;
     if ((!parked && !terminal) || !result.generation || execution_owner.generation(slot) != result.generation)
@@ -2213,6 +2363,7 @@ auto run_resident(std::size_t slot) -> bool {
     outcome.exchange = event == Event::exchange;
     outcome.request = event == Event::request;
     outcome.output = event == Event::output;
+    outcome.input = event == Event::input;
     if (!residents[slot].state.external) {
         Serial::text("AURORA_PROCESS_PARKED:");
         field("run", residents[slot].state.run);
@@ -3062,6 +3213,189 @@ auto execution_output_probe(void *, bool, std::span<const std::byte>) -> bool {
 }
 #endif
 
+auto invalidate_input(U64 owner) -> void {
+    if (!owner || input_read.owner != owner)
+        return;
+    if (input_wait.active)
+        fail("input abort during synchronous wait");
+    input_read.pending = input_read.completing = false;
+    input_read.protocol = process::input_update(input_read.protocol, 4);
+    input_read.bytes = {};
+    input_read.owner = 0; // Revoke before any retirement or ownership return.
+}
+auto input_identity() -> bool {
+    const auto &resident = residents[1];
+    return input_read.pending && input_read.owner && resident.space && !running.space && !execution_owner.entered() &&
+           root() == kernel_root && Timer::irq_off() && resident.state.run == input_read.owner &&
+           resident.space->epoch() == input_read.epoch && resident.space->root() == input_read.root &&
+           execution_owner.phase(1) == aurora::lifecycle::Phase::parked &&
+           execution_owner.pending(1) == static_cast<U64>(aurora::lifecycle::Event::input) &&
+           execution_owner.generation(1) == input_read.generation &&
+           input_frame_equal(resident.continuation, input_read.frame) &&
+           resident.state.captured == &resident.continuation && resident.state.continuation == &resident.continuation;
+}
+#ifdef AURORA_PROCESS_FIXTURE
+auto input_probe_sample(void *) -> aurora::console::Sample {
+    if (!input_identity())
+        fail("input fixture callback identity");
+    ++input_probe_samples;
+    if (input_probe_case == 94 || input_probe_case == 95) {
+        Serial::text("AURORA_INPUT_AUTHORITY_PROBE:");
+        field("case", input_probe_case);
+        field("owner", input_read.owner);
+        field("sequence", input_read.sequence);
+        Serial::text(" before_copy=1\r\n");
+        if (input_probe_case == 94)
+            input_probe_reenter();
+        else
+            residents[1].continuation[frame_rax] ^= 1;
+        return {true, 65, false};
+    }
+    if (input_probe_case == 84)
+        return {true, 3, false};
+    if (input_probe_case == 86 && input_read.sequence == 1 && input_probe_settlements && !input_read.protocol.count)
+        return {true, 65, false};
+    if (input_probe_case == 87 && input_probe_settlements >= 2)
+        return {true, 4, false}; // Must not beat the already settled timeout.
+    if (input_probe_case == 85 || input_probe_case == 86 || input_probe_case == 87)
+        return {}; // Real settlement, not callback count, advances time.
+    if (input_probe_case == 83 && input_probe_settlements < input_read.sequence)
+        return {};
+    if (input_read.protocol.count)
+        return {}; // Deliver partial data immediately, never wait to fill it.
+    if (input_probe_case == 96 || input_read.sequence <= (input_probe_case == 83 ? 2 : 1))
+        return {true, 65, false};
+    return {true, 4, false};
+}
+#endif
+__attribute__((noinline)) auto wait_for_input_sample() -> void {
+    if (!input_identity() || input_wait.active || !input_read.protocol.remaining || Timer::read(0x390) ||
+        !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
+        fail("input wait boundary");
+#ifdef AURORA_PROCESS_FIXTURE
+    const U64 cpu_before = residents[1].budget.used();
+#endif
+    input_wait = {};
+    input_wait.owner = input_read.owner;
+    input_wait.sequence = input_read.sequence;
+    input_wait.armed = least(input_poll_count, input_read.protocol.remaining);
+    input_wait.active = true;
+    asm volatile("mov %%rsp, %0" : "=m"(input_wait.stack) : : "memory");
+    if (!Timer::arm(static_cast<std::uint32_t>(input_wait.armed)))
+        fail("input wait arm");
+#ifdef AURORA_PROCESS_FIXTURE
+    bool early = false;
+    if (input_probe_case == 86 && !input_probe_partial) {
+        // Bounded genuine early relinquish, not an injected timer reading.
+        for (U64 polls = 0; polls < 1000000; ++polls) {
+            const U64 sample = Timer::read(0x390);
+            if (sample && sample < input_wait.armed) {
+                early = true;
+                input_probe_partial = true;
+                break;
+            }
+            if (!sample || Timer::pending())
+                break;
+        }
+        if (!early)
+            fail("input fixture partial sample unavailable");
+    }
+    if (!early)
+#endif
+        asm volatile(".global uefi_process_input_wait_begin\nuefi_process_input_wait_begin:\nsti\nhlt\ncli\n"
+                     ".global uefi_process_input_wait_end\nuefi_process_input_wait_end:"
+                     :
+                     :
+                     : "memory");
+    const U64 current = Timer::read(0x390); // Sample before stop destroys count.
+    if (current > input_wait.armed || !Timer::stop())
+        fail("input wait stop");
+    const bool expired = input_wait.expired, pending = Timer::pending();
+    const bool full = expired || pending || current == 0;
+    const U64 measured = full ? input_wait.armed : input_wait.armed - current;
+    const U64 charge = measured ? measured : 1;
+    input_wait.active = false; // Any remaining delivery belongs to drain only.
+    if (Timer::pending()) {
+        draining = true;
+        process_drain();
+    }
+    if (draining || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
+        fail("input wait drain");
+    input_wait.active = false;
+    if (!input_identity())
+        fail("input wait identity");
+#ifdef AURORA_PROCESS_FIXTURE
+    const U64 before = input_read.protocol.remaining;
+#endif
+    input_read.protocol = process::input_update(input_read.protocol, 0, charge);
+#ifdef AURORA_PROCESS_FIXTURE
+    if (input_probe_case) {
+        if (!charge || charge > input_wait.armed || input_wait.armed > before ||
+            input_read.protocol.remaining != before - charge || (early && full) ||
+            residents[1].budget.used() != cpu_before)
+            fail("input fixture settlement");
+        ++input_probe_settlements;
+        Serial::text("AURORA_INPUT_WAIT:");
+        field("case", input_probe_case);
+        field("sequence", input_read.sequence);
+        field("settlement", input_probe_settlements);
+        field("arm", input_wait.armed);
+        field("current", current);
+        field("expired", expired);
+        field("pending", pending);
+        field("early", early);
+        field("charge", charge);
+        field("before", before);
+        field("after", input_read.protocol.remaining);
+        field("cpu_before", cpu_before);
+        field("cpu_after", residents[1].budget.used());
+        Serial::text(" drained=1\r\n");
+    }
+#endif
+    input_wait = {};
+}
+[[gnu::noinline]] auto deliver_input() -> bool {
+    if (!input_read.pending || !residents[1].space)
+        return false;
+    if (!input_identity())
+        fail("input delivery boundary");
+    while (input_read.protocol.status == 0 && input_read.protocol.count < 504) {
+        if (!input_source) {
+            input_read.protocol = process::input_update(input_read.protocol, 2);
+            break;
+        }
+        const auto sample = input_source(output_context);
+        if (!input_identity())
+            fail("input callback identity");
+        if (sample.damaged) {
+            input_read.protocol = process::input_update(input_read.protocol, 2);
+            break;
+        }
+        if (!sample.present) {
+            if (input_read.protocol.count)
+                break; // Never wait to fill a partial chunk.
+            if (!input_read.protocol.remaining) {
+                input_read.protocol = process::input_update(input_read.protocol, 0);
+                break;
+            }
+            wait_for_input_sample();
+            continue;
+        }
+        const U64 prior = input_read.protocol.count;
+        input_read.protocol = process::input_update(input_read.protocol, 1, sample.byte);
+        if (input_read.protocol.count == prior + 1)
+            input_read.bytes[prior] = std::byte{sample.byte};
+        else if (!input_read.protocol.count)
+            input_read.bytes = {};
+    }
+    if (!input_identity())
+        fail("input commit identity");
+    input_read.completing = true;
+    const bool completed = execution_owner.complete(1);
+    input_read.completing = false;
+    return completed;
+}
+
 // Actual resources/effect evidence belong to the private authenticated lease
 // binding. Aurora owns command sequencing; there is no native command loop.
 class ExecutionEffects {
@@ -3086,25 +3420,34 @@ public:
     static auto advance(Binding &binding) -> aurora::execution::Observation {
         using namespace aurora::execution;
         require(bound_client(binding) && !binding.output_pending && !binding.request_pending &&
-                !binding.output_failed && !binding.request_failed && !binding.explicit_cancel_requested &&
-                !endpoint.caller_cancelled);
+                !binding.input_pending && !binding.output_failed && !binding.request_failed &&
+                !binding.explicit_cancel_requested && !endpoint.caller_cancelled);
         if (run_resident(1)) {
             // Freeze terminal facts before any later cleanup can replace outcome.
             const auto ended = outcome.exited ? Status::exited : outcome.watchdog ? Status::watchdog : Status::fault;
             return {Step::retired, ended, outcome.exited ? outcome.status : outcome.vector};
         }
-        require(!(outcome.output && outcome.request));
+        require(!(outcome.output && outcome.request) && !(outcome.input && (outcome.output || outcome.request)));
         binding.output_pending = outcome.output;
         binding.request_pending = outcome.request;
-        return {binding.output_pending    ? Step::output
+        binding.input_pending = outcome.input;
+        return {binding.input_pending     ? Step::input
+                : binding.output_pending  ? Step::output
                 : binding.request_pending ? Step::request
                                           : Step::parked,
                 Status::unavailable,
                 0};
     }
+    static auto input(Binding &binding) -> aurora::execution::Effect {
+        require(bound_client(binding) && binding.input_pending && !binding.output_pending && !binding.request_pending &&
+                !binding.explicit_cancel_requested && !endpoint.caller_cancelled);
+        const bool delivered = deliver_input();
+        binding.input_pending = false;
+        return delivered ? aurora::execution::Effect::success : aurora::execution::Effect::failed;
+    }
     static auto output(Binding &binding) -> aurora::execution::Effect {
         using namespace aurora::execution;
-        require(bound_client(binding) && binding.output_pending && !binding.request_pending &&
+        require(bound_client(binding) && binding.output_pending && !binding.request_pending && !binding.input_pending &&
                 !binding.explicit_cancel_requested);
         binding.output_failed = !deliver_output();
         binding.output_pending = false;
@@ -3112,7 +3455,7 @@ public:
     }
     static auto request(Binding &binding) -> aurora::execution::Request {
         using namespace aurora::execution;
-        require(bound_client(binding) && binding.request_pending && !binding.output_pending);
+        require(bound_client(binding) && binding.request_pending && !binding.output_pending && !binding.input_pending);
         ClientProgress progress = ClientProgress::failed;
         if (bound_service(binding)) {
             if (binding.explicit_cancel_requested && endpoint.caller_cancelled) {
@@ -3139,9 +3482,11 @@ public:
     }
     static auto cancel(Binding &binding) -> aurora::execution::Cancel {
         using namespace aurora::execution;
+        invalidate_input(binding.client);
+        binding.input_pending = false;
         // Inert refusals and already retired clients retain their frozen result.
         if (!binding.client || !residents[1].space) {
-            require(!binding.output_pending && !binding.request_pending);
+            require(!binding.output_pending && !binding.request_pending && !binding.input_pending);
             return Cancel::settled;
         }
         require(bound_client(binding));
@@ -3173,7 +3518,7 @@ public:
     }
     static auto finish(Binding &binding, aurora::execution::Finish disposition) -> aurora::execution::Effect {
         using namespace aurora::execution;
-        require(!binding.output_pending && !binding.request_pending);
+        require(!binding.output_pending && !binding.request_pending && !binding.input_pending);
         if (!binding.client) {
             require(disposition == Finish::complete && !residents[1].space && !snapshot && !endpoint.caller);
             return Effect::success;
@@ -3221,8 +3566,9 @@ public:
     }
     static auto settled(const Binding &binding) -> bool {
         const auto endpoint_observation = endpoint_owner.observe();
-        return !binding.client && !binding.output_pending && !binding.request_pending && !residents[1].space &&
-               !snapshot && !endpoint.caller && !endpoint_observation.delivery() && !endpoint_observation.completion();
+        return !binding.client && !binding.output_pending && !binding.request_pending && !binding.input_pending &&
+               !residents[1].space && !snapshot && !endpoint.caller && !endpoint_observation.delivery() &&
+               !endpoint_observation.completion();
     }
 };
 class ExecutionPlatform final {
@@ -3567,6 +3913,102 @@ public:
 };
 using FixtureExecutionSession = aurora::execution::Session<FixtureExecutionTransport, ExecutionPlatform>;
 
+auto input_probe_reenter() -> void {
+    if (!input_probe_lease || !input_probe_lease_generation)
+        fail("input fixture reentry receipt");
+    static_cast<void>(FixtureExecutionSession::advance(input_probe_lease, input_probe_lease_generation));
+    fail("input fixture reentry returned");
+}
+
+// Drive the existing lease at real parked boundaries; no copied lifecycle.
+auto execution_input_fixture(std::span<const std::byte> volume,
+                             std::span<const std::byte> runs,
+                             const process::RunEntry &entry,
+                             U64 client) -> void {
+    using namespace aurora::execution;
+    using Session = FixtureExecutionSession;
+    if (input_probe_case < 82 || input_probe_case > 96 || input_source || input_read.owner)
+        fail("input fixture admission");
+    input_read = {};
+    input_probe_settlements = input_probe_completions = input_probe_samples = 0;
+    input_probe_partial = false;
+    input_source = input_probe_sample;
+    FixtureExecutionTransport::bind(volume, runs, entry, client);
+    const auto issuer = Session::open();
+    const auto lease = Session::prepare(issuer.grant, issuer.generation);
+    if (Session::preparation(lease.binding, lease.generation).state != Prepared::loaded)
+        fail("input fixture load");
+    input_probe_lease = lease.binding;
+    input_probe_lease_generation = lease.generation;
+    const bool raw = input_probe_case >= 89 && input_probe_case <= 93 && (input_probe_case != 90 || client == 3);
+    if (raw) {
+        if (input_probe_case == 90 && (input_probe_retired != client - 1 || input_probe_retired == 0))
+            fail("input fixture stale epoch provenance");
+        Serial::text("AURORA_INPUT_RAW:");
+        field("case", input_probe_case);
+        field("owner", client);
+        field("prior_retired", input_probe_retired);
+        Serial::text(" admitted=1\r\n");
+    }
+    Finish disposition = Finish::complete;
+    for (;;) {
+        const auto step = Session::advance(lease.binding, lease.generation);
+        if (step.state == Step::retired)
+            break;
+        if (step.state == Step::input) {
+            if (input_probe_case == 88) {
+                if (!input_identity() || input_probe_completions ||
+                    static_cast<Cancel>(Session::cancel(lease.binding, lease.generation)) != Cancel::settled ||
+                    input_read.pending || input_read.owner || input_probe_completions)
+                    fail("input fixture abort");
+                disposition = Finish::cancel_requested;
+                break;
+            }
+            if (Session::input(lease.binding, lease.generation) != static_cast<U64>(Effect::success))
+                fail("input fixture delivery");
+        } else if (step.state == Step::request) {
+            for (;;) {
+                const auto request = static_cast<Request>(Session::request(lease.binding, lease.generation));
+                if (request == Request::pending)
+                    continue;
+                if (request != Request::ready)
+                    fail("input fixture file request");
+                break;
+            }
+        } else if (step.state != Step::parked) {
+            fail("input fixture unexpected output");
+        }
+    }
+    if (input_probe_case == 96) {
+        if (input_probe_completions < 2 || !outcome.watchdog || outcome.terminal_ticks != 2)
+            fail("input fixture original CPU budget");
+    } else if (raw) {
+        if (input_probe_completions || input_probe_samples || !outcome.invalid_call || outcome.operation != 21)
+            fail("input fixture raw rejection");
+    } else if (input_probe_case != 88 && (input_probe_completions != 4 || !outcome.exited || outcome.status))
+        fail("input fixture consumer result");
+    if (Session::finish(lease.binding, lease.generation, static_cast<U64>(disposition)) !=
+        static_cast<U64>(Effect::success))
+        fail("input fixture finish");
+    Session::release(issuer);
+    FixtureExecutionTransport::unbind();
+    if (input_read.owner || input_read.pending || input_wait.active || residents[1].space || Timer::read(0x390) ||
+        !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
+        fail("input fixture cleanup");
+    Serial::text("AURORA_INPUT_FINISHED:");
+    field("case", input_probe_case);
+    field("completed", input_probe_completions);
+    field("settlements", input_probe_settlements);
+    field("samples", input_probe_samples);
+    field("partial", input_probe_partial);
+    Serial::text(" quiet=1 retired=1\r\n");
+    input_probe_retired = client;
+    input_probe_lease = nullptr;
+    input_probe_lease_generation = 0;
+    input_source = nullptr;
+    input_read = {};
+}
+
 // Fixture-only elapsed-clock gate at an authenticated, already-staged request.
 // No process runs here and no effect loan survives Session::advance. Every
 // charged count comes from the existing LAPIC; there is no synthetic expiry.
@@ -3870,6 +4312,10 @@ auto run_external(std::span<const std::byte> view,
             break;
         ++count;
 #ifdef AURORA_PROCESS_FIXTURE
+        if (input_probe_case) {
+            execution_input_fixture(view, runs, *entry, count);
+            continue;
+        }
         const auto arguments = runs.subspan(entry->arguments, entry->argument_bytes);
         constexpr std::string_view initial_cancel{"raw-cancel-initial\0", 19};
         constexpr std::string_view tail_cancel{"raw-cancel-tail\0", 16};
@@ -4147,6 +4593,8 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 [[noreturn]] auto run_list(U64 arena, std::span<const std::byte> view, U64 selected) -> void {
     U64 run_case = selected;
 #ifdef AURORA_PROCESS_FIXTURE
+    if (selected >= 82 && selected <= 96)
+        input_probe_case = selected;
     if (selected >= 64 && selected <= 71) {
         execution_probe_case = selected;
         run_case = selected == 69 || selected == 71 ? 1 : 3;
@@ -4268,7 +4716,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 #endif
     if ((selected >= 1 && selected <= 6) || selected == 43 || selected == 44 || (selected >= 63 && selected <= 71))
         count = run_independent(view, *runs);
-    if (selected == 8)
+    if (selected == 8 || (selected >= 82 && selected <= 96))
         count = run_external(view, *runs);
     if (selected == 10) {
         const auto baseline = table.free();
@@ -4928,12 +5376,17 @@ auto aurora::uefi::run_program(U64 arena,
                                std::span<const std::byte> path,
                                std::span<const std::byte> arguments,
                                ProcessOutput output,
-                               void *context) -> RunResult {
+                               void *context,
+                               ProcessInput source_input,
+                               bool input_after_cr) -> RunResult {
     if (!output || path.empty() || path.size() > process::file_path_limit || arguments.empty() ||
         arguments.size() > 65536 || !enter_runtime(arena, handoff))
         return {};
     output_sink = output;
     output_context = context;
+    input_source = source_input;
+    input_read = {};
+    input_read.protocol.after_cr = input_after_cr ? 1 : 0;
     auto supplied = resident_arguments(handoff);
     supplied.path = path;
     supplied.arguments = arguments;
@@ -4943,7 +5396,10 @@ auto aurora::uefi::run_program(U64 arena,
     aurora::execution::Result observed;
     source_resident_run(resident_owner.storage(), &observed);
     resident_owner.close(operation);
-    const RunResult result{static_cast<RunStatus>(observed.status), observed.value};
+    const RunResult result{static_cast<RunStatus>(observed.status), observed.value, input_read.quarantine};
+    invalidate_input(input_read.owner);
+    input_source = nullptr;
+    input_read = {};
     output_sink = nullptr;
     output_context = nullptr;
     leave_runtime(handoff);
@@ -5131,6 +5587,11 @@ auto execution_output(const void *, U64) -> U64 asm("__au_runtime_execution_outp
     __attribute__((visibility("hidden")));
 auto execution_output(const void *grant, U64 generation) -> U64 {
     return ExecutionSession::output(grant, generation);
+}
+auto execution_input(const void *, U64) -> U64 asm("__au_runtime_execution_input")
+    __attribute__((visibility("hidden")));
+auto execution_input(const void *grant, U64 generation) -> U64 {
+    return ExecutionSession::input(grant, generation);
 }
 auto execution_request(const void *, U64) -> U64 asm("__au_runtime_execution_request")
     __attribute__((visibility("hidden")));
@@ -5400,6 +5861,7 @@ __attribute__((visibility("hidden"))) U64 __au_runtime_execution_authority_retir
             endpoint_observation.delivery() || endpoint_observation.completion())
             fail("service retirement invalidation boundary");
     }
+    invalidate_input(residents[slot].state.run);
     const bool result = release_resident_physical(slot);
     execution_owner.leave();
     return result ? 1 : 0;

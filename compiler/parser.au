@@ -139,6 +139,9 @@ export namespace compiler_parser {
             if (service == 6) {
                 return 64;
             }
+            if (service == 11) {
+                return 2048;
+            }
             if (service == 10) {
                 return 1024;
             }
@@ -548,12 +551,14 @@ namespace compiler_parser {
             114> names10 =
             "ResidentSlot;ResidentRunResult;ResidentStatus;OwnedWords;MappingAuthority;ExecutionAuthority;ExecutionObservation;";
         const builtin::span<const u8> words10 = borrow_bytes(names10);
-        return word_list_matches(source, token, words10) || word_list_matches(source, token, words9)
-            || word_list_matches(source, token, words8) || word_list_matches(source, token, words7)
-            || word_list_matches(source, token, words0) || word_list_matches(source, token, words1)
-            || word_list_matches(source, token, words2) || word_list_matches(source, token, words3)
-            || word_list_matches(source, token, words4) || word_list_matches(source, token, words5)
-            || word_list_matches(source, token, words6);
+        const array<u8, 35> names11 = "InputStream;InputStatus;InputChunk;";
+        const builtin::span<const u8> words11 = borrow_bytes(names11);
+        return word_list_matches(source, token, words11) || word_list_matches(source, token, words10)
+            || word_list_matches(source, token, words9) || word_list_matches(source, token, words8)
+            || word_list_matches(source, token, words7) || word_list_matches(source, token, words0)
+            || word_list_matches(source, token, words1) || word_list_matches(source, token, words2)
+            || word_list_matches(source, token, words3) || word_list_matches(source, token, words4)
+            || word_list_matches(source, token, words5) || word_list_matches(source, token, words6);
     }
     enum class TypeWord {
         invalid,
@@ -945,8 +950,8 @@ namespace compiler_parser {
                                                 55> samples = "ConsoleSample;IommuEventSample;CallResult;ServeRequest;";
                                             const builtin::span<const u8> samples_words = borrow_bytes(samples);
                                             const array<u8,
-                                                62> host_samples =
-                                                "HostChunk;HostFileResult;HostDirectoryResult;HostOutputResult;";
+                                                73> host_samples =
+                                                "HostChunk;HostFileResult;HostDirectoryResult;HostOutputResult;InputChunk;";
                                             const builtin::span<const u8> host_words = borrow_bytes(host_samples);
                                             const array<u8,
                                                 88> execution_samples =
@@ -3175,6 +3180,19 @@ namespace compiler_parser {
         if (word_matches(source, token, host_word, 0, 9)) {
             return AdmissionType(AdmissionKind::service, configuration.service_mask(6), token);
         }
+        const array<u8, 11> input_name = "InputStream";
+        const builtin::span<const u8> input_word = borrow_bytes(input_name);
+        if (word_matches(source, token, input_word, 0, 11)) {
+            if ((u64(configuration.groups()) & 8192u64) == 0u64) {
+                return AdmissionType(AdmissionKind::unsupported, 0, token);
+            }
+            return AdmissionType(AdmissionKind::service, configuration.service_mask(11), token);
+        }
+        const array<u8, 11> input_status = "InputStatus";
+        const builtin::span<const u8> input_status_word = borrow_bytes(input_status);
+        if (word_matches(source, token, input_status_word, 0, 11)) {
+            return AdmissionType(AdmissionKind::copied, 0, token);
+        }
         const array<u8, 23> bootstrap_name = "ServiceBootstrapEffects";
         const builtin::span<const u8> bootstrap_word = borrow_bytes(bootstrap_name);
         if (word_matches(source, token, bootstrap_word, 0, 23)) {
@@ -3315,7 +3333,7 @@ namespace compiler_parser {
     auto admission_service_pair(i64 groups, u64 kinds) -> bool {
         return (kinds == 3u64 && (u64(groups) & 8u64) != 0u64) || (kinds == 5u64 && (u64(groups) & 32u64) != 0u64)
             || (kinds == 160u64 && (u64(groups) & 128u64) != 0u64) || (kinds == 288u64 && (u64(groups) & 1024u64)
-            != 0u64);
+            != 0u64) || (kinds == 2112u64 && (u64(groups) & 16384u64) != 0u64);
     }
     auto admission_callable(AstArena& arena, builtin::span<const u8> source, ParseToken start, SyntaxNode callable,
         AdmissionScope scope, AdmissionConfig configuration) -> AdmissionProgress {
@@ -3475,10 +3493,10 @@ namespace compiler_parser {
     }
     // Admission policy may restrict the closed group set. Unlike the lowering
     // seed catalogue, a subset is intentional (for example disabling a pair).
-    // The appended singleton Serve and HostFiles bits are new; mixed/high bits
-    // stay closed. HostFiles (mask 64) is admitted through bit 0.
+    // Explicit InputStream and HostFiles+InputStream tags join the existing
+    // closed set; unrelated mixed/high bits stay closed. HostFiles uses bit 0.
     auto admission_service_groups(i64 groups) -> bool {
-        return groups >= 0 && (u64(groups) & 4295041023u64) == u64(groups);
+        return groups >= 0 && (u64(groups) & 4295065599u64) == u64(groups);
     }
     auto admission_module(AstArena& arena, builtin::span<const u8> source, i64 root,
         AdmissionConfig configuration) -> AdmissionResult {
@@ -3491,10 +3509,10 @@ namespace compiler_parser {
         }
         u64 masks = 0u64;
         i64 service = 0;
-        while (service < 11) {
+        while (service < 12) {
             const i64 mask = configuration.service_mask(service);
             if ((mask != 1 && mask != 2 && mask != 4 && mask != 8 && mask != 16 && mask != 32 && mask != 64 && mask
-                != 128 && mask != 256 && mask != 512 && mask != 1024) || (masks & u64(mask)) != 0u64) {
+                != 128 && mask != 256 && mask != 512 && mask != 1024 && mask != 2048) || (masks & u64(mask)) != 0u64) {
                 return admission_result(AdmissionStatus::invalid);
             }
             masks = masks | u64(mask);

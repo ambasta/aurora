@@ -690,6 +690,33 @@ export namespace compiler_x86 {
     // region is that address, host_memory::start maps the runtime's state
     // after host::start (a failure exits 1 without main) and
     // host_memory::finish checks after main that no allocation is live.
+    // Input-aware entries keep their independent grant between HostFiles and
+    // ByteRegion. Existing memory hooks still receive exactly grant+region.
+    auto hosted_memory_hook(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
+        i64 hook, bool input) -> bool {
+        if (!input) {
+            emit_mov_rr(w, o, Register::rsp, Register::r11);
+            return direct_target(w, o, m, hook);
+        }
+        emit_reserve_stack(w, o, 32);
+        i64 lane = 0;
+        while (lane < 16) {
+            const i64 source = w.pack_address(1, 32 + lane);
+            const i64 target = w.pack_address(1, lane);
+            emit_load(w, o, source, Register::rax, false);
+            emit_store(w, o, Register::rax, target, false);
+            lane = lane + 8;
+        }
+        const i64 source_region = w.pack_address(1, 64);
+        const i64 target_region = w.pack_address(1, 16);
+        emit_load(w, o, source_region, Register::rax, false);
+        emit_store(w, o, Register::rax, target_region, false);
+        const i64 padding = w.pack_address(1, 24);
+        emit_store_imm(w, o, 0, padding, false);
+        emit_mov_rr(w, o, Register::rsp, Register::r11);
+        direct_target(w, o, m, hook);
+        return emit_release_stack(w, o, 32);
+    }
     auto module_emit_hosted_entry(EmitWorkspace& w, ObjectWorkspace& o,
         const compiler_ir_metadata::MetadataStore& m) -> bool {
         const i64 entry = hosted_entry(m);
@@ -711,6 +738,10 @@ export namespace compiler_x86 {
             return w.fail();
         }
         const bool kernel = w.kernel_target();
+        const bool input = hosted_input(m);
+        if (input && !kernel) {
+            return w.fail();
+        }
         const i64 name = w.intern_runtime("_start");
         if (!w.begin_function(2, name, -1)) {
             return false;
@@ -726,6 +757,10 @@ export namespace compiler_x86 {
             w.text(".globl _start\n.type _start, @function\n_start:\n");
         }
         emit_alu_rr(w, o, AluOp::bit_xor, Register::rbp, Register::rbp);
+        if (input) {
+            // R8 is an independent opaque input epoch; RDX remains untouched.
+            emit_mov_rr(w, o, Register::r8, Register::rbx);
+        }
         if (kernel) {
             // The Aurora kernel passes the argument block's address in RDI and
             // its length in RSI (kernel/uefi/process.md#processes).
@@ -784,6 +819,10 @@ export namespace compiler_x86 {
             span = 24;
             record = 96;
         }
+        if (input) {
+            span = span + 16;
+            record = record + 16;
+        }
         emit_reserve_stack(w, o, record);
         const i64 grant = w.pack_address(1, 0);
         emit_store(w, o, Register::r8, grant, false);
@@ -795,8 +834,18 @@ export namespace compiler_x86 {
             emit_store_imm(w, o, 0, lane, false);
             word = word + 8;
         }
+        if (input) {
+            const i64 token = w.pack_address(1, 16);
+            const i64 input_generation = w.pack_address(1, 24);
+            emit_store(w, o, Register::rbx, token, false);
+            emit_store_imm(w, o, 1, input_generation, false);
+        }
         if (memory) {
-            const i64 region = w.pack_address(1, 16);
+            i64 region_offset = 16;
+            if (input) {
+                region_offset = 32;
+            }
+            const i64 region = w.pack_address(1, region_offset);
             emit_store(w, o, Register::r8, region, false);
         }
         const i64 address = w.pack_address(1, span + 8);
@@ -810,8 +859,7 @@ export namespace compiler_x86 {
         emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
         emit_branch(w, o, 5, 0, 3);
         if (memory) {
-            emit_mov_rr(w, o, Register::rsp, Register::r11);
-            direct_target(w, o, m, memory_start);
+            hosted_memory_hook(w, o, m, memory_start, input);
             emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
             emit_branch(w, o, 5, 0, 3);
         }
@@ -821,8 +869,7 @@ export namespace compiler_x86 {
         emit_branch(w, o, 7, 4, 0);
         emit_store(w, o, Register::rax, status, false);
         if (memory) {
-            emit_mov_rr(w, o, Register::rsp, Register::r11);
-            direct_target(w, o, m, memory_finish);
+            hosted_memory_hook(w, o, m, memory_finish, input);
             emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
             emit_branch(w, o, 5, 4, 0);
         }
@@ -1568,8 +1615,15 @@ export namespace compiler_x86 {
             w.fail();
             return w.status();
         }
+        // Input requests are carried only by the native ELF object/link path.
+        // An assembly-only output would silently lose its request advertisement.
+        if (hosted_input(m) && (!s.kernel_target() || !o.object_mode())) {
+            w.fail();
+            return w.status();
+        }
         if (o.object_mode()) {
             w.select_object();
+            o.set_input_request(s.kernel_target() && hosted_input(m));
             const i64 instruction_count = s.instruction_count();
             const i64 callable_count = m.callable_count();
             o.configure_labels(instruction_count, callable_count, m.descriptor_count());

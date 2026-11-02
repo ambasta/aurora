@@ -151,6 +151,12 @@ def parser():
     result.add_argument("--text", action="append", default=[], dest="texts")
     result.add_argument("--program", action="append", default=[], dest="programs")
     result.add_argument("--elf", action="append", default=[], dest="elves")
+    result.add_argument(
+        "--input-abi",
+        action="append",
+        default=[],
+        help="fixture-only copied program alias requesting input ABI, not authority",
+    )
     result.add_argument("--run", action="append", default=[], dest="runs")
     result.add_argument("--host-files-tree", action="store_true")
     result.add_argument("--rejections", action="append", default=[])
@@ -173,6 +179,26 @@ def build(args, root):
     entries += [(text.partition("=")[0].encode(), text.partition("=")[2].encode()) for text in args.texts]
     entries += [(item.partition("=")[0].encode(), Path(item.partition("=")[2]).read_bytes()) for item in args.programs]
     entries += [(item.partition("=")[0].encode(), elf(item.partition("=")[2])) for item in args.elves]
+    if len(set(args.input_abi)) != len(args.input_abi):
+        raise ValueError("duplicate input ABI alias")
+    for alias in args.input_abi:
+        matches = [index for index, (path, _) in enumerate(entries) if path == alias.encode()]
+        if len(matches) != 1:
+            raise ValueError("input ABI alias must name exactly one copied program")
+        index = matches[0]
+        path, original = entries[index]
+        if (
+            not any(item.partition("=")[0] == alias for item in args.programs)
+            or len(original) < 64
+            or original[:7] != b"\x7fELF\x02\x01\x01"
+            or int.from_bytes(original[18:20], "little") != 62
+            or int.from_bytes(original[48:52], "little") != 0
+        ):
+            raise ValueError("input ABI alias requires an unflagged ELF64 x86-64 copied program")
+        copied = bytearray(original)
+        copied[48:52] = (1).to_bytes(4, "little")
+        entries[index] = path, bytes(copied)
+
     if args.host_files_tree:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
         from host_files import TREE

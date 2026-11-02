@@ -6,6 +6,7 @@ import json
 import os
 import re
 import signal
+import struct
 from pathlib import Path
 import subprocess
 import tempfile
@@ -308,6 +309,81 @@ def file_count_checks(compiler, work):
     print("PASS actual pure file counter: LF/words/bytes, binary bytes, limit and refusal preservation")
 
 
+def input_group_checks(compiler, work):
+    # One helper object covers singleton loans, both exact pair orders and
+    # forwarding; exact root objects below are linked, but not executed here.
+    source, output, facts = (work / name for name in ("input-group.au", "input-group.o", "input-group.json"))
+    source.write_text(
+        "module input_group; "
+        "auto read_input(builtin::InputStream& input)->builtin::InputChunk {"
+        "const builtin::InputChunk result=input.read(); return result;} "
+        "auto host_input(builtin::HostFiles& files,builtin::InputStream& input)->u64 {"
+        "const builtin::InputChunk result=read_input(input); return result.count;} "
+        "auto input_host(builtin::InputStream& input,builtin::HostFiles& files)->u64 {"
+        "return host_input(files,input);}"
+    )
+    result = run([compiler, "--target", "aurora", "--emit-object", source, "--abi-facts", facts, "-o", output])
+    require(result.returncode == 0, "input helpers: " + result.stderr.decode())
+    abi = json.loads(facts.read_text())
+    require(
+        "__au_input_chunk" in abi["records"] and "__au_input_status" in abi["enums"],
+        "input helper catalogue not seeded",
+    )
+    require(
+        struct.unpack_from("<I", output.read_bytes(), 48)[0] == 0, "helper-only object acquired root input-request flag"
+    )
+    result = run([compiler, "--target", "linux", "--emit-object", source, "-o", work / "input-linux.o"])
+    require(result.returncode == 1 and result.stderr, "Linux accepted InputStream read")
+    print("PASS InputStream singleton/pair forwarding and helper-only request isolation; Linux read rejected")
+
+    root_source = work / "input-root.au"
+    for label, imports, region in (
+        ("no-region", "", ""),
+        ("region", "import aurora.memory; ", "builtin::ByteRegion region, "),
+    ):
+        root_source.write_text(
+            "module input_root; import aurora.host; "
+            + imports
+            + "auto main(builtin::HostFiles& files, builtin::InputStream& input, "
+            + region
+            + "builtin::span<const u8> arguments)->builtin::HostExit {"
+            "const builtin::InputChunk chunk=input.read(); "
+            "if(chunk.count>504u64) {return builtin::HostExit::failure;} "
+            "return builtin::HostExit::success;}"
+        )
+        root_object, executable = work / f"input-{label}.o", work / f"input-{label}"
+        result = run([compiler, "--target", "aurora", "--emit-object", root_source, "-o", root_object])
+        require(result.returncode == 0, f"input root {label}: " + result.stderr.decode())
+        result = run([compiler, "--link-object", root_object, "-o", executable])
+        require(result.returncode == 0, f"input root link {label}: " + result.stderr.decode())
+        for artifact in (root_object, executable):
+            require(
+                struct.unpack_from("<I", artifact.read_bytes(), 48)[0] == 1,
+                f"input root {label}: missing input request in {artifact.name}",
+            )
+
+    # Even an unused input parameter requests authority, and is unsupported on
+    # Linux or an assembly-only route that cannot preserve the ELF request bit.
+    unused_body = "builtin::span<const u8> arguments)->builtin::HostExit {return builtin::HostExit::success;}"
+    root_source.write_text(
+        "module input_root; import aurora.host; "
+        "auto main(builtin::HostFiles& files,builtin::InputStream& input," + unused_body
+    )
+    for label, options, suffix in (
+        ("linux-unused", ["--target", "linux", "--emit-object"], ".o"),
+        ("assembly-unused", ["--target", "aurora"], ".s"),
+    ):
+        result = run([compiler, *options, root_source, "-o", work / ("input-" + label + suffix)])
+        require(result.returncode == 1 and result.stderr, f"unsupported input root accepted: {label}")
+    root_source.write_text(
+        "module input_root; import aurora.host; "
+        "auto main(builtin::InputStream& input,builtin::HostFiles& files," + unused_body
+    )
+    result = run([compiler, "--target", "aurora", "--emit-object", root_source, "-o", work / "input-reversed.o"])
+    require(result.returncode == 1 and result.stderr, "reversed input main accepted")
+    print("PASS exact input roots with/without ByteRegion: object/link flags; Linux/assembly/reversed roots rejected")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
@@ -323,6 +399,7 @@ def main():
     assembly = work / "group.s"
     file_count_checks(compiler, work)
     catalogue_checks(compiler, work)
+    input_group_checks(compiler, work)
     result = run([compiler, ROOT / "tests/compiler/service_group.au", "-o", assembly])
     require(result.returncode == 0, result.stderr.decode())
     text = assembly.read_text()
@@ -458,12 +535,36 @@ __au_runtime_group_entry:
             "call-raw": "auto __au_runtime_call() -> i64 { return 0; }",
         }
     )
+    input_parameter = "builtin::InputStream& input"
+    input_pair = "builtin::HostFiles& files, " + input_parameter
+    negative.update(
+        {
+            "input-duplicate": f"auto f({input_parameter}, builtin::InputStream& again)->i64 {{return 0;}}",
+            "input-triple": f"auto f({input_pair}, builtin::ConsoleSession& console)->i64 {{return 0;}}",
+            "input-console-pair": f"auto f({input_parameter}, builtin::ConsoleSession& console)->i64 {{return 0;}}",
+            "input-console-first": f"auto f(builtin::ConsoleSession& console, {input_parameter})->i64 {{return 0;}}",
+            "input-by-value": "auto f(builtin::InputStream input)->i64 {return 0;}",
+            "input-const": "auto f(const builtin::InputStream& input)->i64 {return 0;}",
+            "input-pair-by-value": "auto f(builtin::HostFiles& files,builtin::InputStream input)->i64 {return 0;}",
+            "input-read-extra": f"auto f({input_parameter})->builtin::InputChunk {{"
+            "const builtin::InputChunk result=input.read(1u64); return result;}",
+            "input-forge": "auto f()->i64 {builtin::InputStream input; return 0;}",
+            "input-construct": "auto f()->i64 {builtin::InputStream input=builtin::InputStream(); return 0;}",
+            "input-return-authority": f"auto f({input_parameter})->builtin::InputStream {{return input;}}",
+            "input-copy-authority": f"auto f({input_parameter})->i64 {{builtin::InputStream copy=input; return 0;}}",
+        }
+    )
     for name, body in negative.items():
         source = work / (name + ".au")
         source.write_text("module rejected; " + body)
-        result = run([compiler, source, "-o", work / "rejected.s"])
+        if name.startswith("input-"):
+            # Test source rejection on the supported target, not incidental
+            # failure of the deliberately unsupported Linux input backend.
+            result = run([compiler, "--target", "aurora", "--emit-object", source, "-o", work / "rejected.o"])
+        else:
+            result = run([compiler, source, "-o", work / "rejected.s"])
         require(result.returncode == 1 and result.stderr, "invalid group source was not cleanly rejected: " + name)
-        if name in ("call-extra", "call-absent"):
+        if name in ("call-extra", "call-absent", "input-read-extra"):
             require(
                 result.stderr.count(b"error AU") == 1
                 and result.stderr.endswith(b"error AU3001: wrong argument count for method\n"),

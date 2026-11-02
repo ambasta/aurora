@@ -124,6 +124,13 @@ export namespace kernel {
         return end - end % elf_page() + elf_page();
     }
 
+    auto elf_input_requested(builtin::span<const u8> image) -> u64 {
+        if (image.size() < 64) {
+            return 0u64;
+        }
+        return elf_half(image, 48) & 1u64;
+    }
+
     // The ELF header: identity, type, machine and the table's shape and extent.
     auto elf_header(builtin::span<const u8> image) -> ElfVerdict {
         if (image.size() < 64) {
@@ -133,9 +140,11 @@ export namespace kernel {
             return ElfVerdict::magic;
         }
         // ELFCLASS64, little-endian, version 1, System V ABI version 0, zero
-        // padding (bytes 9..15), version 1 and no processor flags.
+        // padding (bytes 9..15), version 1. Processor flag0x1 requests the
+        // foreground InputStream entry ABI; it is not input authority.
         if (image.at(4) != 2u8 || image.at(5) != 1u8 || image.at(6) != 1u8 || image.at(7) != 0u8 || image.at(8) != 0u8
-            || (elf_word(image, 8) >> 8) != 0u64 || elf_half(image, 20) != 1u64 || elf_half(image, 48) != 0u64) {
+            || (elf_word(image, 8) >> 8) != 0u64 || elf_half(image, 20) != 1u64 || (elf_half(image, 48) & ~1u64)
+            != 0u64) {
             return ElfVerdict::format;
         }
         if (elf_short(image, 16) != 2u64) {

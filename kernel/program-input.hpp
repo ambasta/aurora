@@ -89,6 +89,7 @@ class SubmissionArgument final {
 public:
     console::ServiceArgument console;
     std::uint64_t after_cr;
+    std::uint64_t quarantine{};
 };
 
 class Submission final {
@@ -263,8 +264,9 @@ public:
 };
 static_assert(std::is_standard_layout_v<console::ServiceArgument> && sizeof(console::ServiceArgument) == 16 &&
               offsetof(console::ServiceArgument, grant) == 0 && offsetof(console::ServiceArgument, generation) == 8);
-static_assert(std::is_standard_layout_v<SubmissionArgument> && sizeof(SubmissionArgument) == 24 &&
-              offsetof(SubmissionArgument, console) == 0 && offsetof(SubmissionArgument, after_cr) == 16);
+static_assert(std::is_standard_layout_v<SubmissionArgument> && sizeof(SubmissionArgument) == 32 &&
+              offsetof(SubmissionArgument, console) == 0 && offsetof(SubmissionArgument, after_cr) == 16 &&
+              offsetof(SubmissionArgument, quarantine) == 24);
 static_assert(std::is_standard_layout_v<Submission::Record> && sizeof(Submission::Record) == 88 &&
               offsetof(Submission::Record, bytes) == 0 && offsetof(Submission::Record, count) == 64 &&
               offsetof(Submission::Record, action) == 72 && offsetof(Submission::Record, after_cr) == 80);

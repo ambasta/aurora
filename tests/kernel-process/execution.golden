@@ -63,3 +63,5 @@ expired_staged_request watchdog:0 prepare,advance,request,cancel,finish:cancelle
 expired_dispatched_request watchdog:0 prepare,advance,request,cancel,request,request,finish:cancelled
 explicit_cancel_precedes_late_expiry cancelled:0 prepare,advance,cancel,request,finish:cancel_requested
 expired_close_failure unavailable:0 prepare,advance,request,cancel,finish:cancelled
+input_resume exited:0 prepare,advance,input,advance,finish:complete
+input_failure cancelled:0 prepare,advance,input,cancel,finish:cancel_requested

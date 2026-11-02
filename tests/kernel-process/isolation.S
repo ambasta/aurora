@@ -99,6 +99,69 @@ _start:
     kernel_call 19
     ud2
 .Largument_modes:
+    # The same raw binary is copied under a fixture-only input ABI request
+    # alias. R8 is still a supervisor-issued epoch, never selected by argv.
+    cmpq $11, %r15
+    jne .Lnot_input_raw
+    movabsq $0x61722d7475706e69, %rax # "input-ra"
+    cmpq %rax, (%r14)
+    jne .Lnot_input_raw
+    cmpb $119, 8(%r14)
+    jne .Lnot_input_raw
+    cmpb $0, 10(%r14)
+    jne .Lnot_input_raw
+    movzbl 9(%r14), %r12d
+    subl $48, %r12d
+    cmpl $5, %r12d
+    ja .Lnot_input_raw
+    movq %rsp, %rbx
+    subq $528, %rsp
+    movq %rsp, %rdi
+    movq %r9, %rsi
+    xorl %edx, %edx
+    xorl %r10d, %r10d
+    cmpl $5, %r12d
+    je .Linput_fuel
+    testl %r12d, %r12d
+    jnz .Linput_stale
+    xorq $0x10000000, %rsi
+    jmp .Linput_call
+.Linput_stale:
+    cmpl $1, %r12d
+    jne .Linput_destination
+    decq %rsi # fixture checks this equals an actually issued, retired prior run
+    jmp .Linput_call
+.Linput_destination:
+    cmpl $2, %r12d
+    jne .Linput_unmapped
+    leaq _start(%rip), %rdi
+    jmp .Linput_call
+.Linput_unmapped:
+    cmpl $3, %r12d
+    jne .Linput_crossing
+    movabsq $0xffff800000000000, %rdi
+    jmp .Linput_call
+.Linput_crossing:
+    leaq -256(%rbx), %rdi # writable stack prefix, full 520 extends beyond its end
+.Linput_call:
+    kernel_call 21
+    ud2 # No rejected call may deliver a chunk or resume this continuation.
+.Linput_fuel:
+    movq %rsp, %rdi
+    movq %r9, %rsi
+    xorl %edx, %edx
+    xorl %r10d, %r10d
+    kernel_call 21
+    testq %rax, %rax
+    jnz .Linput_unexpected
+    movl $100000, %ecx
+.Linput_work:
+    decl %ecx
+    jnz .Linput_work
+    jmp .Linput_fuel
+.Linput_unexpected:
+    ud2
+.Lnot_input_raw:
     leaq service_modes(%rip), %rbx
     movl $18, %r11d
 .Lmode_next:

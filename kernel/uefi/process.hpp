@@ -1,5 +1,6 @@
 #pragma once
 #include "handoff.hpp"
+#include "../console-uart.hpp"
 namespace aurora::uefi {
 enum class RunStatus {
     exited,
@@ -16,7 +17,9 @@ class RunResult final {
 public:
     RunStatus status = RunStatus::unavailable;
     std::uint64_t value = 0;
+    bool input_quarantine = false;
 };
+using ProcessInput = console::Sample (*)(void *);
 using ProcessOutput = bool (*)(void *, bool, std::span<const std::byte>);
 // A supervisor-only command boundary. The retained service survives return;
 // all process mappings are detached from the production console's exact root.
@@ -25,7 +28,9 @@ using ProcessOutput = bool (*)(void *, bool, std::span<const std::byte>);
                                std::span<const std::byte> path,
                                std::span<const std::byte> arguments,
                                ProcessOutput output,
-                               void *context) -> RunResult;
+                               void *context,
+                               ProcessInput input = nullptr,
+                               bool input_after_cr = false) -> RunResult;
 
 // Exact production NVMe composition only: admit its readonly mount before the
 // first prompt. A valid unavailable mount preserves the boot/console owner.

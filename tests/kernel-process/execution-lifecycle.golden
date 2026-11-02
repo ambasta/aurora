@@ -92,3 +92,6 @@ retire-noncanonical denied=source
 finish-noncanonical denied=source
 invalidate-noncanonical denied=source
 staged-request-expiry bind=1 exchange=1 service=1 prepare=1 stage=1 terminal=10:0:1 resident=0 before=staged:7:0:0:0:17 withdraw=1 after=waiting:7:0:0:0:0 run=6:0:1 finish=1 enter=0 retire=1:4:10 enter=0 invalidate=0 retire=0:6:6
+input-completion prepare=1 run=15:0:1 complete=1 run=6:0:1 finish=1 enter=0 enter=1 retire=1:6:6
+input-expiry prepare=1 run=10:0:1 state=0:1 finish=1 enter=0 retire=1:15:10
+input-abort prepare=1 run=15:0:1 force=11:0:1 state=0:1 finish=1 enter=0 retire=1:14:11

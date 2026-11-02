@@ -72,3 +72,5 @@ expired_staged_request point:2 prepare:loaded:exited advance:request:unavailable
 expired_dispatched_request point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:draining_after_expiry request:pending request:explicit_after_expiry finish:cancelled:success
 explicit_cancel_precedes_late_expiry point:1 prepare:loaded:exited advance:request:unavailable:0 cancel:draining request:cancel_requested finish:cancel_requested:success
 expired_close_failure point:2 prepare:loaded:exited advance:request:unavailable:0 request:pending cancel:settled_after_expiry finish:cancelled:failed
+input_resume prepare:loaded:exited advance:input:unavailable:0 input:success advance:retired:exited:0 finish:complete:success
+input_failure prepare:loaded:exited advance:input:unavailable:0 input:failed cancel:settled finish:cancel_requested:success

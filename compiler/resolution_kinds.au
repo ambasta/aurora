@@ -32,7 +32,8 @@ export namespace compiler_resolver {
         writable_block,
         execution_effects,
         service_resource,
-        bootstrap_effects
+        bootstrap_effects,
+        input_stream
     };
     enum class DeclarationKind {
         invalid,

@@ -1153,7 +1153,7 @@ export namespace compiler_ir_metadata {
     }
     // A HostFiles result: a HostStatus leaf, then u64 words; HostChunk then
     // carries its 504-byte array.
-    auto sealed_host_result(MetadataStore& store, i64 class_index, i64 words, bool chunk) -> bool {
+    auto sealed_host_result(MetadataStore& store, i64 class_index, i64 words, bool chunk, bool input) -> bool {
         const ClassRow row = store.class_at(class_index);
         const IndexRange leaves = row.leaves();
         const ClassResultRow result = store.result_at(class_index);
@@ -1172,7 +1172,8 @@ export namespace compiler_ir_metadata {
             const RawTypeRow type = store.type_at(leaves.begin() + at);
             bool valid = plain_type(type, 10);
             if (at == 0) {
-                valid = type.kind() == 9 && canonical_tail(type) && named(store, type.name(), "__au_host_status");
+                valid = type.kind() == 9 && canonical_tail(type) && ((!input && named(store, type.name(),
+                    "__au_host_status")) || (input && named(store, type.name(), "__au_input_status")));
             } else {
                 if (at < words) {
                     valid = plain_type(type, 7);
@@ -1311,16 +1312,19 @@ export namespace compiler_ir_metadata {
             if (member(row, masks.class_layout())) {
                 bool valid = true;
                 if (named(store, row.name(), "__au_host_directory_result")) {
-                    valid = sealed_host_result(store, at, 4, false);
+                    valid = sealed_host_result(store, at, 4, false, false);
                 }
                 if (named(store, row.name(), "__au_host_output_result")) {
-                    valid = sealed_host_result(store, at, 6, false);
+                    valid = sealed_host_result(store, at, 6, false, false);
                 }
                 if (named(store, row.name(), "__au_host_file_result")) {
-                    valid = sealed_host_result(store, at, 5, false);
+                    valid = sealed_host_result(store, at, 5, false, false);
                 }
                 if (named(store, row.name(), "__au_host_chunk")) {
-                    valid = sealed_host_result(store, at, 2, true);
+                    valid = sealed_host_result(store, at, 2, true, false);
+                }
+                if (named(store, row.name(), "__au_input_chunk")) {
+                    valid = sealed_host_result(store, at, 2, true, true);
                 }
                 if (!valid) {
                     return false;
@@ -1396,9 +1400,9 @@ export namespace compiler_ir_metadata {
             3, false) && sealed_enum(store, "__au_host_status", 10, false) && sealed_enum(store, "__au_host_stream", 2,
             false) && sealed_host_results(store) && sealed_execution_results(store) && sealed_bootstrap_results(store)
             && sealed_enum(store, "__au_exec_prepared", 3, false) && sealed_enum(store, "__au_exec_status", 9, false)
-            && sealed_enum(store, "__au_exec_step", 4, false) && sealed_enum(store, "__au_exec_effect", 2, false)
+            && sealed_enum(store, "__au_exec_step", 5, false) && sealed_enum(store, "__au_exec_effect", 2, false)
             && sealed_enum(store, "__au_exec_request", 6, false) && sealed_enum(store, "__au_exec_finish", 5, false)
-            && sealed_enum(store, "__au_exec_cancel", 5, false);
+            && sealed_enum(store, "__au_exec_cancel", 5, false) && sealed_enum(store, "__au_input_status", 4, false);
     }
 
     // Children are complete before this computation starts. Offsets come only
@@ -1791,9 +1795,12 @@ export namespace compiler_ir_metadata {
     auto service_type(RawTypeRow type) -> bool {
         return type.kind() == 14 || type.kind() == 15 || type.kind() == 16 || type.kind() == 18 || type.kind() == 19
             || type.kind() == 20 || type.kind() == 22 || type.kind() == 23 || type.kind() == 24 || type.kind() == 25
-            || type.kind() == 27;
+            || type.kind() == 27 || type.kind() == 29;
     }
     auto service_kind(RawTypeRow type) -> i64 {
+        if (type.kind() == 29) {
+            return 11;
+        }
         if (type.kind() == 27) {
             return 10;
         }
@@ -1916,6 +1923,9 @@ export namespace compiler_ir_metadata {
     }
     auto service_bit(RawTypeRow type) -> u64 {
         const FlagMasks masks = FlagMasks();
+        if (type.kind() == 29) {
+            return masks.service_input();
+        }
         if (type.kind() == 27) {
             return masks.service_bootstrap();
         }
@@ -1964,6 +1974,10 @@ export namespace compiler_ir_metadata {
             || plain_type(first, 24)) && plain_type(second, 12)) {
             return 1;
         }
+        if (count >= 3 && ((plain_type(first, 22) && plain_type(second, 29)) || (plain_type(first, 29)
+            && plain_type(second, 22))) && plain_type(store.type_at(row.value_parameter_begin() + 2), 12)) {
+            return 2;
+        }
         if (count >= 3 && ((plain_type(first, 20) && (plain_type(second, 23) || plain_type(second, 24)))
             || ((plain_type(first, 23) || plain_type(first, 24)) && plain_type(second, 20)))
             && plain_type(store.type_at(row.value_parameter_begin() + 2), 12)) {
@@ -2007,7 +2021,8 @@ export namespace compiler_ir_metadata {
             != masks.service_iommu() && kinds != masks.service_call() && kinds != masks.service_port() && kinds
             != masks.service_serve() && kinds != masks.service_host() && kinds != masks.service_block() && kinds
             != masks.service_writer() && kinds != masks.service_execution() && kinds != masks.service_bootstrap()
-            && kinds != (masks.service_serve() | masks.service_writer()) && kinds != (masks.service_serve()
+            && kinds != masks.service_input() && kinds != (masks.service_host() | masks.service_input()) && kinds
+            != (masks.service_serve() | masks.service_writer()) && kinds != (masks.service_serve()
             | masks.service_block()) && kinds != (masks.service_console() | masks.service_display()) && kinds
             != (masks.service_console() | masks.service_iommu()))) {
             return fail(store, MetadataError::service_group);

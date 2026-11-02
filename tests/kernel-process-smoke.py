@@ -687,6 +687,145 @@ def validate(
     ordered(text, BASE)
     volume = (image / "esp/aurora/volume").read_bytes()
     terminal_cleanup_order(text)
+    if mode.startswith("process-input-") and PROCESS_CASES[mode][0] >= 89:
+        free = frames(text)
+        case = PROCESS_CASES[mode][0]
+        if case == 96:
+            chunks = [fields(row) for row in re.findall(r"^AURORA_INPUT_CHUNK: (.*)$", text, re.M)]
+            need(
+                status == 33 and "AURORA_PROCESS_FAIL:" not in text and len(chunks) >= 2,
+                "Repeated successful reads still exhaust original CPU fuel",
+            )
+            need(
+                all(row["status"] == "0" and row["count"] == "1" and row["remaining"] == "2500000" for row in chunks),
+                "No input wait debit or fabricated terminal chunk in CPU loop",
+            )
+            need(
+                "AURORA_PROCESS_RUN: run=2 path=bin/input-raw ticks=2" in text
+                and "AURORA_PROCESS_END: run=2 reason=watchdog ticks=2" in text,
+                "Watchdog uses the original two-tick admission, not per-read renewal",
+            )
+            need(
+                "AURORA_INPUT_WAIT:" not in text and text.count(f"AURORA_PROCESS_RUNS_OK: runs=2 free={free}") == 1,
+                "CPU-only expiry reclaims all frames without an input wait",
+            )
+        elif case >= 94:
+            marker = f"AURORA_INPUT_AUTHORITY_PROBE: case={case} owner=2 sequence=1 before_copy=1"
+            need(text.count(marker) == 1, "Actual protected callback boundary")
+            after = text[text.index(marker) :]
+            reason = "execution grant" if case == 94 else "input callback identity"
+            need(
+                status == 35 and after.count(f"AURORA_PROCESS_FAIL: {reason}") == 1,
+                "Callback mutation/reentry fails at its actual authority gate",
+            )
+            need(
+                not any(
+                    word in after
+                    for word in (
+                        "AURORA_INPUT_CHUNK:",
+                        "AURORA_PROCESS_END:",
+                        "AURORA_PROCESS_RELEASED:",
+                        "AURORA_INPUT_FINISHED:",
+                        "AURORA_PROCESS_KERNEL_FAULT:",
+                    )
+                ),
+                "No copy, resume, cleanup success or trap fallback after rejected callback",
+            )
+        else:
+            owner = 3 if case == 90 else 2
+            prior = 2 if case == 90 else 0
+            marker = f"AURORA_INPUT_RAW: case={case} owner={owner} prior_retired={prior} admitted=1"
+            need(text.count(marker) == 1, "One actual input-granted raw syscall client")
+            before, after = text.split(marker)
+            if case == 90:
+                need(
+                    before.count("AURORA_INPUT_CHUNK:") == 4 and "AURORA_PROCESS_RELEASED: run=2 " in before,
+                    "Stale token came from an actually granted and retired prior command",
+                )
+            need(status == 33 and "AURORA_PROCESS_FAIL:" not in text, "Raw refusal remains process-local")
+            need(
+                f"AURORA_PROCESS_END: run={owner} reason=call operation=21 " in after,
+                "Actual syscall21 refused before completion",
+            )
+            need(
+                "AURORA_INPUT_CHUNK:" not in after and "AURORA_INPUT_WAIT:" not in after,
+                "No callback result or wait for malformed syscall",
+            )
+            done = [fields(row) for row in re.findall(r"^AURORA_INPUT_FINISHED: (.*)$", after, re.M)]
+            need(
+                len(done) == 1 and all(done[0][key] == "0" for key in ("completed", "samples", "settlements")),
+                "Raw rejection performs no input effect",
+            )
+            need(
+                text.count(f"AURORA_PROCESS_RUNS_OK: runs={owner} free={free}") == 1,
+                "Raw rejected command and service fully reclaimed",
+            )
+        return
+    if mode.startswith("process-input-"):
+        free = frames(text)
+        case = PROCESS_CASES[mode][0]
+        need(status == 33 and "AURORA_PROCESS_FAIL:" not in text, "Input fixture completed")
+        chunks = [fields(row) for row in re.findall(r"^AURORA_INPUT_CHUNK: (.*)$", text, re.M)]
+        waits = [fields(row) for row in re.findall(r"^AURORA_INPUT_WAIT: (.*)$", text, re.M)]
+        finished = [fields(row) for row in re.findall(r"^AURORA_INPUT_FINISHED: (.*)$", text, re.M)]
+        need(len(finished) == 1, "One input cleanup receipt")
+        done = finished[0]
+        need(int(done["case"]) == case and done["quiet"] == done["retired"] == "1", "Input cleanup identity")
+        need(int(done["completed"]) == len(chunks) and int(done["settlements"]) == len(waits), "Complete receipts")
+        rows = []
+        for sequence, chunk in enumerate(chunks, 1):
+            need(
+                int(chunk["case"]) == case and int(chunk["sequence"]) == sequence and chunk["copied"] == "1",
+                "Exactly-once ordered completion",
+            )
+            remaining = chunk["remaining"]
+            if case == 86 and sequence == 1:
+                need(
+                    waits and remaining == waits[0]["after"] and 0 < int(remaining) < 2500000,
+                    "First partial debit retained across next child read",
+                )
+                remaining = "partial"
+            rows.append(f"{sequence} status={chunk['status']} count={chunk['count']} remaining={remaining}")
+        # The partial sample is intentionally machine-dependent. Its exact debit
+        # is checked against actual arm/current; terminal chunks still have zero.
+        compare(ROOT / f"tests/kernel-process/{mode}.golden", rows)
+        sequences = [int(wait["sequence"]) for wait in waits]
+        if case in (82, 84, 88):
+            need(not sequences, "Immediate/aborted input does not arm a timer")
+        elif case == 83:
+            need(sequences == [1, 2, 3], "Cross-read full debit belongs to each actual read")
+        elif case == 86:
+            need(
+                len(sequences) >= 2 and sequences[0] == 1 and all(v == 2 for v in sequences[1:]),
+                "Partial debit belongs to read1 and remaining exhaustion to read2",
+            )
+        else:
+            need(sequences and all(v == 1 for v in sequences), "Timeout settles only the first read")
+        prior = 5000000 if case == 83 else 2500000
+        for ordinal, wait in enumerate(waits, 1):
+            values = {key: int(value) for key, value in wait.items()}
+            need(values["case"] == case and values["settlement"] == ordinal, "Wait receipt sequence")
+            arm, current, charge = values["arm"], values["current"], values["charge"]
+            full = values["expired"] or values["pending"] or current == 0
+            need(0 < arm <= prior and 0 <= current <= arm and values["before"] == prior, "Admitted real timer slice")
+            need(charge == (arm if full else max(1, arm - current)), "Exact full or partial debit")
+            need(values["after"] == prior - charge and values["drained"] == 1, "No allowance renewal and quiet drain")
+            need(values["cpu_before"] == values["cpu_after"], "Parked wait does not consume or renew CPU fuel")
+            if values["early"]:
+                need(
+                    case == 86 and ordinal == 1 and not full and 0 < current < arm,
+                    "Instrumented early relinquish is genuine partial, not full IRQ",
+                )
+            else:
+                need(values["expired"] == 1 and full, "Ordinary wait was an actual timer IRQ")
+            prior = values["after"]
+        need((done["partial"] == "1") == (case == 86), "Partial case observed, never silently skipped")
+        if case in (85, 86, 87):
+            need(waits and prior == 0, "Cumulative allowance exhausted")
+        if case == 88:
+            need(not chunks and not waits and done["samples"] == "0", "Staged abort neither samples nor completes")
+        need(text.count(f"AURORA_PROCESS_RUNS_OK: runs=2 free={free}") == 1, "All client/service frames reclaimed")
+        return
     if mode == "process-xfs-mounted-prepared-loss":
         free = frames(text)
         need(status == 33 and "AURORA_PROCESS_FAIL:" not in text, "Prepared mounted refusal failed")

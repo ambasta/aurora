@@ -96,7 +96,7 @@ layout __au_execution_step [(enum __au_exec_step display=builtin::ExecStep) (enu
 fields __au_execution_step [((enum __au_exec_step display=builtin::ExecStep) 0 1 false) ((enum __au_exec_status display=builtin::ExecStatus) 1 1 false) (u64 2 1 false)]
 enum __au_exec_prepared 3
 enum __au_exec_status 9
-enum __au_exec_step 4
+enum __au_exec_step 5
 enum __au_exec_effect 2
 enum __au_exec_request 6
 enum __au_exec_finish 5
@@ -161,7 +161,7 @@ end
 ; EXPECT-ERROR: invalid service resource operation shape
 @@ -40 +40 @@
 -    ServiceResourceOperation 96 5 0 0
-+    ServiceResourceOperation 96 6 0 0
++    ServiceResourceOperation 96 7 0 0
 
 ; CASE: execution rejects wrong observation nominal identity
 ; BASE: execution lease observations move and helper transfer

@@ -60,3 +60,17 @@ call 0xc 0x61 0x7ffffe800000 0x10001 0 -> invalid value=0 length=0 base=0 record
 call 0xd 0x61 0 0 0 -> commit value=0x61 length=0 base=0 record=0
 call 0xe 0xffffffffffffffff 0 0 0 -> discard value=0xffffffffffffffff length=0 base=0 record=0
 call 0xf 0 0 0 0 -> invalid value=0 length=0 base=0 record=0
+input 0x64 0 0 0 0x1 0x41 -> remaining=100 status=0 count=1 after_cr=0
+input 0x64 0 0x7 0 0x1 0x4 -> remaining=100 status=1 count=7 after_cr=0
+input 0x64 0x1 0x7 0 0x3 0 -> remaining=100 status=1 count=0 after_cr=0
+input 0x64 0x1 0 0 0x1 0x41 -> remaining=100 status=1 count=0 after_cr=0
+input 0x64 0 0x7 0 0x1 0x3 -> remaining=100 status=2 count=0 after_cr=0
+input 0x64 0x2 0 0 0x1 0x41 -> remaining=100 status=2 count=0 after_cr=0
+input 0x64 0 0 0 0 0x28 -> remaining=60 status=0 count=0 after_cr=0
+input 0x3c 0 0 0 0 0x3c -> remaining=0 status=3 count=0 after_cr=0
+input 0x64 0 0x3 0 0x2 0 -> remaining=100 status=3 count=0 after_cr=0
+input 0x64 0 0x3 0 0x4 0 -> remaining=0 status=3 count=0 after_cr=0
+input 0x64 0 0 0x1 0x1 0xa -> remaining=100 status=0 count=0 after_cr=0
+input 0x64 0 0 0x1 0x1 0x41 -> remaining=100 status=0 count=1 after_cr=0
+input 0x64 0 0x1f7 0 0x1 0x41 -> remaining=100 status=0 count=504 after_cr=0
+input 0x64 0 0x1f8 0 0x3 0 -> remaining=100 status=0 count=0 after_cr=0

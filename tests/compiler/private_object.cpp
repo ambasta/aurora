@@ -306,7 +306,7 @@ void mutations(const std::string &source,
         std::size_t offset, width;
         require(bool(fields >> description >> input >> location >> record >> offset >> width >> valueText >> expected),
                 "malformed private object case " + line);
-        require(expected == "reject", "unknown private object expectation");
+        require(expected == "reject" || expected == "accept-preserve-flags", "unknown private object expectation");
         auto changedSource = source, changedWrapper = wrapper, changedSelected = selected;
         auto &changed = input == "source" ? changedSource : input == "wrapper" ? changedWrapper : changedSelected;
         if (location == "selection") {
@@ -343,16 +343,22 @@ void mutations(const std::string &source,
                 require(location == "header", "unknown private object mutation");
             writeLittle(changed, base + offset, width, value);
         }
-        bool rejected = false;
-        try {
-            (void)composePrivateObject(changedSource, changedWrapper, changedSelected);
-        } catch (const Error &) {
-            rejected = true;
+        if (expected == "accept-preserve-flags") {
+            const auto composed = composePrivateObject(changedSource, changedWrapper, changedSelected);
+            require(Elf(composed).header().e_flags == Elf(changedSource).header().e_flags,
+                    description + ": source request flags were not preserved");
+        } else {
+            bool rejected = false;
+            try {
+                (void)composePrivateObject(changedSource, changedWrapper, changedSelected);
+            } catch (const Error &) {
+                rejected = true;
+            }
+            require(rejected, description + ": malformed private object accepted");
         }
-        require(rejected, description + ": malformed private object accepted");
         ++count;
     }
-    std::cout << "PASS private object " << count << " malformed input data cases\n";
+    std::cout << "PASS private object " << count << " input data cases\n";
 }
 void repeatedRun(const std::string &source, const std::string &wrapper, const std::string &selected) {
     hosted::bytes::Region region(64 * 1024 * 1024);

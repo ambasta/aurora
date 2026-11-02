@@ -28,7 +28,8 @@ enum class Event : U64 {
     cancelled,
     unavailable,
     completed,
-    forced
+    forced,
+    input
 };
 enum class EffectKind : U64 {
     prepare,

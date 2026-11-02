@@ -297,7 +297,8 @@ export namespace compiler_lowering {
             return say(session, "unknown operation for sealed service kind");
         }
         if (reason == LoweringError::hosted_entry_signature) {
-            say(session, "hosted entry must be auto main(builtin::HostFiles& files, [builtin::ByteRegion region,] ");
+            say(session,
+                "hosted entry must be auto main(builtin::HostFiles& files, [builtin::InputStream& input,] [builtin::ByteRegion region,] ");
             return say(session, "builtin::span<const u8> arguments) -> builtin::HostExit");
         }
         if (reason == LoweringError::host_operation_requires_runtime_module) {
