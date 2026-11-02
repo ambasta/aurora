@@ -1,0 +1,173 @@
+module write_source;
+import aurora.host;
+
+// Application policy, not a stream ABI or a compiler source-syntax validator.
+// No echo: BS/DEL edit only the unfinished line; completed lines are private
+// output until EOF commits. All normalized bytes, including LF, count to 16 KiB.
+enum class LineEvent {
+    pending,
+    complete,
+    rejected
+};
+class SourceLine {
+    array<u8, 256> bytes;
+    i64 length;
+    bool submitted;
+    bool after_cr;
+public:
+    SourceLine() : bytes{}, length(0), submitted(false), after_cr(false) {
+    }
+    auto size() const -> i64 {
+        return length;
+    }
+    auto byte(i64 index) const -> u8 {
+        if (index < 0 || index >= length) {
+            return 0u8;
+        }
+        return bytes[index];
+    }
+    auto finish_input() -> LineEvent {
+        if (submitted || length == 0) {
+            return LineEvent::pending;
+        }
+        submitted = true;
+        return LineEvent::complete;
+    }
+    auto consume(u8 value) -> LineEvent {
+        if (submitted) {
+            length = 0;
+            submitted = false;
+        }
+        const bool suppressed = after_cr && value == '\n';
+        after_cr = value == '\r';
+        if (suppressed) {
+            return LineEvent::pending;
+        }
+        if (value == '\r' || value == '\n') {
+            submitted = true;
+            return LineEvent::complete;
+        }
+        if (value == '\b' || value == '\x7f') {
+            if (length > 0) {
+                length = length - 1;
+            }
+            return LineEvent::pending;
+        }
+        if ((value != '\t' && (value < ' ' || value > '~')) || length == 256) {
+            return LineEvent::rejected;
+        }
+        bytes[length] = value;
+        length = length + 1;
+        return LineEvent::pending;
+    }
+};
+
+// A failed discard is not evidence of cleanup or of a surviving service.
+auto abandon(builtin::HostFiles& files, u64 output, builtin::span<const u8> reason) -> builtin::HostExit {
+    const builtin::HostStatus discarded = files.discard(output);
+    if (files.print(builtin::HostStream::stderr, reason) != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    if (discarded != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "write-source: cleanup unconfirmed\n");
+    }
+    return builtin::HostExit::failure;
+}
+
+auto append_line(builtin::HostFiles& files, u64 output, SourceLine line) -> bool {
+    array<u8,
+        257> bytes =
+        "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+    i64 index = 0;
+    while (index < line.size()) {
+        bytes[index] = line.byte(index);
+        index = index + 1;
+    }
+    bytes[index] = '\n';
+    const builtin::span<const u8> all = borrow_bytes(bytes);
+    const builtin::span<const u8> text = all.subspan(0, index + 1);
+    return files.write(output, text) == builtin::HostStatus::success;
+}
+
+auto main(builtin::HostFiles& files, builtin::InputStream& input,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    i64 index = 0;
+    i64 words = 0;
+    i64 begin = 0;
+    i64 count = 0;
+    while (index < arguments.size()) {
+        if (arguments.at(index) == 0u8) {
+            words = words + 1;
+            if (words == 1) {
+                begin = index + 1;
+            }
+            if (words == 2) {
+                count = index - begin;
+            }
+        }
+        index = index + 1;
+    }
+    if (words != 2 || count == 0 || begin + count + 1 != arguments.size()) {
+        files.print(builtin::HostStream::stderr, "usage: write-source OUTPUT\n");
+        return builtin::HostExit::usage;
+    }
+    const builtin::span<const u8> path = arguments.subspan(begin, count);
+    const builtin::HostOutputResult output = files.create_output(path);
+    if (output.status != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "write-source: cannot create output\n");
+        return builtin::HostExit::failure;
+    }
+    if (files.print(builtin::HostStream::stdout, "write-source ready: no echo; Ctrl-D saves, Ctrl-C cancels\n")
+        != builtin::HostStatus::success) {
+        files.discard(output.id);
+        return builtin::HostExit::failure;
+    }
+    SourceLine line = SourceLine();
+    u64 written = 0u64;
+    bool ended = false;
+    while (!ended) {
+        const builtin::InputChunk chunk = input.read();
+        if (chunk.status == builtin::InputStatus::cancelled) {
+            return abandon(files, output.id, "write-source: input cancelled\n");
+        }
+        if (chunk.status == builtin::InputStatus::unavailable) {
+            return abandon(files, output.id, "write-source: input unavailable\n");
+        }
+        ended = chunk.status == builtin::InputStatus::eof;
+        const array<u8, 504> bytes = chunk.bytes;
+        u64 at = 0u64;
+        // EOF is a distinct terminal event, never inferred from a short chunk.
+        while (at < chunk.count || (ended && at == 0u64)) {
+            LineEvent event = LineEvent::pending;
+            if (ended) {
+                event = line.finish_input();
+            } else {
+                event = line.consume(bytes[i64(at)]);
+            }
+            if (event == LineEvent::rejected) {
+                return abandon(files, output.id, "write-source: line rejected\n");
+            }
+            if (event == LineEvent::complete) {
+                const u64 size = u64(line.size()) + 1u64;
+                if (size > 16384u64 - written) {
+                    return abandon(files, output.id, "write-source: file too large\n");
+                }
+                if (!append_line(files, output.id, line)) {
+                    return abandon(files, output.id, "write-source: write failed\n");
+                }
+                written = written + size;
+            }
+            at = at + 1u64;
+        }
+    }
+    // commit consumes the handle even on failure. Never discard or replay it;
+    // an unknown acknowledgement can follow actual publication.
+    if (files.commit(output.id) != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "write-source: commit unconfirmed; do not retry automatically\n");
+        return builtin::HostExit::failure;
+    }
+    if (files.print(builtin::HostStream::stdout, "write-source: saved\n") != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    return builtin::HostExit::success;
+}

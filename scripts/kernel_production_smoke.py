@@ -848,6 +848,7 @@ def main():
         "snapshot-read",
         "snapshot-close",
         "console-commit",
+        "source-writer",
         "bootstrap-serve",
         "shutdown-fault",
     ):

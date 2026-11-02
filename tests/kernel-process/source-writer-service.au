@@ -1,0 +1,293 @@
+module source_writer_service;
+import aurora.endpoint;
+import aurora.memory;
+import service.files;
+import service.console;
+import service.protocol;
+import console.session_note;
+import console.protected_files;
+import console.protected_commands;
+import console.session_files;
+import console.file_namespace;
+import kernel.process_files;
+import std.binary;
+import std.binary_buffer;
+
+// Private-ESP fixture only. All storage and control operations use the real
+// Store/protocol. The three exact destination names select bounded reply faults;
+// they confer no authority and are not installed in the production volume.
+auto same(builtin::span<const u8> left, builtin::span<const u8> right) -> bool {
+    if (left.size() != right.size()) {
+        return false;
+    }
+    i64 at = 0;
+    while (at < left.size()) {
+        if (left.at(at) != right.at(at)) {
+            return false;
+        }
+        at = at + 1;
+    }
+    return true;
+}
+
+auto mode_for(builtin::span<const u8> path) -> u64 {
+    if (same(path, "ws-write.au")) {
+        return 1u64;
+    }
+    if (same(path, "ws-failed.au")) {
+        return 2u64;
+    }
+    if (same(path, "ws-lost.au")) {
+        return 3u64;
+    }
+    return 0u64;
+}
+
+auto contents(service::Store& store, u64 handle, builtin::span<const u8> expected) -> bool {
+    const service::Reply read = store.read_file(handle, 0u64);
+    if (read.status != kernel::FileStatus::success || read.count != u64(expected.size())) {
+        return false;
+    }
+    i64 at = 0;
+    while (at < expected.size()) {
+        if (store.read_byte(u64(at)) != expected.at(at)) {
+            return false;
+        }
+        at = at + 1;
+    }
+    const service::Reply end = store.read_file(handle, u64(expected.size()));
+    return end.status == kernel::FileStatus::success && end.count == 0u64;
+}
+
+auto open_current(service::Store& store, u64 mode) -> service::Reply {
+    if (mode == 2u64) {
+        const service::Reply result = store.open(2u64, 0u64, "ws-failed.au");
+        return result;
+    }
+    const service::Reply result = store.open(2u64, 0u64, "ws-lost.au");
+    return result;
+}
+
+auto execute(service::Store& store, builtin::span<const u8> payload, u64 operation, u64 id, u64 offset,
+    bool refuse) -> service::Reply {
+    if (refuse) {
+        return service::reply(kernel::FileStatus::failed);
+    }
+    const service::Reply result = service::file_operation(store, payload, operation, id, offset);
+    return result;
+}
+
+// A lost-reply success exit is reachable only after this real old/new readback.
+auto committed(service::Store& store, u64 mode, u64 old) -> bool {
+    if (!contents(store, old, "old\n")) {
+        return false;
+    }
+    const service::Reply current = open_current(store, mode);
+    if (current.status != kernel::FileStatus::success || !contents(store, current.id, "new\n")) {
+        return false;
+    }
+    const service::Reply close_current = store.close(current.id);
+    const service::Reply close_old = store.close(old);
+    return close_current.status == kernel::FileStatus::success && close_old.status == kernel::FileStatus::success;
+}
+
+auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const endpoint::Message initial = endpoint::exchange(session, "");
+    if (initial.status() != builtin::ServeStatus::request || initial.source() != 0u64 || initial.count() != 64u64) {
+        return builtin::HostExit::failure;
+    }
+    std::BinaryBuffer64 bootstrap = std::BinaryBuffer64();
+    i64 at = 0;
+    while (at < 64) {
+        bootstrap.write_u8(at, endpoint::byte(session, u64(at)));
+        at = at + 1;
+    }
+    if (!service::bootstrap_valid(bootstrap.bytes(0, 64))) {
+        return builtin::HostExit::failure;
+    }
+    const u64 volume_length = service::request_word(session, 8u64);
+    service::Store store = service::Store(region, i64(volume_length));
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::SessionNote note = console::SessionNote(empty);
+    const console::FileNamespace names = console::FileNamespace(empty);
+    const console::ProtectedFiles files = console::ProtectedFiles(names);
+    service::ConsoleStore console_state = service::ConsoleStore(region, note, files);
+    const service::RequestHeader empty_header = service::RequestHeader{
+        .operation = 0u64,
+        .id = 0u64,
+        .offset = 0u64,
+        .count = 0u64
+    };
+    const service::ControlState empty_state = service::ControlState{
+        .volume_length = 0u64,
+        .copied = 0u64,
+        .admitted = false,
+        .mount_control = false,
+        .disk_ready = false
+    };
+    const service::ControlReply empty_reply = service::ControlReply{
+        .accepted = false,
+        .exit = false,
+        .admitted = false,
+        .copied = 0u64,
+        .count = 0u64
+    };
+    service::FileRequest request = service::FileRequest(region, empty_header, empty_state, empty_reply);
+    service::Response response = service::Response(region);
+    if (!store.ok() || !console_state.ok() || !request.ok() || !response.ok()
+        || !response.header(service::reply(kernel::FileStatus::success))) {
+        return builtin::HostExit::failure;
+    }
+    u64 reply_count = 64u64;
+    u64 copied = 0u64;
+    bool admitted = false;
+    u64 selected = 0u64;
+    u64 output = 0u64;
+    u64 old = 0u64;
+    bool refused = false;
+    bool terminal = false;
+    while (true) {
+        u64 source = 0u64;
+        u64 length = 0u64;
+        {
+            const endpoint::Message message = endpoint::exchange(session, response.view(i64(reply_count)));
+            if (message.status() != builtin::ServeStatus::request) {
+                return builtin::HostExit::failure;
+            }
+            source = message.source();
+            length = message.count();
+        }
+        if (length < 64u64 || length > 65536u64) {
+            return builtin::HostExit::failure;
+        }
+        const u64 operation = service::request_word(session, 0u64);
+        const u64 id = service::request_word(session, 8u64);
+        const u64 offset = service::request_word(session, 16u64);
+        const u64 count = service::request_word(session, 24u64);
+        if (count != length - 64u64 || service::request_word(session, 32u64) != 0u64 || service::request_word(session,
+            40u64) != 0u64 || service::request_word(session, 48u64) != 0u64 || service::request_word(session, 56u64)
+            != 0u64) {
+            return builtin::HostExit::failure;
+        }
+        u64 byte = 0u64;
+        while (byte < count) {
+            if (!request.set(i64(byte), endpoint::byte(session, 64u64 + byte))) {
+                return builtin::HostExit::failure;
+            }
+            byte = byte + 1u64;
+        }
+        reply_count = 64u64;
+        if (source == 0u64) {
+            if (operation == 5u64 && selected != 0u64 && (!terminal || (selected == 1u64 && !refused))) {
+                return builtin::HostExit::failure;
+            }
+            const service::RequestHeader header = service::RequestHeader{
+                .operation = operation,
+                .id = id,
+                .offset = offset,
+                .count = count
+            };
+            const service::ControlState state = service::ControlState{
+                .volume_length = volume_length,
+                .copied = copied,
+                .admitted = admitted,
+                .mount_control = operation == 15u64 && admitted && id == 0u64 && offset == 0u64 && count == 0u64
+                    && store.active() == 0u64,
+                .disk_ready = false
+            };
+            request.control(header, state);
+            if (!service::control_operation(store, console_state, response, request)) {
+                return builtin::HostExit::failure;
+            }
+            const service::ControlReply control = request.control_reply();
+            if (!control.accepted) {
+                return builtin::HostExit::failure;
+            }
+            copied = control.copied;
+            admitted = control.admitted;
+            reply_count = control.count;
+            if (control.exit) {
+                return builtin::HostExit::success;
+            }
+            if (operation == 4u64) {
+                selected = 0u64;
+                output = 0u64;
+                old = 0u64;
+                refused = false;
+                terminal = false;
+            }
+        } else {
+            if (!store.ok() || !admitted || source != store.active()) {
+                return builtin::HostExit::failure;
+            }
+            const builtin::span<const u8> all = request.bytes();
+            const builtin::span<const u8> payload = all.subspan(0, i64(count));
+            if (selected != 0u64 && (operation == 21u64 || (terminal && id == output && operation >= 22u64 && operation
+                <= 24u64))) {
+                return builtin::HostExit::failure;
+            }
+            if (operation == 21u64) {
+                selected = mode_for(payload);
+                if (selected != 0u64) {
+                    const service::Reply prior = store.open(2u64, 0u64, payload);
+                    if (prior.status != kernel::FileStatus::success || !contents(store, prior.id, "old\n")) {
+                        return builtin::HostExit::failure;
+                    }
+                    old = prior.id;
+                }
+            }
+            const bool reject_write = selected == 1u64 && operation == 22u64 && id == output;
+            if (selected == 1u64 && operation == 22u64 && id == output) {
+                if (refused) {
+                    return builtin::HostExit::failure;
+                }
+                refused = true;
+            } else {
+                if (selected == 1u64 && operation == 23u64 && id == output) {
+                    return builtin::HostExit::failure;
+                }
+            }
+            const service::Reply result = execute(store, payload, operation, id, offset, reject_write);
+            if (operation == 21u64 && selected != 0u64) {
+                if (result.status != kernel::FileStatus::success) {
+                    return builtin::HostExit::failure;
+                }
+                output = result.id;
+            }
+            if (selected != 0u64 && id == output && operation == 24u64) {
+                if (selected != 1u64 || !refused || result.status != kernel::FileStatus::success || !contents(store,
+                    old, "old\n")) {
+                    return builtin::HostExit::failure;
+                }
+                terminal = true;
+            }
+            if (selected >= 2u64 && id == output && operation == 23u64) {
+                if (result.status != kernel::FileStatus::success || !committed(store, selected, old)) {
+                    return builtin::HostExit::failure;
+                }
+                terminal = true;
+                if (selected == 3u64) {
+                    return builtin::HostExit::success;
+                }
+                if (!response.header(service::reply(kernel::FileStatus::failed))) {
+                    return builtin::HostExit::failure;
+                }
+            }
+            if (!(selected == 2u64 && operation == 23u64 && id == output) && !response.header(result)) {
+                return builtin::HostExit::failure;
+            }
+            reply_count = 64u64 + result.count;
+            if (operation == 19u64 && result.status == kernel::FileStatus::success) {
+                byte = 0u64;
+                while (byte < result.count) {
+                    if (!response.set_byte(i64(64u64 + byte), store.read_byte(byte))) {
+                        return builtin::HostExit::failure;
+                    }
+                    byte = byte + 1u64;
+                }
+            }
+        }
+    }
+    return builtin::HostExit::failure;
+}

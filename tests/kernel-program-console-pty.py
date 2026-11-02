@@ -1255,7 +1255,11 @@ def production_case_volume(source, programs, directory, service_case=None):
         name, length, _, offset, size = struct.unpack_from("<QIIQQ", data, 64 + index * stride)
         entries.append((data[names + name : names + name + length], data[payload + offset : payload + offset + size]))
     if service_case:
-        if service_case == "console-commit":
+        if service_case == "source-writer":
+            replacement = (programs / "source-writer-service-aurora").read_bytes()
+            entries.append((b"probe", (programs / "host-files-probe-aurora").read_bytes()))
+            entries.extend((name, b"old\n") for name in (b"ws-write.au", b"ws-failed.au", b"ws-lost.au"))
+        elif service_case == "console-commit":
             replacement = (programs / "console-commit-hostile-aurora").read_bytes()
         elif service_case == "bootstrap-serve":
             # Its default fixed file-service argv reaches the existing invalid
@@ -1299,7 +1303,14 @@ def main():
     parser.add_argument("--program-cases", type=Path, help="existing hostile program build products; private ESP only")
     parser.add_argument(
         "--service-case",
-        choices=("snapshot-read", "snapshot-close", "console-commit", "bootstrap-serve", "shutdown-fault"),
+        choices=(
+            "snapshot-read",
+            "snapshot-close",
+            "console-commit",
+            "bootstrap-serve",
+            "shutdown-fault",
+            "source-writer",
+        ),
         help="private designated-service payload using --program-cases build products",
     )
     args = parser.parse_args()
@@ -1569,19 +1580,25 @@ def main():
                 )
                 return part
 
-            def run_input(chunks, status, printed, absent=b"", launch=b"\r\n"):
+            def run_input(
+                chunks,
+                status,
+                printed,
+                absent=b"",
+                launch=b"\r\n",
+                command=b"run bin/line-echo",
+                ready=b"line-echo ready",
+            ):
                 begin = len(transcript)
-                send(b"run bin/line-echo" + launch)
-                receive(b"line-echo ready", begin)
+                send(command + launch)
+                receive(ready, begin)
                 for chunk in chunks:
                     send(chunk)
                     time.sleep(0.02)
                 receive(b"Input closed; press Enter to return to the console.", begin)
                 part = bytes(transcript[begin:]).replace(b"\r\n", b"\n")
-                need(
-                    part.count(("run: exited status=" + str(status) + "\n").encode()) == 1,
-                    "Interactive child exit status",
-                )
+                result = "exited status=" + str(status) if isinstance(status, int) else status
+                need(part.count(("run: " + result + "\n").encode()) == 1, "Interactive child result")
                 need(
                     printed in part and (not absent or absent not in part),
                     "Interactive child exact completed/abandoned line behavior",
@@ -1596,6 +1613,18 @@ def main():
                 send(b"stale-command\r\n")
                 receive(b"aurora> ", handoff)
                 need(b"Unknown command" not in transcript[handoff:], "Input handoff replayed stale bytes")
+                return part
+
+            def write_source(path, chunks, status=0, message=b"write-source: saved\n"):
+                part = run_input(
+                    chunks,
+                    status,
+                    message,
+                    command=b"run bin/write-source " + path,
+                    ready=b"write-source ready:",
+                )
+                need(part.count(b"write-source: saved\n") == (status == 0), "Writer publication acknowledgment")
+                return part
 
             def finish_session():
                 begin = len(transcript)
@@ -1646,6 +1675,67 @@ def main():
             receive(b"aurora> ", 0)
             tty.setraw(master)
             if args.service_case:
+                if args.service_case == "source-writer":
+                    # One private service payload uses the real Store. Only the
+                    # named fault destinations below alter replies; all input,
+                    # supervisor, file binding and application code is production.
+                    write_source(
+                        b"ws-write.au",
+                        [(b"x" * 255 + b"\n") * 16],
+                        1,
+                        b"write-source: write failed\n",
+                    )
+                    run_command(
+                        "run probe file ws-write.au read @1 0",
+                        "exited status=0",
+                        b"2 read success 4 old\n\n",
+                    )
+                    write_source(
+                        b"ws-failed.au",
+                        [b"new", b"\x04"],
+                        1,
+                        b"write-source: commit unconfirmed; do not retry automatically\n",
+                    )
+                    run_command(
+                        "run probe file ws-failed.au read @1 0",
+                        "exited status=0",
+                        b"2 read success 4 new\n\n",
+                    )
+                    # The fixture returns status=0 only after verifying a real
+                    # commit and both retained-old/current-new file readers. A
+                    # genuinely lost reply retires the caller; it cannot execute
+                    # the application's diagnostic branch or preserve this RAM
+                    # namespace after the entire service incarnation is lost.
+                    part = run_input(
+                        [b"new\n", b"\x04"],
+                        "file service unavailable",
+                        b"AURORA_FILE_SERVICE_LOST:",
+                        command=b"run bin/write-source ws-lost.au",
+                        ready=b"write-source ready:",
+                    )
+                    need(
+                        re.findall(
+                            rb"AURORA_FILE_SERVICE_LOST: generation=(\d+) transaction=[1-9]\d* "
+                            rb"cause=exit status=0 volatile_data=lost\n",
+                            part,
+                        )
+                        == [b"1"]
+                        and b"write-source: saved\n" not in part
+                        and b"write-source: commit unconfirmed" not in part,
+                        "Lost commit reply must not resume, replay or claim rollback",
+                    )
+                    command_upper(b"healthy after writer loss\n", "HEALTHY AFTER WRITER LOSS")
+                    run_command("run bin/sort", "exited status=2", b"usage: host-sort DIRECTORY OUTPUT FILE...\n")
+                    text = bytes(transcript).decode("ascii")
+                    need(
+                        re.findall(r"AURORA_FILE_SERVICE_READY: generation=(\d+)\r?\n", text) == ["1", "2"]
+                        and text.count("AURORA_FILE_SERVICE_LOST:") == 1,
+                        "Writer failure must reclaim the caller and start only one fresh owner",
+                    )
+                    metrics["source_writer_write_failure_commit_uncertainty_loss"] = True
+                    finish_session()
+                    print("PASS: writer precommit refusal, committed-but-failed reply and actual reply loss")
+                    return
                 if args.service_case == "shutdown-fault":
                     run_command("run bin/sort", "program not found")
                     command_upper(b"healthy before shutdown\n", "HEALTHY BEFORE SHUTDOWN")
@@ -2230,6 +2320,93 @@ def main():
                 run_input([b"x" * 64 + b"\n", b"\x04"], 0, b"x" * 64 + b"\n")
                 run_input([b"z" * 65 + b"\n"], 1, b"line rejected", absent=b"z" * 65)
                 metrics["foreground_input_partial_eof_cancel_overflow"] = True
+                # These sources are entered over the foreground serial stream,
+                # not preloaded into a volume or compiled/linked by host tools.
+                # The authored application reads itself and a separately authored
+                # data file through ordinary HostFiles so exact contents, not just
+                # successful compilation, establish what was published.
+                run_command("run bin/cat / absent.tmp main.au", "exited status=1", b"cannot open main.au\n")
+                source = rb"""module entered;
+import aurora.host;
+auto dump(builtin::HostFiles& files, builtin::span<const u8> path) -> bool {
+    const builtin::HostFileResult file = files.open_file(path);
+    if (file.status != builtin::HostStatus::success) {
+        return false;
+    }
+    u64 offset = 0u64;
+    while (true) {
+        const builtin::HostChunk chunk = files.read(file.id, offset);
+        if (chunk.status != builtin::HostStatus::success) {
+            return false;
+        }
+        if (chunk.count == 0u64) {
+            return files.close(file.id) == builtin::HostStatus::success;
+        }
+        const array<u8, 504> bytes = chunk.bytes;
+        const builtin::span<const u8> all = borrow_bytes(bytes);
+        const builtin::span<const u8> part = all.subspan(0, i64(chunk.count));
+        if (files.print(builtin::HostStream::stdout, part) != builtin::HostStatus::success) {
+            return false;
+        }
+        offset = offset + chunk.count;
+    }
+    return false;
+}
+auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {
+    files.print(builtin::HostStream::stdout, "ENTERED-FIRST\nSOURCE-BEGIN\n");
+    if (!dump(files, "main.au")) {
+        return builtin::HostExit::failure;
+    }
+    files.print(builtin::HostStream::stdout, "SOURCE-END\nTEXT-BEGIN\n");
+    if (!dump(files, "text.txt")) {
+        return builtin::HostExit::failure;
+    }
+    files.print(builtin::HostStream::stdout, "TEXT-END\n");
+    return builtin::HostExit::success;
+}
+"""
+
+                def read_authored(expected_source, expected_text, marker):
+                    part = run_command("run app", "exited status=0")
+                    expected = (
+                        marker
+                        + b"\nSOURCE-BEGIN\n"
+                        + expected_source
+                        + b"SOURCE-END\nTEXT-BEGIN\n"
+                        + expected_text
+                        + b"TEXT-END\n"
+                    )
+                    need(part.count(expected) == 1, "Exact guest-authored source and data readback")
+                    return part
+
+                text = b"first\n\n\tsecond!\nlast\n"
+                write_source(b"text.txt", [b"fir", b"st\r", b"\n\n\tsecond?\b!\r", b"\nlastX\x7f", b"\x04"])
+                part = write_source(b"main.au", [source[:19], source[19:-1], b"\x04"])
+                need(b"module entered;" not in part, "Writer unexpectedly echoed source")
+                run_command("run bin/aurorac --emit-executable --target aurora main.au -o app", "exited status=0")
+                read_authored(source, text, b"ENTERED-FIRST")
+                replacement = source.replace(b"ENTERED-FIRST", b"ENTERED-SECOND")
+                write_source(b"main.au", [replacement, b"\x04"])
+                run_command("run bin/aurorac --emit-executable --target aurora main.au -o app", "exited status=0")
+                read_authored(replacement, text, b"ENTERED-SECOND")
+                write_source(
+                    b"main.au",
+                    [b"module abandoned;\n", b"unfinished", b"\x03"],
+                    1,
+                    b"write-source: input cancelled\n",
+                )
+                read_authored(replacement, text, b"ENTERED-SECOND")
+                # Input policy failures occur before commit and preserve the
+                # previous source in this healthy service incarnation.
+                for invalid in (b"\x00", b"\x1b", b"\x80", b"x" * 257):
+                    write_source(b"main.au", [b"module discarded;\n", invalid], 1, b"write-source: line rejected\n")
+                    read_authored(replacement, text, b"ENTERED-SECOND")
+                write_source(b"text.txt", [b"\x04"])
+                read_authored(replacement, b"", b"ENTERED-SECOND")
+                write_source(b"text.txt", [b"z" * 256 + b"\n", b"\x04"])
+                read_authored(replacement, b"z" * 256 + b"\n", b"ENTERED-SECOND")
+                metrics["same_boot_author_save_read_compile_run_replace"] = True
+                metrics["source_writer_cancel_control_line_limit_preserve"] = True
                 run_command("run bin/aurorac --emit-object --target aurora sort.au -o sort.o", "exited status=0")
                 run_command("run bin/aurorac --link-object sort.o -o sorted", "exited status=0")
                 run_command("run sorted / sorted.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")

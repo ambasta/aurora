@@ -102,6 +102,12 @@ native ABI/backend correctness or an ABA guarantee.
 | Native binutils/glibc/Mesa alternatives | The compiler bootstraps from its Aurora sources through the GCC-built seed or an explicitly selected cached first compiler, with current-stage convergence checks. Aurora emits its bounded ELF objects and now links the complete supported emitter object into a static executable through `--link-object` or `--emit-executable`; guest compile/link/run no longer requires host `ld`. This is a checked single-object linker for the supported sections, defined symbols and PC32/PLT32 relocations, not a general GNU linker replacement. Existing kernel/bridge assembly and final native image links still use GNU tools. Core libraries and Linux/Aurora runtime bindings exist; complete native rebuilding, general assembler/linker, runtime/library ecosystem and graphics replacements remain open. |
 | Applications, terminal and tiling desktop | The one production UEFI image combines its protected command console, serial input and 80x24 framebuffer output with `run PATH [args]`. Shipped compiler/tools can compile, link and execute a retained file in the same boot; faulting and resource-limited children return to the console. The source file owner also retains the bounded legacy note/named-file state. These are bounded emulator mechanisms, not general terminal sessions, job control, input devices, windowing or a tiling desktop; those application goals remain open. |
 
+The bounded foreground `write-source` application composes existing input and
+file loans to stage multiline ASCII/TAB files and publish once at EOF. It closes
+the source-authoring gap for same-boot compilation and execution, with a 256-byte
+line and 16 KiB normalized-file ceiling, not a full editor or persistent storage.
+Qualification of the new application remains tied to its final-source receipts.
+
 The retained-run authority and transcript deduplication passed integrated
 qualification in [PR #242](https://github.com/ambasta/aurora/pull/242).
 

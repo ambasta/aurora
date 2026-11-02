@@ -1513,6 +1513,8 @@ PRODUCTION_ESP = {
         "--program",
         "bin/line-echo=aurora:line-echo",
         "--program",
+        "bin/write-source=aurora:write-source",
+        "--program",
         "echo.au=source:line-echo",
         "--program",
         "sort.au=source:host-sort",

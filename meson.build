@@ -219,6 +219,16 @@ if get_option('kernel_images')
   process_programs += {'aurora:console-commit-hostile': custom_target('console-commit-hostile-aurora',
       input: console_commit_hostile_object, output: 'console-commit-hostile-aurora',
       command: compiler_link, build_by_default: false)}
+  source_writer_service_object = custom_target('source-writer-service-aurora-object',
+      input: 'tests/kernel-process/source-writer-service.au', output: 'source-writer-service-aurora.o',
+      command: [aurorac, '--emit-object', '--target', 'aurora', '--module-root',
+                meson.current_source_dir() / 'services', '--module-root',
+                meson.current_source_dir() / 'kernel/policies', '--module-root',
+                meson.current_source_dir() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+      depend_files: kernel_runtime_sources + file_service_sources, build_by_default: false)
+  process_programs += {'aurora:source-writer-service': custom_target('source-writer-service-aurora',
+      input: source_writer_service_object, output: 'source-writer-service-aurora',
+      command: compiler_link, build_by_default: false)}
   foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
                           'host-files-probe': 'tests/host-files/probe.au',
                           'host-sort': 'examples/host-sort.au',
@@ -246,6 +256,12 @@ if get_option('kernel_images')
       depend_files: kernel_runtime_sources + files('library/console/line.au'))
   process_programs += {'aurora:line-echo': custom_target('line-echo-aurora', input: line_echo_object,
       output: 'line-echo-aurora', command: [aurorac, '--link-object', '@INPUT@', '-o', '@OUTPUT@'])}
+  write_source_object = custom_target('write-source-aurora-object', input: 'examples/write-source.au',
+      output: 'write-source-aurora.o',
+      command: [aurorac, '--emit-object', '--target', 'aurora', '@INPUT@', '-o', '@OUTPUT@'],
+      depend_files: kernel_runtime_sources)
+  process_programs += {'aurora:write-source': custom_target('write-source-aurora', input: write_source_object,
+      output: 'write-source-aurora', command: [aurorac, '--link-object', '@INPUT@', '-o', '@OUTPUT@'])}
   input_probe_object = custom_target('process-input-object', input: 'tests/kernel-process/input.au',
       output: 'process-input.o',
       command: [aurorac, '--emit-object', '--target', 'aurora', '--module-root',
