@@ -296,6 +296,7 @@ public:
     U64 recovery_generation = 0, recovery_sectors = 0;
     U64 mounted_generation = 0, mounted_sectors = 0;
     bool external = false;
+    auto operator==(const Running &) const -> bool = default;
 };
 // How the process ended, copied from its last kernel entry.
 class Outcome final {
@@ -323,7 +324,13 @@ constinit aurora::uefi::ProcessOutput output_sink = nullptr;
 constinit void *output_context = nullptr;
 constinit aurora::uefi::ProcessInput input_source = nullptr;
 #ifdef AURORA_PRODUCTION
-constinit bool runtime_initialized = false, runtime_detached = false;
+constinit bool runtime_initialized = false;
+#endif
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+constinit bool runtime_detached = false;
+constinit aurora::uefi::ProcessPresentation presentation_sink = nullptr;
+constinit const Bytes *presentation_handoff = nullptr;
+auto present_foreground() -> void;
 #endif
 #ifdef AURORA_PRODUCTION
 class ResidentArguments final {
@@ -377,6 +384,7 @@ auto root() -> U64 {
 }
 class LifecyclePlatform final {
 public:
+    static auto authenticate_presentation(U64 slot, aurora::lifecycle::Phase phase) -> void;
     static auto quiet() -> bool {
         return Timer::irq_off() && root() == kernel_root && !running.space && space.closed() && !Timer::read(0x390) &&
                Timer::quiet(0x100, false) && Timer::quiet(0x200, false);
@@ -2217,6 +2225,16 @@ auto authenticate_execution(std::size_t slot, aurora::lifecycle::Phase phase) ->
         resident.initial[4] != table.activation_root(slot, resident.space->epoch()))
         fail("execution physical identity");
 }
+auto LifecyclePlatform::authenticate_presentation(U64 slot, aurora::lifecycle::Phase phase) -> void {
+    using namespace aurora::lifecycle;
+    if (slot != 1 || execution_owner.canonical(0, Field::phase) != static_cast<U64>(Phase::parked) ||
+        execution_owner.canonical(0, Field::pending) != static_cast<U64>(Event::exchange))
+        ::fail("presentation service source identity");
+    authenticate_execution(0, Phase::parked);
+    authenticate_stopped_frame(0, true);
+    authenticate_execution(slot, phase);
+    authenticate_stopped_frame(slot, true);
+}
 auto authenticate_terminal_capture(std::size_t slot) -> void {
     using namespace aurora::lifecycle;
     const auto event = execution_owner.canonical(slot, Field::event);
@@ -3234,6 +3252,9 @@ auto ensure_file_service(std::span<const std::byte> volume, U64 expected = 0, bo
     if (residents[1].continuation != stopped_frame)
         fail("output callback frame changed");
     if (delivered) {
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+        present_foreground();
+#endif
         completed_output = &delivered;
         if (!execution_owner.complete(1))
             fail("output completion refused");
@@ -3280,6 +3301,146 @@ auto input_identity() -> bool {
            input_frame_equal(resident.continuation, input_read.frame) &&
            resident.state.captured == &resident.continuation && resident.state.continuation == &resident.continuation;
 }
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+// This is an observation receipt, never a replacement source authority. Its
+// lifetime is the single synchronous excursion with both source slots frozen.
+class PresentationResident final {
+public:
+    Running state;
+    std::array<U64, frame_words> frame;
+    std::array<U64, 8> initial;
+    U64 generation, pending, epoch, root, used, quantum;
+    aurora::lifecycle::Phase phase;
+};
+auto presentation_quiet() -> bool {
+    const auto endpoint_state = endpoint_owner.observe();
+    return LifecyclePlatform::quiet() && !execution_owner.entered() && !execution_owner.busy() &&
+           (Timer::read(0x320) & 0x700ff) == (0x10000 | Timer::vector) && !runtime_detached && !draining &&
+           !input_wait.active && !input_wait.stack && !input_wait.armed && !input_wait.owner && !input_wait.sequence &&
+           !input_wait.expired && !snapshot && !endpoint.caller &&
+           endpoint_state.phase == aurora::endpoint::Phase::waiting && !endpoint_state.client && !forced_execution &&
+           !completed_output && !endpoint_trap_scope && !loading_image &&
+           service_root.phase() == aurora::service::Phase::ready && endpoint.generation == service_root.generation() &&
+           residents[0].space && residents[1].space && residents[0].state.service == endpoint.generation;
+}
+[[gnu::noinline]] auto present_foreground() -> void {
+    using namespace aurora::lifecycle;
+    if (!presentation_sink)
+        return;
+    U64 stack_pointer;
+    asm volatile("mov %%rsp, %0" : "=r"(stack_pointer));
+    const auto target = reinterpret_cast<U64>(presentation_sink);
+    if (!presentation_handoff || !presentation_quiet() || stack_pointer % 8 ||
+        stack_pointer < owned_arena + Handoff::stack_bottom + 4096 ||
+        stack_pointer >= owned_arena + Handoff::stack_top || target < owned_arena + Handoff::payload_offset ||
+        target >= owned_arena + Handoff::payload_offset + presentation_handoff->get(64) ||
+        !space.verify(table, ranges, kernel_table_pages) || !audit_residents())
+        fail("presentation entry boundary");
+    // Probe does not borrow Display or change architecture. Clean grids consume
+    // no source admission; the production target and all its data are boot-mapped.
+    if (!presentation_sink(false))
+        return;
+    const auto pending = execution_owner.pending(1);
+    if (execution_owner.phase(1) != Phase::parked ||
+        (pending != static_cast<U64>(Event::output) && pending != static_cast<U64>(Event::input)) ||
+        (pending == static_cast<U64>(Event::input) && !input_identity()))
+        fail("presentation parked event");
+    std::array<PresentationResident, 2> saved;
+    for (std::size_t slot = 0; slot < residents.size(); ++slot) {
+        const auto &resident = residents[slot];
+        authenticate_stopped_frame(slot, true);
+        saved[slot] = {resident.state,
+                       resident.continuation,
+                       resident.initial,
+                       execution_owner.generation(slot),
+                       execution_owner.pending(slot),
+                       resident.space->epoch(),
+                       resident.space->root(),
+                       resident.budget.used(),
+                       resident.budget.quantum(),
+                       execution_owner.phase(slot)};
+    }
+    const auto saved_input = input_read;
+    const U64 service = endpoint.generation;
+    const auto endpoint_before = endpoint_owner.observe();
+    const U64 window_before = endpoint.window, count_before = endpoint.count;
+    U64 previous_cr2;
+    asm volatile("mov %%cr2, %0" : "=r"(previous_cr2));
+    // One admission prepays every possible cell/store, even on an immediate
+    // UART yield. Exhaustion is optional graphics deferral, never process failure.
+    const auto ordinal = execution_owner.begin_presentation(1);
+    if (!ordinal)
+        return;
+    if (ordinal > 32 || execution_owner.entered() || execution_owner.busy() ||
+        execution_owner.phase(1) != Phase::presenting)
+        fail("presentation admission closure");
+    table.suspend(); // Requires no bank loan, pin, view or mapping effect.
+    if (!space.detach())
+        fail("presentation detach");
+    // No source/MM access is possible until the exact banks are reattached.
+    if (!presentation_sink(true))
+        fail("presentation callback closure");
+    if (!space.attach(ranges) || !space.resume_manager(table, ranges, kernel_table_pages))
+        fail("presentation exact bank restoration");
+    install_architecture(owned_arena);
+    asm volatile("mov %0, %%cr2" : : "r"(previous_cr2) : "memory");
+    const auto endpoint_after = endpoint_owner.observe();
+    if (!presentation_quiet() || !space.verify(table, ranges, kernel_table_pages) || !audit_residents() ||
+        endpoint.generation != service || endpoint.window != window_before || endpoint.count != count_before ||
+        endpoint_before.incarnation != endpoint_after.incarnation || endpoint_before.phase != endpoint_after.phase ||
+        endpoint_before.next != endpoint_after.next || endpoint_before.transaction != endpoint_after.transaction ||
+        endpoint_before.source != endpoint_after.source || endpoint_before.client != endpoint_after.client ||
+        execution_owner.phase(1) != Phase::presenting)
+        fail("presentation restored boundary");
+    for (std::size_t slot = 0; slot < residents.size(); ++slot) {
+        const auto &resident = residents[slot];
+        const auto &before = saved[slot];
+        if (!resident.space || resident.state != before.state || resident.initial != before.initial ||
+            !input_frame_equal(resident.continuation, before.frame) ||
+            execution_owner.generation(slot) != before.generation || execution_owner.pending(slot) != before.pending ||
+            resident.space->epoch() != before.epoch || resident.space->root() != before.root ||
+            resident.budget.used() != before.used || resident.budget.quantum() != before.quantum ||
+            (slot == 0 && execution_owner.phase(slot) != before.phase))
+            fail("presentation resident changed");
+    }
+    if (input_read.owner != saved_input.owner || input_read.sequence != saved_input.sequence ||
+        input_read.address != saved_input.address || input_read.generation != saved_input.generation ||
+        input_read.epoch != saved_input.epoch || input_read.root != saved_input.root ||
+        input_read.pending != saved_input.pending || input_read.completing != saved_input.completing ||
+        input_read.quarantine != saved_input.quarantine || input_read.bytes != saved_input.bytes ||
+        !input_frame_equal(input_read.frame, saved_input.frame) ||
+        input_read.protocol.remaining != saved_input.protocol.remaining ||
+        input_read.protocol.status != saved_input.protocol.status ||
+        input_read.protocol.count != saved_input.protocol.count ||
+        input_read.protocol.after_cr != saved_input.protocol.after_cr)
+        fail("presentation input changed");
+    if (!execution_owner.finish_presentation(1, ordinal) || execution_owner.phase(1) != Phase::parked ||
+        (pending == static_cast<U64>(Event::input) && !input_identity()))
+        fail("presentation source restoration");
+}
+#endif
+#ifdef AURORA_PROCESS_FIXTURE
+constinit U64 presentation_probe_case = 0, presentation_probe_passes = 0;
+auto presentation_probe_output(void *, bool, std::span<const std::byte>) -> bool {
+    return true;
+}
+[[gnu::noinline]] auto presentation_probe(bool paint) -> bool {
+    if (!paint)
+        return presentation_probe_passes == 0;
+    if (presentation_probe_case < 99 || presentation_probe_case > 101 || space.attached() || root() != kernel_root ||
+        !Timer::irq_off() || Timer::read(0x390) || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
+        fail("presentation fixture detached boundary");
+    ++presentation_probe_passes;
+    Serial::text("AURORA_PRESENTATION_PROBE:");
+    field("case", presentation_probe_case);
+    Serial::text(" detached=1\r\n");
+    if (presentation_probe_case == 100)
+        residents[1].continuation[0] ^= 1;
+    if (presentation_probe_case == 101)
+        reinterpret_cast<volatile U64 *>(kernel_root)[KernelSpace::extension_root] = 2;
+    return true;
+}
+#endif
 #ifdef AURORA_PROCESS_FIXTURE
 auto input_probe_sample(void *) -> aurora::console::Sample {
     if (!input_identity())
@@ -3416,6 +3577,9 @@ __attribute__((noinline)) auto wait_for_input_sample() -> void {
         return false;
     if (!input_identity())
         fail("input delivery boundary");
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+    present_foreground();
+#endif
     while (input_read.protocol.status == 0 && input_read.protocol.count < 504) {
         if (!input_source) {
             input_read.protocol = process::input_update(input_read.protocol, 2);
@@ -4668,6 +4832,11 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 #ifdef AURORA_PROCESS_FIXTURE
     if (selected >= 82 && selected <= 97)
         input_probe_case = selected;
+    if (selected >= 99 && selected <= 101) {
+        presentation_probe_case = selected;
+        presentation_sink = presentation_probe;
+        output_sink = presentation_probe_output;
+    }
     if (selected >= 64 && selected <= 71) {
         execution_probe_case = selected;
         run_case = selected == 69 || selected == 71 ? 1 : 3;
@@ -4793,7 +4962,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 #endif
     if ((selected >= 1 && selected <= 6) || selected == 43 || selected == 44 || (selected >= 63 && selected <= 71))
         count = run_independent(view, *runs);
-    if (selected == 8 || (selected >= 82 && selected <= 97))
+    if (selected == 8 || (selected >= 82 && selected <= 97) || (selected >= 99 && selected <= 101))
         count = run_external(view, *runs);
     if (selected == 10) {
         const auto baseline = table.free();
@@ -4889,6 +5058,14 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
             static_cast<void>(run_resident(selected->client()));
         }
     }
+#ifdef AURORA_PROCESS_FIXTURE
+    if (presentation_probe_case) {
+        if (presentation_probe_case != 99 || presentation_probe_passes != 1 || residents[0].space ||
+            residents[1].space || !audit_residents())
+            fail("presentation fixture final restoration");
+        Serial::text("AURORA_PRESENTATION_RESTORED: passes=1 reclaimed=1\r\n");
+    }
+#endif
     Serial::text("AURORA_PROCESS_RUNS_OK:");
     field("runs", count);
     field("free", table.free());
@@ -5005,6 +5182,9 @@ auto initialize_process(U64 arena, const Bytes &h, U64 selected, bool timer_read
 
 #ifndef AURORA_PRODUCTION
 auto aurora::uefi::run_process(U64 arena, const Bytes &h) -> void {
+#ifdef AURORA_PROCESS_FIXTURE
+    presentation_handoff = &h;
+#endif
     const auto selected = h.get(Handoff::case_word);
     const auto view = initialize_process(arena, h, selected, false);
 #ifdef AURORA_PROCESS_FIXTURE
@@ -5497,12 +5677,15 @@ auto aurora::uefi::run_program(U64 arena,
                                ProcessOutput output,
                                void *context,
                                ProcessInput source_input,
-                               bool input_after_cr) -> RunResult {
+                               bool input_after_cr,
+                               ProcessPresentation presentation) -> RunResult {
     if (!output || path.empty() || path.size() > process::file_path_limit || arguments.empty() ||
         arguments.size() > 65536 || !enter_runtime(arena, handoff))
         return {};
     output_sink = output;
     output_context = context;
+    presentation_sink = presentation;
+    presentation_handoff = &handoff;
     input_source = source_input;
     input_read = {};
     input_read.protocol.after_cr = input_after_cr ? 1 : 0;
@@ -5521,6 +5704,8 @@ auto aurora::uefi::run_program(U64 arena,
     input_read = {};
     output_sink = nullptr;
     output_context = nullptr;
+    presentation_sink = nullptr;
+    presentation_handoff = nullptr;
     leave_runtime(handoff);
     return result;
 }

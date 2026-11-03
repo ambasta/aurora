@@ -513,7 +513,12 @@ RULES = [
             "__au_runtime_manager_frames_release",
             "__au_runtime_manager_frames_audit",
         ],
-        "callbacks": ["deliver_output(=execution_output_probe(", "deliver_input(=input_probe_sample("],
+        "callbacks": [
+            "deliver_output(=execution_output_probe(",
+            "deliver_input(=input_probe_sample(",
+            "deliver_output(=presentation_probe_output(",
+            "present_foreground(=presentation_probe(",
+        ],
     },
     # Retained source accounting is a real consumer, not unused ABI scaffolding.
     {
@@ -646,7 +651,11 @@ RULES = [
     # fixture run-list/export policy and only this copied supervisor output sink.
     {
         "profiles": ["uefi/production"],
-        "callbacks": ["deliver_output(=production_output(", "deliver_input(=production_input("],
+        "callbacks": [
+            "deliver_output(=production_output(",
+            "deliver_input(=production_input(",
+            "present_foreground(=production_present(",
+        ],
         "imports:execution": [
             "__au_runtime_execution_prepare",
             "__au_runtime_execution_preparation",

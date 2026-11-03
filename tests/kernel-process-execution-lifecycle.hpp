@@ -9,6 +9,7 @@ struct Platform {
     static auto quiet() -> bool {
         return quiet_value;
     }
+    static auto authenticate_presentation(U64 slot, lifecycle::Phase phase) -> void;
     [[noreturn]] static auto fail() -> void {
         _exit(96);
     }
@@ -78,6 +79,13 @@ auto identity(U64 slot) -> void {
         current->canonical(slot, Field::initial) != value.initial ||
         current->canonical(slot, Field::saved) != value.saved)
         usage("lifecycle canonical identity lost observation bits");
+}
+auto Platform::authenticate_presentation(U64 slot, lifecycle::Phase phase) -> void {
+    if (slot != 1 || current->canonical(slot, Field::phase) != static_cast<U64>(phase))
+        usage("presentation canonical phase");
+    identity(slot);
+    if (current->canonical(0, Field::phase))
+        identity(0);
 }
 auto observe(U64 slot) -> lifecycle::Observation {
     auto result = identities[slot];
@@ -257,6 +265,12 @@ auto denial(const std::string &name, bool source) -> void {
                 static_cast<void>(root.prepare(0));
                 fault = "stale-reuse";
                 static_cast<void>(root.execute(0));
+            } else if (name == "finish-presenting") {
+                selected = {5, 19, 0};
+                static_cast<void>(root.execute(1));
+                if (root.begin_presentation(1) != 1)
+                    usage("presentation admission");
+                static_cast<void>(root.finish());
             } else if (name == "finish-live")
                 static_cast<void>(root.finish());
             else if (name == "completion-identity" || name == "completion-event" || name == "completion-exhausted" ||
@@ -395,6 +409,27 @@ auto lifecycle_mode(const char *path) -> int {
                 lifecycle_fixture::selected = {number(fields[2]), number(fields[3]), number(fields[4])};
                 const auto result = operation == "run" ? root.execute(slot) : root.force(slot);
                 output << ' ' << operation << '=' << result.event << ':' << result.detail << ':' << result.generation;
+            } else if (operation == "present" && fields.size() == 2) {
+                output << " present=" << root.begin_presentation(number(fields[1]));
+            } else if (operation == "present-finish" && fields.size() == 3) {
+                output << " present-finish=" << root.finish_presentation(number(fields[1]), number(fields[2]));
+            } else if (operation == "pending" && fields.size() == 2) {
+                output << " pending=" << root.pending(number(fields[1]));
+            } else if (operation == "presentation-turns" && fields.size() == 3) {
+                const auto first = number(fields[1]), last = number(fields[2]);
+                if (!first || first > last || last > 32)
+                    usage("invalid presentation turn fixture");
+                const auto generation = root.generation(1), pending = root.pending(1);
+                for (auto ordinal = first; ordinal <= last; ++ordinal) {
+                    if (root.begin_presentation(1) != ordinal ||
+                        root.phase(1) != lifecycle_fixture::lifecycle::Phase::presenting ||
+                        root.begin_presentation(1) || root.finish_presentation(1, ordinal + 1) ||
+                        !root.finish_presentation(1, ordinal) || root.finish_presentation(1, ordinal) ||
+                        root.phase(1) != lifecycle_fixture::lifecycle::Phase::parked ||
+                        root.generation(1) != generation || root.pending(1) != pending)
+                        usage("presentation charge, exclusion or parked restoration");
+                }
+                output << " presentation-turns=" << first << ':' << last;
             } else if (operation == "complete" && fields.size() == 2) {
                 lifecycle_fixture::selected = {13, 0, 0};
                 output << " complete=" << root.complete(number(fields[1]));

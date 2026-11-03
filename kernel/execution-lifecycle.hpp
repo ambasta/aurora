@@ -11,7 +11,8 @@ enum class Phase : U64 {
     prepared,
     executing,
     parked,
-    retiring
+    retiring,
+    presenting = 6
 };
 enum class Event : U64 {
     none,
@@ -38,7 +39,9 @@ enum class EffectKind : U64 {
     force,
     retire,
     finish,
-    invalidate_service
+    invalidate_service,
+    begin_presentation,
+    finish_presentation
 };
 enum class Field : U64 {
     phase,
@@ -55,8 +58,8 @@ enum class Field : U64 {
     pending,
     terminal,
     terminal_detail,
-    reserved14,
-    reserved15
+    presentation_charge,
+    presentation_ordinal
 };
 class alignas(16) Descriptor final {
 public:
@@ -78,6 +81,8 @@ bool __au_runtime_lifecycle_prepare(void *, U64);
 void __au_runtime_lifecycle_execute(void *, U64, Result *);
 void __au_runtime_lifecycle_force(void *, U64, Result *);
 bool __au_runtime_lifecycle_complete(void *, U64);
+U64 __au_runtime_lifecycle_begin_presentation(void *, U64);
+bool __au_runtime_lifecycle_finish_presentation(void *, U64, U64);
 U64 __au_runtime_lifecycle_phase(const void *, U64);
 U64 __au_runtime_lifecycle_generation(const void *, U64);
 U64 __au_runtime_lifecycle_pending(const void *, U64);
@@ -126,6 +131,7 @@ template <class Platform> class Root final {
     }
     auto open(EffectKind kind, U64 slot) -> void {
         require(binding_.active && !entered_ && !busy_ && !consumed_ && slot < 2 && Platform::quiet());
+        require(descriptor().binding == &binding_ && descriptor().epoch == binding_.epoch);
         entered_ = true;
         operation_ = kind;
         slot_ = slot;
@@ -195,6 +201,39 @@ public:
         close();
         return result;
     }
+    auto begin_presentation(U64 slot) -> U64 {
+        open(EffectKind::begin_presentation, slot);
+        const auto identity = descriptor();
+        enter(identity.binding, identity.epoch, storage_.data(), EffectKind::begin_presentation, slot);
+        const auto pending = read(slot, Field::pending);
+        const bool eligible =
+            slot == 1 && read(slot, Field::phase) == static_cast<U64>(Phase::parked) &&
+            (pending == static_cast<U64>(Event::output) || pending == static_cast<U64>(Event::input)) &&
+            read(slot, Field::presentation_charge) < 32 && !read(slot, Field::presentation_ordinal);
+        if (eligible)
+            Platform::authenticate_presentation(slot, Phase::parked);
+        leave();
+        const auto result = __au_runtime_lifecycle_begin_presentation(storage_.data(), slot);
+        require(!result || eligible);
+        close();
+        return result;
+    }
+    // The native caller must prove painter/stack/interrupt restoration first.
+    // Neither a copied ordinal nor copied root bytes authenticate this entry.
+    auto finish_presentation(U64 slot, U64 ordinal) -> bool {
+        open(EffectKind::finish_presentation, slot);
+        const auto identity = descriptor();
+        enter(identity.binding, identity.epoch, storage_.data(), EffectKind::finish_presentation, slot);
+        const bool eligible = slot == 1 && read(slot, Field::phase) == static_cast<U64>(Phase::presenting) && ordinal &&
+                              ordinal == read(slot, Field::presentation_ordinal);
+        if (eligible)
+            Platform::authenticate_presentation(slot, Phase::presenting);
+        leave();
+        const bool result = __au_runtime_lifecycle_finish_presentation(storage_.data(), slot, ordinal);
+        require(!result || eligible);
+        close();
+        return result;
+    }
     auto phase(U64 slot) -> Phase {
         open(EffectKind::prepare, slot);
         const auto result = static_cast<Phase>(__au_runtime_lifecycle_phase(storage_.data(), slot));
@@ -242,7 +281,8 @@ public:
     }
     auto canonical(U64 slot, Field field) const -> U64 {
         require(entered_ && busy_ && !consumed_ && slot < 2 && static_cast<U64>(field) < 16);
-        require(slot == slot_ || operation_ == EffectKind::finish ||
+        require(slot == slot_ || operation_ == EffectKind::finish || operation_ == EffectKind::begin_presentation ||
+                operation_ == EffectKind::finish_presentation ||
                 (operation_ == EffectKind::activate && slot_ == 0 && slot == 1 && revoked_service()));
         return read(slot, field);
     }

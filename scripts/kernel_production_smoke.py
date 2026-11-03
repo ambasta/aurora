@@ -330,6 +330,33 @@ def probe(channel, stem):
     return b"".join(raw[y * PITCH * 4 : (y * PITCH + VIEW_WIDTH) * 4] for y in range(VIEW_HEIGHT))
 
 
+def live_view(channel, renderer, expected, stem, begin):
+    """Observe a real foreground child's framebuffer before supplying more input."""
+    stream = channel.directory / (stem + "-expected.bin")
+    model = channel.directory / (stem + "-viewport.bin")
+    stream.write_bytes(expected)
+    subprocess.run([str(renderer), "--viewport", str(stream), str(model)], check=True, timeout=60)
+    wanted = model.read_bytes()
+    need(len(wanted) == VIEW_WIDTH * VIEW_HEIGHT * 4, "live viewport extent")
+    for attempt in range(100):
+        channel.stop()
+        channel.drain_serial()
+        need(
+            b"run: " not in channel.serial_bytes[begin:] and PROMPT not in channel.serial_bytes[begin:],
+            "foreground child returned before live capture",
+        )
+        if probe(channel, f"{stem}-probe-{attempt:03}") == wanted:
+            break
+        channel.command("cont")
+        time.sleep(0.1)
+    else:
+        raise ValueError("foreground framebuffer did not update before input/exit")
+    raw, ppm = channel.capture(stem)
+    need(len(raw) == SIZE and viewport(raw) == wanted, "live physical viewport differs")
+    need(parse_ppm(ppm) == ppm_rgb(WIDTH, HEIGHT, PITCH, 1, raw), "live physical/screenshot mismatch")
+    channel.command("cont")
+
+
 def wait_for(channel, marker, begin):
     while marker not in channel.serial_bytes[begin:]:
         channel.drain_serial()
@@ -769,6 +796,44 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
                 == (2 if args.storage_readonly == "clean" else 1),
                 "Mounted commands replaced the file owner unexpectedly",
             )
+        if not disk:
+            # These screenshots precede every subsequent input byte and EOF.
+            # A final-only repaint cannot satisfy them. The existing host
+            # painter consumes reviewed bytes, not a second Python renderer.
+            begin = len(channel.serial_bytes)
+            send(channel, b"run bin/line-echo\r")
+            wait_for(channel, b"line-echo ready\n", begin)
+            expected += b"run bin/line-echo\r\nline-echo ready\n"
+            live_view(channel, args.renderer, expected, "live-ready", begin)
+            for index, line in enumerate((b"first live line", b"second live line")):
+                send(channel, line + b"\r")
+                wait_for(channel, line + b"\n", begin)
+                expected += line + b"\n"
+                live_view(channel, args.renderer, expected, f"live-line-{index}", begin)
+            # More dirty output turns than the source-owned 32-pass allowance:
+            # computation and serial delivery must continue, while optional
+            # live rendering defers to the ordinary command-return paint.
+            for index in range(35):
+                line = f"deferred line {index:02}".encode()
+                send(channel, line + b"\r")
+                wait_for(channel, line + b"\n", begin)
+                expected += line + b"\n"
+            # Exact admission exhaustion belongs to the compiled lifecycle
+            # case. A framebuffer sampled immediately after serial delivery
+            # could simply precede painting, so it is not an exhaustion oracle.
+            send(channel, b"\x04")
+            wait_for(channel, b"Input closed; press Enter to return to the console.", begin)
+            handoff = len(channel.serial_bytes)
+            send(channel, b"\r")
+            wait_for(channel, PROMPT, handoff)
+            expected += (
+                b"\r\nrun: exited status=0\r\naurora> "
+                b"\r\nInput closed; press Enter to return to the console.\r\n\r\naurora> "
+            )
+            stream.write_bytes(expected)
+            subprocess.run([str(args.renderer), "--viewport", str(stream), str(model)], check=True, timeout=60)
+            expected_view = model.read_bytes()
+            record["live_foreground_captures"] = ["live-ready", "live-line-0", "live-line-1"]
         skipped = console_stream(channel.serial_bytes, expected)
         # Painting follows the serial prompt; sample paused states until the viewport settles.
         for attempt in range(100):

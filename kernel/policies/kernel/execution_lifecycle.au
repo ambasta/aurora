@@ -15,7 +15,9 @@ export namespace kernel {
     // native storage and field effects authenticate this exact retained root.
     // Each slot: phase, generation, MM epoch/root, bound incarnation, initial/saved frame
     // identity, entry mode, primary event/detail, exhaustion, pending operation,
-    // selected terminal event/detail, and two reserved zero words.
+    // selected terminal event/detail, presentation charge/ordinal, and active ordinal.
+    // Each presentation prepays one nonrefundable turn (1920 cells * 94 stores);
+    // at most 32 turns per slot generation, independently of CPU/input budgets.
     class ExecutionOwner {
         builtin::ExecutionAuthority authority;
         array<u64, 32> state;
@@ -99,10 +101,12 @@ export namespace kernel {
             const LifecycleResult result = LifecycleResult(state[at + 12], state[at + 13], state[at + 1]);
             builtin::require(authority.retire(slot));
             i64 word = 2;
-            while (word < 16) {
+            while (word < 14) {
                 state[at + word] = 0u64;
                 word = word + 1;
             }
+            state[at + 15] = 0u64;
+            // Keep the presentation charge until a new generation is prepared.
             // Empty is published only after complete physical role cleanup.
             state[at] = 0u64;
             return result;
@@ -133,7 +137,7 @@ export namespace kernel {
         ExecutionOwner(builtin::ExecutionAuthority input) : authority(move(input)), state{} {
         }
         auto can_prepare(u64 slot) const -> bool {
-            if (slot >= 2u64) {
+            if (slot >= 2u64 || state[16] == 6u64) {
                 return false;
             }
             const i64 at = i64(slot) * 16;
@@ -155,6 +159,8 @@ export namespace kernel {
                 }
             }
             state[at + 1] = state[at + 1] + 1u64;
+            state[at + 14] = 0u64;
+            state[at + 15] = 0u64;
             state[at + 2] = observed.epoch;
             state[at + 3] = observed.root;
             state[at + 4] = observed.incarnation;
@@ -168,7 +174,7 @@ export namespace kernel {
                 return LifecycleResult(0u64, 0u64, 0u64);
             }
             const i64 at = i64(slot) * 16;
-            if ((state[at] != 1u64 && state[at] != 3u64) || state[at + 11] != 0u64) {
+            if (state[16] == 6u64 || (state[at] != 1u64 && state[at] != 3u64) || state[at + 11] != 0u64) {
                 return LifecycleResult(0u64, 0u64, state[at + 1]);
             }
             state[at + 7] = 0u64;
@@ -185,7 +191,7 @@ export namespace kernel {
                 return LifecycleResult(0u64, 0u64, 0u64);
             }
             const i64 at = i64(slot) * 16;
-            if (state[at] != 1u64 && state[at] != 3u64) {
+            if (state[16] == 6u64 || (state[at] != 1u64 && state[at] != 3u64)) {
                 return LifecycleResult(0u64, 0u64, state[at + 1]);
             }
             const builtin::ExecutionObservation observed = authority.force(slot);
@@ -195,7 +201,7 @@ export namespace kernel {
             return accept(slot, observed);
         }
         auto complete(u64 slot) -> bool {
-            if (slot >= 2u64) {
+            if (slot >= 2u64 || state[16] == 6u64) {
                 return false;
             }
             const i64 at = i64(slot) * 16;
@@ -206,6 +212,28 @@ export namespace kernel {
             builtin::require(same(at, observed) && observed.event == 13u64 && observed.detail == 0u64
                 && observed.exhausted == 0u64);
             state[at + 11] = 0u64;
+            return true;
+        }
+        auto begin_presentation(u64 slot) -> u64 {
+            if (slot != 1u64 || state[16] != 3u64 || (state[27] != 5u64 && state[27] != 15u64) || state[30] >= 32u64
+                || state[31] != 0u64) {
+                return 0u64;
+            }
+            // Charge before publishing presenting. A failed/aborted native turn
+            // is still spent; completion never refunds it or clears pending IO.
+            state[30] = state[30] + 1u64;
+            state[31] = state[30];
+            state[16] = 6u64;
+            return state[31];
+        }
+        auto finish_presentation(u64 slot, u64 ordinal) -> bool {
+            if (slot != 1u64 || state[16] != 6u64 || ordinal == 0u64 || ordinal != state[31]) {
+                return false;
+            }
+            // Native authenticates this retained root and proves full painter
+            // restoration before invoking this entry. An ordinal is not authority.
+            state[31] = 0u64;
+            state[16] = 3u64;
             return true;
         }
         auto phase(u64 slot) const -> u64 {
@@ -228,6 +256,7 @@ export namespace kernel {
         }
         auto finish() && -> bool {
             // A consuming entry cannot silently abandon an owned slot.
+            builtin::require(state[16] != 6u64);
             builtin::require(state[0] == 0u64 && state[16] == 0u64);
             return authority.finish();
         }
