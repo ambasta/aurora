@@ -3333,8 +3333,7 @@ auto presentation_quiet() -> bool {
     if (!presentation_handoff || !presentation_quiet() || stack_pointer % 8 ||
         stack_pointer < owned_arena + Handoff::stack_bottom + 4096 ||
         stack_pointer >= owned_arena + Handoff::stack_top || target < owned_arena + Handoff::payload_offset ||
-        target >= owned_arena + Handoff::payload_offset + presentation_handoff->get(64) ||
-        !space.verify(table, ranges, kernel_table_pages) || !audit_residents())
+        target >= owned_arena + Handoff::payload_offset + presentation_handoff->get(64))
         fail("presentation entry boundary");
     // Probe does not borrow Display or change architecture. Clean grids consume
     // no source admission; the production target and all its data are boot-mapped.
@@ -3345,6 +3344,19 @@ auto presentation_quiet() -> bool {
         (pending != static_cast<U64>(Event::output) && pending != static_cast<U64>(Event::input)) ||
         (pending == static_cast<U64>(Event::input) && !input_identity()))
         fail("presentation parked event");
+    // One admission prepays every possible cell/store, even on an immediate
+    // UART yield. Exhaustion is optional graphics deferral, never process failure.
+    const auto ordinal = execution_owner.begin_presentation(1);
+    if (!ordinal)
+        return;
+    if (ordinal > 32 || execution_owner.entered() || execution_owner.busy() ||
+        execution_owner.phase(1) != Phase::presenting)
+        fail("presentation admission closure");
+    // Only an admitted pass pays for complete mapping/resident scans and
+    // receipts. Clean or exhausted calls cannot repeat this work indefinitely.
+    // Both slots are now frozen; failure here is fail-stop, never a refund.
+    if (!space.verify(table, ranges, kernel_table_pages) || !audit_residents())
+        fail("presentation admitted mapping");
     std::array<PresentationResident, 2> saved;
     for (std::size_t slot = 0; slot < residents.size(); ++slot) {
         const auto &resident = residents[slot];
@@ -3366,14 +3378,6 @@ auto presentation_quiet() -> bool {
     const U64 window_before = endpoint.window, count_before = endpoint.count;
     U64 previous_cr2;
     asm volatile("mov %%cr2, %0" : "=r"(previous_cr2));
-    // One admission prepays every possible cell/store, even on an immediate
-    // UART yield. Exhaustion is optional graphics deferral, never process failure.
-    const auto ordinal = execution_owner.begin_presentation(1);
-    if (!ordinal)
-        return;
-    if (ordinal > 32 || execution_owner.entered() || execution_owner.busy() ||
-        execution_owner.phase(1) != Phase::presenting)
-        fail("presentation admission closure");
     table.suspend(); // Requires no bank loan, pin, view or mapping effect.
     if (!space.detach())
         fail("presentation detach");
