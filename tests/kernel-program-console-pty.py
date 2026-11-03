@@ -2396,6 +2396,16 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                     b"write-source: input cancelled\n",
                 )
                 read_authored(replacement, text, b"ENTERED-SECOND")
+                # No terminal byte is sent: the unchanged cumulative input wait
+                # allowance must expire as unavailable, never implicit EOF.
+                write_source(
+                    b"main.au",
+                    [b"module waiting;\n"],
+                    1,
+                    b"write-source: input unavailable\n",
+                )
+                read_authored(replacement, text, b"ENTERED-SECOND")
+                metrics["source_writer_input_unavailable_preserves_previous"] = True
                 # Input policy failures occur before commit and preserve the
                 # previous source in this healthy service incarnation.
                 for invalid in (b"\x00", b"\x1b", b"\x80", b"x" * 257):

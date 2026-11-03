@@ -3239,6 +3239,17 @@ auto input_probe_sample(void *) -> aurora::console::Sample {
     if (!input_identity())
         fail("input fixture callback identity");
     ++input_probe_samples;
+    if (input_probe_case == 97) {
+        // Two actual writer runs share this fixed bounded producer. The middle
+        // and final ordinary readers receive no input grant or callback.
+        if (input_read.owner != 2 && input_read.owner != 4)
+            fail("source writer input owner");
+        const U64 offset = input_probe_samples - 1;
+        const U64 length = input_read.owner == 2 ? 16384 : 16385;
+        if (offset >= length)
+            return {true, 4, false};
+        return {true, static_cast<std::uint8_t>(offset % 256 == 255 || offset == 16384 ? '\n' : 'x'), false};
+    }
     if (input_probe_case == 94 || input_probe_case == 95) {
         Serial::text("AURORA_INPUT_AUTHORITY_PROBE:");
         field("case", input_probe_case);
@@ -3927,7 +3938,7 @@ auto execution_input_fixture(std::span<const std::byte> volume,
                              U64 client) -> void {
     using namespace aurora::execution;
     using Session = FixtureExecutionSession;
-    if (input_probe_case < 82 || input_probe_case > 96 || input_source || input_read.owner)
+    if (input_probe_case < 82 || input_probe_case > 97 || input_source || input_read.owner)
         fail("input fixture admission");
     input_read = {};
     input_probe_settlements = input_probe_completions = input_probe_samples = 0;
@@ -3979,7 +3990,15 @@ auto execution_input_fixture(std::span<const std::byte> volume,
             fail("input fixture unexpected output");
         }
     }
-    if (input_probe_case == 96) {
+    if (input_probe_case == 97) {
+        const bool writer = client == 2 || client == 4;
+        const U64 expected_status = client == 4 ? 1 : 0;
+        if (client < 2 || client > 5 || !outcome.exited || outcome.status != expected_status ||
+            input_probe_settlements || input_probe_partial ||
+            (writer ? input_probe_samples != (client == 2 ? 16385 : 16386)
+                    : input_probe_samples || input_probe_completions))
+            fail("source writer boundary result");
+    } else if (input_probe_case == 96) {
         if (input_probe_completions < 2 || !outcome.watchdog || outcome.terminal_ticks != 2)
             fail("input fixture original CPU budget");
     } else if (raw) {
@@ -4593,7 +4612,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 [[noreturn]] auto run_list(U64 arena, std::span<const std::byte> view, U64 selected) -> void {
     U64 run_case = selected;
 #ifdef AURORA_PROCESS_FIXTURE
-    if (selected >= 82 && selected <= 96)
+    if (selected >= 82 && selected <= 97)
         input_probe_case = selected;
     if (selected >= 64 && selected <= 71) {
         execution_probe_case = selected;
@@ -4716,7 +4735,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 #endif
     if ((selected >= 1 && selected <= 6) || selected == 43 || selected == 44 || (selected >= 63 && selected <= 71))
         count = run_independent(view, *runs);
-    if (selected == 8 || (selected >= 82 && selected <= 96))
+    if (selected == 8 || (selected >= 82 && selected <= 97))
         count = run_external(view, *runs);
     if (selected == 10) {
         const auto baseline = table.free();

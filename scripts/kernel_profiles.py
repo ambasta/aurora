@@ -387,7 +387,7 @@ for number, mode in enumerate(SNAPSHOT_LEAF_PROBES, 80):
     PROCESS_CASES[mode] = (number, ())
 MAPPING_AUTHORITY_PROBES += SNAPSHOT_LEAF_PROBES
 # One compiled input consumer, trusted boot-selected provider/allowance cases.
-INPUT_PROBES = tuple(f"process-input-{number}" for number in range(82, 97))
+INPUT_PROBES = tuple(f"process-input-{number}" for number in range(82, 98))
 for number, mode in enumerate(INPUT_PROBES, 82):
     PROCESS_CASES[mode] = (
         number,
@@ -412,6 +412,16 @@ PROCESS_CASES["process-input-96"] = (
     (
         (64, 0, 16384, "bin/file-service", "file-service"),
         (2, 0, 8192, "bin/input-raw", "input-raw5"),
+    ),
+)
+PROCESS_CASES["process-input-97"] = (
+    97,
+    (
+        (64, 0, 16384, "bin/file-service", "file-service"),
+        (64, 0, 8192, "bin/write-source", "write-source bound.txt"),
+        (64, 0, 8192, "bin/lifecycle", "lifecycle bound-read"),
+        (64, 0, 8192, "bin/write-source", "write-source bound.txt"),
+        (64, 0, 8192, "bin/lifecycle", "lifecycle bound-read"),
     ),
 )
 PROCESS_CASES["process-require-user"] = (
@@ -1408,6 +1418,7 @@ PROCESS_COMPILER_FILES = ("examples/host-sort.au", "runtime/aurora/aurora/host.a
 PROCESS_PROGRAMS = {
     "bin/probe": "aurora:host-files-probe",
     "bin/input": "aurora:process-input",
+    "bin/write-source": "aurora:write-source",
     "bin/input-raw": "assembly:process-isolation-6",
     "bin/xfs-recover": "aurora:xfs-recover",
     "bin/hostile": "aurora:process-hostile",

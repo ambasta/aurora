@@ -687,6 +687,82 @@ def validate(
     ordered(text, BASE)
     volume = (image / "esp/aurora/volume").read_bytes()
     terminal_cleanup_order(text)
+    if mode == "process-input-97":
+        free = frames(text)
+        need(status == 33 and "AURORA_PROCESS_FAIL:" not in text, "Source writer boundary fixture completed")
+        need(text.count("AURORA_PROCESS_CASE_SELECTED: value=97\n") == 1, "Boundary case selected")
+        need("AURORA_INPUT_WAIT:" not in text, "Fixed source producer never spends parked wait allowance")
+        run_parts = re.split(r"(?m)^(?=AURORA_PROCESS_RUN: )", text)[1:]
+        need(len(run_parts) == 5, "Service, two writers and two ordinary readers")
+        for ordinal, part in enumerate(run_parts, 1):
+            run = fields(part.split("\n", 1)[0])
+            expected = PROCESS_CASES[mode][1][ordinal - 1]
+            need(
+                run["run"] == str(ordinal) and run["path"] == expected[3] and run["ticks"] == str(expected[0]),
+                "Boundary run identity and unchanged CPU budget",
+            )
+        for client in range(2, 6):
+            part = run_parts[client - 1]
+            expected_status = 1 if client == 4 else 0
+            ordered(
+                part,
+                (
+                    f"AURORA_PROCESS_LOADED: run={client} ",
+                    f"AURORA_PROCESS_END: run={client} reason=exit status={expected_status}",
+                    f"AURORA_PROCESS_RELEASED: run={client} ",
+                    "AURORA_INPUT_FINISHED:",
+                ),
+            )
+            done = [fields(row) for row in re.findall(r"^AURORA_INPUT_FINISHED: (.*)$", part, re.M)]
+            chunks = [fields(row) for row in re.findall(r"^AURORA_INPUT_CHUNK: (.*)$", part, re.M)]
+            need(len(done) == 1, "One completed source session per client")
+            final = done[0]
+            need(
+                final["case"] == "97"
+                and final["quiet"] == final["retired"] == "1"
+                and final["settlements"] == final["partial"] == "0"
+                and int(final["completed"]) == len(chunks),
+                "Input source cleanup without waits or lingering owners",
+            )
+            outputs = {}
+            for stream in ("STDOUT", "STDERR"):
+                rows = re.findall(rf"^AURORA_{stream}: run={client} (\S+)$", part, re.M)
+                outputs[stream] = b"".join(base64.b64decode(row, validate=True) for row in rows)
+            if client in (3, 5):
+                need(not chunks and final["samples"] == "0", "Ordinary HostFiles reader receives no input")
+                need(outputs == {"STDOUT": b"source bound 16384 intact\n", "STDERR": b""}, "Exact committed bytes")
+                continue
+            need(final["samples"] == str(16385 if client == 2 else 16386), "Bounded producer sample count")
+            total = 0
+            for sequence, chunk in enumerate(chunks, 1):
+                need(
+                    chunk["case"] == "97"
+                    and chunk["sequence"] == str(sequence)
+                    and chunk["remaining"] == "2500000"
+                    and chunk["copied"] == "1",
+                    "Copied input order and original remaining allowance",
+                )
+                count = int(chunk["count"])
+                need(
+                    (chunk["status"] == "0" and 1 <= count <= 504)
+                    or (client == 2 and sequence == len(chunks) and chunk["status"] == "1" and count == 0),
+                    "Data chunks are not EOF; only successful writer receives terminal EOF",
+                )
+                total += count
+            need(total == (16384 if client == 2 else 16385), "Exact source byte boundary")
+            need(client != 2 or (chunks and chunks[-1]["status"] == "1"), "Successful writer commits only at EOF")
+            ready = b"write-source ready: no echo; Ctrl-D saves, Ctrl-C cancels\n"
+            need(
+                outputs["STDOUT"] == ready + (b"write-source: saved\n" if client == 2 else b"")
+                and outputs["STDERR"] == (b"write-source: file too large\n" if client == 4 else b""),
+                "Single successful save or precommit bound rejection",
+            )
+        need(text.count(f"AURORA_PROCESS_RUNS_OK: runs=5 free={free}") == 1, "All command and service frames reclaimed")
+        need(
+            len(re.findall(r"^AURORA_FILE_SERVICE_OK: clients=4 transactions=[1-9][0-9]*$", text, re.M)) == 1,
+            "All clients share one healthy file service",
+        )
+        return
     if mode.startswith("process-input-") and PROCESS_CASES[mode][0] >= 89:
         free = frames(text)
         case = PROCESS_CASES[mode][0]
