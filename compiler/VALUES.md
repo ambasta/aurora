@@ -21,7 +21,12 @@ Classes are inline values with nominal identity, private-by-default access and e
   arithmetic/bounds trap terminates execution rather than exposing partial state.
 - A declared constructor disables designated aggregate initialization, including
   for public fields. A class without a constructor retains the earlier designated
-  initialization rules, requiring every field to be public and initialized.
+  initialization rules, requiring every field to be public and initialized. Scalar
+  array fields may receive a complete array of the exact element type and length.
+  Each initializer snapshots its value when evaluated; copying does not end the
+  source array's lifetime. The temporary snapshot is consumed before later
+  initialization/return cleanup. This admits no owning or class-element arrays
+  and does not relax field visibility or copied-value limits.
 - Complete values can be copied, including classes with private fields and a
   private constructor. Copying duplicates scalar state; it does not manufacture
   a state unavailable from an existing complete value. Const applies to a binding,

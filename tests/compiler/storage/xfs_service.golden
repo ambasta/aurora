@@ -39,6 +39,19 @@ nested root directory identity	passed
 nested root file identity	passed
 nested normalized nested directory identity	passed
 nested held root read after directory_ready	passed
+nested root listing first entry	passed
+nested nested listing first directory	passed
+nested root listing hides private staging	passed
+nested nested listing hides private directory	passed
+nested root listing final directory	passed
+nested root listing end	passed
+nested root listing sticky end	passed
+nested nested listing next file	passed
+nested nested listing last file	passed
+nested nested listing end	passed
+nested regular handle cannot enumerate	passed
+nested enumeration rejects offset	passed
+nested enumeration rejects payload	passed
 nested directory is not a regular file	passed
 nested held root read after not_regular	passed
 nested directory-bound normalized nested lookup	passed
@@ -48,6 +61,8 @@ nested nested end of file	passed
 nested direct normalized nested file	passed
 nested empty shortform directory identity	passed
 nested empty directory missing name	passed
+nested empty directory listing end	passed
+nested empty directory listing sticky end	passed
 nested hidden intermediate directory	passed
 nested hidden nested leaf	passed
 nested hidden directory cannot be opened	passed
@@ -64,11 +79,16 @@ nested foreign directory handle refused	passed
 nested readonly create refused	passed
 nested closed directory handle	passed
 nested stale directory handle refused	passed
+nested stale directory listing refused	passed
 nested retained child reader survives directory close	passed
 nested client incarnation invalidates held handle	passed
 nested old root directory is not new-client authority	passed
+nested old directory cursor is not new-client authority	passed
 nested new client traverses genuine nested tree	passed
 nested torn child response fails closed	passed
 nested failed child walk leaves backend quarantined	passed
 nested busy walk entry points	refused without mutation
 nested genuine mounted allocation profile	refused: icount=256 ifree=241, not 64/59
+nested directory enumeration rooted handle	passed
+nested torn enumeration response fails closed	passed
+nested failed enumeration leaves backend quarantined	passed

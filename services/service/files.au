@@ -124,6 +124,10 @@ export namespace service {
         builtin::OwnedBytes volume;
         builtin::OwnedBytes table;
         builtin::OwnedBytes records;
+        builtin::OwnedBytes directory_cursors;
+        builtin::OwnedBytes directory_name;
+        bool disk_ready;
+        bool disk_routing;
         // One reusable payload arena, addressed by checked page indices. Each
         // record has up to 16384 page indices (64 MiB); the index owner is 8 MiB.
         // Free pages link through their first word. This is a service-local
@@ -153,6 +157,23 @@ export namespace service {
                 && record_word(export_record - 1u64, 5u64) == export_inode;
         }
 
+        // Fixed-size sidecars keep the handle-table ABI and the language's
+        // bounded inline class-storage limit unchanged.
+        auto directory_cursor(i64 slot) const -> u64 {
+            const builtin::span<const u8> bytes = borrow_bytes(directory_cursors);
+            const std::ByteReadResult value = std::read_le64(bytes, slot * 8);
+            return value.value_or(18446744073709551615u64);
+        }
+        auto set_directory_cursor(i64 slot, u64 value) -> bool {
+            i64 byte = 0;
+            while (byte < 8) {
+                if (!directory_cursors.set(slot * 8 + byte, u8((value >> (byte * 8)) & 255u64))) {
+                    valid = false;
+                }
+                byte = byte + 1;
+            }
+            return valid;
+        }
         auto table_word(u64 offset) const -> u64 {
             const builtin::span<const u8> bytes = borrow_bytes(table);
             return kernel::file_word(bytes, offset);
@@ -309,14 +330,16 @@ export namespace service {
         }
     public:
         Store(builtin::ByteRegion region, i64 volume_bytes) : volume(region.try_allocate(volume_bytes)),
-            table(region.try_allocate(1344)), records(region.try_allocate(20480)), indices(make_indices(region)),
-            data(make_payload(region)), pages(0u64), free_head(0u64), client(0u64), valid(true), admitted(false),
-            read_kind(0u64), read_target(0u64), read_offset(0u64), read_count(0u64), export_record(0u64),
-            export_revision(0u64), export_inode(0u64), export_base(0u64), export_prefix(0u64), export_length(0u64),
-            export_kind(0u64) {
+            table(region.try_allocate(1344)), records(region.try_allocate(20480)),
+            directory_cursors(region.try_allocate(256)), directory_name(region.try_allocate(256)), disk_ready(false),
+            disk_routing(false), indices(make_indices(region)), data(make_payload(region)), pages(0u64),
+            free_head(0u64), client(0u64), valid(true), admitted(false), read_kind(0u64), read_target(0u64),
+            read_offset(0u64), read_count(0u64), export_record(0u64), export_revision(0u64), export_inode(0u64),
+            export_base(0u64), export_prefix(0u64), export_length(0u64), export_kind(0u64) {
         }
         auto ok() const -> bool {
-            return valid && volume.ok() && table.ok() && records.ok() && indices.ok() && data.ok();
+            return valid && volume.ok() && table.ok() && records.ok() && directory_cursors.ok() && directory_name.ok()
+                && indices.ok() && data.ok();
         }
         auto active() const -> u64 {
             return client;
@@ -357,8 +380,11 @@ export namespace service {
                 u64(slot), 3u64) == 0u64;
         }
         auto disk_collision() const -> bool {
-            const kernel::FileOpen decision = decide_open(0u64, 0u64, "/disk");
-            return decision.status != kernel::FileStatus::not_found;
+            const builtin::span<const u8> v = borrow_bytes(volume);
+            const builtin::span<const u8> r = borrow_bytes(records);
+            const kernel::Resolution base = kernel::resolution(kernel::PathKind::directory, 0u64, 0u64, 0u64, 0, 5);
+            const kernel::Resolution found = kernel::resolve(v, r, "/disk", base);
+            return found.kind != kernel::PathKind::absent && found.kind != kernel::PathKind::missing;
         }
         auto volume_byte(i64 offset, u8 byte) -> bool {
             if (admitted || !volume.set(offset, byte)) {
@@ -485,6 +511,7 @@ export namespace service {
             if (decision.status != kernel::FileStatus::success) {
                 return result;
             }
+            set_directory_cursor(i64(decision.slot), 0u64);
             const u64 slot = decision.slot * 32u64;
             set_table(slot, decision.kind);
             set_table(slot + 8u64, decision.generation);
@@ -529,6 +556,75 @@ export namespace service {
             result.directory_inode = decision.directory_inode;
             return result;
         }
+        // Readiness is an observation from the sibling backend, never a mount
+        // request. EOF stays sticky even if the backend becomes ready later.
+        auto observe_disk(bool ready) -> bool {
+            disk_ready = ready;
+            disk_routing = true;
+            return true;
+        }
+        auto next_entry(u64 id) -> Reply {
+            read_count = 0u64;
+            i64 byte = 0;
+            while (byte < 256) {
+                directory_name.set(byte, 0u8);
+                byte = byte + 1;
+            }
+            if (!ok() || !admitted || client == 0u64) {
+                return reply(kernel::FileStatus::failed);
+            }
+            i64 slot = -1;
+            {
+                const builtin::span<const u8> t = borrow_bytes(table);
+                slot = kernel::handle_slot(t, id, 2u64);
+            }
+            if (slot < 0) {
+                return reply(kernel::FileStatus::invalid_handle);
+            }
+            Reply result = reply(kernel::FileStatus::success);
+            const u64 cursor = directory_cursor(slot);
+            if (cursor == 18446744073709551615u64) {
+                return result;
+            }
+            const u64 first = table_word(u64(slot) * 32u64 + 16u64);
+            const u64 depth = table_word(u64(slot) * 32u64 + 24u64);
+            u64 next = cursor;
+            {
+                const builtin::span<const u8> v = borrow_bytes(volume);
+                const builtin::span<const u8> r = borrow_bytes(records);
+                const kernel::DirectorySelection selected = kernel::directory_selection(v, r, first, depth, cursor,
+                    disk_routing);
+                next = selected.next;
+                result.count = selected.count;
+                result.size = selected.kind;
+                byte = 0;
+                while (byte < i64(selected.count)) {
+                    u8 value = 0u8;
+                    if (selected.source == 1u64) {
+                        value = v.at(i64(selected.offset) + byte);
+                    } else {
+                        value = r.at(i64(selected.offset) + byte);
+                    }
+                    directory_name.set(byte, value);
+                    byte = byte + 1;
+                }
+            }
+            set_directory_cursor(slot, next);
+            if (result.count == 0u64) {
+                set_directory_cursor(slot, 18446744073709551615u64);
+                if (depth == 0u64 && first == 0u64 && disk_ready && !disk_collision()) {
+                    directory_name.set(0, 100u8);
+                    directory_name.set(1, 105u8);
+                    directory_name.set(2, 115u8);
+                    directory_name.set(3, 107u8);
+                    result.count = 4u64;
+                    result.size = 2u64;
+                }
+            }
+            read_kind = 4u64;
+            read_count = result.count;
+            return result;
+        }
         auto read_file(u64 id, u64 offset) -> Reply {
             const kernel::FileRead decision = decide_read(id, offset);
             Reply result = reply(decision.status);
@@ -552,6 +648,9 @@ export namespace service {
             if (index >= read_count) {
                 valid = false;
                 return 0u8;
+            }
+            if (read_kind == 4u64) {
+                return directory_name.at(i64(index));
             }
             if (read_kind == 2u64) {
                 return volume.at(i64(read_offset + index));
@@ -705,6 +804,7 @@ export namespace service {
                     free_record(record);
                 }
             }
+            set_directory_cursor(i64(decision.slot - 1u64), 0u64);
             set_table((decision.slot - 1u64) * 32u64, 0u64);
             return reply(decision.status);
         }

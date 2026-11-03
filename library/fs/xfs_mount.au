@@ -164,6 +164,35 @@ export namespace fs {
         not_regular
     };
 
+    // A copied mount-level observation, not an inode or directory capability.
+    // Keep parser reports private so mount users need no parser-module imports.
+    class XfsDirectoryEntry {
+        bool _valid;
+        bool _end;
+        u64 _type;
+        u64 _offset;
+        u64 _length;
+    public:
+        XfsDirectoryEntry(bool valid, bool end, u64 type, u64 offset, u64 length) : _valid(valid), _end(end),
+            _type(type), _offset(offset), _length(length) {
+        }
+        auto valid() const -> bool {
+            return _valid;
+        }
+        auto at_end() const -> bool {
+            return _valid && _end;
+        }
+        auto file_type() const -> u64 {
+            return _type;
+        }
+        auto name_offset_bytes() const -> u64 {
+            return _offset;
+        }
+        auto name_length_bytes() const -> u64 {
+            return _length;
+        }
+    };
+
     // The backend must own an exclusive, stable read-only volume throughout this
     // object's lifetime. Copied bytes cannot establish device provenance.
     class XfsReadonlyMount {
@@ -562,6 +591,29 @@ export namespace fs {
                 return _parent;
             }
             return 0u64;
+        }
+        // Only a completed rooted directory walk exposes copied entry metadata.
+        // The service supplies the private cursor; these values confer no authority.
+        auto directory_entry(i64 index) const -> XfsDirectoryEntry {
+            if (_status == XfsMountStatus::directory_ready) {
+                const XfsRootEntryReport report = entry_at_xfs_v5_512_directory(superblock(), directory_bytes(),
+                    _directory, _parent, index);
+                if (report.status() == XfsRootEntryStatus::found) {
+                    const XfsRootEntry item = report.entry();
+                    return XfsDirectoryEntry(true, false, item.file_type(), item.name_offset_bytes(),
+                        item.name_length_bytes());
+                }
+                if (report.status() == XfsRootEntryStatus::end) {
+                    return XfsDirectoryEntry(true, true, 0u64, 0u64, 0u64);
+                }
+            }
+            return XfsDirectoryEntry(false, false, 0u64, 0u64, 0u64);
+        }
+        auto directory_byte(i64 at) const -> u8 {
+            if (_status != XfsMountStatus::directory_ready || at < 0 || at >= 512) {
+                return 0u8;
+            }
+            return _directory_cache.at(at);
         }
         auto valid_bytes() const -> u64 {
             if (_status == XfsMountStatus::file_sector_ready) {

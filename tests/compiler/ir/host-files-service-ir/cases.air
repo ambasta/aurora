@@ -326,3 +326,67 @@ end
 ; BASE: accepted memory primitives
 ; RUN: emit
 ; EXPECT-ERROR: emission
+
+; CASE: accepted directory stream primitives
+; RUN: emit
+; CHECK: syscall
+; CHECK-NOT: __au_runtime_
+function __au_v_m2_6aurora4host_n1_4host_d7entries
+  result i64
+  params [22]
+  frame 32
+  service 16
+    BindServiceParameter 0 16 6
+    Constant -1 i64
+    Push
+    Constant 2560 u64
+    Push
+    Constant 280 u64
+    Push
+    ServiceOperation 16 53 0 6
+    Constant -1 i64
+    Push
+    Constant 0 u64
+    Push
+    ServiceOperation 16 54 0 6
+    Return
+end
+
+; CASE: rejected directory stream primitives on Aurora
+; BASE: accepted directory stream primitives
+; RUN: verify aurora
+; EXPECT-ERROR: HostFiles primitive does not belong to the selected target
+
+; CASE: rejected directory stream primitive outside aurora.host
+; BASE: accepted directory stream primitives
+; RUN: verify
+; EXPECT-ERROR: service operation
+@@ -1 +1 @@
+-function __au_v_m2_6aurora4host_n1_4host_d7entries
++function __au_v_m2_5other4host_n1_4host_d7entries
+
+; CASE: rejected directory primitive descriptor has unsigned type
+; BASE: accepted directory stream primitives
+; RUN: verify
+; EXPECT-ERROR: scalar
+@@ -7 +7 @@
+-    Constant -1 i64
++    Constant 1 u64
+
+; CASE: accepted directory kind enum
+; RUN: verify
+enum __au_host_entry_kind 5
+function answer
+  result i64
+  frame 16
+    Constant 42 i64
+    Return
+end
+
+; CASE: rejected directory kind enum with missing unknown case
+; BASE: accepted directory kind enum
+; RUN: verify
+; EXPECT-ERROR: sealed service enum
+@@ -1 +1 @@
+-enum __au_host_entry_kind 5
++enum __au_host_entry_kind 4

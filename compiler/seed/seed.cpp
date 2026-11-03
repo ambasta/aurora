@@ -350,6 +350,7 @@ void declare_builtins() {
                                 "failed"});
     enumeration("HostExit", {"success", "failure", "usage"});
     enumeration("HostStream", {"stdout", "stderr"});
+    Type *entry_kind = enumeration("HostEntryKind", {"end", "regular", "directory", "other", "unknown"});
     const auto object = [&](const std::string &name, const std::vector<std::string> &fields, Type *last) {
         auto *decl = new ClassDecl;
         decl->name = name;
@@ -358,6 +359,9 @@ void declare_builtins() {
         auto *type = new Type{K::object, 0, nullptr, decl, nullptr, 0, {}, name};
         for (size_t at = 0; at < fields.size(); ++at) {
             Type *field_type = at == 0 ? status : (at + 1 == fields.size() && last != nullptr ? last : &u64_type);
+            if (name == "HostDirectoryEntry" && at == 1) {
+                field_type = entry_kind;
+            }
             decl->fields.push_back(FieldDecl{Loc{}, nullptr, fields[at]});
             decl->field_types.push_back(field_type);
             decl->offsets.push_back(type->size);
@@ -372,6 +376,7 @@ void declare_builtins() {
     object("HostFileResult", {"status", "id", "size", "device", "inode"}, nullptr);
     object("HostOutputResult", {"status", "id", "device", "inode", "directory_device", "directory_inode"}, nullptr);
     object("HostChunk", {"status", "count", "bytes"}, array_of(&u8_type, 504, Loc{}));
+    object("HostDirectoryEntry", {"status", "kind", "count", "bytes"}, array_of(&u8_type, 256, Loc{}));
 }
 
 // ---------------------------------------------------------------- nodes
@@ -769,6 +774,14 @@ int64_t run_primitive(const Node *node, Frame &frame, uint8_t *) {
         return system_result(syscall(SYS_fstat, static_cast<int>(args[0]), session + u(1)));
     case 20:
         return system_result(syscall(SYS_getpid));
+    case 53:
+        check_session(node, u(1), u(2));
+        return system_result(syscall(SYS_getdents64, static_cast<int>(args[0]), session + u(1), u(2)));
+    case 54:
+        if (u(1) > INT64_MAX) {
+            trap(node, "directory cookie");
+        }
+        return system_result(syscall(SYS_lseek, static_cast<int>(args[0]), args[1], SEEK_SET));
     default:
         trap(node, "unknown primitive");
     }
@@ -1715,13 +1728,15 @@ constexpr Primitive primitives[] = {
     {"system_close", 18, 1},
     {"system_stat", 19, 2},
     {"system_identity", 20, 0},
+    {"system_entries", 53, 3},
+    {"system_seek", 54, 2},
 };
 
 Type *primitive_parameter(int64_t operation, size_t index) {
     if (operation == 12 && index == 1) {
         return &u8_type;
     }
-    if (operation > 12 && operation < 20 && index == 0) {
+    if (((operation > 12 && operation < 20) || operation == 53 || operation == 54) && index == 0) {
         return &i64_type;
     }
     return &u64_type;
@@ -1742,7 +1757,8 @@ Value files_call(Node *files, const Expr *expr, Context &context) {
                                                     "discard",
                                                     "print",
                                                     "close",
-                                                    "open_file"};
+                                                    "open_file",
+                                                    "next_entry"};
     for (const char *name : public_operations) {
         if (expr->text == name) {
             Function *callee = host_function(std::string("files_") + name, loc);

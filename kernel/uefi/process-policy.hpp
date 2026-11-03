@@ -191,7 +191,8 @@ enum class CallAction : U64 {
     create_output,
     write,
     commit,
-    discard
+    discard,
+    next_entry
 };
 enum class RunsVerdict : U64 {
     valid,
@@ -527,6 +528,34 @@ frame_range(std::span<const std::byte> map, U64 stride, U64 index, U64 arena, U6
 [[nodiscard]] inline auto trap(const ProcessTrap &frame) -> std::optional<TrapClass> {
     return verdict<TrapClass, 15>(bridge::trap(&frame));
 }
+// Admit the complete copied directory reply before any caller memory is written.
+// Names are single byte components, not paths; no string terminator is carried.
+[[nodiscard]] inline auto directory_reply_valid(std::span<const std::byte> reply) -> bool {
+    if (reply.size() < 64 || reply.size() > 319)
+        return false;
+    const auto word = [&](std::size_t offset) {
+        U64 value = 0;
+        for (std::size_t byte = 0; byte < 8; ++byte)
+            value |= U64{std::to_integer<unsigned char>(reply[offset + byte])} << (byte * 8);
+        return value;
+    };
+    const U64 status = word(0), count = word(8), kind = word(24);
+    if (status > 9 || count > 255 || reply.size() != 64 + count)
+        return false;
+    for (std::size_t at = 16; at < 64; ++at)
+        if ((at < 24 || at >= 32) && reply[at] != std::byte{0})
+            return false;
+    if (status)
+        return !count && !kind;
+    if (!count)
+        return !kind;
+    if (kind < 1 || kind > 4)
+        return false;
+    for (std::size_t at = 64; at < reply.size(); ++at)
+        if (reply[at] == std::byte{0} || reply[at] == std::byte{'/'})
+            return false;
+    return !(reply[64] == std::byte{'.'} && (count == 1 || (count == 2 && reply[65] == std::byte{'.'})));
+}
 // A decoded kernel call in its closed encoding, or nullopt.
 [[nodiscard]] inline auto call(U64 operation, U64 first, U64 second, U64 third, U64 fourth)
     -> std::optional<KernelCall> {
@@ -551,7 +580,7 @@ frame_range(std::span<const std::byte> map, U64 stride, U64 index, U64 arena, U6
          result.record == 0) ||
         (action == CallAction::remap && length(result.value) && length(result.length) && base && result.record == 0) ||
         (action == CallAction::unmap && result.value == 0 && length(result.length) && base && result.record == 0) ||
-        (handle && bare) ||
+        (handle && bare) || (action == CallAction::next_entry && result.length == 0) ||
         (path && result.length <= 65536 && (action == CallAction::open_beneath || result.value == 0)) ||
         (action == CallAction::write && result.length <= 65536 && result.record == 0))
         return result;

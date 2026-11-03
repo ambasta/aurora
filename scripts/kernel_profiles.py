@@ -77,6 +77,13 @@ FILES_ABSENT = {"link", "dirlink", "fifo", "!closed"}
 
 def files_case(key):
     words = shlex.split(key)
+    # A scan's expected entries are KIND:NAME components, not filesystem paths.
+    # Keep Linux-only symlink/FIFO expectations out of the immutable guest volume.
+    if words[0] == "probe":
+        for index, word in enumerate(words):
+            if word == "scan" and index + 2 < len(words):
+                if any(entry.partition(":")[2] in FILES_ABSENT for entry in words[index + 2].split(",")):
+                    return False
     return (
         words[0] in FILES_PROGRAMS
         and not FILES_ABSENT & {part for word in words for part in word.split("/")}
@@ -216,7 +223,11 @@ PROCESS_CASES = {
                 8192,
                 "bin/probe",
                 "probe file tree/shared read @1 0 read 65 0 file tree/pending "
-                "create tree/reused write @5 z commit @5 file tree/reused read @8 0",
+                "create tree/reused write @5 z commit @5 file tree/reused read @8 0 "
+                "dir tree/sub dir tree/sub next @10 scan @11 1:b.txt next @10 next @10 file tree/sub/b.txt "
+                "next @16 close @10 next @10 dir tree/sub scan @20 1:b.txt create tree/sub/enumerated dir "
+                "tree/sub scan @23 1:b.txt write @22 x commit @22 next @11 close @20 dir tree/sub scan @29 "
+                "1:b.txt,1:enumerated next 65",
             ),
             (1, 0, 8192, "bin/hostile", "hostile spin"),
             (128, 0, 8192, "bin/probe", "probe file tree/shared read @1 0"),
@@ -1422,6 +1433,7 @@ PROCESS_PROGRAMS = {
     "bin/input": "aurora:process-input",
     "bin/write-source": "aurora:write-source",
     "bin/revise-source": "aurora:revise-source",
+    "bin/list-files": "aurora:list-files",
     "bin/input-raw": "assembly:process-isolation-6",
     "bin/xfs-recover": "aurora:xfs-recover",
     "bin/hostile": "aurora:process-hostile",
@@ -1530,6 +1542,8 @@ PRODUCTION_ESP = {
         "bin/write-source=aurora:write-source",
         "--program",
         "bin/revise-source=aurora:revise-source",
+        "--program",
+        "bin/list-files=aurora:list-files",
         "--program",
         "echo.au=source:line-echo",
         "--program",

@@ -152,5 +152,36 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
     if (!bytes.ok() && !bytes.try_resize(4)) {
         files.print(builtin::HostStream::stdout, "inert\n");
     }
+    // Both the seed and compiled program enumerate the real nonempty build
+    // directory, exercising the private directory syscalls and copied tail.
+    const builtin::HostDirectoryResult directory = files.open_directory(".");
+    const builtin::HostDirectoryEntry entry = files.next_entry(directory.id);
+    bool valid = directory.status == builtin::HostStatus::success && entry.status == builtin::HostStatus::success
+        && entry.kind != builtin::HostEntryKind::end && entry.count > 0u64 && entry.count <= 255u64;
+    const array<u8, 256> name = entry.bytes;
+    i64 index = 0;
+    while (index < 256) {
+        if (u64(index) >= entry.count) {
+            valid = valid && name[index] == 0u8;
+        } else {
+            valid = valid && name[index] != 0u8 && name[index] != '/';
+        }
+        index = index + 1;
+    }
+    const builtin::HostStatus closed = files.close(directory.id);
+    const builtin::HostDirectoryEntry stale = files.next_entry(directory.id);
+    valid = valid && closed == builtin::HostStatus::success && stale.status == builtin::HostStatus::invalid_handle
+        && stale.kind == builtin::HostEntryKind::end && stale.count == 0u64;
+    const array<u8, 256> empty = stale.bytes;
+    index = 0;
+    while (index < 256) {
+        valid = valid && empty[index] == 0u8;
+        index = index + 1;
+    }
+    i64 result = 0;
+    if (valid) {
+        result = 1;
+    }
+    number(files, "directory", result);
     return builtin::HostExit::success;
 }

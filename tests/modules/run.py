@@ -650,8 +650,9 @@ check(
     enum_modules,
     error="module graph exceeds 256 enum definitions",
 )
-# A hosted main activates ten builtin enums: the seven of the base service
-# family and HostExit, HostStatus and HostStream.
+# A hosted main activates eleven builtin enums: the seven of the base service
+# family and HostExit, HostStatus, HostStream and HostEntryKind.
+# 192 imported enums + 53 tail enums + 11 builtin enums reaches the 256 cap.
 check(
     "exactly 256 graph enums accepted with activated builtin enums",
     "module app; import aurora.host; import enums0; import enums1; import enums2; import tail;"
@@ -659,17 +660,19 @@ check(
     + " return builtin::HostExit::success; }",
     {
         **{name: text for name, text in enum_modules.items() if name != "enums3"},
-        "tail": "export module tail;" + "".join(f"enum class T{i} {{ a }};" for i in range(54)),
+        "tail": "export module tail;" + "".join(f"enum class T{i} {{ a }};" for i in range(53)),
     },
     check_only=True,
 )
 check(
     "graph enum cap counts activated builtin enums",
-    "module app; import aurora.host;"
-    + "".join(f"import enums{m};" for m in range(4))
+    "module app; import aurora.host; import enums0; import enums1; import enums2; import tail;"
     + "auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {"
     + " return builtin::HostExit::success; }",
-    enum_modules,
+    {
+        **{name: text for name, text in enum_modules.items() if name != "enums3"},
+        "tail": "export module tail;" + "".join(f"enum class T{i} {{ a }};" for i in range(54)),
+    },
     check_only=True,
     error="module graph exceeds 256 enum declarations",
 )

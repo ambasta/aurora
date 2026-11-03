@@ -270,6 +270,11 @@ export namespace compiler_lowering {
         }
         session.index_insert(116, body_function(session), frame.syntax_node(), field, 0, 0);
         const i64 staged_node_107 = compiler_resolver::sw(session, frame.cursor(), 0);
+        const i64 nominal = compiler_resolver::mw(session, frame.output_mark(), 1);
+        const i64 expected = field_type(session, nominal, field);
+        if (value_kind(session, expected) == compiler_resolver::ResolvedTypeKind::array_value) {
+            return push_expression(session, staged_node_107, expected, -1);
+        }
         return push_expression(session, staged_node_107, -1, -1);
     }
     auto finish_designated(compiler_resolver::Session& session, i64 frame_id) -> bool {
@@ -290,10 +295,21 @@ export namespace compiler_lowering {
         while (edge >= 0 && session.good()) {
             const i64 field_source = compiler_resolver::sw(session, edge, 4);
             const i64 field = checked_field(session, type, field_source, true);
-            emit_Pop(session);
-            const i64 staged_a0_110 = local_offset(session, destination) - field_displacement(session, type, field);
-            const i64 staged_a1_111 = field_type(session, nominal, field);
-            emit_Store(session, staged_a0_110, staged_a1_111);
+            const i64 base = local_offset(session, destination) - field_displacement(session, type, field);
+            const i64 field_value = field_type(session, nominal, field);
+            if (value_kind(session, field_value) == compiler_resolver::ResolvedTypeKind::array_value) {
+                const i64 element = compiler_resolver::mw(session, field_value, 2);
+                i64 at = compiler_resolver::mw(session, field_value, 3);
+                while (at > 0 && session.good()) {
+                    at = at - 1;
+                    emit_Pop(session);
+                    const i64 offset = base - at * scalar_width(session, element);
+                    emit_Store(session, offset, element);
+                }
+            } else {
+                emit_Pop(session);
+                emit_Store(session, base, field_value);
+            }
             edge = compiler_resolver::sw(session, edge, 1);
         }
         return finish_expression(session, type, destination);
@@ -309,7 +325,29 @@ export namespace compiler_lowering {
             const OperandRow got = scalar(OperandRole::DiagnosticTypeId, frame.child_type_id());
             return fail_synthetic(session, LoweringError::type_mismatch, field_source, wanted, got);
         }
-        emit_Push(session);
+        if (value_kind(session, expected) == compiler_resolver::ResolvedTypeKind::array_value) {
+            const i64 element = compiler_resolver::mw(session, expected, 2);
+            if (!compiler_resolver::scalar_kind(value_kind(session, element))) {
+                return fail(session, LoweringError::class_field_initializer_requires_complete_local, field_source);
+            }
+            const i64 length = compiler_resolver::mw(session, expected, 3);
+            const i64 base = local_offset(session, frame.child_local_id());
+            i64 at = 0;
+            while (at < length && session.good()) {
+                const i64 offset = base - at * scalar_width(session, element);
+                emit_Load(session, offset, element);
+                emit_Push(session);
+                at = at + 1;
+            }
+            // The scalar stack owns the eager snapshot now. Anonymous array
+            // temporaries must end here, not leak into later branch returns.
+            if (is_byte_array(session, expected)) {
+                emit_EndArray(session, base);
+            }
+            set_live(session, frame.child_local_id(), false, false);
+        } else {
+            emit_Push(session);
+        }
         const i64 last = compiler_resolver::sw(session, frame.syntax_node(), 1);
         frame.set_cursor(ordered_next(session, last, frame.cursor(), 1));
         session.set_continuation(frame_id, frame);

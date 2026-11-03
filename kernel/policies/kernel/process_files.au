@@ -552,6 +552,135 @@ export namespace kernel {
         return true;
     }
 
+    // Enumeration hides only service-private leaves, never ordinary dotfiles.
+    auto private_entry(builtin::span<const u8> name) -> bool {
+        if (name.size() == 1 && name.at(0) == 46u8) {
+            return true;
+        }
+        if (name.size() == 2 && name.at(0) == 46u8 && name.at(1) == 46u8) {
+            return true;
+        }
+        const array<u8, 14> output = ".aurora-output";
+        const builtin::span<const u8> prefix = borrow_bytes(output);
+        if (name.size() >= 15 && name.at(14) == 45u8) {
+            bool same = true;
+            i64 at = 0;
+            while (at < 14) {
+                same = same && name.at(at) == prefix.at(at);
+                at = at + 1;
+            }
+            if (same) {
+                return true;
+            }
+        }
+        const array<u8, 13> stage = ".aurora-stage";
+        const builtin::span<const u8> exact = borrow_bytes(stage);
+        if (name.size() != 13) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < 13) {
+            if (name.at(at) != exact.at(at)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+
+    auto mounted_root_name(builtin::span<const u8> name, u64 depth, bool mounted_namespace) -> bool {
+        return mounted_namespace && depth == 0u64 && name.size() == 4 && name.at(0) == 100u8 && name.at(1) == 105u8
+            && name.at(2) == 115u8 && name.at(3) == 107u8;
+    }
+
+    class DirectorySelection {
+    public:
+        u64 next;
+        u64 kind;
+        u64 source;
+        u64 offset;
+        u64 count;
+    };
+    // A forward ordinal through the immutable volume followed by 64 RAM slots.
+    // At most 4096 volume entries and 64 records are visited per call. Sorted
+    // volume paths let a whole implicit-directory subtree be skipped once.
+    // A RAM shadow shares its boot name/kind; the RAM phase omits it. Mutation is live:
+    // there is no snapshot or guarantee of observing later inserted records.
+    auto directory_selection(builtin::span<const u8> volume, builtin::span<const u8> overlay, u64 first, u64 depth,
+        u64 cursor, bool mounted_namespace) -> DirectorySelection {
+        DirectorySelection result = DirectorySelection{
+            .next = cursor,
+            .kind = 0u64,
+            .source = 0u64,
+            .offset = 0u64,
+            .count = 0u64
+        };
+        const u64 entries = u64(entry_count(volume));
+        const i64 prefix = directory_prefix(volume, first, depth);
+        if (prefix < 0) {
+            return result;
+        }
+        // A nonempty prefix already contributes its separator in key_byte.
+        const Key parent = directory_key(volume, first, depth, 0, 0, false);
+        u64 index = cursor;
+        while (index < entries) {
+            const i64 selected = i64(index);
+            index = index + 1u64;
+            if (depth == 0u64 || compare_key(volume, "", parent, selected, true) == 0) {
+                i64 begin = name_at(volume, selected) + prefix;
+                if (depth != 0u64) {
+                    begin = begin + 1;
+                }
+                const i64 end = name_at(volume, selected) + name_bytes(volume, selected);
+                i64 finish = begin;
+                while (finish < end && volume.at(finish) != 47u8) {
+                    finish = finish + 1;
+                }
+                const builtin::span<const u8> name = volume.subspan(begin, finish - begin);
+                u64 kind = 1u64;
+                if (finish < end) {
+                    kind = 2u64;
+                    const Key subtree = directory_key(volume, first, depth, begin, finish - begin, true);
+                    while (index < entries && compare_key(volume, volume, subtree, i64(index), true) == 0) {
+                        index = index + 1u64;
+                    }
+                }
+                if (name.size() > 0 && !private_entry(name) && !mounted_root_name(name, depth, mounted_namespace)) {
+                    result.next = index;
+                    result.kind = kind;
+                    result.source = 1u64;
+                    result.offset = u64(begin);
+                    result.count = u64(name.size());
+                    return result;
+                }
+            }
+        }
+        while (index < entries + 64u64) {
+            const u64 record = index - entries;
+            index = index + 1u64;
+            if (record_word(overlay, record, 0u64) == 2u64 && record_word(overlay, record, 1u64) == first
+                && record_word(overlay, record, 2u64) == depth) {
+                const u64 count = record_word(overlay, record, 3u64);
+                const u64 offset = record * 320u64 + 64u64;
+                if (count > 0u64 && count <= 255u64) {
+                    const builtin::span<const u8> name = overlay.subspan(i64(offset), i64(count));
+                    const Key key = directory_key(volume, first, depth, 0, name.size(), false);
+                    if (!private_entry(name) && !mounted_root_name(name, depth, mounted_namespace)
+                        && volume_child(volume, name, key) < 0) {
+                        result.next = index;
+                        result.kind = 1u64;
+                        result.source = 2u64;
+                        result.offset = offset;
+                        result.count = count;
+                        return result;
+                    }
+                }
+            }
+        }
+        result.next = entries + 64u64;
+        return result;
+    }
+
     // The live handle slot of id whose state is in kinds (bit per state), or -1.
     auto handle_slot(builtin::span<const u8> table, u64 id, u64 kinds) -> i64 {
         if (id == 0u64) {

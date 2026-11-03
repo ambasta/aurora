@@ -159,8 +159,8 @@ export namespace service {
                 return 18u64;
             }
         }
-        if ((operation == 19u64 || operation == 20u64 || operation == 22u64 || operation == 23u64 || operation == 24u64)
-            && xfs_handle(id)) {
+        if ((operation == 19u64 || operation == 20u64 || operation == 22u64 || operation == 23u64 || operation == 24u64
+            || operation == 25u64) && xfs_handle(id)) {
             return operation;
         }
         return 0u64;
@@ -170,6 +170,7 @@ export namespace service {
     // are not a language feature. No device capability is stored in either.
     class XfsFiles {
         builtin::OwnedBytes table;
+        builtin::array<u64, 16> cursors;
         builtin::OwnedBytes payload;
         builtin::OwnedBytes path_bytes;
         i64 path_length;
@@ -236,6 +237,7 @@ export namespace service {
                 pending = 0u64;
                 return false;
             }
+            cursors[i64(slot)] = 0u64;
             set_word(slot, 0u64, kind);
             set_word(slot, 1u64, next);
             set_word(slot, 2u64, inode);
@@ -249,11 +251,12 @@ export namespace service {
         }
     public:
         XfsFiles(builtin::ByteRegion region, u64 volume_generation, u64 sectors) : table(region.try_allocate(5120)),
-            payload(region.try_allocate(504)), path_bytes(region.try_allocate(4095)), path_length(0), directory(0u64),
-            parent(0u64), directory_open(false), generation(volume_generation), client(0u64), root_inode(0u64),
-            slot(0u64), pending(0u64), offset(0u64), desired(0u64), copied(0u64), usable(volume_generation != 0u64
-            && sectors != 0u64), mounted(false), result_status(kernel::FileStatus::failed), result_count(0u64),
-            result_id(0u64), result_size(0u64), result_inode(0u64) {
+            cursors{}, payload(region.try_allocate(504)), path_bytes(region.try_allocate(4095)), path_length(0),
+            directory(0u64), parent(0u64), directory_open(false), generation(volume_generation), client(0u64),
+            root_inode(0u64), slot(0u64), pending(0u64), offset(0u64), desired(0u64), copied(0u64),
+            usable(volume_generation != 0u64 && sectors != 0u64), mounted(false),
+            result_status(kernel::FileStatus::failed), result_count(0u64), result_id(0u64), result_size(0u64),
+            result_inode(0u64) {
         }
         auto ok() const -> bool {
             return usable && table.ok() && payload.ok() && path_bytes.ok();
@@ -279,6 +282,9 @@ export namespace service {
         }
         auto reading() const -> bool {
             return pending == 2u64;
+        }
+        auto enumerating() const -> bool {
+            return pending == 3u64;
         }
         auto active() const -> u64 {
             return client;
@@ -343,6 +349,7 @@ export namespace service {
                 u64 row = 0u64;
                 while (row < 16u64) {
                     set_word(row, 0u64, 0u64);
+                    cursors[i64(row)] = 0u64;
                     row = row + 1u64;
                 }
             }
@@ -368,13 +375,16 @@ export namespace service {
             return path_bytes.at(at);
         }
         auto directory_inode() const -> u64 {
+            if (enumerating()) {
+                return word(slot, 2u64);
+            }
             if (reading()) {
                 return word(slot, 4u64);
             }
             return directory;
         }
         auto directory_parent() const -> u64 {
-            if (reading()) {
+            if (reading() || enumerating()) {
                 return word(slot, 5u64);
             }
             return parent;
@@ -464,6 +474,21 @@ export namespace service {
             if (!ready() || client == 0u64) {
                 return fail(kernel::FileStatus::failed);
             }
+            if (operation == 25u64) {
+                if (position != 0u64 || path.size() != 0) {
+                    return fail(kernel::FileStatus::failed);
+                }
+                const i64 found = find(id, 1u64);
+                if (found < 0) {
+                    return fail(kernel::FileStatus::invalid_handle);
+                }
+                slot = u64(found);
+                if (cursors[found] == 17u64) {
+                    return set_result(kernel::FileStatus::success);
+                }
+                pending = 3u64;
+                return true;
+            }
             if (operation == 19u64 || operation == 20u64) {
                 u64 kind = 2u64;
                 if (operation == 20u64) {
@@ -476,6 +501,7 @@ export namespace service {
                 slot = u64(found);
                 if (operation == 20u64) {
                     set_word(slot, 0u64, 0u64);
+                    cursors[i64(slot)] = 0u64;
                     set_result(kernel::FileStatus::success);
                     return true;
                 }
@@ -604,6 +630,47 @@ export namespace service {
             }
             return claim(kind, size, inode);
         }
+        auto entry_index() const -> u64 {
+            if (!enumerating()) {
+                return 17u64;
+            }
+            return cursors[i64(slot)];
+        }
+        auto entry_byte(u64 at, u8 byte) -> bool {
+            if (!enumerating() || at >= 255u64) {
+                return poison();
+            }
+            return payload.set(i64(at), byte);
+        }
+        auto next_directory_index() -> bool {
+            if (!enumerating() || cursors[i64(slot)] >= 16u64) {
+                return poison();
+            }
+            cursors[i64(slot)] = cursors[i64(slot)] + 1u64;
+            return true;
+        }
+        auto entry_hidden(u64 length) const -> bool {
+            if (!enumerating() || length == 0u64 || length > 255u64) {
+                return true;
+            }
+            const builtin::span<const u8> all = borrow_bytes(payload);
+            return kernel::private_entry(all.subspan(0, i64(length)));
+        }
+        auto complete_entry(u64 length, u64 kind) -> bool {
+            if (!enumerating() || length > 255u64 || (length == 0u64 && kind != 0u64) || (length != 0u64 && kind != 1u64
+                && kind != 2u64)) {
+                return poison();
+            }
+            if (length == 0u64) {
+                cursors[i64(slot)] = 17u64;
+            }
+            pending = 0u64;
+            set_result(kernel::FileStatus::success);
+            result_count = length;
+            result_size = kind;
+            copied = length;
+            return true;
+        }
         auto append_sector(storage::Sector512 sector, u64 valid_bytes) -> bool {
             if (!reading() || copied >= desired || valid_bytes > 512u64) {
                 return poison();
@@ -634,6 +701,43 @@ export namespace service {
 }
 
 export namespace service {
+    // Shortform directories contain at most sixteen entries. The normal mount
+    // walk revalidates the retained inode/parent tuple before any name is copied.
+    auto enumerate_xfs(XfsFiles& files, fs::XfsReadonlyMount& mount) -> bool {
+        if (!files.enumerating() || mount.status() != fs::XfsMountStatus::directory_ready || mount.directory_inode()
+            != files.directory_inode() || mount.directory_parent() != files.directory_parent()) {
+            return files.poison();
+        }
+        while (files.entry_index() <= 16u64) {
+            const fs::XfsDirectoryEntry item = mount.directory_entry(i64(files.entry_index()));
+            if (item.at_end()) {
+                return files.complete_entry(0u64, 0u64);
+            }
+            if (!item.valid()) {
+                return files.poison();
+            }
+            const u64 length = item.name_length_bytes();
+            const u64 begin = item.name_offset_bytes();
+            if (length == 0u64 || length > 255u64 || begin > 512u64 || length > 512u64 - begin || (item.file_type()
+                != 1u64 && item.file_type() != 2u64)) {
+                return files.poison();
+            }
+            u64 at = 0u64;
+            while (at < length) {
+                if (!files.entry_byte(at, mount.directory_byte(i64(begin + at)))) {
+                    return false;
+                }
+                at = at + 1u64;
+            }
+            if (!files.next_directory_index()) {
+                return false;
+            }
+            if (!files.entry_hidden(length)) {
+                return files.complete_entry(length, item.file_type());
+            }
+        }
+        return files.poison();
+    }
     auto advance_xfs(XfsFiles& files, fs::XfsReadonlyMount& mount) -> bool {
         if (!files.ok()) {
             return false;
@@ -649,6 +753,9 @@ export namespace service {
         }
         if (mount.needs_read()) {
             return true;
+        }
+        if (files.enumerating()) {
+            return enumerate_xfs(files, mount);
         }
         if (files.opening()) {
             if (mount.status() == fs::XfsMountStatus::directory_ready) {
@@ -681,21 +788,25 @@ export namespace service {
         return files.ok();
     }
     auto start_xfs(XfsFiles& files, fs::XfsReadonlyMount& mount) -> bool {
-        if (files.opening() || files.reading()) {
+        if (files.opening() || files.reading() || files.enumerating()) {
             bool started = false;
-            if (files.opening()) {
-                i64 at = 0;
-                while (at < files.name_length()) {
-                    if (!mount.set_path_byte(at, files.name_byte(at))) {
-                        return files.poison();
-                    }
-                    at = at + 1;
-                }
-                started = mount.open_prepared_in(files.directory_inode(), files.directory_parent(), files.name_length(),
-                    files.opening_directory());
+            if (files.enumerating()) {
+                started = mount.open_directory_in(files.directory_inode(), files.directory_parent(), "");
             } else {
-                started = mount.read_inode_in(files.directory_inode(), files.directory_parent(), files.inode(),
-                    files.sector_index());
+                if (files.opening()) {
+                    i64 at = 0;
+                    while (at < files.name_length()) {
+                        if (!mount.set_path_byte(at, files.name_byte(at))) {
+                            return files.poison();
+                        }
+                        at = at + 1;
+                    }
+                    started = mount.open_prepared_in(files.directory_inode(), files.directory_parent(),
+                        files.name_length(), files.opening_directory());
+                } else {
+                    started = mount.read_inode_in(files.directory_inode(), files.directory_parent(), files.inode(),
+                        files.sector_index());
+                }
             }
             if (!started) {
                 if (mount.status() == fs::XfsMountStatus::not_regular) {
@@ -708,6 +819,9 @@ export namespace service {
                     return files.fail(kernel::FileStatus::invalid_path);
                 }
                 return files.poison();
+            }
+            if (files.enumerating() && !mount.needs_read()) {
+                return enumerate_xfs(files, mount);
             }
         }
         return files.ok();

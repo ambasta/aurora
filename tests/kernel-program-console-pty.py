@@ -2420,6 +2420,14 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 write_source(b"text.txt", [b"fir", b"st\r", b"\n\n\tsecond?\b!\r", b"\nlastX\x7f", b"\x04"])
                 part = write_source(b"main.au", [source[:19], source[19:-1], b"\x04"])
                 need(b"module entered;" not in part, "Writer unexpectedly echoed source")
+                listing = run_command("run bin/list-files /", "exited status=0")
+                for entry in (b"d bin\n", b"f main.au\n", b"f text.txt\n"):
+                    need(listing.count(entry) == 1, "Discover authored files and implicit program directory")
+                need(b".aurora-output-" not in listing, "Listing leaked private output staging")
+                programs = run_command("run bin/list-files bin", "exited status=0")
+                for entry in (b"f aurorac\n", b"f list-files\n", b"f write-source\n"):
+                    need(programs.count(entry) == 1, "Discover shipped programs without duplicate directory entries")
+                metrics["directory_discovery_before_guest_compile_run"] = True
                 run_command("run bin/aurorac --emit-executable --target aurora main.au -o app", "exited status=0")
                 read_authored(source, text, b"ENTERED-FIRST")
                 replacement = source.replace(b"ENTERED-FIRST", b"ENTERED-SECOND")

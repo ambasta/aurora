@@ -6,7 +6,7 @@ export module aurora.host;
 // word access to the zeroed 16384-byte session block that the hosted entry
 // lends as the grant, and the closed set of Linux system calls the compiler
 // emits inline (openat2, pread64, write, renameat, unlinkat, close, fstat and
-// getpid). Offsets and lengths are checked by the primitives themselves.
+// getpid, getdents64 and fixed-origin directory seek). Offsets and lengths are checked by the primitives themselves.
 //
 // The session block holds the handle table, the output table and scratch
 // buffers. Ids are plain numbers, (generation << 6) + slot + 1, checked against
@@ -51,6 +51,11 @@ namespace host_session {
     }
     auto stat_buffer() -> u64 {
         return 14864u64;
+    }
+    // Per-handle terminal enumeration state: 0 live, 1 EOF, 2 failed, 3 exhausted.
+    // The 144-byte stat record ends at 15008; this table stays in the session.
+    auto directory_state(u64 slot) -> u64 {
+        return 15008u64 + slot * 8u64;
     }
     auto path_limit() -> i64 {
         return 4095;
@@ -216,6 +221,8 @@ namespace host_session {
         files.store(entry, state);
         files.store(entry + 8u64, u64(descriptor));
         files.store(entry + 16u64, generation);
+        files.store(entry + 24u64, 0u64);
+        files.store(directory_state(slot), 0u64);
         return make_id(generation, slot);
     }
     // The device and inode recorded by the last fstat into the stat buffer.
@@ -238,6 +245,56 @@ namespace host_session {
         }
         const u64 mode = files.load(stat_buffer() + 24u64) % 4294967296u64;
         return mode / 4096u64 % 16u64 == 8u64;
+    }
+    // Empty observations never retain bytes from a previous result or scratch use.
+    auto no_entry(builtin::HostStatus status) -> builtin::HostDirectoryEntry {
+        const array<u8,
+            256> bytes =
+            "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+        const builtin::HostDirectoryEntry result = builtin::HostDirectoryEntry{
+            .status = status,
+            .kind = builtin::HostEntryKind::end,
+            .count = 0u64,
+            .bytes = bytes
+        };
+        return result;
+    }
+    auto entry_error(builtin::HostFiles& files, u64 slot, bool exhausted) -> builtin::HostDirectoryEntry {
+        builtin::HostStatus status = builtin::HostStatus::failed;
+        u64 state = 2u64;
+        if (exhausted) {
+            status = builtin::HostStatus::exhausted;
+            state = 3u64;
+        }
+        files.store(directory_state(slot), state);
+        const builtin::HostDirectoryEntry result = no_entry(status);
+        return result;
+    }
+    auto entry_matches(builtin::HostFiles& files, u64 base, u64 count, builtin::span<const u8> text,
+        bool prefix) -> bool {
+        if (count < u64(text.size()) || (!prefix && count != u64(text.size()))) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < text.size()) {
+            if (files.load8(base + u64(at)) != text.at(at)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto entry_kind(u8 kind) -> builtin::HostEntryKind {
+        if (kind == 8u8) {
+            return builtin::HostEntryKind::regular;
+        }
+        if (kind == 4u8) {
+            return builtin::HostEntryKind::directory;
+        }
+        if (kind == 0u8) {
+            return builtin::HostEntryKind::unknown;
+        }
+        return builtin::HostEntryKind::other;
     }
     auto no_file(builtin::HostStatus status) -> builtin::HostFileResult {
         const builtin::HostFileResult result = builtin::HostFileResult{
@@ -460,6 +517,107 @@ namespace host_session {
     }
 }
 export namespace host {
+    // A directory owns its opaque Linux d_off cookie. The shared 280-byte
+    // scratch can be reused by any other operation: each fetch seeks back to
+    // the last consumed record, so unread records in a batch are not lost.
+    // Changes to the directory during iteration do not imply a snapshot.
+    auto files_next_entry(builtin::HostFiles& files, u64 directory) -> builtin::HostDirectoryEntry {
+        const u64 slot = host_session::handle_slot(files, directory, 1u64);
+        if (slot == host_session::handle_slots()) {
+            const builtin::HostDirectoryEntry result = host_session::no_entry(builtin::HostStatus::invalid_handle);
+            return result;
+        }
+        const u64 terminal = files.load(host_session::directory_state(slot));
+        if (terminal != 0u64) {
+            builtin::HostStatus status = builtin::HostStatus::failed;
+            if (terminal == 1u64) {
+                status = builtin::HostStatus::success;
+            }
+            if (terminal == 3u64) {
+                status = builtin::HostStatus::exhausted;
+            }
+            const builtin::HostDirectoryEntry result = host_session::no_entry(status);
+            return result;
+        }
+        const u64 handle = host_session::handle_entry(slot);
+        const i64 descriptor = i64(files.load(handle + 8u64));
+        const u64 buffer = host_session::path_buffer();
+        u64 skipped = 0u64;
+        while (skipped < 128u64) {
+            const u64 cookie = files.load(handle + 24u64);
+            if (cookie > 9223372036854775807u64) {
+                const builtin::HostDirectoryEntry result = host_session::entry_error(files, slot, false);
+                return result;
+            }
+            const i64 sought = files.system_seek(descriptor, cookie);
+            if (sought < 0 || u64(sought) != cookie) {
+                const builtin::HostDirectoryEntry result = host_session::entry_error(files, slot, false);
+                return result;
+            }
+            const i64 received = files.system_entries(descriptor, buffer, 280u64);
+            if (received == 0) {
+                files.store(host_session::directory_state(slot), 1u64);
+                const builtin::HostDirectoryEntry result = host_session::no_entry(builtin::HostStatus::success);
+                return result;
+            }
+            if (received < 24 || received > 280) {
+                const bool exhausted = received == -12 || received == -23 || received == -24;
+                const builtin::HostDirectoryEntry result = host_session::entry_error(files, slot, exhausted);
+                return result;
+            }
+            // linux_dirent64: inode[0:8], opaque next cookie[8:16],
+            // record length[16:18], d_type[18], NUL-terminated name[19:].
+            const u64 record = u64(files.load8(buffer + 16u64)) + u64(files.load8(buffer + 17u64)) * 256u64;
+            const u64 next = files.load(buffer + 8u64);
+            if (record < 24u64 || record > u64(received) || record % 8u64 != 0u64 || next > 9223372036854775807u64
+                || next == cookie) {
+                const builtin::HostDirectoryEntry result = host_session::entry_error(files, slot, false);
+                return result;
+            }
+            u64 count = 0u64;
+            bool ended = false;
+            bool invalid = false;
+            while (count < 256u64 && 19u64 + count < record && !ended) {
+                const u8 byte = files.load8(buffer + 19u64 + count);
+                if (byte == 0u8) {
+                    ended = true;
+                } else {
+                    invalid = invalid || byte == '/';
+                    count = count + 1u64;
+                }
+            }
+            if (!ended || invalid || count == 0u64 || count > 255u64) {
+                const builtin::HostDirectoryEntry result = host_session::entry_error(files, slot, false);
+                return result;
+            }
+            files.store(handle + 24u64, next);
+            const u64 name = buffer + 19u64;
+            const bool hidden = host_session::entry_matches(files, name, count, ".", false)
+                || host_session::entry_matches(files, name, count, "..", false) || host_session::entry_matches(files,
+                name, count, ".aurora-output-", true) || host_session::entry_matches(files, name, count,
+                ".aurora-stage", false);
+            if (files.load(buffer) != 0u64 && !hidden) {
+                const builtin::HostDirectoryEntry empty = host_session::no_entry(builtin::HostStatus::success);
+                array<u8, 256> bytes = empty.bytes;
+                u64 at = 0u64;
+                while (at < count) {
+                    bytes[i64(at)] = files.load8(name + at);
+                    at = at + 1u64;
+                }
+                const builtin::HostEntryKind kind = host_session::entry_kind(files.load8(buffer + 18u64));
+                const builtin::HostDirectoryEntry result = builtin::HostDirectoryEntry{
+                    .status = builtin::HostStatus::success,
+                    .kind = kind,
+                    .count = count,
+                    .bytes = bytes
+                };
+                return result;
+            }
+            skipped = skipped + 1u64;
+        }
+        const builtin::HostDirectoryEntry result = host_session::entry_error(files, slot, true);
+        return result;
+    }
     auto files_open_directory(builtin::HostFiles& files, builtin::span<const u8> path) -> builtin::HostDirectoryResult {
         builtin::HostStatus status = builtin::HostStatus::success;
         u64 id = 0u64;

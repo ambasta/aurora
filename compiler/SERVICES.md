@@ -411,11 +411,36 @@ Operations copy data only; `builtin::HostStatus` is `success`, `invalid_handle`,
 | `open_file(span path)` | `HostFileResult`; a regular file at any no-symlink path |
 | `close(u64 handle)` | `HostStatus`; closes a directory or file |
 | `read(u64 file, u64 offset)` | `HostChunk {status, count, bytes}`; `count == 0` at end of file |
+| `next_entry(u64 directory)` | `HostDirectoryEntry {status, kind, count, bytes}`; one immediate child or explicit end |
 | `create_output(span path)` | `HostOutputResult {status, id, device, inode, directory_device, directory_inode}`; an exclusive temporary beside the destination |
 | `write(u64 output, span bytes)` | `HostStatus`; at most 64 MiB per output |
 | `commit(u64 output)`, `discard(u64 output)` | `HostStatus`; atomic rename into place, or removal |
 
 | `print(HostStream stream, span bytes)` | `HostStatus`; `stdout` or `stderr` |
+
+`HostDirectoryEntry` is a 280-byte copied value with a 256-byte name array.
+`HostEntryKind` is `end`, `regular`, `directory`, `other` or `unknown`; kinds
+are descriptive, not authority or a promise that a later open will succeed.
+Success with `end` and count zero is EOF; other successful entries contain
+1–255 raw non-NUL, non-slash name bytes. Unused bytes are zero. Errors return
+`end`, count zero and zero bytes. No inode, native cookie or private padding is
+exposed. Opening a returned name still passes the ordinary confinement checks.
+
+A live directory handle owns its forward cursor. Reopening starts again;
+EOF is sticky. Enumeration has no ordering or snapshot guarantee: mutations
+may cause missed/repeated entries. A lost reply may have advanced the cursor
+and must not be treated as replayable. Dot/self-parent and reserved
+`.aurora-output-*` / `.aurora-stage` names are hidden, not ordinary dotfiles.
+This filtering also omits caller-created reserved names; it is not a guarantee
+that every backend rejects their creation or exact-name access.
+The guest merges immediate boot/RAM children with committed RAM shadowing and
+omits private or unlinked versions. Storage compositions expose one root `disk`
+directory only when ready; listing does not initiate a mount or recovery.
+Linux uses a checked opaque directory cookie and shared bounded scratch, not
+an unbounded retained snapshot. This binding requires seekable nonnegative
+cookies within signed 64-bit range; an unchanged resume cookie fails closed.
+It does not support every Linux directory backend. At most 128 raw records are examined per call;
+exceeding that limit returns exhausted rather than false EOF, until reopen.
 
 A failed or lost commit reply does not prove rollback: the destination may already
 have been published. The caller must not automatically retry it as a fresh output
@@ -428,7 +453,10 @@ hosted output limit remains 64 MiB.
 `HostChunk.bytes` is `array<u8, 504>`: with the two leading words that is the
 whole 520-byte copied-class bound (506 of 513 leaves). It is the one sealed class
 with a public array; a program copies it to a local (`const array<u8, 504> bytes
-= chunk.bytes;`), and only the read primitive produces a chunk. Ids are plain
+= chunk.bytes;`), and read returns this copied chunk. Callers can also construct complete copied
+data values; fabricated fields grant no handle or service authority. The result
+count, EOF and zero-suffix guarantees describe runtime-produced values, not
+arbitrary constructed HostChunk, HostDirectoryEntry or InputChunk values. Ids are plain
 numbers, `generation * 64 + slot + 1`, checked against the session's own tables:
 32 open directories and files (slots 0..31) and 4 outputs (slots 32..35), each slot with a generation that
 advances on reuse. An id that does not name a live handle of the right kind
@@ -460,7 +488,7 @@ nothing in the output records which root was used), never from a
 rejected if a module root also holds it; a root module declaring a reserved name is rejected. `files.NAME(...)` calls the exported
 `host::files_NAME(files, ...)` of that module (`read` and `write` are reserved
 function names) as an ordinary service-helper call. The Linux binding,
-`runtime/linux/aurora/host.au`, uses twelve private HostFiles primitives that
+`runtime/linux/aurora/host.au`, uses fourteen private HostFiles primitives that
 only an imported module named `aurora.host` may name: `load`, `store`, `load8`
 and `store8` over the zeroed 16384-byte session block the grant addresses, and
 the system calls `system_open` (openat2 under one of six compiler-fixed open
@@ -469,7 +497,7 @@ symlinks, the last three beneath their directory, read-write for `/dev/null`,
 and regular file at any path), `system_chunk` (pread64 into a cleared
 HostChunk), `system_write`, `system_rename` (renameat), `system_unlink`
 (unlinkat), `system_close`, `system_stat` (fstat) and `system_identity`
-(getpid). The compiler emits each inline with a `syscall` instruction after
+(getpid), `system_entries` (bounded getdents64) and `system_seek` (lseek with fixed SEEK_SET and a checked opaque cookie). The compiler emits each inline with a `syscall` instruction after
 checking every offset and length against the session block (failure traps);
 paths are NUL-terminated in the block, and only scalar results return. The
 typed-IR verifier admits the primitives only in functions whose native name
@@ -487,20 +515,22 @@ configured runtime root is the build tree's `runtime/aurora` instead of
 `runtime/linux`: `runtime/aurora/aurora/host.au` beside the one
 `runtime/linux/aurora/memory.au` both targets compile, which
 `runtime/aurora/aurora/meson.build` copies there. The typed IR admits the Linux
-system primitives 13..20 only for `linux`, the kernel primitives only for
+system primitives 13..20 and 53..54 only for `linux`, the kernel primitives only for
 `aurora` and the memory primitives for both; a wrong pairing (for example
 `--target aurora --runtime-root runtime/linux`) fails closed. That binding,
-`runtime/aurora/aurora/host.au`, has the same ten functions over the session
+`runtime/aurora/aurora/host.au`, has the same eleven functions over the session
 primitives and three kernel primitives emitted inline as `int $0x83`:
 `kernel_print(stream, offset, length)` (kernel operation 2, stream 1 or 2,
 returning 0 or a negative HostStatus), `kernel_chunk(file, offset)` (operation
 3 into a cleared HostChunk, returning a count up to 504 or a negative HostStatus;
 anything else traps) and `kernel_file(operation, handle, offset, length,
-record)` (kernel operation 7 + `operation` for an `operation` up to 7, else a
-trap: open_directory, open_beneath, open_file, close, create_output, write,
+record)` (kernel operation 7 + `operation` for an `operation` up to 7: open_directory, open_beneath, open_file, close, create_output, write,
 commit or discard on a handle, the session buffer `[offset, offset + length)`
 and the 48-byte session result record at `record`, returning 0 or a negative
-HostStatus). The kernel's [file service](../kernel/uefi/process.md#files) owns
+HostStatus). Selector 8 maps separately to kernel operation 22: it requires
+length zero, a 256-byte name destination and the same 48-byte result record;
+it returns name count or a negative status, with descriptive kind in record
+word one and all other words zero. Unknown selectors trap. The kernel's [file service](../kernel/uefi/process.md#files) owns
 the handles, ids, path confinement and statuses with the Linux binding's
 semantics; the binding marshals paths through the session block and, as the
 Linux binding does, coalesces output bytes in one 4096-byte buffer with each

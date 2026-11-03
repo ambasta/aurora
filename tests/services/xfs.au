@@ -29,6 +29,153 @@ import console.session_files;
 import console.file_namespace;
 import kernel.process_files;
 
+auto listing_name(service::XfsFiles& disk, builtin::span<const u8> expected, u64 kind) -> bool {
+    const service::Reply result = disk.response();
+    if (result.status != kernel::FileStatus::success || result.size != kind || result.count != u64(expected.size())
+        || result.id != 0u64 || result.device != 0u64 || result.inode != 0u64 || result.directory_device != 0u64
+        || result.directory_inode != 0u64) {
+        return false;
+    }
+    i64 at = 0;
+    while (at < expected.size()) {
+        if (disk.read_byte(u64(at)) != expected.at(at)) {
+            return false;
+        }
+        at = at + 1;
+    }
+    return disk.read_byte(u64(expected.size())) == 0u8;
+}
+
+auto directory_result(service::Store& store, u64 id, u64 kind, builtin::span<const u8> name) -> bool {
+    const service::Reply item = store.next_entry(id);
+    if (item.status != kernel::FileStatus::success || item.size != kind || item.count != u64(name.size()) || item.id
+        != 0u64 || item.device != 0u64 || item.inode != 0u64 || item.directory_device != 0u64 || item.directory_inode
+        != 0u64) {
+        return false;
+    }
+    i64 at = 0;
+    while (at < name.size()) {
+        if (store.read_byte(u64(at)) != name.at(at)) {
+            return false;
+        }
+        at = at + 1;
+    }
+    return true;
+}
+
+auto test_store_directory(builtin::HostFiles& files, builtin::ByteRegion region, u64 image, u64 size) -> bool {
+    service::Store store = service::Store(region, i64(size));
+    u64 loaded = 0u64;
+    while (loaded < size) {
+        const builtin::HostChunk chunk = files.read(image, loaded);
+        if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64) {
+            return false;
+        }
+        const builtin::array<u8, 504> bytes = chunk.bytes;
+        u64 at = 0u64;
+        while (at < chunk.count) {
+            store.volume_byte(i64(loaded + at), bytes[i64(at)]);
+            at = at + 1u64;
+        }
+        loaded = loaded + chunk.count;
+    }
+    if (!store.admit_volume() || !store.begin(7u64)) {
+        return false;
+    }
+    const service::Reply root = store.open(0u64, 0u64, "/");
+    const service::Reply tree = store.open(0u64, 0u64, "/tree");
+    const service::Reply regular = store.open(2u64, 0u64, "/tree/a");
+    const service::Reply wrong = store.next_entry(regular.id);
+    const service::Reply zero = store.next_entry(0u64);
+    bool passed = wrong.status == kernel::FileStatus::invalid_handle && wrong.count == 0u64 && wrong.size == 0u64
+        && zero.status == kernel::FileStatus::invalid_handle;
+    passed = directory_result(store, root.id, 2u64, "tree") && passed;
+    passed = directory_result(store, root.id, 0u64, "") && passed;
+    store.observe_disk(true);
+    passed = directory_result(store, root.id, 0u64, "") && passed;
+    const service::Reply closed_root = store.close(root.id);
+    const service::Reply stale = store.next_entry(root.id);
+    const service::Reply reopened = store.open(0u64, 0u64, "/");
+    passed = closed_root.status == kernel::FileStatus::success && stale.status == kernel::FileStatus::invalid_handle
+        && reopened.id != root.id && passed;
+    builtin::array<u64, 29> full_handles = {
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64
+    };
+    i64 handle_at = 0;
+    while (handle_at < 29) {
+        const service::Reply full = store.open(0u64, 0u64, "/");
+        full_handles[handle_at] = full.id;
+        passed = full.status == kernel::FileStatus::success && passed;
+        handle_at = handle_at + 1;
+    }
+    passed = directory_result(store, reopened.id, 2u64, "tree") && passed;
+    passed = directory_result(store, reopened.id, 2u64, "disk") && passed;
+    passed = directory_result(store, reopened.id, 0u64, "") && passed;
+    passed = directory_result(store, reopened.id, 0u64, "") && passed;
+    handle_at = 0;
+    while (handle_at < 29) {
+        const service::Reply closed = store.close(full_handles[handle_at]);
+        passed = closed.status == kernel::FileStatus::success && passed;
+        handle_at = handle_at + 1;
+    }
+    const service::Reply shadow = store.create("/tree/a");
+    const service::Reply committed = store.commit(shadow.id);
+    const service::Reply held = store.open(2u64, 0u64, "/tree/a");
+    const service::Reply replacement = store.create("/tree/a");
+    const service::Reply replaced = store.commit(replacement.id);
+    const service::Reply dot = store.create("/tree/.visible");
+    const service::Reply dot_committed = store.commit(dot.id);
+    const service::Reply stage = store.create("/tree/.aurora-stage");
+    const service::Reply stage_committed = store.commit(stage.id);
+    const service::Reply pending = store.create("/tree/pending");
+    passed = committed.status == kernel::FileStatus::success && replaced.status == kernel::FileStatus::success
+        && dot_committed.status == kernel::FileStatus::success && stage_committed.status == kernel::FileStatus::success
+        && pending.status == kernel::FileStatus::success && passed;
+    passed = directory_result(store, tree.id, 1u64, "a") && passed;
+    passed = directory_result(store, tree.id, 2u64, "disk") && passed;
+    passed = directory_result(store, tree.id, 1u64, ".visible") && passed;
+    passed = directory_result(store, tree.id, 0u64, "") && passed;
+    const service::Reply late = store.create("/tree/late");
+    const service::Reply late_committed = store.commit(late.id);
+    passed = late_committed.status == kernel::FileStatus::success && directory_result(store, tree.id, 0u64, "")
+        && passed;
+    passed = kernel::private_entry(".aurora-output-x") && kernel::private_entry(".aurora-stage")
+        && !kernel::private_entry(".aurora-stages") && !kernel::private_entry(".aurora-output")
+        && !kernel::private_entry(".visible") && passed;
+    passed = store.finish(7u64) && store.begin(8u64) && passed;
+    const service::Reply old_client = store.next_entry(tree.id);
+    passed = old_client.status == kernel::FileStatus::invalid_handle && store.finish(8u64) && passed;
+    return passed;
+}
+
 auto hex_digit(u8 value) -> u8 {
     if (value < 10u8) {
         return value + 48u8;
@@ -1084,9 +1231,13 @@ auto nested_tree(builtin::HostFiles& files, builtin::ByteRegion region, builtin:
             }
             disk.prepare(19u64, id, 0u64, "");
         } else {
-            if (op == 255u64) {
+            if (op == 255u64 || op == 254u64) {
                 mutated = true;
-                op = 18u64;
+                if (op == 255u64) {
+                    op = 18u64;
+                } else {
+                    op = 25u64;
+                }
             }
             if (op == 252u64 || op == 253u64) {
                 const i64 length = 4095 + i64(op - 252u64);
@@ -1321,6 +1472,9 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
         return builtin::HostExit::success;
     }
     if (fault >= 3u64) {
+        if (fault == 3u64 && !test_store_directory(files, region, image.id, image.size)) {
+            return builtin::HostExit::failure;
+        }
         if (image.size > 4096u64) {
             return builtin::HostExit::failure;
         }
@@ -1604,6 +1758,41 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
                 const service::Reply private_beneath = disk.response();
                 passed = passed && private_absolute.status == kernel::FileStatus::denied && private_root.status
                     == kernel::FileStatus::success && private_beneath.status == kernel::FileStatus::denied;
+                disk.prepare(25u64, result.id, 0u64, "");
+                const service::Reply wrong_kind = disk.response();
+                disk.prepare(25u64, private_root.id, 1u64, "");
+                const service::Reply bad_offset = disk.response();
+                disk.prepare(25u64, private_root.id, 0u64, "x");
+                const service::Reply bad_payload = disk.response();
+                passed = passed && wrong_kind.status == kernel::FileStatus::invalid_handle && wrong_kind.count == 0u64
+                    && bad_offset.status == kernel::FileStatus::failed && bad_payload.status
+                    == kernel::FileStatus::failed && disk.read_byte(0u64) == 0u8;
+                disk.prepare(25u64, private_root.id, 0u64, "");
+                service::start_xfs(disk, mount);
+                passed = passed && listing_name(disk, "hello", 1u64);
+                disk.prepare(16u64, 0u64, 0u64, "/disk");
+                const service::Reply parallel_root = disk.response();
+                disk.prepare(25u64, parallel_root.id, 0u64, "");
+                service::start_xfs(disk, mount);
+                passed = passed && listing_name(disk, "hello", 1u64);
+                disk.prepare(25u64, private_root.id, 0u64, "");
+                service::start_xfs(disk, mount);
+                passed = passed && listing_name(disk, "pattern", 1u64);
+                disk.prepare(25u64, private_root.id, 0u64, "");
+                service::start_xfs(disk, mount);
+                passed = passed && listing_name(disk, "", 0u64) && !disk.enumerating();
+                disk.prepare(25u64, private_root.id, 0u64, "");
+                passed = passed && listing_name(disk, "", 0u64) && !disk.enumerating();
+                disk.prepare(20u64, private_root.id, 0u64, "");
+                disk.prepare(25u64, private_root.id, 0u64, "");
+                const service::Reply stale_listing = disk.response();
+                passed = passed && stale_listing.status == kernel::FileStatus::invalid_handle && disk.read_byte(0u64)
+                    == 0u8;
+                disk.prepare(16u64, 0u64, 0u64, "/disk");
+                const service::Reply reused_root = disk.response();
+                disk.prepare(25u64, reused_root.id, 0u64, "");
+                service::start_xfs(disk, mount);
+                passed = passed && reused_root.id != private_root.id && listing_name(disk, "hello", 1u64);
                 passed = passed && !disk.check_generation(2u64) && !disk.ok();
                 disk.prepare(19u64, result.id, 0u64, "");
                 const service::Reply dead = disk.response();
