@@ -23,6 +23,17 @@ The older commands remain embedded bounded application demonstrations. The
 production `run` path below is separate; neither path is a general terminal
 emulator or hardware qualification.
 
+## Directory discovery
+
+`run bin/list-files DIRECTORY` lists at most 256 immediate children through
+HostFiles, including implicit boot directories, committed RAM files and the
+admitted readonly XFS namespace. It does not recurse or sort. Each line starts
+with `f`, `d`, `o` or `?`; spaces, control/non-ASCII bytes and backslashes in names
+are escaped as `\xHH`, preventing terminal-control injection. Names are copied
+observations, not handles. The utility closes its directory on normal failure
+or EOF and reports an incomplete listing on errors, output failure or its entry
+limit; it never retries a lost request. Concurrent mutation is not a snapshot.
+
 ## Production program launch
 
 The production command `run PATH [args]` loads a static Aurora ELF from the

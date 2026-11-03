@@ -1193,6 +1193,7 @@ auto file_request(const process::KernelCall &call, volatile U64 *frame) -> bool 
                           : action == Action::create_output ? 21
                           : action == Action::write         ? 22
                           : action == Action::commit        ? 23
+                          : action == Action::next_entry    ? 25
                                                             : 24;
     U64 length = 0;
     std::optional<std::byte *> source;
@@ -1205,6 +1206,10 @@ auto file_request(const process::KernelCall &call, volatile U64 *frame) -> bool 
                 return false;
             length = call.length;
         }
+    } else if (action == Action::next_entry) {
+        if (!user_bytes(call.base, 256, true) || !user_bytes(call.record, 48, true) ||
+            (call.base < call.record + 48 && call.record < call.base + 256))
+            return false;
     } else if (action == Action::read) {
         if (!user_bytes(call.base, process::file_chunk, true))
             return false;
@@ -2114,6 +2119,13 @@ auto complete_resident_physical(std::size_t slot) -> void {
             for (U64 at = 0; at < count; ++at)
                 (*target)[at] = endpoint.bytes[64 + at];
         }
+        if (action == process::CallAction::next_entry) {
+            const auto target = user_bytes(endpoint.call.base, 256, true);
+            if (!target)
+                fail("parked directory destination");
+            for (U64 at = 0; at < 256; ++at)
+                (*target)[at] = !status && at < count ? endpoint.bytes[64 + at] : std::byte{0};
+        }
         if (endpoint.call.record) {
             if (!user_bytes(endpoint.call.record, 48, true))
                 fail("parked file result");
@@ -2484,6 +2496,8 @@ auto file_reply_valid() -> bool {
                 return false;
         return endpoint.count == 64;
     }
+    if (action == process::CallAction::next_entry)
+        return process::directory_reply_valid(std::span<const std::byte>{endpoint.bytes.data(), endpoint.count});
     if (action == process::CallAction::read) {
         for (U64 at = 16; at < 64; ++at)
             if (endpoint.bytes[at] != std::byte{0})

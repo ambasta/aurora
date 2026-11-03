@@ -57,7 +57,8 @@ export namespace kernel {
         create_output,
         write,
         commit,
-        discard
+        discard,
+        next_entry
     };
 
     // A decoded kernel call: exit with value, print length bytes at base to
@@ -210,7 +211,8 @@ export namespace kernel {
     // open_directory, 8 open_beneath, 9 open_file and 11 create_output
     // (handle, path, length up to 64 KiB, record), 10 close(handle), 12
     // write(output, buffer, length up to 64 KiB), 13 commit(output) and 14
-    // discard(output); arguments an operation does not use are ignored.
+    // discard(output), 22 next_entry(directory, name[256], zero, record).
+    // Arguments an operation does not use are ignored.
     // Anything else is invalid.
     auto process_call(u64 operation, u64 first, u64 second, u64 third, u64 fourth) -> KernelCall {
         const KernelCall invalid = KernelCall(CallAction::invalid, 0u64, 0u64, 0u64, 0u64);
@@ -258,6 +260,9 @@ export namespace kernel {
         if (operation == 8u64 && third <= arguments_limit()) {
             const KernelCall beneath = KernelCall(CallAction::open_beneath, first, third, second, fourth);
             return beneath;
+        }
+        if (operation == 22u64 && third == 0u64) {
+            return KernelCall(CallAction::next_entry, first, 0u64, second, fourth);
         }
         if (operation == 12u64 && third <= arguments_limit()) {
             const KernelCall write = KernelCall(CallAction::write, first, third, second, 0u64);

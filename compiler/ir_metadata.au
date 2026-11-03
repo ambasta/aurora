@@ -1151,17 +1151,15 @@ export namespace compiler_ir_metadata {
         }
         return true;
     }
-    // A HostFiles result: a HostStatus leaf, then u64 words; HostChunk then
-    // carries its 504-byte array.
-    auto sealed_host_result(MetadataStore& store, i64 class_index, i64 words, bool chunk, bool input) -> bool {
+    // Copied host/input observations have fixed scalar headers and byte tails.
+    // A directory entry additionally carries nominal HostEntryKind in lane 1.
+    auto sealed_host_result(MetadataStore& store, i64 class_index, i64 words, i64 bytes, bool input) -> bool {
         const ClassRow row = store.class_at(class_index);
         const IndexRange leaves = row.leaves();
         const ClassResultRow result = store.result_at(class_index);
         const IndexRange fields = result.fields();
-        i64 bytes = 0;
         i64 field_count = words;
-        if (chunk) {
-            bytes = 504;
+        if (bytes > 0) {
             field_count = words + 1;
         }
         if (leaves.count() != words + bytes || fields.count() != field_count) {
@@ -1177,6 +1175,10 @@ export namespace compiler_ir_metadata {
             } else {
                 if (at < words) {
                     valid = plain_type(type, 7);
+                    if (bytes == 256 && at == 1) {
+                        valid = type.kind() == 9 && canonical_tail(type) && named(store, type.name(),
+                            "__au_host_entry_kind");
+                    }
                 }
             }
             if (!valid) {
@@ -1312,19 +1314,22 @@ export namespace compiler_ir_metadata {
             if (member(row, masks.class_layout())) {
                 bool valid = true;
                 if (named(store, row.name(), "__au_host_directory_result")) {
-                    valid = sealed_host_result(store, at, 4, false, false);
+                    valid = sealed_host_result(store, at, 4, 0, false);
                 }
                 if (named(store, row.name(), "__au_host_output_result")) {
-                    valid = sealed_host_result(store, at, 6, false, false);
+                    valid = sealed_host_result(store, at, 6, 0, false);
                 }
                 if (named(store, row.name(), "__au_host_file_result")) {
-                    valid = sealed_host_result(store, at, 5, false, false);
+                    valid = sealed_host_result(store, at, 5, 0, false);
+                }
+                if (named(store, row.name(), "__au_host_directory_entry")) {
+                    valid = sealed_host_result(store, at, 3, 256, false);
                 }
                 if (named(store, row.name(), "__au_host_chunk")) {
-                    valid = sealed_host_result(store, at, 2, true, false);
+                    valid = sealed_host_result(store, at, 2, 504, false);
                 }
                 if (named(store, row.name(), "__au_input_chunk")) {
-                    valid = sealed_host_result(store, at, 2, true, true);
+                    valid = sealed_host_result(store, at, 2, 504, true);
                 }
                 if (!valid) {
                     return false;
@@ -1398,11 +1403,12 @@ export namespace compiler_ir_metadata {
             && sealed_enum(store, "__au_display_put_result", 2, false) && sealed_enum(store, "__au_display_completion",
             2, false) && sealed_enum(store, "__au_port_write_result", 1, false) && sealed_enum(store, "__au_host_exit",
             3, false) && sealed_enum(store, "__au_host_status", 10, false) && sealed_enum(store, "__au_host_stream", 2,
-            false) && sealed_host_results(store) && sealed_execution_results(store) && sealed_bootstrap_results(store)
-            && sealed_enum(store, "__au_exec_prepared", 3, false) && sealed_enum(store, "__au_exec_status", 9, false)
-            && sealed_enum(store, "__au_exec_step", 5, false) && sealed_enum(store, "__au_exec_effect", 2, false)
-            && sealed_enum(store, "__au_exec_request", 6, false) && sealed_enum(store, "__au_exec_finish", 5, false)
-            && sealed_enum(store, "__au_exec_cancel", 5, false) && sealed_enum(store, "__au_input_status", 4, false);
+            false) && sealed_enum(store, "__au_host_entry_kind", 5, false) && sealed_host_results(store)
+            && sealed_execution_results(store) && sealed_bootstrap_results(store) && sealed_enum(store,
+            "__au_exec_prepared", 3, false) && sealed_enum(store, "__au_exec_status", 9, false) && sealed_enum(store,
+            "__au_exec_step", 5, false) && sealed_enum(store, "__au_exec_effect", 2, false) && sealed_enum(store,
+            "__au_exec_request", 6, false) && sealed_enum(store, "__au_exec_finish", 5, false) && sealed_enum(store,
+            "__au_exec_cancel", 5, false) && sealed_enum(store, "__au_input_status", 4, false);
     }
 
     // Children are complete before this computation starts. Offsets come only

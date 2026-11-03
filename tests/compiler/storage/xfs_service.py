@@ -55,6 +55,19 @@ def nested_cases(program, directory):
     held = case("root file identity", 18, b"/disk/hello", size=64, inode=99)
     sub = case("normalized nested directory identity", 16, b"/disk//s/.", inode=101)
     case("held root read after directory_ready", 19, reference=held, data=hello)
+    case("root listing first entry", 25, reference=root, size=1, data=b"hello")
+    case("nested listing first directory", 25, reference=sub, size=2, data=b"deep")
+    case("root listing hides private staging", 25, reference=root, size=2, data=b"s")
+    case("nested listing hides private directory", 25, reference=sub, size=1, data=b"a.au")
+    case("root listing final directory", 25, reference=root, size=2, data=b"empty")
+    case("root listing end", 25, reference=root)
+    case("root listing sticky end", 25, reference=root)
+    case("nested listing next file", 25, reference=sub, size=1, data=b"b.au")
+    case("nested listing last file", 25, reference=sub, size=1, data=b"p")
+    case("nested listing end", 25, reference=sub)
+    case("regular handle cannot enumerate", 25, reference=held, status=1)
+    case("enumeration rejects offset", 25, reference=sub, position=1, status=9)
+    case("enumeration rejects payload", 25, b"x", reference=sub, status=9)
     case("directory is not a regular file", 18, b"/disk/s", status=5)
     case("held root read after not_regular", 19, reference=held, data=hello)
     value = case("directory-bound normalized nested lookup", 17, b"deep//./value", reference=sub, size=23, inode=262241)
@@ -64,6 +77,8 @@ def nested_cases(program, directory):
     case("direct normalized nested file", 18, b"/disk//s/./a.au", size=74, inode=102)
     empty = case("empty shortform directory identity", 16, b"/disk/empty/", inode=655456)
     case("empty directory missing name", 17, b"absent", reference=empty, status=2)
+    case("empty directory listing end", 25, reference=empty)
+    case("empty directory listing sticky end", 25, reference=empty)
     case("hidden intermediate directory", 17, b".aurora-stage/secret", reference=sub, status=3)
     case("hidden nested leaf", 18, b"/disk/s/deep/.aurora-stage", status=3)
     case("hidden directory cannot be opened", 16, b"/disk/s/.aurora-stage", status=3)
@@ -80,6 +95,7 @@ def nested_cases(program, directory):
     case("readonly create refused", 21, b"/disk/s/new", status=3)
     case("closed directory handle", 20, reference=sub)
     case("stale directory handle refused", 17, b"deep/value", reference=sub, status=1)
+    case("stale directory listing refused", 25, reference=sub, status=1)
     case(
         "retained child reader survives directory close",
         19,
@@ -88,6 +104,7 @@ def nested_cases(program, directory):
     )
     case("client incarnation invalidates held handle", 0, reference=held, status=1)
     case("old root directory is not new-client authority", 17, b"hello", reference=root, status=1)
+    case("old directory cursor is not new-client authority", 25, reference=root, status=1)
     case("new client traverses genuine nested tree", 18, b"/disk/s/deep/value", size=23, inode=262241)
     # After the authentic mount, tear only the delivered child-inode CRC.
     # The disk remains unchanged; this terminal case must poison the service.
@@ -102,6 +119,19 @@ def nested_cases(program, directory):
         yield "nested " + label, "passed"
     yield "nested busy walk entry points", "refused without mutation"
     yield "nested genuine mounted allocation profile", "refused: icount=256 ifree=241, not 64/59"
+
+    # A second sequence uses the same driver and immutable image, but tears the
+    # actual directory-read response for enumeration rather than an open.
+    rows.clear()
+    sub = case("directory enumeration rooted handle", 16, b"/disk/s", inode=101)
+    case("torn enumeration response fails closed", 254, reference=sub, status=9)
+    case("failed enumeration leaves backend quarantined", 25, reference=sub, status=9)
+    cases.write_bytes(b"".join(row for _, row in rows))
+    result = harness.command([program, image, "tree", cases], timeout=30)
+    harness.require(result.returncode == 0 and not result.stderr, "nested enumeration: " + result.stderr.decode())
+    harness.require(result.stdout == b"PASS nested case\n" * len(rows), "complete torn enumeration sequence")
+    for label, _ in rows:
+        yield "nested " + label, "passed"
 
 
 def mounted_cases(program, directory):

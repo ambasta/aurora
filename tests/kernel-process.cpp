@@ -139,7 +139,8 @@ constexpr const char *call_names[] = {"invalid",
                                       "create_output",
                                       "write",
                                       "commit",
-                                      "discard"};
+                                      "discard",
+                                      "next_entry"};
 constexpr const char *memory_names[] = {
     "mapped", "resized", "moved", "unmapped", "quota", "space", "records", "length", "malformed"};
 constexpr const char *runs_names[] = {
@@ -910,6 +911,19 @@ auto events_mode(const char *path) -> int {
             else
                 std::cout << call_names[call->action] << " value=" << hex(call->value) << " length=" << call->length
                           << " base=" << hex(call->base) << " record=" << hex(call->record) << "\n";
+        } else if (verb == "directory_reply" && values.size() >= 9) {
+            if (values[0] > 1024)
+                usage("directory reply fixture too large");
+            std::vector<std::byte> reply(values[0]);
+            for (std::size_t at = 0; at < reply.size(); ++at) {
+                const U64 byte = at < 64                       ? (values[1 + at / 8] >> ((at % 8) * 8)) & 255
+                                 : at - 64 + 9 < values.size() ? values[at - 64 + 9]
+                                                               : 97;
+                if (byte > 255)
+                    usage("directory reply byte too large");
+                reply[at] = std::byte{static_cast<unsigned char>(byte)};
+            }
+            std::cout << text << " -> " << (process::directory_reply_valid(reply) ? "accepted" : "rejected") << "\n";
         } else if (verb == "snapshot_leaf" && values.size() == 6) {
             const process::SnapshotLeafArguments arguments{
                 values[0], values[1], values[2], values[3], values[4], values[5]};

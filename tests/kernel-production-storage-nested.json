@@ -1,6 +1,8 @@
 {
   "input": [
     "write memo retained\r",
+    "run bin/list-files /disk/s\r",
+    "run bin/list-files /disk/empty\r",
     "run bin/cat /disk//s/. copied a.au\r",
     "run bin/cat /disk deep-copy s//deep/./value\r",
     "run bin/aurorac --check --module-root /disk /disk//s/./a.au\r",
@@ -20,6 +22,12 @@
     "AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines",
     "aurora> write memo retained",
     "wrote memo: 8 bytes",
+    "aurora> run bin/list-files /disk/s",
+    "d deep\nf a.au\nf b.au\nf p\n",
+    "run: exited status=0",
+    "aurora> run bin/list-files /disk/empty",
+    "",
+    "run: exited status=0",
     "aurora> run bin/cat /disk//s/. copied a.au",
     "a.au 74\n",
     "run: exited status=0",

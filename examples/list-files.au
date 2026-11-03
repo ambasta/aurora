@@ -1,0 +1,147 @@
+module list_files;
+import aurora.host;
+
+// Names are diagnostic copied bytes, never authority. Enumeration is forward
+// only and is not a snapshot. Reopen to restart after EOF or an uncertain reply.
+class Word {
+    i64 first;
+    i64 length;
+public:
+    Word(i64 begin, i64 count) : first(begin), length(count) {
+    }
+    auto begin() const -> i64 {
+        return first;
+    }
+    auto count() const -> i64 {
+        return length;
+    }
+};
+
+// The NUL-terminated argument at ordinal `index`, or an empty range at -1.
+auto argument(builtin::span<const u8> arguments, i64 index) -> Word {
+    i64 at = 0;
+    i64 begin = 0;
+    i64 ordinal = 0;
+    while (at < arguments.size()) {
+        if (arguments.at(at) == 0u8) {
+            if (ordinal == index) {
+                const Word result = Word(begin, at - begin);
+                return result;
+            }
+            ordinal = ordinal + 1;
+            begin = at + 1;
+        }
+        at = at + 1;
+    }
+    const Word missing = Word(-1, 0);
+    return missing;
+}
+
+class NameOutput {
+    array<u8, 512> bytes;
+    i64 length;
+public:
+    NameOutput() : bytes{}, length(0) {
+    }
+    auto push(u8 byte) -> bool {
+        if (length == 512) {
+            return false;
+        }
+        bytes[length] = byte;
+        length = length + 1;
+        return true;
+    }
+    auto size() const -> i64 {
+        return length;
+    }
+    auto view() const -> builtin::span<const u8> {
+        const builtin::span<const u8> all = borrow_bytes(bytes);
+        return all.subspan(0, length);
+    }
+    auto clear() -> bool {
+        length = 0;
+        return true;
+    }
+};
+auto hex(u8 value) -> u8 {
+    if (value < 10u8) {
+        return u8(48u64 + u64(value));
+    }
+    return u8(97u64 + u64(value) - 10u64);
+}
+auto display(builtin::HostFiles& files, builtin::HostDirectoryEntry entry) -> bool {
+    NameOutput output = NameOutput();
+    u8 marker = '?';
+    if (entry.kind == builtin::HostEntryKind::regular) {
+        marker = 'f';
+    }
+    if (entry.kind == builtin::HostEntryKind::directory) {
+        marker = 'd';
+    }
+    if (entry.kind == builtin::HostEntryKind::other) {
+        marker = 'o';
+    }
+    output.push(marker);
+    output.push(' ');
+    const array<u8, 256> name = entry.bytes;
+    i64 at = 0;
+    while (at < i64(entry.count)) {
+        if (output.size() > 507) {
+            if (files.print(builtin::HostStream::stdout, output.view()) != builtin::HostStatus::success) {
+                return false;
+            }
+            output.clear();
+        }
+        const u8 byte = name[at];
+        if (byte >= '!' && byte <= '~' && byte != '\\') {
+            output.push(byte);
+        } else {
+            output.push('\\');
+            output.push('x');
+            output.push(hex(u8(u64(byte) / 16u64)));
+            output.push(hex(u8(u64(byte) % 16u64)));
+        }
+        at = at + 1;
+    }
+    output.push('\n');
+    return files.print(builtin::HostStream::stdout, output.view()) == builtin::HostStatus::success;
+}
+auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {
+    const Word path = argument(arguments, 1);
+    const Word extra = argument(arguments, 2);
+    if (path.begin() < 0 || path.count() == 0 || extra.begin() >= 0) {
+        files.print(builtin::HostStream::stderr, "usage: list-files DIRECTORY\n");
+        return builtin::HostExit::usage;
+    }
+    const builtin::HostDirectoryResult directory = files.open_directory(arguments.subspan(path.begin(), path.count()));
+    if (directory.status != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "list-files: cannot open directory\n");
+        return builtin::HostExit::failure;
+    }
+    bool complete = false;
+    bool failed = false;
+    i64 count = 0;
+    while (!complete && !failed && count <= 256) {
+        const builtin::HostDirectoryEntry entry = files.next_entry(directory.id);
+        if (entry.status != builtin::HostStatus::success) {
+            failed = true;
+        } else {
+            if (entry.kind == builtin::HostEntryKind::end) {
+                complete = entry.count == 0u64;
+                failed = !complete;
+            } else {
+                failed = count == 256 || entry.count == 0u64 || entry.count > 255u64;
+                if (!failed) {
+                    failed = !display(files, entry);
+                    count = count + 1;
+                }
+            }
+        }
+    }
+    const builtin::HostStatus closed = files.close(directory.id);
+    if (!complete || failed || closed != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "list-files: incomplete listing\n");
+        return builtin::HostExit::failure;
+    }
+    return builtin::HostExit::success;
+}

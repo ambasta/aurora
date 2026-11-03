@@ -6,7 +6,7 @@ export module aurora.host;
 // this module may name: byte and word access to the zeroed 16384-byte session
 // block the hosted entry lends as the grant, and the kernel operations the
 // compiler emits inline through the INT 0x83 gate: kernel_print (print, 2),
-// kernel_chunk (read, 3) and kernel_file (the file operations 7..14 on a
+// kernel_chunk (read, 3) and kernel_file (file operations 7..14 and 22 on a
 // handle, a session buffer and the session's 48-byte result record).
 // Offsets and lengths are checked by the primitives themselves; the kernel
 // checks each address range against the process's own memory
@@ -58,7 +58,7 @@ namespace host_session {
     auto stderr_stream() -> u64 {
         return 2u64;
     }
-    // kernel_file operations: kernel operation 7 + this.
+    // kernel_file selectors 0..7 map to kernel operations 7..14; selector 8 is 22.
     auto open_directory_call() -> u64 {
         return 0u64;
     }
@@ -82,6 +82,9 @@ namespace host_session {
     }
     auto discard_call() -> u64 {
         return 7u64;
+    }
+    auto next_entry_call() -> u64 {
+        return 8u64;
     }
     // A kernel result: 0, or a negative HostStatus ordinal.
     auto status_of(i64 result) -> builtin::HostStatus {
@@ -147,6 +150,273 @@ namespace host_session {
             .inode = result_word(files, 3u64)
         };
         return file;
+    }
+    auto no_entry(builtin::HostStatus status) -> builtin::HostDirectoryEntry {
+        const array<u8, 256> bytes = {
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8,
+            0u8
+        };
+        const builtin::HostDirectoryEntry result = builtin::HostDirectoryEntry{
+            .status = status,
+            .kind = builtin::HostEntryKind::end,
+            .count = 0u64,
+            .bytes = bytes
+        };
+        return result;
     }
     // Output entries.
     auto output_entry(u64 slot) -> u64 {
@@ -242,6 +512,41 @@ export namespace host {
             .inode = host_session::result_word(files, 3u64)
         };
         return directory;
+    }
+    auto files_next_entry(builtin::HostFiles& files, u64 directory) -> builtin::HostDirectoryEntry {
+        const i64 result = host_session::file_call(files, host_session::next_entry_call(), directory,
+            host_session::path_buffer(), 0u64);
+        if (result < 0) {
+            return host_session::no_entry(host_session::status_of(result));
+        }
+        const builtin::HostDirectoryEntry empty = host_session::no_entry(builtin::HostStatus::success);
+        array<u8, 256> bytes = empty.bytes;
+        builtin::HostEntryKind kind = builtin::HostEntryKind::end;
+        const u64 observed = host_session::result_word(files, 1u64);
+        if (observed == 1u64) {
+            kind = builtin::HostEntryKind::regular;
+        }
+        if (observed == 2u64) {
+            kind = builtin::HostEntryKind::directory;
+        }
+        if (observed == 3u64) {
+            kind = builtin::HostEntryKind::other;
+        }
+        if (observed == 4u64) {
+            kind = builtin::HostEntryKind::unknown;
+        }
+        i64 at = 0;
+        while (at < result) {
+            bytes[at] = files.load8(host_session::path_buffer() + u64(at));
+            at = at + 1;
+        }
+        const builtin::HostDirectoryEntry entry = builtin::HostDirectoryEntry{
+            .status = builtin::HostStatus::success,
+            .kind = kind,
+            .count = u64(result),
+            .bytes = bytes
+        };
+        return entry;
     }
     auto files_open_beneath(builtin::HostFiles& files, u64 directory,
         builtin::span<const u8> relative) -> builtin::HostFileResult {

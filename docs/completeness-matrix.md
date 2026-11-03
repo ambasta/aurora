@@ -110,6 +110,9 @@ The companion `revise-source` application displays numbered source and replaces,
 inserts or deletes bounded line ranges using the same file/input loans. It
 validates the original before staging and preserves unchanged bytes through an
 immutable reader; it adds no kernel/compiler authority or full-screen framework.
+A compiled `list-files` consumer now enumerates immediate boot/RAM and admitted
+XFS directory children through a live directory capability, with copied names,
+private-name filtering and no snapshot or recursive traversal promise.
 Qualification of these applications remains tied to their final-source receipts.
 
 The retained-run authority and transcript deduplication passed integrated

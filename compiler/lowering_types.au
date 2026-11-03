@@ -379,8 +379,8 @@ export namespace compiler_lowering {
         if (composed && depth > 4) {
             return fail(session, LoweringError::composed_class_depth, source);
         }
-        // HostChunk, the one sealed class with an array, is only produced whole
-        // by its service primitive and then copied.
+        // Sealed copied observations can carry public scalar-array fields.
+        // Their exact layout is admitted separately by typed IR.
         const compiler_resolver::MetaRow owner = session.meta(nominal);
         const bool sealed = owner.native_mode() == compiler_resolver::NativeMode::sealed_builtin;
         if (needs_constructor && !has_constructor(session, nominal) && !sealed) {
@@ -485,7 +485,7 @@ export namespace compiler_lowering {
                 if (element_kind == compiler_resolver::ResolvedTypeKind::u8_value) {
                     maximum = configured_limit(session, OperandRole::MaximumByteArrayLength);
                 }
-                // Only the sealed HostChunk exposes a public array: copied data,
+                // Only sealed observations expose a public array: copied data,
                 // never authority, read by copying the field.
                 const compiler_resolver::MetaRow owner = session.meta(nominal);
                 const bool sealed = owner.native_mode() == compiler_resolver::NativeMode::sealed_builtin;

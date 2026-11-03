@@ -11,6 +11,8 @@ import aurora.host;
 //   dir PATH            open_directory (prints the identity)
 //   open DIR PATH       open_beneath (prints the size and identity)
 //   file PATH           open_file (prints the size and identity)
+//   next DIR            next_entry (status, kind ordinal, count, exact name; verifies zero suffix)
+//   scan DIR KIND:NAME,...  order-independent exact enumeration, rejects duplicates and verifies zero suffix
 //   close ID            close
 //   churn DIR PATH N    open_beneath and close N times (prints the count done)
 //   read FILE OFFSET    read (prints the count and the bytes)
@@ -150,6 +152,120 @@ auto chunk_line(builtin::HostFiles& files, u64 file, u64 offset) -> builtin::Hos
     }
     const builtin::span<const u8> part = all.subspan(0, shown);
     return files.print(builtin::HostStream::stdout, part);
+}
+
+// Every observation must have a canonical kind/count and zero byte suffix.
+auto entry_kind(builtin::HostEntryKind kind) -> u64 {
+    if (kind == builtin::HostEntryKind::end) {
+        return 0u64;
+    }
+    if (kind == builtin::HostEntryKind::regular) {
+        return 1u64;
+    }
+    if (kind == builtin::HostEntryKind::directory) {
+        return 2u64;
+    }
+    if (kind == builtin::HostEntryKind::other) {
+        return 3u64;
+    }
+    return 4u64;
+}
+
+auto entry_valid(builtin::HostDirectoryEntry entry) -> bool {
+    if (entry.count > 255u64) {
+        return false;
+    }
+    if (entry.status != builtin::HostStatus::success && entry.count != 0u64) {
+        return false;
+    }
+    if ((entry.count == 0u64) != (entry.kind == builtin::HostEntryKind::end)) {
+        return false;
+    }
+    const array<u8, 256> bytes = entry.bytes;
+    i64 at = 0;
+    while (at < 256) {
+        if (u64(at) >= entry.count) {
+            if (bytes[at] != 0u8) {
+                return false;
+            }
+        } else {
+            if (bytes[at] == 0u8 || bytes[at] == '/') {
+                return false;
+            }
+        }
+        at = at + 1;
+    }
+    if (entry.count == 1u64 && bytes[0] == '.') {
+        return false;
+    }
+    if (entry.count == 2u64 && bytes[0] == '.' && bytes[1] == '.') {
+        return false;
+    }
+    return true;
+}
+
+// Expected entries are comma-separated KIND:NAME components, with no order promise.
+// A bit for each expected component rejects duplicates and omissions.
+auto scan_entries(builtin::HostFiles& files, u64 directory, builtin::span<const u8> expected, i64 ordinal) -> bool {
+    u64 seen = 0u64;
+    u64 count = 0u64;
+    bool ended = false;
+    bool okay = true;
+    while (!ended && okay && count < 64u64) {
+        const builtin::HostDirectoryEntry entry = files.next_entry(directory);
+        okay = entry_valid(entry) && entry.status == builtin::HostStatus::success;
+        if (okay && entry.count == 0u64) {
+            ended = true;
+        } else {
+            if (okay) {
+                const array<u8, 256> bytes = entry.bytes;
+                const builtin::span<const u8> name = borrow_bytes(bytes);
+                i64 first = 0;
+                i64 index = 0;
+                u64 bit = 1u64;
+                bool found = false;
+                while (first < expected.size() && index < 63) {
+                    i64 end = first;
+                    while (end < expected.size() && expected.at(end) != ',') {
+                        end = end + 1;
+                    }
+                    if (end - first >= 3 && expected.at(first + 1) == ':' && u64(expected.at(first)) == 48u64
+                        + entry_kind(entry.kind) && is(expected.subspan(first + 2, end - first - 2), name.subspan(0,
+                        i64(entry.count)))) {
+                        if ((seen & bit) != 0u64) {
+                            okay = false;
+                        }
+                        seen = seen | bit;
+                        found = true;
+                    }
+                    first = end + 1;
+                    index = index + 1;
+                    bit = bit * 2u64;
+                }
+                okay = okay && found;
+                count = count + 1u64;
+            }
+        }
+    }
+    u64 expected_count = 0u64;
+    i64 at = 0;
+    if (expected.size() > 0) {
+        expected_count = 1u64;
+    }
+    while (at < expected.size()) {
+        if (expected.at(at) == ',') {
+            expected_count = expected_count + 1u64;
+        }
+        at = at + 1;
+    }
+    okay = okay && ended && count == expected_count;
+    builtin::HostStatus outcome = builtin::HostStatus::failed;
+    if (okay) {
+        outcome = builtin::HostStatus::success;
+    }
+    report(files, ordinal, "scan", outcome);
+    decimal(files, count);
+    return okay;
 }
 
 // Fill is specified in KiB. Two bounded writes per unit test its byte limit
@@ -551,6 +667,24 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 identities = 1;
                 first_device = result.device;
                 first_inode = result.inode;
+            }
+            if (is(operation, "next")) {
+                const builtin::HostDirectoryEntry result = files.next_entry(id);
+                if (!entry_valid(result)) {
+                    return builtin::HostExit::failure;
+                }
+                report(files, ordinal, operation, result.status);
+                decimal(files, entry_kind(result.kind));
+                decimal(files, result.count);
+                const array<u8, 256> bytes = result.bytes;
+                const builtin::span<const u8> name = borrow_bytes(bytes);
+                files.print(builtin::HostStream::stdout, name.subspan(0, i64(result.count)));
+            }
+            if (is(operation, "scan")) {
+                if (!scan_entries(files, id, two, ordinal)) {
+                    return builtin::HostExit::failure;
+                }
+                used = 3;
             }
             if (is(operation, "close")) {
                 const builtin::HostStatus result = files.close(id);

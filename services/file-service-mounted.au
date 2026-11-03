@@ -146,8 +146,8 @@ auto main(builtin::ServeSession& session, builtin::WritableBlock& blocks, builti
             const bool ready = id == 0u64 && offset == 0u64 && count == 0u64 && length == 64u64
                 && service::request_word(session, 32u64) == 0u64 && service::request_word(session, 40u64) == 0u64
                 && service::request_word(session, 48u64) == 0u64 && service::request_word(session, 56u64) == 0u64
-                && admitted && output.consumed() && commit.confirmed() && writer_ready
-                && mount.root_inode() == 96u64 && disk.continuity_idle() && output.idle() && store.continuity_idle()
+                && admitted && output.consumed() && commit.confirmed() && writer_ready && mount.root_inode() == 96u64
+                && disk.continuity_idle() && output.idle() && store.continuity_idle()
                 && console_state.continuity_baseline();
             u64 status = 1u64;
             if (ready) {
@@ -158,9 +158,9 @@ auto main(builtin::ServeSession& session, builtin::WritableBlock& blocks, builti
             }
             reply_count = 64u64;
         } else {
-            if (count != length - 64u64 || service::request_word(session, 32u64) != 0u64 || service::request_word(session,
-                40u64) != 0u64 || service::request_word(session, 48u64) != 0u64 || service::request_word(session, 56u64)
-                != 0u64) {
+            if (count != length - 64u64 || service::request_word(session, 32u64) != 0u64
+                || service::request_word(session, 40u64) != 0u64 || service::request_word(session, 48u64) != 0u64
+                || service::request_word(session, 56u64) != 0u64) {
                 return builtin::HostExit::failure;
             }
             if (source != 0u64 && (!store.ok() || !admitted || source != store.active())) {
@@ -189,7 +189,7 @@ auto main(builtin::ServeSession& session, builtin::WritableBlock& blocks, builti
             // path publishes readiness before all log/root/inode reads complete.
             const bool output_request = disk_request && ((disk_operation >= 21u64 && disk_operation <= 24u64)
                 || (disk_operation == 20u64 && output.owns(id)));
-            if (mount_control || (disk_request && !output_request)) {
+            if (mount_control || (disk_request && !output_request && (disk_operation != 25u64 || disk.ready()))) {
                 const builtin::span<const u8> all = request.bytes();
                 const builtin::span<const u8> payload = all.subspan(0, i64(count));
                 disk.check_generation(block_write::volume_generation(blocks));
@@ -202,7 +202,8 @@ auto main(builtin::ServeSession& session, builtin::WritableBlock& blocks, builti
                     disk.prepare(disk_operation, id, offset, payload);
                     prepared = true;
                 }
-                while (disk.ok() && ((mount_control && !disk.ready()) || !prepared || disk.opening() || disk.reading())) {
+                while (disk.ok() && ((mount_control && !disk.ready()) || !prepared || disk.opening() || disk.reading()
+                    || disk.enumerating())) {
                     if (mount.needs_read()) {
                         const u64 lba = mount.requested_lba();
                         const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
@@ -246,7 +247,8 @@ auto main(builtin::ServeSession& session, builtin::WritableBlock& blocks, builti
                 }
                 writer_ready = clean.status() == fs::XfsRecoveryStatus::already_clean;
                 const fs::XfsCommitCleanFacts facts = fs::xfs_commit_clean_facts(clean);
-                writer_ready = writer_ready && fs::copy_xfs_mounted_inputs(commit, clean) && commit.begin_allocation(facts);
+                writer_ready = writer_ready && fs::copy_xfs_mounted_inputs(commit, clean)
+                    && commit.begin_allocation(facts);
                 while (writer_ready && commit.allocation_lba() != 0u64) {
                     const u64 lba = commit.allocation_lba();
                     const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
@@ -328,8 +330,8 @@ auto main(builtin::ServeSession& session, builtin::WritableBlock& blocks, builti
                                     while (committed && ordinal < 16u64) {
                                         const fs::XfsRecoveryWrite write = commit.write_at(ordinal);
                                         const storage::Sector512 sector = write.sector_or_zero();
-                                        committed = write.valid() && block_write::write_sector(blocks, write.lba(), sector)
-                                            == storage::SectorIoStatus::success;
+                                        committed = write.valid() && block_write::write_sector(blocks, write.lba(),
+                                            sector) == storage::SectorIoStatus::success;
                                         if (committed && commit.flush_after(ordinal)) {
                                             committed = block_write::flush(blocks) == storage::SectorIoStatus::success;
                                         }
@@ -352,8 +354,8 @@ auto main(builtin::ServeSession& session, builtin::WritableBlock& blocks, builti
                                             && commit.accept_confirmation(lba, read.status(), borrow_bytes(scratch));
                                     }
                                     committed = committed && mount.continue_mounted(commit.continuation(),
-                                        commit.original_superblock(), commit.original_root(), commit.completion_header(),
-                                        commit.completion_body());
+                                        commit.original_superblock(), commit.original_root(),
+                                        commit.completion_header(), commit.completion_body());
                                     while (committed && mount.needs_read()) {
                                         const u64 lba = mount.requested_lba();
                                         const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
@@ -388,6 +390,13 @@ auto main(builtin::ServeSession& session, builtin::WritableBlock& blocks, builti
                     }
                 }
             }
+            if (disk_request && disk_operation == 25u64 && !disk.ready()) {
+                disk.prepare(25u64, id, offset, "");
+            }
+            if (source != 0u64 && operation == 25u64) {
+                disk.check_generation(block_write::volume_generation(blocks));
+            }
+            store.observe_disk(disk.ready());
             if (source == 0u64) {
                 const service::RequestHeader header = service::RequestHeader{
                     .operation = operation,
@@ -427,8 +436,8 @@ auto main(builtin::ServeSession& session, builtin::WritableBlock& blocks, builti
                 if (control.exit) {
                     // A native fifth Flush alone cannot establish source success:
                     // all readbacks and the refreshed mount must also be healthy.
-                    if (output.consumed() && (!commit.confirmed() || !writer_ready
-                        || mount.root_inode() != 96u64 || !disk.ready())) {
+                    if (output.consumed() && (!commit.confirmed() || !writer_ready || mount.root_inode() != 96u64
+                        || !disk.ready())) {
                         return builtin::HostExit::failure;
                     }
                     return builtin::HostExit::success;
@@ -457,7 +466,7 @@ auto main(builtin::ServeSession& session, builtin::WritableBlock& blocks, builti
                     response_size = result.count;
                 }
                 reply_count = 64u64 + response_size;
-                if (operation == 19u64 && status == kernel::FileStatus::success) {
+                if ((operation == 19u64 || operation == 25u64) && status == kernel::FileStatus::success) {
                     u64 byte = 0u64;
                     while (byte < response_size) {
                         u8 value = 0u8;

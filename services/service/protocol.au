@@ -79,6 +79,13 @@ export namespace service {
     };
     auto file_operation(service::Store& store, builtin::span<const u8> payload, u64 operation, u64 id,
         u64 offset) -> service::Reply {
+        if (operation == 25u64) {
+            if (offset != 0u64 || payload.size() != 0) {
+                return service::reply(kernel::FileStatus::failed);
+            }
+            const service::Reply result = store.next_entry(id);
+            return result;
+        }
         if (operation == 16u64) {
             const service::Reply reply = store.open(0u64, id, payload);
             return reply;

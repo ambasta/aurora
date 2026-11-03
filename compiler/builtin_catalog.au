@@ -81,7 +81,9 @@ export namespace compiler_catalog {
         ExecutionRequest,
         ExecutionFinish,
         BootstrapBegin,
-        InputRead
+        InputRead,
+        HostEntries,
+        HostSeek
     };
     // Catalog extents for the host's loose resolution quota.
     class Summary {
@@ -213,9 +215,15 @@ export namespace compiler_catalog {
     // Family 0 is always seeded. Optional families, including 12 (InputStream),
     // are seeded only when admitted syntax names one of their types.
     auto type_count() -> i64 {
-        return 64;
+        return 66;
     }
     auto type_kind(i64 type) -> compiler_resolver::ResolvedTypeKind {
+        if (type == 64) {
+            return compiler_resolver::ResolvedTypeKind::enum_value;
+        }
+        if (type == 65) {
+            return compiler_resolver::ResolvedTypeKind::class_value;
+        }
         if (type == 61) {
             return compiler_resolver::ResolvedTypeKind::input_stream;
         }
@@ -312,6 +320,9 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::invalid;
     }
     auto type_family(i64 type) -> i64 {
+        if (type == 64 || type == 65) {
+            return 4;
+        }
         if (type >= 61 && type <= 63) {
             return 12;
         }
@@ -357,6 +368,12 @@ export namespace compiler_catalog {
     }
     // Field or case count of a nominal type.
     auto member_count(i64 type) -> i64 {
+        if (type == 64) {
+            return 5;
+        }
+        if (type == 65) {
+            return 4;
+        }
         if (type == 62) {
             return 4;
         }
@@ -436,6 +453,18 @@ export namespace compiler_catalog {
     }
     // Catalog type of a class field.
     auto field_type(i64 type, i64 field) -> i64 {
+        if (type == 65) {
+            if (field == 0) {
+                return 28;
+            }
+            if (field == 1) {
+                return 64;
+            }
+            if (field == 3) {
+                return 2;
+            }
+            return 1;
+        }
         if (type == 63) {
             if (field == 0) {
                 return 62;
@@ -502,6 +531,9 @@ export namespace compiler_catalog {
     // HostChunk and InputChunk each carry 504 bytes. Their two leading qwords
     // complete the 520-byte copied-class bound and 506 of 513 permitted leaves.
     auto field_array_length(i64 type, i64 field) -> i64 {
+        if (type == 65 && field == 3) {
+            return 256;
+        }
         if ((type == 33 || type == 63) && field == 2) {
             return 504;
         }
@@ -510,6 +542,14 @@ export namespace compiler_catalog {
     // Words: full spelling, then for nominal types the native spelling and the
     // field or case names in declaration order. See use_word for begin/end.
     auto type_word(compiler_resolver::Session& session, i64 type, i64 part, i64 begin, i64 end) -> i64 {
+        if (type == 64) {
+            return use_word(session, "builtin::HostEntryKind;__au_host_entry_kind;end;regular;directory;other;unknown",
+                part, begin, end);
+        }
+        if (type == 65) {
+            return use_word(session, "builtin::HostDirectoryEntry;__au_host_directory_entry;status;kind;count;bytes",
+                part, begin, end);
+        }
         if (type == 61) {
             return use_word(session, "builtin::InputStream", part, begin, end);
         }
@@ -1000,7 +1040,8 @@ export namespace compiler_catalog {
         return 1;
     }
     auto operation_admitted(i64 operation) -> bool {
-        return (operation >= 0 && operation < 47) || operation == 51 || operation == 52;
+        return (operation >= 0 && operation < 47) || operation == 51 || operation == 52 || operation == 53 || operation
+            == 54;
     }
     auto catalog_byte(builtin::span<const u8> name, i64 index) -> i64 {
         if (index == -1) {
@@ -1221,6 +1262,12 @@ export namespace compiler_catalog {
         return -1;
     }
     auto type_native_byte(i64 type, i64 index) -> i64 {
+        if (type == 64) {
+            return catalog_byte("__au_host_entry_kind", index);
+        }
+        if (type == 65) {
+            return catalog_byte("__au_host_directory_entry", index);
+        }
         if (type == 62) {
             return catalog_byte("__au_input_status", index);
         }
@@ -1558,7 +1605,7 @@ export namespace compiler_catalog {
 
     // Sealed service operations, indexed by ServiceOperation.
     auto operation_count() -> i64 {
-        return 53;
+        return 55;
     }
     auto operation_kind(i64 operation) -> i64 {
         if (operation == 52) {
@@ -1697,6 +1744,12 @@ export namespace compiler_catalog {
         return 0;
     }
     auto parameter_count(i64 operation) -> i64 {
+        if (operation == 53) {
+            return 3;
+        }
+        if (operation == 54) {
+            return 2;
+        }
         if (operation == 52) {
             return 0;
         }
@@ -1744,12 +1797,15 @@ export namespace compiler_catalog {
             && index == 1)) {
             return compiler_resolver::ResolvedTypeKind::u8_value;
         }
-        if (operation > 12 && operation < 20 && index == 0) {
+        if (((operation > 12 && operation < 20) || operation == 53 || operation == 54) && index == 0) {
             return compiler_resolver::ResolvedTypeKind::i64_value;
         }
         return compiler_resolver::ResolvedTypeKind::u64_value;
     }
     auto append_spelling(compiler_resolver::Session& session, i64 operation) -> i64 {
+        if (operation == 53 || operation == 54) {
+            return use_word(session, "system_entries;system_seek", operation - 53, -1, 0);
+        }
         if (operation == 52) {
             return use_word(session, "read", 0, -1, 0);
         }
@@ -1797,17 +1853,18 @@ export namespace compiler_catalog {
     // 9..12 and 21..28 serve every target; 13..20 exist only for --target
     // linux and 29 (print), 30 (read into a HostChunk) and 31 (a file
     // operation on a handle, a session buffer and a session result record)
-    // only for --target aurora, where they and map, remap and unmap enter the
+    // only for --target aurora; 53/54 are Linux-only directory primitives.
+    // The kernel operations and map, remap and unmap enter the
     // Aurora kernel through INT 0x83.
-    // The ten public HostFiles operations are implemented by exported
+    // The eleven public HostFiles operations are implemented by exported
     // functions of namespace host in module aurora.host; a call on the
     // capability forwards it to that function as its first argument.
     auto host_operation_count() -> i64 {
-        return 10;
+        return 11;
     }
     auto host_operation(compiler_resolver::Session& session, i64 operation, i64 begin, i64 end) -> i64 {
         if (operation > 7) {
-            return use_word(session, "close;open_file", operation - 8, begin, end);
+            return use_word(session, "close;open_file;next_entry", operation - 8, begin, end);
         }
         return use_word(session, "open_directory;open_beneath;read;create_output;write;commit;discard;print", operation,
             begin, end);
@@ -1816,8 +1873,8 @@ export namespace compiler_catalog {
     // (`read` and `write` themselves are reserved function names).
     auto host_runtime_name(compiler_resolver::Session& session, i64 operation, i64 begin, i64 end) -> i64 {
         if (operation > 5) {
-            return use_word(session, "files_discard;files_print;files_close;files_open_file", operation - 6, begin,
-                end);
+            return use_word(session, "files_discard;files_print;files_close;files_open_file;files_next_entry", operation
+                - 6, begin, end);
         }
         return use_word(session,
             "files_open_directory;files_open_beneath;files_read;files_create_output;files_write;files_commit",

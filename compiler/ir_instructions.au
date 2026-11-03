@@ -2630,7 +2630,7 @@ export namespace compiler_ir_instructions {
             return true;
         } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || (operation > 45 && operation != 52)) {
+        if (operation < 0 || (operation > 45 && operation != 52 && operation != 53 && operation != 54)) {
             return fail(store, InstructionError::service_operation);
         }
         i64 expected_kind = 0;
@@ -2655,7 +2655,7 @@ export namespace compiler_ir_instructions {
         if (operation >= 36 && operation < 39) {
             expected_kind = 7;
         }
-        if (operation > 8 && operation < 32) {
+        if ((operation > 8 && operation < 32) || operation == 53 || operation == 54) {
             expected_kind = 6;
         } // HostFiles: the Linux binding's session and system primitives
         if (operation == 52) {
@@ -2676,8 +2676,8 @@ export namespace compiler_ir_instructions {
         // system primitives (13..20) exist only for the Linux target and the
         // kernel primitives (29..31) only for the Aurora one; the memory
         // primitives serve both.
-        if (((operation > 8 && operation < 21) || (operation > 28 && operation < 32))
-            && !host_runtime_callable(metadata, callable)) {
+        if (((operation > 8 && operation < 21) || (operation > 28 && operation < 32) || operation == 53 || operation
+            == 54) && !host_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);
         }
         if (operation >= 39 && operation < 46 && !writer_runtime_callable(metadata, callable)) {
@@ -2701,11 +2701,12 @@ export namespace compiler_ir_instructions {
         if (operation >= 32 && operation < 36 && !store.kernel_target()) {
             return fail(store, InstructionError::endpoint_platform);
         }
-        if ((operation > 12 && operation < 21 && store.kernel_target()) || (operation > 28 && operation < 32
-            && !store.kernel_target())) {
+        if ((((operation > 12 && operation < 21) || operation == 53 || operation == 54) && store.kernel_target())
+            || (operation > 28 && operation < 32 && !store.kernel_target())) {
             return fail(store, InstructionError::service_platform);
         }
-        if (operation > 8 && operation < 46 && operation != 14 && operation != 30 && operation != 32) {
+        if ((operation > 8 && operation < 46 && operation != 14 && operation != 30 && operation != 32) || operation
+            == 53 || operation == 54) {
             if (result_offset != 0) {
                 return fail(store, InstructionError::service_operation);
             }

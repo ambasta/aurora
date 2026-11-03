@@ -45,6 +45,22 @@ def fixture(root):
     os.mkfifo(tree / "fifo")
 
 
+def enumeration_fixture(root):
+    """Real Linux directory records, isolated from the ordinary golden tree."""
+    directory = root / "enumeration"
+    for name in ("many", "hidden", "private", "raw", "long", "empty"):
+        (directory / name).mkdir(parents=True)
+    for index in range(20):
+        (directory / "many" / f"r{index:02}").write_bytes(b"")
+    for index in range(130):
+        (directory / "hidden" / f".aurora-output-{index:03}").write_bytes(b"")
+    for name in (".aurora-stage", ".aurora-output-secret", ".visible", ".aurora-stagex"):
+        (directory / "private" / name).write_bytes(b"")
+    (directory / "long" / ("n" * 255)).write_bytes(b"")
+    descriptor = os.open(os.fsencode(directory / "raw") + b"/\xffraw", os.O_CREAT | os.O_WRONLY, 0o600)
+    os.close(descriptor)
+
+
 def entry(path):
     if path.is_symlink() or not path.is_file():
         return path.name
@@ -53,12 +69,17 @@ def entry(path):
 
 def run(programs, case, timeout):
     words = shlex.split(case)
+    enumeration = words[0] == "!enumeration"
+    if enumeration:
+        words = words[1:]
     closed = words[0] == "!closed"
     if closed:
         words = words[1:]
     with tempfile.TemporaryDirectory(prefix="aurora-host-files-") as directory:
         root = Path(directory)
         fixture(root)
+        if enumeration:
+            enumeration_fixture(root)
         try:
             argv = [programs[words[0]], *words[1:]]
             if closed:

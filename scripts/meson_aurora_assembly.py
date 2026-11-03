@@ -960,7 +960,7 @@ def validate_native_abi(facts, source):
             (
                 "kernel::CallAction",
                 "invalid exit print read map remap unmap open_directory open_beneath open_file close create_output "
-                "write commit discard",
+                "write commit discard next_entry",
             ),
         ):
             enum(name, names)

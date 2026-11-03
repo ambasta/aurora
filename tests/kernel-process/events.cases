@@ -91,3 +91,36 @@ input 100 0 0 1 1 10
 input 100 0 0 1 1 65
 input 100 0 503 0 1 65
 input 100 0 504 0 3 0
+
+# Directory trap and complete native reply admission. Unspecified payload bytes are a.
+call 22 65 0x600000 0 0x601000
+call 22 65 0x600000 1 0x601000
+call 23 65 0x600000 0 0x601000
+directory_reply 64 0 0 0 0 0 0 0 0
+directory_reply 65 0 1 0 1 0 0 0 0 97
+directory_reply 65 0 1 0 2 0 0 0 0 100
+directory_reply 65 0 1 0 3 0 0 0 0 111
+directory_reply 65 0 1 0 4 0 0 0 0 255
+directory_reply 319 0 255 0 1 0 0 0 0
+directory_reply 64 1 0 0 0 0 0 0 0
+directory_reply 64 9 0 0 0 0 0 0 0
+directory_reply 64 10 0 0 0 0 0 0 0
+directory_reply 65 1 1 0 1 0 0 0 0 97
+directory_reply 64 1 0 0 1 0 0 0 0
+directory_reply 64 0 0 0 1 0 0 0 0
+directory_reply 65 0 1 0 0 0 0 0 0 97
+directory_reply 65 0 1 0 5 0 0 0 0 97
+directory_reply 65 0 1 65 1 0 0 0 0 97
+directory_reply 65 0 1 0 1 1 0 0 0 97
+directory_reply 65 0 1 0 1 0 1 0 0 97
+directory_reply 65 0 1 0 1 0 0 1 0 97
+directory_reply 65 0 1 0 1 0 0 0 1 97
+directory_reply 65 0 1 0 1 0 0 0 0 0
+directory_reply 65 0 1 0 1 0 0 0 0 47
+directory_reply 65 0 1 0 1 0 0 0 0 46
+directory_reply 66 0 2 0 1 0 0 0 0 46 46
+directory_reply 67 0 3 0 1 0 0 0 0 46 46 97
+directory_reply 65 0 2 0 1 0 0 0 0 97
+directory_reply 66 0 1 0 1 0 0 0 0 97 98
+directory_reply 63 0 0 0 0 0 0 0 0
+directory_reply 320 0 256 0 1 0 0 0 0

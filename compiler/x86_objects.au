@@ -267,9 +267,25 @@ export namespace compiler_x86 {
         const i64 grant = workspace.pack_address(0, offset);
         const i64 size = host_session_bytes();
         // Each target emits only its own primitives (typed IR admits them so).
-        if ((operation > 12 && operation < 21 && workspace.kernel_target()) || (operation > 28
-            && !workspace.kernel_target())) {
+        if ((((operation > 12 && operation < 21) || operation == 53 || operation == 54) && workspace.kernel_target())
+            || (operation > 28 && operation < 32 && !workspace.kernel_target())) {
             return workspace.fail();
+        }
+        if (operation == 53) { // getdents64(directory, checked session buffer, length)
+            emit_pop(workspace, object, Register::rdx);
+            emit_pop(workspace, object, Register::rsi);
+            emit_pop(workspace, object, Register::rdi);
+            emit_load(workspace, object, grant, Register::r10, false);
+            host_buffer(workspace, object, Register::r10, Register::rsi, Register::rdx);
+            return host_system_call(workspace, object, 217);
+        }
+        if (operation == 54) { // lseek(directory, opaque nonnegative cookie, SEEK_SET)
+            emit_pop(workspace, object, Register::rsi);
+            emit_pop(workspace, object, Register::rdi);
+            emit_alu_rr(workspace, object, AluOp::test, Register::rsi, Register::rsi);
+            emit_branch(workspace, object, 8, 4, 0);
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rdx, Register::rdx);
+            return host_system_call(workspace, object, 8);
         }
         if (operation == 29) { // print(stream, buffer, length): kernel operation 2
             emit_pop(workspace, object, Register::rdx);
@@ -321,7 +337,14 @@ export namespace compiler_x86 {
             emit_pop(workspace, object, Register::r9);
             // Only the file operations: open_directory, open_beneath,
             // open_file, close, create_output, write, commit and discard.
-            host_bound(workspace, object, Register::r9, 7);
+            host_bound(workspace, object, Register::r9, 8);
+            const i64 directory_labels = workspace.next_division();
+            emit_alu_imm(workspace, object, AluOp::compare, 8, Register::r9);
+            emit_branch(workspace, object, 5, 2, directory_labels);
+            // next_entry has a fixed 256-byte name destination and no input.
+            host_bound(workspace, object, Register::rdx, 0);
+            host_bound(workspace, object, Register::rsi, size - 256);
+            emit_bind_label(workspace, object, 2, directory_labels);
             emit_load(workspace, object, grant, Register::r11, false);
             host_buffer(workspace, object, Register::r11, Register::rsi, Register::rdx);
             // The 48-byte result record of the opens and create_output.
@@ -329,6 +352,10 @@ export namespace compiler_x86 {
             emit_indexed_lea(workspace, object, Register::r11, Register::r10, 0, Register::r10);
             emit_mov_rr(workspace, object, Register::r9, Register::rax);
             emit_alu_imm(workspace, object, AluOp::add, 7, Register::rax);
+            emit_alu_imm(workspace, object, AluOp::compare, 8, Register::r9);
+            emit_branch(workspace, object, 5, 3, directory_labels);
+            emit_mov_imm(workspace, object, 22, Register::rax);
+            emit_bind_label(workspace, object, 3, directory_labels);
             const i64 marker = workspace.intern_runtime("__au_kernel_service_call");
             workspace.record_call(2, marker, -2);
             return emit_interrupt(workspace, object, 131);
@@ -1135,7 +1162,7 @@ export namespace compiler_x86 {
         if (operation >= 32 && operation < 36) {
             return emit_endpoint_operation(workspace, object, store, instruction);
         }
-        if (operation > 8 && operation < 32) {
+        if ((operation > 8 && operation < 32) || operation == 53 || operation == 54) {
             return emit_host_operation(workspace, object, store, instruction);
         }
         const i64 address_token3 = workspace.pack_address(0, offset);
