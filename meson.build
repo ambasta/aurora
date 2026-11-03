@@ -262,6 +262,12 @@ if get_option('kernel_images')
       depend_files: kernel_runtime_sources)
   process_programs += {'aurora:write-source': custom_target('write-source-aurora', input: write_source_object,
       output: 'write-source-aurora', command: [aurorac, '--link-object', '@INPUT@', '-o', '@OUTPUT@'])}
+  revise_source_object = custom_target('revise-source-aurora-object', input: 'examples/revise-source.au',
+      output: 'revise-source-aurora.o',
+      command: [aurorac, '--emit-object', '--target', 'aurora', '@INPUT@', '-o', '@OUTPUT@'],
+      depend_files: kernel_runtime_sources)
+  process_programs += {'aurora:revise-source': custom_target('revise-source-aurora', input: revise_source_object,
+      output: 'revise-source-aurora', command: [aurorac, '--link-object', '@INPUT@', '-o', '@OUTPUT@'])}
   input_probe_object = custom_target('process-input-object', input: 'tests/kernel-process/input.au',
       output: 'process-input.o',
       command: [aurorac, '--emit-object', '--target', 'aurora', '--module-root',

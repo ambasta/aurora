@@ -121,6 +121,27 @@ then `run app`. Paths and input bytes convey no authority; the independent
 `HostFiles` and `InputStream` loans do. Files remain RAM-backed and session-local;
 this does not add reboot persistence or widen the bounded disk-write contract.
 
+`run bin/revise-source main.au` displays numbered source lines. To replace a
+range, use `run bin/revise-source main.au FIRST COUNT`, then enter replacement
+lines and Ctrl-D. FIRST is one-based; COUNT existing lines are removed. COUNT
+zero inserts before FIRST, including N+1 to append after N lines. Empty EOF
+deletes the selected range. For example, `run bin/revise-source main.au 3 1`
+replaces only line 3, preserving the other bytes exactly.
+
+The entire original and range are validated before private output is created.
+Stored files are limited to 16 KiB and 256 content bytes per line, with printable
+ASCII/TAB and LF or CRLF delimiters; bare CR and other controls are rejected.
+An empty file has zero lines, trailing LF adds no empty line, and an unterminated
+tail counts as one line. Appending after an unterminated tail is rejected rather
+than silently inserting a separator; replacing or deleting that tail is allowed.
+Numbered view adds a display newline and `[no final LF]` for that tail without
+changing the file. Replacement input uses the writer's normalization and control
+policy, and unchanged prefix/suffix bytes count toward the final 16 KiB bound.
+The same immutable reader supplies validation and copying. It is closed before
+commit; failures before commit attempt close/discard, while an unconfirmed
+commit is never replayed. The command does not provide concurrent-edit merging,
+full-screen editing, source parsing or a new persistence guarantee.
+
 The serial provider interprets Ctrl-D as end of input and Ctrl-C as input-channel
 cancellation, not a general signal or forced kill. The child retains its
 remaining CPU budget to handle a terminal input result. Existing command abort
