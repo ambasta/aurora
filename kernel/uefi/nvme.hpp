@@ -104,6 +104,16 @@ auto initialize_nvme_mounted(std::uint64_t arena, const Bytes &handoff, const Nv
                                       std::uint64_t lba,
                                       std::span<const std::byte, 512> input) -> NvmeReadStatus;
 [[nodiscard]] auto nvme_mounted_flush(const NvmeMountedContext &context) -> NvmeReadStatus;
+// Committed means only that all five physical Flushes completed, not that the
+// source filesystem confirmed the transaction. The dispatcher authenticates
+// healthy source completion and orderly shutdown independently before sealing.
+[[nodiscard]] auto nvme_mounted_committed() -> bool;
+// Seal revokes only the write-data IOVA under the kernel root. All DMA backing
+// remains boot-pinned. Retired follows actual process/grant reclamation and is
+// the only transition that exposes the transport to a fresh readonly service.
+[[nodiscard]] auto nvme_mounted_seal() -> bool;
+[[nodiscard]] auto nvme_mounted_retired() -> bool;
+[[nodiscard]] auto nvme_mounted_readonly() -> bool;
 auto nvme_mounted_abandon() -> void;
 
 #if !defined(AURORA_PROCESS_FIXTURE) && !defined(AURORA_PRODUCTION)

@@ -238,6 +238,88 @@ auto mounted_cases() -> void {
         }
         check(bad.phase() == Phase::failed && !bad.permit_read(65535, false) && !bad.begin());
     }
+    constexpr unsigned readonly_reserve = NvmeMountedPhase::read_reserve;
+    const auto commit = [&](NvmeMountedPhase &state) {
+        check(state.begin() && state.arm());
+        unsigned budget = readonly_reserve + 21;
+        for (unsigned count : writes) {
+            for (unsigned i = 0; i < count; ++i)
+                check(state.permit_write(budget--));
+            check(state.permit_flush(budget--) && state.flushed());
+        }
+        check(budget == readonly_reserve && state.phase() == Phase::committed);
+    };
+    // Mounted startup scans the log twice. Its existing smaller reserve still
+    // permits one fresh readonly remount without renewing any command IDs.
+    NvmeMountedPhase two_scans;
+    check(two_scans.begin());
+    unsigned two_scan_remaining = 65535;
+    for (unsigned i = 0; i < 2 * 16384; ++i)
+        check(two_scans.permit_read(two_scan_remaining--, true));
+    check(two_scans.arm());
+    for (unsigned count : writes) {
+        for (unsigned i = 0; i < count; ++i)
+            check(two_scans.permit_write(two_scan_remaining--));
+        check(two_scans.permit_flush(two_scan_remaining--) && two_scans.flushed());
+    }
+    check(two_scan_remaining == 32746 && two_scan_remaining < NvmeRecoveryPhase::readonly_reserve);
+    check(two_scans.seal(two_scan_remaining) && two_scans.retired() && two_scans.permits_readonly());
+    NvmeMountedPhase retired;
+    check(retired.permits_readonly());
+    commit(retired);
+    check(!retired.permits_readonly());
+    check(retired.seal(readonly_reserve) && retired.phase() == Phase::sealing);
+    check(!retired.available() && !retired.permits_readonly());
+    check(retired.retired() && retired.phase() == Phase::readonly && retired.permits_readonly());
+    check(!retired.available() && retired.admitted_writes() == 16 && retired.admitted_flushes() == 5);
+    // Only the retirement transition opens readonly; there is no rearm or
+    // second transaction, even with a fresh caller budget.
+    for (unsigned mode = 0; mode < 11; ++mode) {
+        NvmeMountedPhase bad;
+        commit(bad);
+        if (mode == 0)
+            check(!bad.seal(readonly_reserve - 1));
+        else if (mode == 1)
+            check(!bad.seal(0)); // Pending, quarantined or exhausted queue.
+        else if (mode == 2) {
+            check(bad.permit_read(readonly_reserve, true));
+            check(!bad.seal(readonly_reserve - 1)); // A post-commit cache miss.
+        } else if (mode == 3)
+            check(!bad.retired());
+        else {
+            check(bad.seal(readonly_reserve));
+            if (mode >= 5)
+                check(bad.retired());
+            if (mode == 4 || mode == 5)
+                check(!bad.seal(65535));
+            if (mode == 6)
+                check(!bad.retired());
+            if (mode == 7)
+                check(!bad.arm());
+            if (mode == 8)
+                check(!bad.permit_read(65535, false));
+            if (mode == 9)
+                check(!bad.permit_write(65535));
+            if (mode == 10)
+                check(!bad.permit_flush(65535));
+        }
+        check(bad.phase() == Phase::failed && !bad.permits_readonly() && !bad.available());
+        check(!bad.begin() && !bad.arm() && !bad.seal(65535) && !bad.retired());
+    }
+    // Never seal an unstarted, mounting, armed or incomplete/pending writer.
+    for (unsigned mode = 0; mode < 5; ++mode) {
+        NvmeMountedPhase bad;
+        if (mode >= 1)
+            check(bad.begin());
+        if (mode >= 2)
+            check(bad.arm());
+        if (mode >= 3)
+            for (unsigned i = 0; i < 10; ++i)
+                check(bad.permit_write(65535 - i));
+        if (mode == 4)
+            check(bad.permit_flush(65525));
+        check(!bad.seal(65535) && bad.phase() == Phase::failed && !bad.permits_readonly());
+    }
     NvmeMountedPhase abandoned;
     check(abandoned.begin() && abandoned.arm() && !abandoned.fail() && !abandoned.arm() &&
           !abandoned.permit_write(65535));

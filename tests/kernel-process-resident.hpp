@@ -27,6 +27,7 @@ extern "C" U64 __au_runtime_process_resident_prepare(void *);
 extern "C" void __au_runtime_process_resident_run(void *, aurora::execution::Result *);
 extern "C" U64 __au_runtime_process_resident_console(void *);
 extern "C" U64 __au_runtime_process_resident_reject(void *);
+extern "C" U64 __au_runtime_process_resident_stop(void *);
 extern "C" U64 __au_runtime_process_resident_finish(void *);
 auto Platform::construct(void *storage, resident::Descriptor *input) -> void {
     const auto original = *input;
@@ -67,7 +68,7 @@ extern "C" U64 __au_runtime_resident_reject(const void *binding, U64 epoch, cons
     return scalar(binding, epoch, address, Kind::reject);
 }
 auto progress(const void *binding, U64 epoch, const void *address, bool continuation) -> U64 {
-    auto &operation = current->enter(binding, epoch, address, Kind::shutdown, continuation);
+    auto &operation = current->enter_shutdown(binding, epoch, address, continuation);
     auto &input = operation.input();
     if (input.terminal || input.cursor == input.progress.size())
         usage("unexpected resident shutdown progression");
@@ -112,9 +113,28 @@ auto denial(const std::string &name) -> void {
             Platform::construction_fault = 2;
         root.initialize();
         Input input;
-        Root::Operation operation{Kind::prepare, input};
+        const bool stopping = name == "finish-during-stop" || name == "consume-during-stop" || name == "stop-parent" ||
+                              name == "stop-replay" || name == "stop-final-close";
+        Root::Operation operation{stopping ? Kind::stop : Kind::prepare, input};
         root.open(operation);
         const auto descriptor = field(root);
+        if (stopping) {
+            root.enter_shutdown(descriptor.binding, descriptor.epoch, root.storage());
+            if (name == "stop-parent")
+                static_cast<void>(root.capture_parent());
+            else if (name == "consume-during-stop")
+                root.consume(operation);
+            else {
+                root.leave(operation);
+                if (name == "stop-replay")
+                    root.enter_shutdown(descriptor.binding, descriptor.epoch, root.storage());
+                else if (name == "stop-final-close")
+                    root.finish(operation);
+                else
+                    __au_runtime_resident_finish(descriptor.binding, descriptor.epoch, root.storage());
+            }
+            _exit(0);
+        }
         if (name == "wrong-binding")
             root.enter(&descriptor, descriptor.epoch, root.storage(), Kind::prepare);
         else if (name == "wrong-epoch")
@@ -123,6 +143,8 @@ auto denial(const std::string &name) -> void {
             root.enter(descriptor.binding, descriptor.epoch, &descriptor, Kind::prepare);
         else if (name == "wrong-kind")
             root.enter(descriptor.binding, descriptor.epoch, root.storage(), Kind::run);
+        else if (name == "shutdown-during-prepare")
+            root.enter_shutdown(descriptor.binding, descriptor.epoch, root.storage());
         else if (name == "not-quiet") {
             Platform::quiet_value = false;
             root.enter(descriptor.binding, descriptor.epoch, root.storage(), Kind::prepare);
@@ -204,6 +226,22 @@ auto resident_mode(const char *path) -> int {
             if (operation == "deny" && fields.size() == 2) {
                 resident_fixture::denial(fields[1]);
                 output << " denied";
+            } else if (operation == "stop" && fields.size() >= 2) {
+                resident_fixture::Input selected;
+                for (std::size_t i = 1; i < fields.size(); ++i)
+                    selected.progress.push_back(number(fields[i]));
+                const auto before = resident_fixture::field(root);
+                resident_fixture::Root::Operation call{resident_fixture::Kind::stop, selected};
+                root.open(call);
+                const auto result = resident_fixture::__au_runtime_process_resident_stop(root.storage());
+                if (!selected.terminal || selected.cursor != selected.progress.size() ||
+                    result != selected.progress.back())
+                    usage("resident stop returned without terminal progression");
+                root.close(call);
+                const auto after = resident_fixture::field(root);
+                if (!root.active() || before.binding != after.binding || before.epoch != after.epoch)
+                    usage("resident stop consumed or replaced owner");
+                output << " stop=" << result << " steps=" << selected.cursor << " active=" << root.active();
             } else if (operation == "finish" && fields.size() >= 3) {
                 resident_fixture::Input selected;
                 selected.result = number(fields[1]);

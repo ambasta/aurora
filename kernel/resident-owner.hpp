@@ -12,6 +12,7 @@ enum class OperationKind : U64 {
     run,
     console,
     reject,
+    stop,
     shutdown
 };
 class alignas(16) Descriptor final {
@@ -132,6 +133,13 @@ public:
         operation_->busy_ = true;
         return *operation_;
     }
+    // Only these two operation kinds may drive the existing shutdown effects.
+    // A retained stop never acquires the consuming finalizer authority.
+    auto enter_shutdown(const void *binding, U64 epoch, const void *field, bool continuation = false) -> Operation & {
+        require(operation_ &&
+                (operation_->kind_ == OperationKind::stop || operation_->kind_ == OperationKind::shutdown));
+        return enter(binding, epoch, field, operation_->kind_, continuation);
+    }
     auto leave(Operation &operation) -> void {
         require(operation_ == &operation && operation.active_ && operation.busy_ && !operation.pins_ &&
                 Platform::quiet());
@@ -139,14 +147,15 @@ public:
     }
     auto capture_parent() -> Parent {
         require(binding_.active && operation_ && operation_->active_ && operation_->busy_ &&
-                operation_->kind_ != OperationKind::shutdown && operation_->pins_ != ~U64{0});
+                operation_->kind_ != OperationKind::shutdown && operation_->kind_ != OperationKind::stop &&
+                operation_->pins_ != ~U64{0});
         ++operation_->pins_;
         return {operation_, operation_->epoch_};
     }
     auto parent_valid(Parent parent) const -> bool {
         return binding_.active && operation_ && parent.context == operation_ && parent.epoch &&
                parent.epoch == operation_->epoch_ && operation_->owner_ == this && operation_->active_ &&
-               operation_->busy_ && operation_->pins_ && !finishing_;
+               operation_->busy_ && operation_->pins_ && !finishing_ && operation_->kind_ != OperationKind::stop;
     }
     auto release_parent(Parent parent) -> void {
         require(parent_valid(parent));

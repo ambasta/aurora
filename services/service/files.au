@@ -321,6 +321,35 @@ export namespace service {
         auto active() const -> u64 {
             return client;
         }
+        // A read-only projection: even an empty authored RAM file must survive
+        // in this incarnation rather than being lost to a disk-only remount.
+        auto continuity_idle() const -> bool {
+            if (!ok() || !admitted || client != 0u64) {
+                return false;
+            }
+            u64 record = 0u64;
+            while (record < 64u64) {
+                if (record_word(record, 0u64) != 0u64) {
+                    return false;
+                }
+                record = record + 1u64;
+            }
+            u64 slot = 0u64;
+            while (slot < 32u64) {
+                if (table_word(slot * 32u64) != 0u64) {
+                    return false;
+                }
+                slot = slot + 1u64;
+            }
+            slot = 0u64;
+            while (slot < 4u64) {
+                if (table_word(1024u64 + slot * 64u64) != 0u64) {
+                    return false;
+                }
+                slot = slot + 1u64;
+            }
+            return true;
+        }
         auto is_root_directory(u64 id) const -> bool {
             const builtin::span<const u8> bytes = borrow_bytes(table);
             const i64 slot = kernel::handle_slot(bytes, id, 2u64);

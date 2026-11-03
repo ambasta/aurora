@@ -261,6 +261,19 @@ export namespace service {
         auto ready() const -> bool {
             return ok() && mounted;
         }
+        auto continuity_idle() const -> bool {
+            if (!ready() || client != 0u64 || pending != 0u64) {
+                return false;
+            }
+            u64 row = 0u64;
+            while (row < 16u64) {
+                if (word(row, 0u64) != 0u64) {
+                    return false;
+                }
+                row = row + 1u64;
+            }
+            return true;
+        }
         auto opening() const -> bool {
             return pending == 1u64;
         }

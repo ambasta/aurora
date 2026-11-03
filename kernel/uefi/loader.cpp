@@ -144,8 +144,9 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     // Only BAR and IVRS rows capture the firmware BAR resources (handoff v4).
     const bool capture = aurora::uefi::platform::capture(*selected);
 #elif defined(AURORA_PROCESS_FIXTURE)
-    const bool capture = ((*selected_case >= 10 && *selected_case <= 41) || *selected_case == 72) &&
-                         *selected == Fixture::process_volume;
+    const bool capture =
+        ((*selected_case >= 10 && *selected_case <= 41) || *selected_case == 72 || *selected_case == 98) &&
+        *selected == Fixture::process_volume;
 #elif defined(AURORA_PRODUCTION)
     const auto storage = aurora::uefi::fw_cfg::FwCfg::read_storage();
     if (!storage)

@@ -743,3 +743,18 @@ remains a final-source gate.
 Independent qualification covers all protected-console profiles, their exact source/images
 and original-clock traces, plus actual normal BIOS/UEFI restoration and the final
 native/review gates. A wrapper's normal-image rebuild is not that restoration boot.
+
+## Explicit mounted-owner retirement
+
+In the production profile, the exact command `storage readonly` requests the
+[bounded orderly transition](../storage/README.md#orderly-readonly-continuation)
+from the confirmed mounted writer to a fresh readonly mount. It is not available
+as an upper-mode payload or an ordinary command in the other profiles. The copied
+input action is validated against the complete command before native dispatch.
+A refusal leaves the old service and console projections intact. Live RAM files,
+private outputs, handles, clients or changed legacy note/named-file state prevent
+the transition; there is no implicit deletion or migration of authored programs.
+Successful replacement or a failed retirement clears the old console projections.
+Output failure never retries retirement. Once sealed, this boot cannot regain a
+writer; repeat commands report unavailable. See the storage contract for device
+assumptions, finite command budget and fail-closed uncertainty.

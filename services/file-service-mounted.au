@@ -138,315 +138,342 @@ auto main(builtin::ServeSession& session, builtin::WritableBlock& blocks, builti
         const u64 id = service::request_word(session, 8u64);
         const u64 offset = service::request_word(session, 16u64);
         const u64 count = service::request_word(session, 24u64);
-        if (count != length - 64u64 || service::request_word(session, 32u64) != 0u64 || service::request_word(session,
-            40u64) != 0u64 || service::request_word(session, 48u64) != 0u64 || service::request_word(session, 56u64)
-            != 0u64) {
-            return builtin::HostExit::failure;
-        }
-        if (source != 0u64 && (!store.ok() || !admitted || source != store.active())) {
-            return builtin::HostExit::failure;
-        }
-        u64 at = 0u64;
-        while (at < count) {
-            if (!request.set(i64(at), endpoint::byte(session, 64u64 + at))) {
+        // Supervisor-only preflight is observational. A conflict leaves this
+        // incarnation, its RAM files, and all pending state untouched.
+        // root_inode() accepts healthy idle read results as well as ready;
+        // successful continuation is already required to retain writer_ready.
+        if (source == 0u64 && operation == 16u64) {
+            const bool ready = id == 0u64 && offset == 0u64 && count == 0u64 && length == 64u64
+                && service::request_word(session, 32u64) == 0u64 && service::request_word(session, 40u64) == 0u64
+                && service::request_word(session, 48u64) == 0u64 && service::request_word(session, 56u64) == 0u64
+                && admitted && output.consumed() && commit.confirmed() && writer_ready
+                && mount.root_inode() == 96u64 && disk.continuity_idle() && output.idle() && store.continuity_idle()
+                && console_state.continuity_baseline();
+            u64 status = 1u64;
+            if (ready) {
+                status = 0u64;
+            }
+            if (!response.console_header(status, 0u64, 0u64)) {
                 return builtin::HostExit::failure;
             }
-            at = at + 1u64;
-        }
-        reply_count = 64u64;
-        const bool mount_control = source == 0u64 && operation == 15u64 && admitted && id == 0u64 && offset == 0u64
-            && count == 0u64 && store.active() == 0u64;
-        bool disk_request = false;
-        u64 disk_operation = 0u64;
-        if (source != 0u64) {
-            const builtin::span<const u8> all = request.bytes();
-            const builtin::span<const u8> payload = all.subspan(0, i64(count));
-            disk_operation = service::xfs_operation(store, payload, operation, id);
-            disk_request = disk_operation != 0u64;
-        }
-        // The same mount state and pump serve lazy opens and explicit startup
-        // admission. Only authenticated source0 can request the latter; neither
-        // path publishes readiness before all log/root/inode reads complete.
-        const bool output_request = disk_request && ((disk_operation >= 21u64 && disk_operation <= 24u64)
-            || (disk_operation == 20u64 && output.owns(id)));
-        if (mount_control || (disk_request && !output_request)) {
-            const builtin::span<const u8> all = request.bytes();
-            const builtin::span<const u8> payload = all.subspan(0, i64(count));
-            disk.check_generation(block_write::volume_generation(blocks));
-            service::advance_xfs(disk, mount);
-            bool prepared = mount_control;
-            const service::XfsPath parsed = service::xfs_path(payload);
-            if (!mount_control && (disk_operation == 21u64 || (parsed.kind == 3u64 && (disk_operation == 16u64
-                || disk_operation == 18u64)) || (!disk.ready() && disk_operation != 16u64 && disk_operation
-                != 18u64))) {
-                disk.prepare(disk_operation, id, offset, payload);
-                prepared = true;
+            reply_count = 64u64;
+        } else {
+            if (count != length - 64u64 || service::request_word(session, 32u64) != 0u64 || service::request_word(session,
+                40u64) != 0u64 || service::request_word(session, 48u64) != 0u64 || service::request_word(session, 56u64)
+                != 0u64) {
+                return builtin::HostExit::failure;
             }
-            while (disk.ok() && ((mount_control && !disk.ready()) || !prepared || disk.opening() || disk.reading())) {
-                if (mount.needs_read()) {
-                    const u64 lba = mount.requested_lba();
+            if (source != 0u64 && (!store.ok() || !admitted || source != store.active())) {
+                return builtin::HostExit::failure;
+            }
+            u64 at = 0u64;
+            while (at < count) {
+                if (!request.set(i64(at), endpoint::byte(session, 64u64 + at))) {
+                    return builtin::HostExit::failure;
+                }
+                at = at + 1u64;
+            }
+            reply_count = 64u64;
+            const bool mount_control = source == 0u64 && operation == 15u64 && admitted && id == 0u64 && offset == 0u64
+                && count == 0u64 && store.active() == 0u64;
+            bool disk_request = false;
+            u64 disk_operation = 0u64;
+            if (source != 0u64) {
+                const builtin::span<const u8> all = request.bytes();
+                const builtin::span<const u8> payload = all.subspan(0, i64(count));
+                disk_operation = service::xfs_operation(store, payload, operation, id);
+                disk_request = disk_operation != 0u64;
+            }
+            // The same mount state and pump serve lazy opens and explicit startup
+            // admission. Only authenticated source0 can request the latter; neither
+            // path publishes readiness before all log/root/inode reads complete.
+            const bool output_request = disk_request && ((disk_operation >= 21u64 && disk_operation <= 24u64)
+                || (disk_operation == 20u64 && output.owns(id)));
+            if (mount_control || (disk_request && !output_request)) {
+                const builtin::span<const u8> all = request.bytes();
+                const builtin::span<const u8> payload = all.subspan(0, i64(count));
+                disk.check_generation(block_write::volume_generation(blocks));
+                service::advance_xfs(disk, mount);
+                bool prepared = mount_control;
+                const service::XfsPath parsed = service::xfs_path(payload);
+                if (!mount_control && (disk_operation == 21u64 || (parsed.kind == 3u64 && (disk_operation == 16u64
+                    || disk_operation == 18u64)) || (!disk.ready() && disk_operation != 16u64 && disk_operation
+                    != 18u64))) {
+                    disk.prepare(disk_operation, id, offset, payload);
+                    prepared = true;
+                }
+                while (disk.ok() && ((mount_control && !disk.ready()) || !prepared || disk.opening() || disk.reading())) {
+                    if (mount.needs_read()) {
+                        const u64 lba = mount.requested_lba();
+                        const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
+                        const storage::Sector512 sector = read.sector_or_zero();
+                        if (disk.check_generation(block_write::volume_generation(blocks))) {
+                            i64 byte = 0;
+                            while (byte < 512) {
+                                const std::ByteReadResult value = sector.read_byte(byte);
+                                scratch.set(byte, u8(value.value_or(0u64)));
+                                byte = byte + 1;
+                            }
+                            mount.accept(lba, read.status(), borrow_bytes(scratch));
+                            service::advance_xfs(disk, mount);
+                        }
+                    } else {
+                        if (!prepared) {
+                            disk.prepare(disk_operation, id, offset, payload);
+                            prepared = true;
+                            service::start_xfs(disk, mount);
+                        } else {
+                            service::advance_xfs(disk, mount);
+                        }
+                    }
+                }
+                if (!prepared) {
+                    disk.prepare(disk_operation, id, offset, payload);
+                }
+            }
+            if (mount_control && disk.ready()) {
+                while (clean.needs_read()) {
+                    const u64 lba = clean.requested_lba();
                     const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
                     const storage::Sector512 sector = read.sector_or_zero();
-                    if (disk.check_generation(block_write::volume_generation(blocks))) {
-                        i64 byte = 0;
-                        while (byte < 512) {
-                            const std::ByteReadResult value = sector.read_byte(byte);
-                            scratch.set(byte, u8(value.value_or(0u64)));
-                            byte = byte + 1;
-                        }
-                        mount.accept(lba, read.status(), borrow_bytes(scratch));
-                        service::advance_xfs(disk, mount);
+                    i64 byte = 0;
+                    while (byte < 512) {
+                        const std::ByteReadResult value = sector.read_byte(byte);
+                        scratch.set(byte, u8(value.value_or(0u64)));
+                        byte = byte + 1;
                     }
-                } else {
-                    if (!prepared) {
-                        disk.prepare(disk_operation, id, offset, payload);
-                        prepared = true;
-                        service::start_xfs(disk, mount);
+                    clean.accept(lba, read.status(), borrow_bytes(scratch));
+                }
+                writer_ready = clean.status() == fs::XfsRecoveryStatus::already_clean;
+                const fs::XfsCommitCleanFacts facts = fs::xfs_commit_clean_facts(clean);
+                writer_ready = writer_ready && fs::copy_xfs_mounted_inputs(commit, clean) && commit.begin_allocation(facts);
+                while (writer_ready && commit.allocation_lba() != 0u64) {
+                    const u64 lba = commit.allocation_lba();
+                    const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
+                    const storage::Sector512 sector = read.sector_or_zero();
+                    i64 byte = 0;
+                    while (byte < 512) {
+                        const std::ByteReadResult value = sector.read_byte(byte);
+                        scratch.set(byte, u8(value.value_or(0u64)));
+                        byte = byte + 1;
+                    }
+                    writer_ready = read.status() == storage::SectorIoStatus::success && commit.accept_allocation(lba,
+                        borrow_bytes(scratch));
+                }
+                writer_ready = writer_ready && commit.allocation_ready() && commit.admit_files(facts);
+                while (writer_ready && commit.append_lba() != 0u64) {
+                    const u64 lba = commit.append_lba();
+                    const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
+                    const storage::Sector512 sector = read.sector_or_zero();
+                    i64 byte = 0;
+                    while (byte < 512) {
+                        const std::ByteReadResult value = sector.read_byte(byte);
+                        scratch.set(byte, u8(value.value_or(0u64)));
+                        byte = byte + 1;
+                    }
+                    writer_ready = read.status() == storage::SectorIoStatus::success && commit.accept_append(lba,
+                        borrow_bytes(scratch));
+                }
+                writer_ready = writer_ready && commit.append_ready();
+                if (!writer_ready) {
+                    disk.poison();
+                }
+            }
+            if (output_request) {
+                const builtin::span<const u8> all = request.bytes();
+                const builtin::span<const u8> payload = all.subspan(0, i64(count));
+                if (disk_operation == 21u64) {
+                    if (!writer_ready || !output.available()) {
+                        disk.fail(kernel::FileStatus::denied);
                     } else {
-                        service::advance_xfs(disk, mount);
-                    }
-                }
-            }
-            if (!prepared) {
-                disk.prepare(disk_operation, id, offset, payload);
-            }
-        }
-        if (mount_control && disk.ready()) {
-            while (clean.needs_read()) {
-                const u64 lba = clean.requested_lba();
-                const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
-                const storage::Sector512 sector = read.sector_or_zero();
-                i64 byte = 0;
-                while (byte < 512) {
-                    const std::ByteReadResult value = sector.read_byte(byte);
-                    scratch.set(byte, u8(value.value_or(0u64)));
-                    byte = byte + 1;
-                }
-                clean.accept(lba, read.status(), borrow_bytes(scratch));
-            }
-            writer_ready = clean.status() == fs::XfsRecoveryStatus::already_clean;
-            const fs::XfsCommitCleanFacts facts = fs::xfs_commit_clean_facts(clean);
-            writer_ready = writer_ready && fs::copy_xfs_mounted_inputs(commit, clean) && commit.begin_allocation(facts);
-            while (writer_ready && commit.allocation_lba() != 0u64) {
-                const u64 lba = commit.allocation_lba();
-                const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
-                const storage::Sector512 sector = read.sector_or_zero();
-                i64 byte = 0;
-                while (byte < 512) {
-                    const std::ByteReadResult value = sector.read_byte(byte);
-                    scratch.set(byte, u8(value.value_or(0u64)));
-                    byte = byte + 1;
-                }
-                writer_ready = read.status() == storage::SectorIoStatus::success && commit.accept_allocation(lba,
-                    borrow_bytes(scratch));
-            }
-            writer_ready = writer_ready && commit.allocation_ready() && commit.admit_files(facts);
-            while (writer_ready && commit.append_lba() != 0u64) {
-                const u64 lba = commit.append_lba();
-                const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
-                const storage::Sector512 sector = read.sector_or_zero();
-                i64 byte = 0;
-                while (byte < 512) {
-                    const std::ByteReadResult value = sector.read_byte(byte);
-                    scratch.set(byte, u8(value.value_or(0u64)));
-                    byte = byte + 1;
-                }
-                writer_ready = read.status() == storage::SectorIoStatus::success && commit.accept_append(lba,
-                    borrow_bytes(scratch));
-            }
-            writer_ready = writer_ready && commit.append_ready();
-            if (!writer_ready) {
-                disk.poison();
-            }
-        }
-        if (output_request) {
-            const builtin::span<const u8> all = request.bytes();
-            const builtin::span<const u8> payload = all.subspan(0, i64(count));
-            if (disk_operation == 21u64) {
-                if (!writer_ready || !output.available()) {
-                    disk.fail(kernel::FileStatus::denied);
-                } else {
-                    disk.create_output(payload, commit.admitted_destination());
-                    const service::Reply created = disk.response();
-                    if (created.status == kernel::FileStatus::success && !output.begin(created.id)) {
-                        disk.poison();
-                    }
-                }
-            } else {
-                if (!disk.output_valid(id) || !output.owns(id)) {
-                    disk.fail(kernel::FileStatus::invalid_handle);
-                } else {
-                    if (disk_operation == 22u64) {
-                        kernel::FileStatus status = kernel::FileStatus::denied;
-                        const bool oversized = output.exceeds_limit(u64(payload.size()));
-                        if (output.append(id, payload)) {
-                            status = kernel::FileStatus::success;
-                        } else {
-                            if (oversized) {
-                                status = kernel::FileStatus::too_large;
-                            }
-                        }
-                        disk.respond(status);
-                    }
-                    if (disk_operation == 24u64 || disk_operation == 20u64) {
-                        disk.release_output(id, kernel::FileStatus::success);
-                        output.clear();
-                    }
-                    if (disk_operation == 23u64) {
-                        bool committed = false;
-                        bool started = false;
-                        if (output.committable(id)) {
-                            const fs::XfsCommitCleanFacts facts = fs::xfs_commit_clean_facts(clean);
-                            bool prepared = commit.prepare(facts, output.bytes());
-                            if (prepared && commit.ready() && output.consume(id)) {
-                                // First kernel write atomically reserves the complete
-                                // command budget. Neither budget() nor this local
-                                // consumed flag is itself a disk reservation.
-                                started = true;
-                                committed = true;
-                                u64 ordinal = 0u64;
-                                while (committed && ordinal < 16u64) {
-                                    const fs::XfsRecoveryWrite write = commit.write_at(ordinal);
-                                    const storage::Sector512 sector = write.sector_or_zero();
-                                    committed = write.valid() && block_write::write_sector(blocks, write.lba(), sector)
-                                        == storage::SectorIoStatus::success;
-                                    if (committed && commit.flush_after(ordinal)) {
-                                        committed = block_write::flush(blocks) == storage::SectorIoStatus::success;
-                                    }
-                                    ordinal = ordinal + 1u64;
-                                }
-                                // Never rearm or send startup control15 here.
-                                // This is a private cache refresh within the
-                                // original pending commit, after all five fences.
-                                while (committed && commit.needs_confirmation()) {
-                                    const u64 lba = commit.confirmation_lba();
-                                    const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
-                                    const storage::Sector512 sector = read.sector_or_zero();
-                                    i64 byte = 0;
-                                    while (byte < 512) {
-                                        const std::ByteReadResult value = sector.read_byte(byte);
-                                        scratch.set(byte, u8(value.value_or(0u64)));
-                                        byte = byte + 1;
-                                    }
-                                    committed = disk.check_generation(block_write::volume_generation(blocks))
-                                        && commit.accept_confirmation(lba, read.status(), borrow_bytes(scratch));
-                                }
-                                committed = committed && mount.continue_mounted(commit.continuation(),
-                                    commit.original_superblock(), commit.original_root(), commit.completion_header(),
-                                    commit.completion_body());
-                                while (committed && mount.needs_read()) {
-                                    const u64 lba = mount.requested_lba();
-                                    const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
-                                    const storage::Sector512 sector = read.sector_or_zero();
-                                    i64 byte = 0;
-                                    while (byte < 512) {
-                                        const std::ByteReadResult value = sector.read_byte(byte);
-                                        scratch.set(byte, u8(value.value_or(0u64)));
-                                        byte = byte + 1;
-                                    }
-                                    mount.accept(lba, read.status(), borrow_bytes(scratch));
-                                    committed = read.status() == storage::SectorIoStatus::success;
-                                }
-                                committed = committed && mount.status() == fs::XfsMountStatus::ready
-                                    && mount.root_inode() == 96u64;
-                            }
-                        }
-                        kernel::FileStatus status = kernel::FileStatus::denied;
-                        if (started) {
-                            status = kernel::FileStatus::failed;
-                        }
-                        if (committed) {
-                            status = kernel::FileStatus::success;
-                        }
-                        disk.release_output(id, status);
-                        output.clear();
-                        if (started && !committed) {
-                            writer_ready = false;
+                        disk.create_output(payload, commit.admitted_destination());
+                        const service::Reply created = disk.response();
+                        if (created.status == kernel::FileStatus::success && !output.begin(created.id)) {
                             disk.poison();
                         }
                     }
-                }
-            }
-        }
-        if (source == 0u64) {
-            const service::RequestHeader header = service::RequestHeader{
-                .operation = operation,
-                .id = id,
-                .offset = offset,
-                .count = count
-            };
-            const service::ControlState state = service::ControlState{
-                .volume_length = volume_length,
-                .copied = copied,
-                .admitted = admitted,
-                .mount_control = mount_control,
-                .disk_ready = disk.ready()
-            };
-            request.control(header, state);
-            if (!service::control_operation(store, console_state, response, request)) {
-                return builtin::HostExit::failure;
-            }
-            const service::ControlReply control = request.control_reply();
-            admitted = control.admitted;
-            copied = control.copied;
-            reply_count = control.count;
-            bool accepted = control.accepted;
-            if (admitted && store.disk_collision()) {
-                disk.poison();
-            }
-            if (accepted && operation == 4u64) {
-                accepted = disk.begin(id);
-            }
-            if (accepted && operation == 5u64) {
-                accepted = disk.finish(id);
-                output.clear();
-            }
-            if (!accepted) {
-                return builtin::HostExit::failure;
-            }
-            if (control.exit) {
-                return builtin::HostExit::success;
-            }
-        } else {
-            if (!store.ok() || !admitted || source != store.active()) {
-                return builtin::HostExit::failure;
-            }
-            kernel::FileStatus status = kernel::FileStatus::failed;
-            u64 response_size = 0u64;
-            if (disk_request) {
-                const service::Reply result = disk.response();
-                if (!response.header(result)) {
-                    return builtin::HostExit::failure;
-                }
-                status = result.status;
-                response_size = result.count;
-            } else {
-                const builtin::span<const u8> all = request.bytes();
-                const builtin::span<const u8> payload = all.subspan(0, i64(count));
-                const service::Reply result = service::file_operation(store, payload, operation, id, offset);
-                if (!response.header(result)) {
-                    return builtin::HostExit::failure;
-                }
-                status = result.status;
-                response_size = result.count;
-            }
-            reply_count = 64u64 + response_size;
-            if (operation == 19u64 && status == kernel::FileStatus::success) {
-                u64 byte = 0u64;
-                while (byte < response_size) {
-                    u8 value = 0u8;
-                    if (disk_request) {
-                        value = disk.read_byte(byte);
+                } else {
+                    if (!disk.output_valid(id) || !output.owns(id)) {
+                        disk.fail(kernel::FileStatus::invalid_handle);
                     } else {
-                        value = store.read_byte(byte);
+                        if (disk_operation == 22u64) {
+                            kernel::FileStatus status = kernel::FileStatus::denied;
+                            const bool oversized = output.exceeds_limit(u64(payload.size()));
+                            if (output.append(id, payload)) {
+                                status = kernel::FileStatus::success;
+                            } else {
+                                if (oversized) {
+                                    status = kernel::FileStatus::too_large;
+                                }
+                            }
+                            disk.respond(status);
+                        }
+                        if (disk_operation == 24u64 || disk_operation == 20u64) {
+                            disk.release_output(id, kernel::FileStatus::success);
+                            output.clear();
+                        }
+                        if (disk_operation == 23u64) {
+                            bool committed = false;
+                            bool started = false;
+                            if (output.committable(id)) {
+                                const fs::XfsCommitCleanFacts facts = fs::xfs_commit_clean_facts(clean);
+                                bool prepared = commit.prepare(facts, output.bytes());
+                                if (prepared && commit.ready() && output.consume(id)) {
+                                    // First kernel write atomically reserves the complete
+                                    // command budget. Neither budget() nor this local
+                                    // consumed flag is itself a disk reservation.
+                                    started = true;
+                                    committed = true;
+                                    u64 ordinal = 0u64;
+                                    while (committed && ordinal < 16u64) {
+                                        const fs::XfsRecoveryWrite write = commit.write_at(ordinal);
+                                        const storage::Sector512 sector = write.sector_or_zero();
+                                        committed = write.valid() && block_write::write_sector(blocks, write.lba(), sector)
+                                            == storage::SectorIoStatus::success;
+                                        if (committed && commit.flush_after(ordinal)) {
+                                            committed = block_write::flush(blocks) == storage::SectorIoStatus::success;
+                                        }
+                                        ordinal = ordinal + 1u64;
+                                    }
+                                    // Never rearm or send startup control15 here.
+                                    // This is a private cache refresh within the
+                                    // original pending commit, after all five fences.
+                                    while (committed && commit.needs_confirmation()) {
+                                        const u64 lba = commit.confirmation_lba();
+                                        const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
+                                        const storage::Sector512 sector = read.sector_or_zero();
+                                        i64 byte = 0;
+                                        while (byte < 512) {
+                                            const std::ByteReadResult value = sector.read_byte(byte);
+                                            scratch.set(byte, u8(value.value_or(0u64)));
+                                            byte = byte + 1;
+                                        }
+                                        committed = disk.check_generation(block_write::volume_generation(blocks))
+                                            && commit.accept_confirmation(lba, read.status(), borrow_bytes(scratch));
+                                    }
+                                    committed = committed && mount.continue_mounted(commit.continuation(),
+                                        commit.original_superblock(), commit.original_root(), commit.completion_header(),
+                                        commit.completion_body());
+                                    while (committed && mount.needs_read()) {
+                                        const u64 lba = mount.requested_lba();
+                                        const storage::SectorReadResult read = block_write::read_sector(blocks, lba);
+                                        const storage::Sector512 sector = read.sector_or_zero();
+                                        i64 byte = 0;
+                                        while (byte < 512) {
+                                            const std::ByteReadResult value = sector.read_byte(byte);
+                                            scratch.set(byte, u8(value.value_or(0u64)));
+                                            byte = byte + 1;
+                                        }
+                                        mount.accept(lba, read.status(), borrow_bytes(scratch));
+                                        committed = read.status() == storage::SectorIoStatus::success;
+                                    }
+                                    committed = committed && mount.status() == fs::XfsMountStatus::ready
+                                        && mount.root_inode() == 96u64;
+                                }
+                            }
+                            kernel::FileStatus status = kernel::FileStatus::denied;
+                            if (started) {
+                                status = kernel::FileStatus::failed;
+                            }
+                            if (committed) {
+                                status = kernel::FileStatus::success;
+                            }
+                            disk.release_output(id, status);
+                            output.clear();
+                            if (started && !committed) {
+                                writer_ready = false;
+                                disk.poison();
+                            }
+                        }
                     }
-                    response.set_byte(i64(64u64 + byte), value);
-                    byte = byte + 1u64;
                 }
             }
-        }
-        if (!store.ok()) {
-            return builtin::HostExit::failure;
+            if (source == 0u64) {
+                const service::RequestHeader header = service::RequestHeader{
+                    .operation = operation,
+                    .id = id,
+                    .offset = offset,
+                    .count = count
+                };
+                const service::ControlState state = service::ControlState{
+                    .volume_length = volume_length,
+                    .copied = copied,
+                    .admitted = admitted,
+                    .mount_control = mount_control,
+                    .disk_ready = disk.ready()
+                };
+                request.control(header, state);
+                if (!service::control_operation(store, console_state, response, request)) {
+                    return builtin::HostExit::failure;
+                }
+                const service::ControlReply control = request.control_reply();
+                admitted = control.admitted;
+                copied = control.copied;
+                reply_count = control.count;
+                bool accepted = control.accepted;
+                if (admitted && store.disk_collision()) {
+                    disk.poison();
+                }
+                if (accepted && operation == 4u64) {
+                    accepted = disk.begin(id);
+                }
+                if (accepted && operation == 5u64) {
+                    accepted = disk.finish(id);
+                    output.clear();
+                }
+                if (!accepted) {
+                    return builtin::HostExit::failure;
+                }
+                if (control.exit) {
+                    // A native fifth Flush alone cannot establish source success:
+                    // all readbacks and the refreshed mount must also be healthy.
+                    if (output.consumed() && (!commit.confirmed() || !writer_ready
+                        || mount.root_inode() != 96u64 || !disk.ready())) {
+                        return builtin::HostExit::failure;
+                    }
+                    return builtin::HostExit::success;
+                }
+            } else {
+                if (!store.ok() || !admitted || source != store.active()) {
+                    return builtin::HostExit::failure;
+                }
+                kernel::FileStatus status = kernel::FileStatus::failed;
+                u64 response_size = 0u64;
+                if (disk_request) {
+                    const service::Reply result = disk.response();
+                    if (!response.header(result)) {
+                        return builtin::HostExit::failure;
+                    }
+                    status = result.status;
+                    response_size = result.count;
+                } else {
+                    const builtin::span<const u8> all = request.bytes();
+                    const builtin::span<const u8> payload = all.subspan(0, i64(count));
+                    const service::Reply result = service::file_operation(store, payload, operation, id, offset);
+                    if (!response.header(result)) {
+                        return builtin::HostExit::failure;
+                    }
+                    status = result.status;
+                    response_size = result.count;
+                }
+                reply_count = 64u64 + response_size;
+                if (operation == 19u64 && status == kernel::FileStatus::success) {
+                    u64 byte = 0u64;
+                    while (byte < response_size) {
+                        u8 value = 0u8;
+                        if (disk_request) {
+                            value = disk.read_byte(byte);
+                        } else {
+                            value = store.read_byte(byte);
+                        }
+                        response.set_byte(i64(64u64 + byte), value);
+                        byte = byte + 1u64;
+                    }
+                }
+            }
+            if (!store.ok()) {
+                return builtin::HostExit::failure;
+            }
         }
     }
     return builtin::HostExit::failure;

@@ -52,7 +52,8 @@ enum class ConsoleStatus {
     success,
     unavailable,
     conflict,
-    malformed
+    malformed,
+    failed
 };
 class ConsoleResult final {
 public:
@@ -66,6 +67,10 @@ public:
                                    std::uint64_t expected_note_revision,
                                    std::span<const std::byte> request,
                                    std::span<std::byte> response) -> ConsoleResult;
+
+// Retire a confirmed mounted writer through the retained source owner, then
+// fully validate a fresh readonly incarnation. Conflict preserves the old owner.
+[[nodiscard]] auto switch_storage_readonly(std::uint64_t arena, const Bytes &handoff) -> ConsoleResult;
 
 // An inner policy decoder may reject a structurally valid reply. Revoke only
 // the observed incarnation; this never starts or replays a service request.

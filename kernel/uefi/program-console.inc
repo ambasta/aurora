@@ -1098,6 +1098,37 @@ auto production_input(void *) -> console::Sample {
         stop("production input ownership");
     return ProgramSerial::next();
 }
+[[nodiscard]] __attribute__((noinline)) auto production_storage_readonly() -> bool {
+    require(ProgramInputPlatform::quiet() && terminal_mapping(), "storage switch entry ownership");
+    const auto previous_cr2 = production_process_enter();
+    const auto result = switch_storage_readonly(arena, *handoff);
+    production_process_leave(previous_cr2);
+    std::string_view message;
+    switch (result.status) {
+    case ConsoleStatus::success:
+        message = "storage: readonly remount ready";
+        break;
+    case ConsoleStatus::conflict:
+        message = "storage: readonly refused; RAM retained or disk not ready";
+        break;
+    case ConsoleStatus::unavailable:
+        message = "storage: readonly switch unavailable";
+        break;
+    case ConsoleStatus::failed:
+        message = "storage: readonly switch failed; disk unavailable";
+        break;
+    default:
+        stop("storage switch result");
+    }
+    if (result.status == ConsoleStatus::success || result.status == ConsoleStatus::failed) {
+        command_files.abort();
+        production_selection_clear();
+        console_last_generation = result.status == ConsoleStatus::success ? result.generation : 0;
+    }
+    program::Response response{program::Response::Kind::file_reply};
+    require(response.payload(std::as_bytes(std::span{message.data(), message.size()})), "storage switch response");
+    return program_write_response(response);
+}
 [[nodiscard]] __attribute__((noinline)) auto production_run(const program::Submission &input, bool &input_quarantine)
     -> bool {
     require(ProgramInputPlatform::quiet() && terminal_mapping(), "production run entry ownership");
@@ -1224,6 +1255,10 @@ __attribute__((noinline)) auto run_program_console() -> void {
             effect = session.advance(Event::input, static_cast<U64>(copied.action()), copied.after_cr());
             continue;
 #ifdef AURORA_PRODUCTION
+        case Effect::storage_readonly:
+            effect = session.advance(Event::response, production_storage_readonly());
+            copied.scrub();
+            continue;
         case Effect::run:
             effect = session.advance(Event::response, production_run(copied, input_quarantine));
             copied.scrub();

@@ -323,6 +323,7 @@ for mode, case, argument in (
             (16, 8, 8192, "bin/lifecycle", "lifecycle " + argument),
         ),
     )
+PROCESS_CASES["process-xfs-mounted-confirm-failed"] = (98, PROCESS_CASES["process-xfs-mounted"][1])
 PROCESS_CASES["process-xfs-mounted-prepared-loss"] = (72, PROCESS_CASES["process-xfs-mounted"][1][:1])
 PROCESS_CASES["process-xfs-mounted-loss"] = (
     40,
@@ -457,6 +458,7 @@ PROCESS_MEMORY = {
     "process-xfs-mounted": "256M",
     "process-xfs-mounted-small": "256M",
     "process-xfs-mounted-loss": "256M",
+    "process-xfs-mounted-confirm-failed": "256M",
     "process-xfs-mounted-prepared-loss": "256M",
     "process-service-hostile": "256M",
     "production": "256M",
@@ -1588,6 +1590,7 @@ GUEST_TIMEOUTS = {
     "process-xfs-mounted": 900,
     "process-xfs-mounted-small": 900,
     "process-xfs-mounted-loss": 900,
+    "process-xfs-mounted-confirm-failed": 900,
     "process-xfs-mounted-prepared-loss": 900,
     "process-memory": 180,
     "process-files": 180,

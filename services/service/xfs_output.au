@@ -16,6 +16,12 @@ export namespace service {
         auto ok() const -> bool {
             return _bytes.ok();
         }
+        auto consumed() const -> bool {
+            return _consumed;
+        }
+        auto idle() const -> bool {
+            return ok() && _id == 0u64 && _length == 0u64 && !_poisoned;
+        }
         auto available() const -> bool {
             return ok() && !_consumed && _id == 0u64;
         }

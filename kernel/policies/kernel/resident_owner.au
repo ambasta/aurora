@@ -21,6 +21,14 @@ export namespace kernel {
         auto reject() -> builtin::ResidentStatus {
             return slot.reject();
         }
+        // Retire the current incarnation while retaining the unique slot owner.
+        auto stop() -> builtin::BootstrapProgress {
+            builtin::BootstrapProgress progress = slot.begin_shutdown();
+            while (progress == builtin::BootstrapProgress::pending) {
+                progress = slot.advance_shutdown();
+            }
+            return progress;
+        }
         // Aurora's && is a consuming receiver, not merely a ref-qualification.
         // The retained native owner invokes this admitted entry in place.
         auto finish() && -> builtin::ExecEffect {

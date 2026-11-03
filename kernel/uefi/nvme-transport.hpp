@@ -220,6 +220,8 @@ public:
         armed,
         committing,
         committed,
+        sealing,
+        readonly,
         failed
     };
     static constexpr unsigned write_limit = 16, flush_limit = 5;
@@ -250,6 +252,9 @@ public:
     }
     [[nodiscard]] auto admitted_flushes() const -> unsigned {
         return flushes_;
+    }
+    [[nodiscard]] auto permits_readonly() const -> bool {
+        return phase_ == Phase::cold || phase_ == Phase::readonly;
     }
     [[nodiscard]] auto available() const -> bool {
         return phase_ == Phase::mounting || phase_ == Phase::armed || phase_ == Phase::committing ||
@@ -302,6 +307,20 @@ public:
         pending_ = false;
         if (flushes_ == flush_limit)
             phase_ = Phase::committed;
+        return true;
+    }
+    // Committed records the five physical Flush completions only. The caller
+    // must separately authenticate healthy source completion and orderly exit.
+    [[nodiscard]] auto seal(unsigned remaining) -> bool {
+        if (phase_ != Phase::committed || pending_ || remaining < read_reserve)
+            return fail();
+        phase_ = Phase::sealing;
+        return true;
+    }
+    [[nodiscard]] auto retired() -> bool {
+        if (phase_ != Phase::sealing)
+            return fail();
+        phase_ = Phase::readonly;
         return true;
     }
 };

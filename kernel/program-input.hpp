@@ -40,7 +40,8 @@ public:
         abort_file,
         exited,
         failed,
-        run
+        run,
+        storage_readonly
     };
 
 private:
@@ -67,8 +68,8 @@ public:
         const Argument argument{state_, static_cast<std::uint64_t>(event), value, carry};
         Result result{};
         __au_runtime_program_session(&argument, &result);
-        if (result.effect == 0 || result.effect > static_cast<std::uint64_t>(Effect::run) || result.carry > 1 ||
-            result.outcome > 2)
+        if (result.effect == 0 || result.effect > static_cast<std::uint64_t>(Effect::storage_readonly) ||
+            result.carry > 1 || result.outcome > 2)
             return Effect::invalid;
         state_ = result.state;
         carry_ = result.carry;
@@ -99,7 +100,8 @@ public:
         upper_payload = 1,
         requested_exit = 2,
         output_failure = 3,
-        run = 4
+        run = 4,
+        storage_readonly = 5
     };
     class Record final {
     public:
@@ -128,11 +130,19 @@ public:
         return record_.after_cr;
     }
     [[nodiscard]] auto valid() const -> bool {
-        if (record_.count < 0 || record_.count > 64 || record_.action > 4 || record_.after_cr > 1)
+        if (record_.count < 0 || record_.count > 64 || record_.action > 5 || record_.after_cr > 1)
             return false;
         if (((action() == Action::command || action() == Action::run) && record_.count == 0) ||
             ((record_.action == 2 || record_.action == 3) && record_.count != 0))
             return false;
+        if (action() == Action::storage_readonly) {
+            constexpr char command[] = "storage readonly";
+            if (record_.count != 16)
+                return false;
+            for (std::size_t index = 0; index < 16; ++index)
+                if (record_.bytes[index] != command[index])
+                    return false;
+        }
         for (std::size_t index = 0; index < record_.bytes.size(); ++index) {
             const auto byte = record_.bytes[index];
             if (index < length() ? byte < 32 || byte > 126 : byte != 0)
