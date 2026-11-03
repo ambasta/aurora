@@ -97,6 +97,30 @@ limits. Multiple lines may arrive in one chunk. EOF flushes a final nonempty
 line once; cancellation, unavailable input or an overlong/malformed line does
 not publish an unfinished line. A rejected line ends this example with failure.
 
+`run bin/write-source main.au` stages a new or replacement real file through
+`HostFiles`, independently of the console's 49-byte record namespace. This is a
+non-echoing multiline writer, not a full editor or source-syntax validator. Its
+application-local limits are 256 bytes per line and 16384 normalized file bytes,
+including inserted LF. Printable ASCII and TAB (one preserved byte) are accepted;
+BS/DEL erase only within the unfinished line. Other controls and non-ASCII bytes,
+or an overlong line/file, reject the whole transaction. CR and LF delimit lines;
+CRLF is one delimiter even across reads. EOF adds LF to a final nonempty
+unterminated line; empty EOF creates an empty file. Short reads are not EOF.
+
+Completed lines go to private output. EOF attempts commit exactly once;
+cancellation, unavailable input and precommit errors attempt discard once. A
+failed discard does not confirm cleanup or a surviving file-service incarnation.
+A failed commit is unconfirmed, not rollback: the handle is consumed and the app
+never discards, recreates or retries it. Success followed by failed output does
+not undo or repeat the commit. Actual transport loss may retire the process
+before a status reaches the app; supervisor cleanup and quarantine still apply.
+
+After saving, the shipped compiler can compile the new source and run it in the
+same boot, for example `run bin/aurorac --emit-executable --target aurora main.au -o app`
+then `run app`. Paths and input bytes convey no authority; the independent
+`HostFiles` and `InputStream` loans do. Files remain RAM-backed and session-local;
+this does not add reboot persistence or widen the bounded disk-write contract.
+
 The serial provider interprets Ctrl-D as end of input and Ctrl-C as input-channel
 cancellation, not a general signal or forced kill. The child retains its
 remaining CPU budget to handle a terminal input result. Existing command abort

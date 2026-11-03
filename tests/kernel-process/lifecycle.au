@@ -16,6 +16,16 @@ auto mode(builtin::span<const u8> arguments) -> u8 {
         return 0u8;
     }
     if (arguments.size() - at == 11 && arguments.at(at + 10) == 0u8) {
+        const array<u8, 10> bounded = "bound-read";
+        i64 index = 0;
+        while (index < 10 && arguments.at(at + index) == bounded[index]) {
+            index = index + 1;
+        }
+        if (index == 10) {
+            return 1u8;
+        }
+    }
+    if (arguments.size() - at == 11 && arguments.at(at + 10) == 0u8) {
         const array<u8, 10> clean = "disk-clean";
         i64 index = 0;
         while (index < 10 && arguments.at(at + index) == clean[index]) {
@@ -56,6 +66,44 @@ auto mode(builtin::span<const u8> arguments) -> u8 {
         }
     }
     return arguments.at(at);
+}
+
+// Read the actual writer's committed boundary file through ordinary HostFiles.
+// This same check runs again after the one-byte-over replacement is rejected.
+auto bound_read(builtin::HostFiles& files) -> builtin::HostExit {
+    const builtin::HostFileResult file = files.open_file("bound.txt");
+    if (file.status != builtin::HostStatus::success || file.size != 16384u64) {
+        return builtin::HostExit::failure;
+    }
+    u64 offset = 0u64;
+    while (offset < file.size) {
+        const builtin::HostChunk chunk = files.read(file.id, offset);
+        if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64 || chunk.count > file.size - offset) {
+            return builtin::HostExit::failure;
+        }
+        const array<u8, 504> bytes = chunk.bytes;
+        u64 index = 0u64;
+        while (index < chunk.count) {
+            u8 expected = 'x';
+            if ((offset + index) % 256u64 == 255u64) {
+                expected = '\n';
+            }
+            if (bytes[i64(index)] != expected) {
+                return builtin::HostExit::failure;
+            }
+            index = index + 1u64;
+        }
+        offset = offset + chunk.count;
+    }
+    const builtin::HostChunk end = files.read(file.id, file.size);
+    if (end.status != builtin::HostStatus::success || end.count != 0u64 || files.close(file.id)
+        != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    if (files.print(builtin::HostStream::stdout, "source bound 16384 intact\n") != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    return builtin::HostExit::success;
 }
 
 auto pattern(i64 index, u8 salt) -> u8 {
@@ -292,6 +340,9 @@ auto recovered_pair(builtin::HostFiles& files, builtin::ByteRegion region) -> bu
 auto main(builtin::HostFiles& files, builtin::ByteRegion region,
     builtin::span<const u8> arguments) -> builtin::HostExit {
     const u8 selected = mode(arguments);
+    if (selected == 1u8) {
+        return bound_read(files);
+    }
     if (selected == 'R') {
         return recovered_pair(files, region);
     }

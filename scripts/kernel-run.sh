@@ -216,7 +216,7 @@ if [[ "$action" == --smoke ]]; then
         build_root="${image_dir%/kernel-images/*}"
         meson compile -C "$build_root" tests/graphical-terminal-host process-hostile-aurora \
             process-lifecycle-aurora host-files-probe-aurora process-isolation-3 \
-            process-isolation-6 console-commit-hostile-aurora >/dev/null
+            process-isolation-6 console-commit-hostile-aurora source-writer-service-aurora >/dev/null
         exec python3 -B scripts/kernel_production_smoke.py --build-dir "$image_dir" \
             --renderer "$build_root/tests/graphical-terminal-host"
     fi

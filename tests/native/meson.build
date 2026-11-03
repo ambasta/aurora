@@ -360,6 +360,7 @@ if get_option('kernel_images')
        depends: kernel_profile_images['uefi/production'] + [graphical_terminal_host,
                 process_programs['aurora:process-hostile'], process_programs['aurora:process-lifecycle'],
                 process_programs['aurora:host-files-probe'], process_programs['assembly:process-isolation-3'],
-                process_programs['assembly:process-isolation-6'], process_programs['aurora:console-commit-hostile']],
+                process_programs['assembly:process-isolation-6'], process_programs['aurora:console-commit-hostile'],
+                process_programs['aurora:source-writer-service']],
        suite: ['guest', 'guest-production'], workdir: native_root, timeout: 480)
 endif
