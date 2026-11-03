@@ -133,6 +133,13 @@ auto program_input() -> void {
         {"write a x\n", "write a x", Action::command, 0, "write a x\r\n"},
         {"run bin/cat file\r", "run bin/cat file", Action::run, 1, "run bin/cat file\r\n"},
         {"run\n", "run", Action::run, 0, "run\r\n"},
+        {"storage readonly\n", "storage readonly", Action::storage_readonly, 0, "storage readonly\r\n"},
+        {"storage readonly x\n", "storage readonly x", Action::command, 0, "storage readonly x\r\n"},
+        {"upper\nstorage readonly\n",
+         "storage readonly",
+         Action::upper_payload,
+         0,
+         "upper\r\ntext> storage readonly\r\n"},
         {"runner\n", "runner", Action::command, 0, "runner\r\n"},
         {"run " + std::string(61, 'a') + "\nq\n",
          "q",
@@ -194,7 +201,8 @@ auto program_input() -> void {
         "wc <name>          LF lines / words / bytes (file-call profile only)\r\n"
         "crc <name>         CRC32C over the file (file-call profile only)\r\n"
         "ls / rm <name>     List / remove RAM files\r\nrun <path> [args]  Run a volume or committed program "
-        "(production only)\r\nhelp    Show commands\r\n"
+        "(production only)\r\nstorage readonly  Retire a confirmed disk writer; refuses live RAM state\r\nhelp    Show "
+        "commands\r\n"
         "status  Show console state\r\nexit    Close this QEMU session\r\naurora> "
         "status\r\nstatus: protected Aurora programs; bounded copied data; timer budgets; capacity=64\r\naurora> "
         "q\r\n";
@@ -267,12 +275,24 @@ auto submission_records() -> void {
         return submission.valid();
     };
     Submission::Record record{};
-    for (std::uint64_t action = 0; action < 5; ++action) {
+    for (std::uint64_t action = 0; action < 6; ++action) {
         record.action = action;
         for (std::uint64_t carry = 0; carry < 2; ++carry) {
             record.after_cr = carry;
-            need(accepts(record) == (action != 0 && action != 4), "empty command/payload/terminal distinction");
+            need(accepts(record) == (action != 0 && action != 4 && action != 5),
+                 "empty command/payload/terminal distinction");
         }
+    }
+    record = {};
+    record.count = 16;
+    record.action = 5;
+    constexpr std::string_view storage_command = "storage readonly";
+    std::copy(storage_command.begin(), storage_command.end(), record.bytes.begin());
+    need(accepts(record), "exact copied storage command");
+    for (std::size_t at = 0; at < storage_command.size(); ++at) {
+        auto forged = record;
+        forged.bytes[at] = 'x';
+        need(!accepts(forged), "forged storage command rejects");
     }
     record = {};
     record.count = 1;
@@ -286,7 +306,7 @@ auto submission_records() -> void {
         bad.count = count;
         need(!accepts(bad), "copied submission signed count bounds");
     }
-    for (const auto action : {std::uint64_t{2}, std::uint64_t{3}, std::uint64_t{5}, maximum}) {
+    for (const auto action : {std::uint64_t{2}, std::uint64_t{3}, std::uint64_t{5}, std::uint64_t{6}, maximum}) {
         auto bad = record;
         bad.action = action;
         need(!accepts(bad), "terminal payload and unknown actions reject");

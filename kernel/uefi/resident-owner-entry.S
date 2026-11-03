@@ -57,6 +57,17 @@ __au_runtime_process_resident_reject:
     leave
     ret
 .size __au_runtime_process_resident_reject,.-__au_runtime_process_resident_reject
+.global __au_runtime_process_resident_stop
+.hidden __au_runtime_process_resident_stop
+.type __au_runtime_process_resident_stop,@function
+__au_runtime_process_resident_stop:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r10
+    call @process_resident_stop@
+    leave
+    ret
+.size __au_runtime_process_resident_stop,.-__au_runtime_process_resident_stop
 .global __au_runtime_process_resident_finish
 .hidden __au_runtime_process_resident_finish
 .type __au_runtime_process_resident_finish,@function

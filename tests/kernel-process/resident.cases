@@ -26,3 +26,12 @@ expired-parent deny:expired-parent
 after-finish deny:after-finish
 double-finish deny:double-finish
 reinitialize deny:reinitialize
+stop-remount prepare:1 console:0 stop:0:0:1 prepare:1 run:0:42 finish:0:1
+stop-failed prepare:1 stop:0:2 prepare:0 finish:0:1
+stop-empty stop:1 finish:0:1
+shutdown-during-prepare deny:shutdown-during-prepare
+finish-during-stop deny:finish-during-stop
+consume-during-stop deny:consume-during-stop
+stop-parent deny:stop-parent
+stop-replay deny:stop-replay
+stop-final-close deny:stop-final-close

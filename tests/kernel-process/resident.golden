@@ -25,3 +25,12 @@ expired-parent denied
 after-finish denied
 double-finish denied
 reinitialize denied
+stop-remount prepare=1 console=0 stop=1 steps=3 active=1 prepare=1 run=0:42 finish=0 steps=1 active=0
+stop-failed prepare=1 stop=2 steps=2 active=1 prepare=0 finish=0 steps=1 active=0
+stop-empty stop=1 steps=1 active=1 finish=0 steps=1 active=0
+shutdown-during-prepare denied
+finish-during-stop denied
+consume-during-stop denied
+stop-parent denied
+stop-replay denied
+stop-final-close denied

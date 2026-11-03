@@ -39,6 +39,7 @@
     "crc <name>         CRC32C over the file (file-call profile only)",
     "ls / rm <name>     List / remove RAM files",
     "run <path> [args]  Run a volume or committed program (production only)",
+    "storage readonly  Retire a confirmed disk writer; refuses live RAM state",
     "help    Show commands",
     "status  Show console state",
     "exit    Close this QEMU session",

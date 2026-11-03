@@ -28,6 +28,11 @@ where a contains these two lines joined by one space (no trailing newline):
 The reference must measure 1..4096 bytes. --xfs-db names the pinned xfsprogs
 read-only decoder. The result is checked against those bytes and metadata,
 then linked/run after a cold readonly boot; Linux mount acceptance is separate.
+With --storage-readonly CASE, instead exercise same-boot retirement/remount or
+one isolated RAM conflict. Supply --continuity-probe (the existing immutable
+host-files-probe-aurora fixture), not --mounted-object. The source preservation
+case enters its source over the serial input stream. --continuity-bytes selects
+1..4096 binary bytes (default 4096); the original 150-second guest deadline applies.
 """
 
 import argparse
@@ -133,6 +138,86 @@ def mounted_golden(size, cold):
     command("run bin/file-service-mounted", ["", "run: fault vector=6"])
     command("run bin/cat / copied input.txt", ["input.txt 17\n", "run: exited status=0"])
     command("run bin/sort / sorted copied", ["3 lines: 5 3 6\n", "run: exited status=0"])
+    lines.append("aurora> ")
+    return commands, "\r\n".join(lines).encode()
+
+
+READONLY_REFUSED = "storage: readonly refused; RAM retained or disk not ready"
+READONLY_READY = "storage: readonly remount ready"
+READONLY_UNAVAILABLE = "storage: readonly switch unavailable"
+CONTINUITY_SOURCE = (
+    b"module retained; import aurora.host;\n"
+    b"auto main(builtin::HostFiles&f,builtin::span<const u8>a)->builtin::HostExit{\n"
+    b'const builtin::HostFileResult s=f.open_file("main.au");\n'
+    b"const builtin::HostChunk c=f.read(s.id,0u64);\n"
+    b"const array<u8,504>b=c.bytes;\n"
+    b"const builtin::span<const u8>v=borrow_bytes(b);\n"
+    b"f.print(builtin::HostStream::stdout,v.subspan(0,i64(c.count)));\n"
+    b"f.close(s.id);return builtin::HostExit::success;}\n"
+)
+
+
+def continuity_golden(case, size, probe_size):
+    """Cases are input data for the same production image and mounted profile."""
+    commands = []
+    lines = ["AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines"]
+
+    def command(text, output, input_bytes=None):
+        need(len(text) <= 64, "Continuity command exceeds the production line limit")
+        commands.append(((text + "\r").encode(), input_bytes))
+        lines.append("aurora> " + text)
+        lines.extend(output)
+
+    def run(text, output="", status=0):
+        command("run " + text, [output, f"run: exited status={status}"])
+
+    def author(path, contents):
+        command(
+            "run bin/write-source " + path,
+            [
+                "write-source ready: no echo; Ctrl-D saves, Ctrl-C cancels\nwrite-source: saved\n",
+                "run: exited status=0",
+                "aurora> ",
+                "Input closed; press Enter to return to the console.",
+                "",
+            ],
+            contents + b"\x04",
+        )
+
+    command("storage readonly", [READONLY_UNAVAILABLE])
+    run(f"probe binary /disk/hello {size}", "1 binary success \n")
+    run(f"probe verify /disk/hello {size}", "1 verify success \n")
+    if case == "clean":
+        # Cancellation leaves no committed RAM record, including an empty one.
+        run("probe create cancelled discard @1", "1 create success #0 #1 \n2 discard success \n")
+        command("storage readonly", [READONLY_READY])
+        run(f"probe verify /disk/hello {size}", "1 verify success \n")
+        run(f"probe binary /disk/hello {size}", "1 binary denied \n")
+        command("storage readonly", [READONLY_UNAVAILABLE])
+    else:
+        if case == "ram-source":
+            author("main.au", CONTINUITY_SOURCE)
+        elif case == "ram-executable":
+            run("bin/cat / app probe", f"probe {probe_size}\n")
+        elif case == "ram-zero":
+            author("empty", b"")
+        elif case == "note":
+            command("write note retained", ["Note saved."])
+        elif case == "named":
+            command("write kept retained", ["wrote kept: 8 bytes"])
+        command("storage readonly", [READONLY_REFUSED])
+        if case == "ram-source":
+            run("bin/aurorac --emit-executable --target aurora main.au -o app")
+            run("app", CONTINUITY_SOURCE.decode())
+        elif case == "ram-executable":
+            run(f"app verify /disk/hello {size}", "1 verify success \n")
+        elif case == "ram-zero":
+            run("probe file empty close @1", "1 file success 0 #1 \n2 close success \n")
+        elif case == "note":
+            command("cat note", ["output> retained"])
+        elif case == "named":
+            command("cat kept", ["output> retained"])
+        run(f"probe verify /disk/hello {size}", "1 verify success \n")
     lines.append("aurora> ")
     return commands, "\r\n".join(lines).encode()
 
@@ -445,7 +530,11 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
         args.xfs_exchange,
         args.xfs_nested,
     )
-    if args.xfs_mounted:
+    if args.storage_readonly:
+        commands, expected = continuity_golden(
+            args.storage_readonly, len(args.mounted_bytes), args.continuity_probe.stat().st_size
+        )
+    elif args.xfs_mounted:
         commands, expected = mounted_golden(len(args.mounted_bytes), mounted_cold)
     if recover and not restart:
         commands.append(b"run bin/xfs-recover\r")
@@ -519,10 +608,15 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
                 entries.append(
                     (data[names + name : names + name + length], data[payload + offset : payload + offset + size])
                 )
-            need(not any(name == b"a" for name, _ in entries), "Tiny source name already present")
-            entries.append((b"a", MOUNTED_SOURCE.encode()))
+            if args.storage_readonly:
+                need(not any(name == b"probe" for name, _ in entries), "Probe name already present")
+                entries.append((b"probe", args.continuity_probe.read_bytes()))
+            else:
+                need(not any(name == b"a" for name, _ in entries), "Tiny source name already present")
+                entries.append((b"a", MOUNTED_SOURCE.encode()))
             path.write_bytes(kernel_volume.volume(entries))
-            (directory / "source.au").write_text(MOUNTED_SOURCE)
+            if not args.storage_readonly:
+                (directory / "source.au").write_text(MOUNTED_SOURCE)
         if restart:
             # Reuse the existing private designated-owner fixture; the production
             # kernel and recovery executable remain unchanged.
@@ -571,6 +665,7 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
             memory=PROCESS_MEMORY["production"],
         )
     proc = channel = None
+    continuity_hash = None
     record = dict(argv=argv, status="failed")
     try:
         with open(directory / "qemu.stderr", "xb") as stderr:
@@ -603,10 +698,53 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
             )
             if recover:
                 recovery_lifecycle(channel.serial_bytes, args.xfs_recovery, exchange=args.xfs_exchange)
-        for command in commands:
+        for item in commands:
+            command, input_bytes = item if args.storage_readonly else (item, None)
             begin = len(channel.serial_bytes)
+            prompt_begin = begin
             send(channel, command)
-            wait_for(channel, PROMPT, begin)
+            if input_bytes is not None:
+                wait_for(channel, b"write-source ready:", begin)
+                send(channel, input_bytes)
+                wait_for(channel, b"Input closed; press Enter to return to the console.", begin)
+                # The run result already printed a prompt before quarantine.
+                # Only a fresh prompt after Enter returns input ownership.
+                prompt_begin = len(channel.serial_bytes)
+                send(channel, b"\r")
+            wait_for(channel, PROMPT, prompt_begin)
+            if args.storage_readonly and command == b"storage readonly\r":
+                part = channel.serial_bytes[begin:]
+                if READONLY_READY.encode() in part:
+                    need(args.storage_readonly == "clean", "RAM conflict discarded the old service")
+                    markers = (
+                        rb"AURORA_MOUNTED_RETIRED: generation=\d+ writes=16 flushes=5 disk=readonly\r\n",
+                        rb"AURORA_RESIDENT_STOPPED: clean=1 reclaimed=1 retained=1\r\n",
+                        rb"AURORA_FILE_SERVICE_READY: generation=\d+ disk=ready\r\n",
+                        rb"AURORA_STORAGE_READONLY: ready\r\n",
+                    )
+                    positions = []
+                    for pattern in markers:
+                        matches = list(re.finditer(pattern, part))
+                        need(len(matches) == 1, "Missing unique readonly lifecycle receipt: " + repr(pattern))
+                        positions.append(matches[0].start())
+                    need(positions == sorted(positions), "Readonly remount preceded actual old-owner retirement")
+                else:
+                    need(
+                        b"AURORA_MOUNTED_RETIRED:" not in part
+                        and b"AURORA_FILE_SERVICE_READY:" not in part
+                        and b"AURORA_RESIDENT_STOPPED:" not in part,
+                        "Refusal changed the live service incarnation",
+                    )
+            if args.storage_readonly and command.startswith(b"run probe binary ") and continuity_hash is None:
+                # The first command has returned only after all Flush replies and
+                # checked commit confirmation. Later reads/refusals may not write.
+                channel.stop()
+                continuity_hash = file_hash(disk)
+                channel.command("cont")
+        if continuity_hash is not None:
+            channel.stop()
+            need(file_hash(disk) == continuity_hash, "Readonly switch or subsequent commands changed disk")
+            channel.command("cont")
         channel.drain_serial()
         if disk:
             forbidden = (b"AURORA_NVME_QUARANTINED:",)
@@ -627,8 +765,9 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
                 "Mounted authority armed more than once or on readonly boot",
             )
             need(
-                channel.serial_bytes.count(b"AURORA_FILE_SERVICE_READY:") == 1,
-                "Mounted commands replaced the file owner",
+                channel.serial_bytes.count(b"AURORA_FILE_SERVICE_READY:")
+                == (2 if args.storage_readonly == "clean" else 1),
+                "Mounted commands replaced the file owner unexpectedly",
             )
         skipped = console_stream(channel.serial_bytes, expected)
         # Painting follows the serial prompt; sample paused states until the viewport settles.
@@ -650,6 +789,16 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
         need(transport.wait_exit(proc, 10) == 33, "QEMU did not exit cleanly")
         channel.drain_serial()
         need(b"\r\nAURORA_CONSOLE_EXIT\r\n" in channel.serial_bytes[begin:], "Console exit response")
+        if args.storage_readonly:
+            need(
+                channel.serial_bytes.count(b"AURORA_RESIDENT_OWNER_FINISHED: clean=1 reclaimed=1\r\n") == 1,
+                "Final retained owner was not consumed exactly once",
+            )
+            if args.storage_readonly == "clean":
+                generations = re.findall(
+                    rb"AURORA_FILE_SERVICE_READY: generation=(\d+) disk=ready", channel.serial_bytes
+                )
+                need(len(generations) == 2 and generations[0] != generations[1], "Readonly remount reused generation")
         for path in (directory / "terminal.bin", directory / "terminal.ppm"):
             path.unlink()
         record.update(status="passed", diagnostics=skipped, probes=attempt + 1, exit_status=33)
@@ -668,6 +817,8 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
         if unsettled:
             raise transport.ChildNotReaped("; ".join(errors))
         if disk:
+            if continuity_hash is not None:
+                need(file_hash(disk) == continuity_hash, "Final owner cleanup changed the confirmed disk")
             if mounted:
                 try:
                     mounted_delta(args, directory, before)
@@ -715,6 +866,13 @@ def main():
     )
     parser.add_argument("--xfs-nested", action="store_true", help="read-only shortform directories and shipped clients")
     parser.add_argument("--xfs-mounted", action="store_true", help="one tiny compiler commit, then readonly cold boot")
+    parser.add_argument(
+        "--storage-readonly",
+        choices=("clean", "ram-source", "ram-executable", "ram-zero", "note", "named"),
+        help="same-boot mounted continuity case; no cold boot or RAM source injection",
+    )
+    parser.add_argument("--continuity-probe", type=Path, help="existing host-files-probe-aurora fixture")
+    parser.add_argument("--continuity-bytes", type=int, default=4096, help="binary fixture size, 1..4096")
     parser.add_argument("--mounted-object", type=Path, help="independent Aurora-target object of MOUNTED_SOURCE")
     parser.add_argument("--xfs-db", type=Path, help="pinned read-only xfs_db metadata oracle for mounted mode")
     args = parser.parse_args()
@@ -724,9 +882,13 @@ def main():
     )
     need(not args.xfs_mounted or not (args.xfs_history or args.xfs_recovery), "Choose mounted, history or recovery")
     need(
-        bool(args.mounted_object) == args.xfs_mounted and bool(args.xfs_db) == args.xfs_mounted,
-        "Mounted mode requires both independent object and xfs_db",
+        bool(args.mounted_object) == (args.xfs_mounted and not args.storage_readonly)
+        and bool(args.xfs_db) == args.xfs_mounted,
+        "Mounted mode requires xfs_db and, outside continuity cases, an independent object",
     )
+    need(not args.storage_readonly or args.xfs_mounted, "Continuity requires mounted profile")
+    need(bool(args.continuity_probe) == bool(args.storage_readonly), "Continuity requires the immutable probe")
+    need(1 <= args.continuity_bytes <= 4096, "Continuity binary must fit one block")
     need(not args.recovery_owner_restart or args.xfs_recovery == "clean", "Owner restart requires clean recovery")
     need(not args.xfs_exchange or args.xfs_recovery, "Exchange requires explicit recovery")
     need(not (args.xfs_exchange and args.recovery_owner_restart), "Exchange owner restart is not qualified")
@@ -742,17 +904,23 @@ def main():
         evidence = ROOT / "build/program-console-evidence"
         evidence.mkdir(parents=True, exist_ok=True)
         if args.xfs_mounted:
-            fd = os.open(args.mounted_object, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
-            with os.fdopen(fd, "rb") as artifact:
-                facts = os.fstat(artifact.fileno())
-                need(stat.S_ISREG(facts.st_mode) and 0 < facts.st_size <= 4096, "Mounted object must fit one block")
-                args.mounted_bytes = artifact.read(4097)
-                need(
-                    len(args.mounted_bytes) == facts.st_size
-                    and args.mounted_bytes[:6] == b"\x7fELF\x02\x01"
-                    and args.mounted_bytes[16:20] == b"\x01\x00\x3e\x00",
-                    "Mounted reference must be x86-64 ET_REL",
+            if args.storage_readonly:
+                need(args.continuity_probe.is_file(), "Continuity probe unavailable")
+                args.mounted_bytes = bytes(range(256)) * (args.continuity_bytes // 256) + bytes(
+                    range(args.continuity_bytes % 256)
                 )
+            else:
+                fd = os.open(args.mounted_object, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as artifact:
+                    facts = os.fstat(artifact.fileno())
+                    need(stat.S_ISREG(facts.st_mode) and 0 < facts.st_size <= 4096, "Mounted object must fit one block")
+                    args.mounted_bytes = artifact.read(4097)
+                    need(
+                        len(args.mounted_bytes) == facts.st_size
+                        and args.mounted_bytes[:6] == b"\x7fELF\x02\x01"
+                        and args.mounted_bytes[16:20] == b"\x01\x00\x3e\x00",
+                        "Mounted reference must be x86-64 ET_REL",
+                    )
             # Keep argv[0]'s name: pinned tool wrappers can dispatch by basename.
             args.xfs_db = args.xfs_db.absolute()
             need(args.xfs_db.is_file() and os.access(args.xfs_db, os.X_OK), "xfs_db metadata oracle unavailable")
@@ -769,17 +937,21 @@ def main():
                 )
                 try:
                     screen_guest(args, directory)
-                    args.xfs_image = directory / "storage.raw"
-                    cold = directory / "cold-readonly"
-                    cold.mkdir()
-                    screen_guest(args, cold, mounted_cold=True)
+                    if not args.storage_readonly:
+                        args.xfs_image = directory / "storage.raw"
+                        cold = directory / "cold-readonly"
+                        cold.mkdir()
+                        screen_guest(args, cold, mounted_cold=True)
                 finally:
                     original.seek(0)
                     need(
                         hashlib.file_digest(original, "sha256").digest() == args.recovery_source_hash,
                         "Held original mounted image changed",
                     )
-            print("PASS: production compiler commit, xfsprogs metadata, readonly cold link/run and framebuffer")
+            if args.storage_readonly:
+                print(f"PASS: mounted readonly continuity {args.storage_readonly}, exact binary data and framebuffer")
+            else:
+                print("PASS: production compiler commit, xfsprogs metadata, readonly cold link/run and framebuffer")
             return
         if args.xfs_recovery:
             profile = "exchange-" if args.xfs_exchange else ""

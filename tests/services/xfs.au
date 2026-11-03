@@ -784,17 +784,69 @@ auto mounted_commit(builtin::HostFiles& files, builtin::ByteRegion region, built
     return builtin::HostExit::success;
 }
 
+auto check_console_continuity(builtin::ByteRegion region, bool note_command) -> bool {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::SessionNote note = console::SessionNote(empty);
+    const console::FileNamespace names = console::FileNamespace(empty);
+    const console::ProtectedFiles named_files = console::ProtectedFiles(names);
+    service::ConsoleStore state = service::ConsoleStore(region, note, named_files);
+    builtin::OwnedBytes wire = region.try_allocate(80);
+    if (!wire.ok() || !state.continuity_baseline() || !state.continuity_baseline()) {
+        return false;
+    }
+    // Malformed commands and observations do not dirty the baseline.
+    state.execute(10u64, 0u64, "");
+    if (!state.continuity_baseline()) {
+        return false;
+    }
+    i64 at = 0;
+    while (at < 80) {
+        wire.set(at, 0u8);
+        at = at + 1;
+    }
+    u64 operation = 11u64;
+    i64 size = 80;
+    if (note_command) {
+        const builtin::array<u8, 12> command = "write note x";
+        at = 0;
+        while (at < 12) {
+            wire.set(at, command[at]);
+            at = at + 1;
+        }
+        wire.set(64, 12u8);
+        operation = 10u64;
+        size = 72;
+    } else {
+        const builtin::array<u8, 9> command = "write a x";
+        at = 0;
+        while (at < 9) {
+            wire.set(at, command[at]);
+            at = at + 1;
+        }
+        wire.set(64, 9u8);
+    }
+    {
+        const builtin::span<const u8> bytes = borrow_bytes(wire);
+        if (!state.execute(operation, 0u64, bytes.subspan(0, size)) || state.status() != 0u64
+            || state.continuity_baseline() || state.continuity_baseline()) {
+            return false;
+        }
+    }
+    // Clearing edited bytes cannot authorize destroying this incarnation.
+    return state.execute(14u64, 0u64, "") && !state.continuity_baseline();
+}
+
 auto check_mounted_output(builtin::ByteRegion region) -> bool {
     service::XfsOutput output = service::XfsOutput(region);
-    if (!output.available() || !output.begin(40u64) || output.committable(40u64) || output.append(41u64, "x")
-        || !output.append(40u64, "x")) {
+    if (!output.available() || output.consumed() || !output.idle() || !output.begin(40u64) || output.idle()
+        || output.consumed() || output.committable(40u64) || output.append(41u64, "x") || !output.append(40u64, "x")) {
         return false;
     }
     if (output.exceeds_limit(4095u64) || !output.exceeds_limit(4096u64) || !output.committable(40u64)) {
         return false;
     }
     output.clear();
-    if (!output.available() || !output.begin(41u64)) {
+    if (!output.available() || output.consumed() || !output.idle() || !output.begin(41u64)) {
         return false;
     }
     u64 at = 0u64;
@@ -814,7 +866,8 @@ auto check_mounted_output(builtin::ByteRegion region) -> bool {
         return false;
     }
     output.clear();
-    return !output.available() && !output.begin(43u64);
+    return output.consumed() && output.idle() && !output.available() && !output.begin(43u64) && output.consumed()
+        && output.idle();
 }
 
 auto nested_status(kernel::FileStatus status, u64 expected) -> bool {
@@ -1209,7 +1262,8 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
         const console::ProtectedFiles named_files = console::ProtectedFiles(names);
         service::ConsoleStore state = service::ConsoleStore(region, note, named_files);
         builtin::OwnedBytes line = region.try_allocate(528);
-        if (!state.ok() || !line.ok()) {
+        if (!state.ok() || !line.ok() || !check_console_continuity(region, true) || !check_console_continuity(region,
+            false)) {
             return builtin::HostExit::failure;
         }
         u64 offset = 0u64;
@@ -1286,7 +1340,9 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
             }
             loaded = loaded + chunk.count;
         }
-        bool passed = store.admit_volume() && store.begin(41u64) && missing.begin(41u64);
+        bool passed = !store.continuity_idle() && store.admit_volume() && store.continuity_idle()
+            && store.continuity_idle() && store.begin(41u64) && !store.continuity_idle() && missing.begin(41u64)
+            && !missing.continuity_idle();
         passed = passed && store.disk_collision() == (fault == 4u64);
         const service::Reply root = store.open(0u64, 0u64, "/");
         const service::Reply tree = store.open(0u64, 0u64, "/tree");
@@ -1322,7 +1378,22 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
             && service::xfs_operation(store, "disk/hello", 17u64, root.id) == 0u64 && store.finish(41u64)
             && missing.finish(41u64) && store.active() == 0u64 && missing.active() == 0u64;
         if (fault == 5u64) {
-            passed = verify_exports(store) && passed;
+            passed = !store.continuity_idle() && verify_exports(store) && !store.continuity_idle() && passed;
+        } else {
+            passed = passed && store.continuity_idle() && store.begin(42u64);
+            const service::Reply staged = store.create("/empty");
+            passed = passed && staged.status == kernel::FileStatus::success && !store.continuity_idle()
+                && store.finish(42u64) && store.continuity_idle() && store.begin(43u64);
+            const service::Reply empty_output = store.create("/empty");
+            const service::Reply empty_committed = store.commit(empty_output.id);
+            passed = passed && empty_output.status == kernel::FileStatus::success && empty_committed.status
+                == kernel::FileStatus::success && store.finish(43u64) && !store.continuity_idle()
+                && !store.continuity_idle() && store.begin(44u64);
+            const service::Reply retained = store.open(2u64, 0u64, "/empty");
+            const service::Reply retained_bytes = store.read_file(retained.id, 0u64);
+            passed = passed && retained.status == kernel::FileStatus::success && retained_bytes.status
+                == kernel::FileStatus::success && retained_bytes.count == 0u64 && store.finish(44u64)
+                && !store.continuity_idle();
         }
         files.close(image.id);
         if (passed) {
@@ -1397,7 +1468,8 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
                     files.print(builtin::HostStream::stderr, "unavailable\n");
                     return builtin::HostExit::failure;
                 }
-                passed = disk.begin(11u64);
+                passed = disk.continuity_idle() && disk.continuity_idle() && disk.begin(11u64)
+                    && !disk.continuity_idle();
                 disk.prepare(16u64, 0u64, 0u64, "/disk");
                 stage = 1;
             }
@@ -1486,7 +1558,9 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
             if (current == 13) {
                 passed = result.status == kernel::FileStatus::success && result.size == 64u64;
                 old = result.id;
-                passed = disk.finish(11u64) && disk.begin(12u64) && passed;
+                passed = mount.status() == fs::XfsMountStatus::file_metadata_ready && mount.root_inode() == 96u64
+                    && disk.finish(11u64) && disk.continuity_idle() && disk.begin(12u64) && !disk.continuity_idle()
+                    && passed;
                 disk.prepare(19u64, old, 0u64, "");
                 stage = 14;
             }
@@ -1533,7 +1607,8 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
                 passed = passed && !disk.check_generation(2u64) && !disk.ok();
                 disk.prepare(19u64, result.id, 0u64, "");
                 const service::Reply dead = disk.response();
-                passed = passed && dead.status == kernel::FileStatus::failed && disk.read_byte(0u64) == 0u8;
+                passed = passed && dead.status == kernel::FileStatus::failed && disk.read_byte(0u64) == 0u8
+                    && !disk.continuity_idle();
                 stage = 19;
             }
         }

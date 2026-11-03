@@ -114,6 +114,7 @@ def runs(text, mode):
         "process-xfs-mounted",
         "process-xfs-mounted-small",
         "process-xfs-mounted-loss",
+        "process-xfs-mounted-confirm-failed",
     )
     exported = {} if paired else run_exports(text)
     need(text.count(f"AURORA_PROCESS_CASE_SELECTED: value={case}\n") == 1, "Missing case selector echo")
@@ -125,7 +126,12 @@ def runs(text, mode):
     companion, last_generation, released_companions = None, 0, 0
     seen_owners = set()
     fatal_companion = None
-    mounted_bootstrap = mode in ("process-xfs-mounted", "process-xfs-mounted-small", "process-xfs-mounted-loss")
+    mounted_bootstrap = mode in (
+        "process-xfs-mounted",
+        "process-xfs-mounted-small",
+        "process-xfs-mounted-loss",
+        "process-xfs-mounted-confirm-failed",
+    )
     bootstrap_owners = set()
     normalized = text.replace("\r", "")
     for kind, rest in RECORD.findall(normalized):
@@ -500,10 +506,18 @@ def mounted_authority(status, text, mode, image, cut, plan):
     from kernel_profiles import MOUNTED_CUT_CASES
 
     need(
-        mode in ("process-xfs-mounted", "process-xfs-mounted-small", "process-xfs-mounted-loss") and len(plan) == 16,
+        mode
+        in (
+            "process-xfs-mounted",
+            "process-xfs-mounted-small",
+            "process-xfs-mounted-loss",
+            "process-xfs-mounted-confirm-failed",
+        )
+        and len(plan) == 16,
         "Mounted profile and plan",
     )
     loss = mode == "process-xfs-mounted-loss"
+    confirm_failed = mode == "process-xfs-mounted-confirm-failed"
     frames(text)
     grants = re.findall(
         r"AURORA_MOUNTED_GRANTED: owner=(\d+) root=(\d+) generation=(\d+) service=(\d+) sectors=(\d+)", text
@@ -565,7 +579,8 @@ def mounted_authority(status, text, mode, image, cut, plan):
             status == 33 and "AURORA_PROCESS_FAIL:" not in text and "AURORA_MOUNTED_CUT:" not in text,
             "Mounted replacement failed",
         )
-        retired = f"AURORA_MOUNTED_RETIRED: generation={generation} writes=16 flushes=5 disk=unavailable"
+        disposition = "unavailable" if loss or confirm_failed else "readonly"
+        retired = f"AURORA_MOUNTED_RETIRED: generation={generation} writes=16 flushes=5 disk={disposition}"
         need(text.count(retired) == 1, "Mounted budget consumed and authority retired")
         final_fence = f"AURORA_MOUNTED_FENCE: generation={generation} writes=16 flushes=5"
         if loss:
@@ -606,14 +621,54 @@ def mounted_authority(status, text, mode, image, cut, plan):
                 text.index(final_fence) < text.index("AURORA_PROCESS_END: run=2") < text.index(retired),
                 "Mounted persistence before client completion and retirement",
             )
+            need("AURORA_MOUNTED_OWNER_LOSS:" not in text, "Unexpected owner termination injection")
+            if not confirm_failed:
+                need("AURORA_FILE_SERVICE_LOST:" not in text, "Unexpected owner loss")
+        if confirm_failed:
+            need(text.count("AURORA_PROCESS_CASE_SELECTED: value=98\n") == 1, "Confirmation failure selected")
+            corrupted = re.findall(r"AURORA_MOUNTED_CONFIRM_CORRUPTED: lba=(\d+) returned_copy=1", text)
             need(
-                "AURORA_MOUNTED_OWNER_LOSS:" not in text and "AURORA_FILE_SERVICE_LOST:" not in text,
-                "Unexpected owner loss",
+                len(corrupted) == 1 and int(corrupted[0]) in {lba for lba, _, _ in plan},
+                "Exactly one actual post-Flush confirmation read corrupted",
             )
-        need(
-            len(re.findall(r"AURORA_FILE_SERVICE_OK: clients=1 transactions=[1-9][0-9]*", text)) == 1,
-            "Mounted source service completed",
-        )
+            losses = re.findall(
+                r"AURORA_FILE_SERVICE_LOST: generation=(\d+) transaction=(\d+) cause=exit status=1 volatile_data=lost",
+                text,
+            )
+            need(
+                len(losses) == 1
+                and int(losses[0][0]) == service
+                and int(losses[0][1]) > 0
+                and text.count("AURORA_FILE_SERVICE_LOST:") == 1,
+                "Failed shutdown reports the exact old service exit",
+            )
+            cleanup = "AURORA_MOUNTED_CONFIRM_CLEANUP: shutdown_failed=1 reclaimed=1 readonly=0 scrubbed=1"
+            need(text.count(cleanup) == 1, "Failed confirmation failed shutdown and reclaimed its owner")
+            ordered(
+                text,
+                (
+                    final_fence,
+                    "AURORA_MOUNTED_CONFIRM_CORRUPTED:",
+                    "AURORA_PROCESS_END: run=2 reason=exit status=1",
+                    "AURORA_PROCESS_RELEASED: run=2 ",
+                    "AURORA_PROCESS_END: run=1 reason=exit status=1",
+                    "AURORA_PROCESS_RELEASED: run=1 ",
+                    retired,
+                    cleanup,
+                ),
+            )
+            need(
+                text.count("AURORA_FILE_SERVICE_READY:") == 1
+                and "AURORA_FILE_SERVICE_OK:" not in text
+                and "AURORA_STORAGE_READONLY:" not in text
+                and "disk=readonly" not in text,
+                "Failed confirmation did not remount or acknowledge clean shutdown",
+            )
+        else:
+            need(
+                len(re.findall(r"AURORA_FILE_SERVICE_OK: clients=1 transactions=[1-9][0-9]*", text)) == 1,
+                "Mounted source service completed",
+            )
         compare(ROOT / f"tests/kernel-process/{mode}.golden", runs(text, mode))
     observed = re.findall(r"AURORA_MOUNTED_FENCE: generation=(\d+) writes=(\d+) flushes=(\d+)", text)
     need(observed == [(str(generation), str(w), str(f)) for w, f in fences], "Mounted durable fence sequence")
@@ -1140,7 +1195,12 @@ def validate(
         )
         need("AURORA_PROCESS_VOLUME_OK" not in text and "AURORA_EXPORT" not in text, "Unsorted volume continued")
         return
-    if mode in ("process-xfs-mounted", "process-xfs-mounted-small", "process-xfs-mounted-loss"):
+    if mode in (
+        "process-xfs-mounted",
+        "process-xfs-mounted-small",
+        "process-xfs-mounted-loss",
+        "process-xfs-mounted-confirm-failed",
+    ):
         mounted_authority(status, text, mode, image, mounted_cut, mounted_plan)
         return
     if mode == "process-xfs-recover-pair":

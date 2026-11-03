@@ -181,6 +181,11 @@ export namespace service {
         auto ok() const -> bool {
             return output.ok();
         }
+        // Conservatively retain this owner after any legacy note/file edit,
+        // including an edit that restores the original bytes.
+        auto continuity_baseline() const -> bool {
+            return ok() && note_revision == 1u64 && files.version() == 1u64;
+        }
         auto status() const -> u64 {
             return result_status;
         }

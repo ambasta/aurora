@@ -146,6 +146,50 @@ sectors are unchanged. This avoids repeating the full log scan inside a client
 request without increasing its watchdog budget. Any mismatch loses disk
 availability; it never makes an indeterminate commit safe to retry.
 
+### Orderly readonly continuation
+
+The explicit production command `storage readonly` requests one orderly
+transition after this mounted replacement. It is not crash recovery or a second
+write opportunity. The mounted source owner must confirm its completed readback
+and namespace validation, healthy idle disk, and absence of any live client,
+handle or staged output. It also refuses if any RAM file exists (including an
+empty file), or the legacy note/named-file state has changed. Refusal preserves
+the original service and RAM bytes. This deliberately conservative interface
+never silently discards an authored program or compiled RAM executable, and
+provides no migration or force-discard option.
+
+The authenticated readiness response is bound to the exact waiting incarnation
+and immediately followed by retained-owner shutdown, without an intervening
+service request. Successful source shutdown is required; a fifth Flush alone
+is insufficient. The broker seals the writer irreversibly, removes its write
+buffer's IOVA leaf and observes a fresh invalidation completion. Only verified
+service reclamation, continuation clearing and old-grant disposal allow a new
+readonly grant. The fresh service validates the complete supported log and
+namespace again. Its readiness is reported only after that mount completes.
+The writer claim remains spent. Failure during shutdown, invalidation or remount
+leaves disk access unavailable; no reset, replay or attempted rollback occurs.
+
+The admission bound remains 16,896 remaining command IDs. With admitted 4 KiB
+blocks, an aligned log of at most 16,384 blocks and at most 16 namespace inodes,
+a cold readonly mount needs at most 16,403 commands: one superblock, 16,384 log
+blocks, one clean-record body reread, one root inode and 16 namespace inodes.
+A first complete sequential read of the fixed root `/disk/hello` (at most 4096
+bytes) adds at most 37 commands: one open inode plus nine 504-byte chunks, each
+spanning at most two sectors and requiring at most one inode and one data read
+per sector. Root traversal uses retained validated root bytes. EOF and close
+issue no disk reads. The total is 16,440, leaving 456 commands in reserve without
+assuming NVMe cache hits. The mounted profile's two-entry namespace is stricter.
+Nested paths and arbitrary repeated offsets are outside this first-read bound.
+Remaining reads are finite and exhaustion fails closed; the queue/CID lifetime
+is never reset. Recovery retains its separate 32,768-command reservation.
+
+This contract assumes the admitted device/requester and translation domain,
+no bypass alias, coherent DMA ordering, conforming command/Flush completion and
+effective invalidation. Queue and read mappings remain; all device backing stays
+boot-pinned. Revoking the write leaf is not proof that the device has stopped all
+DMA or that its pages may be reused. Qualification remains emulator-specific,
+not a physical-hardware or arbitrary crash-recovery claim.
+
 ### Targeted acceptance
 
 The actual source owner has replaced 64-byte contents with 777 bytes while a

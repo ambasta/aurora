@@ -738,7 +738,7 @@ def validate_native_abi(facts, source):
         enum(
             "console::ProgramEffect",
             "invalid ready file_ready input note files upper read_note upper_note file peek wc crc unknown "
-            "note_saved file_reply abort_file exited failed run",
+            "note_saved file_reply abort_file exited failed run storage_readonly",
         )
         record(
             "console::ProgramSessionUpdate",

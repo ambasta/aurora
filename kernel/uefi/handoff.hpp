@@ -181,7 +181,8 @@ public:
             h.get(framebuffer_word) == actual + framebuffer_record_offset;
 #else
         const bool selected = loader_fixture::admitted(h.get(fixture_offset)) && h.get(case_word) <= 255;
-        const bool storage_case = (h.get(case_word) >= 10 && h.get(case_word) <= 41) || h.get(case_word) == 72;
+        const bool storage_case =
+            (h.get(case_word) >= 10 && h.get(case_word) <= 41) || h.get(case_word) == 72 || h.get(case_word) == 98;
         const bool storage =
 #ifdef AURORA_UEFI_NVME
             composition == 3 && storage_case &&

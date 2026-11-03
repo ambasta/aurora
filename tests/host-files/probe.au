@@ -17,6 +17,8 @@ import aurora.host;
 //   create PATH         create_output (prints the destination and directory identities)
 //   write OUT TEXT      write
 //   fill OUT KIB        write KIB KiB of 'x', stopping at the first failure
+//   binary PATH BYTES   commit 1..4096 bytes of the repeating byte sequence 0..255
+//   verify PATH BYTES   check exact size, every sequence byte, EOF and close
 //   commit OUT          commit
 //   discard OUT         discard
 //   print TEXT          print to stdout; eprint TEXT prints to stderr
@@ -157,10 +159,14 @@ class FillBlock {
 public:
     FillBlock() : elements{} {
     }
-    auto initialize() -> bool {
+    auto initialize(bool binary) -> bool {
         i64 at = 0;
         while (at < 512) {
-            elements[at] = 'x';
+            if (binary) {
+                elements[at] = u8(at % 256);
+            } else {
+                elements[at] = 'x';
+            }
             at = at + 1;
         }
         return true;
@@ -172,7 +178,7 @@ public:
 
 auto fill(builtin::HostFiles& files, u64 output, u64 kibibytes) -> builtin::HostStatus {
     FillBlock block = FillBlock();
-    block.initialize();
+    block.initialize(false);
     const builtin::span<const u8> bytes = block.bytes();
     u64 written = 0u64;
     while (written < kibibytes * 2u64) {
@@ -183,6 +189,69 @@ auto fill(builtin::HostFiles& files, u64 output, u64 kibibytes) -> builtin::Host
         written = written + 1u64;
     }
     return builtin::HostStatus::success;
+}
+
+// Binary fixtures remain immutable volume clients. They do not create RAM
+// records while testing the mounted store's one bounded replacement.
+auto binary_write(builtin::HostFiles& files, builtin::span<const u8> path, u64 count) -> builtin::HostStatus {
+    if (count == 0u64 || count > 4096u64) {
+        return builtin::HostStatus::too_large;
+    }
+    const builtin::HostOutputResult output = files.create_output(path);
+    if (output.status != builtin::HostStatus::success) {
+        return output.status;
+    }
+    FillBlock block = FillBlock();
+    block.initialize(true);
+    u64 written = 0u64;
+    while (written < count) {
+        u64 length = count - written;
+        if (length > 512u64) {
+            length = 512u64;
+        }
+        const builtin::span<const u8> bytes = block.bytes();
+        const builtin::HostStatus result = files.write(output.id, bytes.subspan(0, i64(length)));
+        if (result != builtin::HostStatus::success) {
+            files.discard(output.id);
+            return result;
+        }
+        written = written + length;
+    }
+    return files.commit(output.id);
+}
+
+auto binary_verify(builtin::HostFiles& files, builtin::span<const u8> path, u64 count) -> builtin::HostStatus {
+    const builtin::HostFileResult file = files.open_file(path);
+    if (file.status != builtin::HostStatus::success) {
+        return file.status;
+    }
+    bool okay = count > 0u64 && count <= 4096u64 && file.size == count;
+    u64 offset = 0u64;
+    while (okay && offset < count) {
+        const builtin::HostChunk chunk = files.read(file.id, offset);
+        if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64 || chunk.count > count - offset) {
+            okay = false;
+        } else {
+            const array<u8, 504> bytes = chunk.bytes;
+            u64 index = 0u64;
+            while (index < chunk.count) {
+                if (bytes[i64(index)] != u8((offset + index) % 256u64)) {
+                    okay = false;
+                }
+                index = index + 1u64;
+            }
+            offset = offset + chunk.count;
+        }
+    }
+    if (okay) {
+        const builtin::HostChunk end = files.read(file.id, count);
+        okay = end.status == builtin::HostStatus::success && end.count == 0u64;
+    }
+    const builtin::HostStatus closed = files.close(file.id);
+    if (!okay) {
+        return builtin::HostStatus::failed;
+    }
+    return closed;
 }
 
 // The operation ordinal an @N operand names, or -1 for a literal.
@@ -520,6 +589,16 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
             }
             if (is(operation, "fill")) {
                 const builtin::HostStatus result = fill(files, id, number(two, 0));
+                report(files, ordinal, operation, result);
+                used = 3;
+            }
+            if (is(operation, "binary")) {
+                const builtin::HostStatus result = binary_write(files, one, number(two, 0));
+                report(files, ordinal, operation, result);
+                used = 3;
+            }
+            if (is(operation, "verify")) {
+                const builtin::HostStatus result = binary_verify(files, one, number(two, 0));
                 report(files, ordinal, operation, result);
                 used = 3;
             }

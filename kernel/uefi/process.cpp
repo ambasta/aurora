@@ -52,6 +52,8 @@ auto source_resident_console(void *) -> U64 asm("__au_runtime_process_resident_c
     __attribute__((visibility("hidden")));
 auto source_resident_reject(void *) -> U64 asm("__au_runtime_process_resident_reject")
     __attribute__((visibility("hidden")));
+auto source_resident_stop(void *) -> U64 asm("__au_runtime_process_resident_stop")
+    __attribute__((visibility("hidden")));
 auto source_resident_finish(void *) -> U64 asm("__au_runtime_process_resident_finish")
     __attribute__((visibility("hidden")));
 #endif
@@ -744,6 +746,8 @@ constinit U64 recovery_cut_case = 0, mounted_cut_case = 0;
 constinit bool frame_finish_fault = false, nested_fault_probe = false;
 constinit U64 execution_probe_case = 0;
 constinit bool mounted_owner_termination = false, mounted_prepared_refusal = false;
+constinit bool mounted_confirmation_probe = false, mounted_confirmation_corrupted = false;
+constinit bool mounted_confirmation_shutdown_failed = false;
 #endif
 constinit bool recovery_completed = false;
 constinit std::array<std::byte, 512> block_copy{};
@@ -932,6 +936,18 @@ public:
     [[nodiscard]] static auto read(U64 lba, std::span<std::byte, 512> output) -> NvmeReadStatus {
         const auto result = nvme_mounted_read(context(), lba, output);
         restored();
+#ifdef AURORA_PROCESS_FIXTURE
+        // A real completed post-Flush read, with only its returned copy changed.
+        // The physical disk, transport completion and cache remain untouched.
+        if (mounted_confirmation_probe && !mounted_confirmation_corrupted && result == NvmeReadStatus::success &&
+            nvme_mounted_committed() && nvme_mounted_admitted_flushes() == 5) {
+            output[0] ^= std::byte{1};
+            mounted_confirmation_corrupted = true;
+            Serial::text("AURORA_MOUNTED_CONFIRM_CORRUPTED:");
+            field("lba", lba);
+            Serial::text(" returned_copy=1\r\n");
+        }
+#endif
         return result;
     }
     [[nodiscard]] static auto write(U64 lba, std::span<const std::byte, 512> input) -> NvmeReadStatus {
@@ -1831,6 +1847,8 @@ auto load_one(std::span<const std::byte> view,
 
 #endif
 
+auto service_shutdown_selected() -> bool;
+
 auto release_resident_physical(std::size_t slot) -> bool {
     using namespace aurora::lifecycle;
     if (execution_owner.canonical(slot, Field::phase) != static_cast<U64>(Phase::retiring))
@@ -1864,7 +1882,7 @@ auto release_resident_physical(std::size_t slot) -> bool {
     auto &process_space = *resident.space;
     const bool writer = resident.state.recovery_generation != 0;
     const bool mounted_writer = resident.state.mounted_generation != 0;
-    bool sealed_writer = false;
+    bool sealed_writer = false, sealed_mounted = false;
 #ifdef AURORA_UEFI_NVME
     if (mounted_writer) {
         if (!resident.state.service || resident.state.service != mounted_service ||
@@ -1872,7 +1890,11 @@ auto release_resident_physical(std::size_t slot) -> bool {
             resident.state.mounted_sectors != mounted_sectors || process_space.owner() != mounted_owner ||
             process_space.root() != mounted_root || root() != kernel_root || !space.closed())
             fail("mounted retirement authority");
-        aurora::uefi::nvme_mounted_abandon();
+        const bool success = terminal == Event::exited && detail == 0 && service_shutdown_selected() &&
+                             execution_owner.canonical(slot, Field::event) != static_cast<U64>(Event::forced);
+        sealed_mounted = success && aurora::uefi::nvme_mounted_committed() && aurora::uefi::nvme_mounted_seal();
+        if (!sealed_mounted)
+            aurora::uefi::nvme_mounted_abandon();
     }
     if (writer) {
         if (resident.state.service || resident.state.recovery_generation != recovery_generation ||
@@ -1934,20 +1956,23 @@ auto release_resident_physical(std::size_t slot) -> bool {
     const auto retired_generation = resident.state.recovery_generation;
     if (writer)
         recovery_owner = recovery_root = recovery_generation = recovery_sectors = 0;
-    if (mounted_writer) {
-#ifdef AURORA_UEFI_NVME
-        Serial::text("AURORA_MOUNTED_RETIRED:");
-        field("generation", mounted_generation);
-        field("writes", aurora::uefi::nvme_mounted_admitted_writes());
-        field("flushes", aurora::uefi::nvme_mounted_admitted_flushes());
-        Serial::text(" disk=unavailable\r\n");
-#endif
+    const auto retired_mounted_generation = resident.state.mounted_generation;
+    if (mounted_writer)
         mounted_owner = mounted_root = mounted_generation = mounted_sectors = mounted_service = 0;
-    }
     resident.budget.stop();
     running.budget = nullptr;
     resident.state = {};
 #ifdef AURORA_UEFI_NVME
+    if (mounted_writer) {
+        const bool readonly = sealed_mounted && aurora::uefi::nvme_mounted_retired();
+        if (!readonly)
+            aurora::uefi::nvme_mounted_abandon();
+        Serial::text("AURORA_MOUNTED_RETIRED:");
+        field("generation", retired_mounted_generation);
+        field("writes", aurora::uefi::nvme_mounted_admitted_writes());
+        field("flushes", aurora::uefi::nvme_mounted_admitted_flushes());
+        Serial::text(readonly ? std::string_view{" disk=readonly\r\n"} : std::string_view{" disk=unavailable\r\n"});
+    }
     if (writer) {
         recovery_completed = sealed_writer && aurora::uefi::nvme_recovery_retired();
         if (!recovery_completed)
@@ -1963,6 +1988,8 @@ auto release_resident_physical(std::size_t slot) -> bool {
         Serial::text("\r\n");
     }
 #else
+    static_cast<void>(sealed_mounted);
+    static_cast<void>(retired_mounted_generation);
     static_cast<void>(sealed_writer);
     static_cast<void>(retired_generation);
 #endif
@@ -2836,6 +2863,11 @@ public:
         endpoint.request_operation = endpoint.invalid_reply_operation = 0;
         endpoint.caller_cancelled = false;
         const auto image = process::volume_lookup(binding.volume, bytes_of(path));
+        bool bootstrap_grant_block = runtime_storage.block() && !runtime_storage.mounted();
+#ifdef AURORA_UEFI_NVME
+        bootstrap_grant_block =
+            runtime_storage.block() && (!runtime_storage.mounted() || aurora::uefi::nvme_mounted_readonly());
+#endif
         process::RunEntry entry{};
         entry.ticks = 64;
         entry.quota = 32768;
@@ -2848,7 +2880,7 @@ public:
                                   true,
                                   true,
                                   binding.generation,
-                                  runtime_storage.block() && !runtime_storage.mounted(),
+                                  bootstrap_grant_block,
                                   0,
                                   binding.mounted_entry)) {
             failed(binding);
@@ -4392,6 +4424,14 @@ auto run_external(std::span<const std::byte> view,
     message_header(6, 0, 0, 0);
     if (exchange_request(0) || residents[0].space || !outcome.exited || outcome.status ||
         !service_shutdown_selected()) {
+#ifdef AURORA_PROCESS_FIXTURE
+        if (mounted_confirmation_probe) {
+            if (!mounted_confirmation_corrupted || residents[0].space || !outcome.exited || !outcome.status ||
+                service_shutdown_selected())
+                fail("mounted confirmation shutdown failure");
+            mounted_confirmation_shutdown_failed = true;
+        }
+#endif
         abandon_service();
         if (recover) {
             close_service_operation();
@@ -4640,6 +4680,10 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
         mounted_cut_case = selected;
     if (selected == 72)
         mounted_prepared_refusal = true;
+    if (selected == 98) {
+        mounted_confirmation_probe = true;
+        run_case = 17;
+    }
 #endif
     char path[] = "runs/000";
     std::size_t length = 5;
@@ -4756,8 +4800,29 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
         count = run_external(view, *runs, true, 1, ~U64{0}, false, XfsReadonlyProfile::linux_6_12_x86_64_clean);
     }
 #endif
-    if (run_case == 17 || run_case == 39)
+    if ((run_case == 17 || run_case == 39) && selected != 98)
         count = run_external(view, *runs, true, 0, ~U64{0}, false, XfsReadonlyProfile::linux_6_12_x86_64_clean, true);
+#if defined(AURORA_PROCESS_FIXTURE) && defined(AURORA_UEFI_NVME)
+    if (selected == 98) {
+        const auto baseline = table.free();
+        count = run_external(view, *runs, true, 0, ~U64{0}, true, XfsReadonlyProfile::linux_6_12_x86_64_clean, true);
+        if (!mounted_confirmation_corrupted || !mounted_confirmation_shutdown_failed || residents[0].space ||
+            residents[1].space || endpoint.generation || mounted_generation || mounted_owner || mounted_root ||
+            mounted_service || block_generation || block_service || aurora::uefi::nvme_mounted_readonly() ||
+            aurora::uefi::nvme_sector_count() || service_root.phase() != aurora::service::Phase::absent ||
+            table.free() != baseline || !audit_residents())
+            fail("mounted confirmation failure cleanup");
+        for (const auto &resident : residents) {
+            for (const auto word : resident.continuation)
+                if (word)
+                    fail("mounted confirmation continuation scrub");
+            for (const auto word : resident.initial)
+                if (word)
+                    fail("mounted confirmation initial scrub");
+        }
+        Serial::text("AURORA_MOUNTED_CONFIRM_CLEANUP: shutdown_failed=1 reclaimed=1 readonly=0 scrubbed=1\r\n");
+    }
+#endif
     if (selected == 40) {
         const auto baseline = table.free();
         count = run_external(view, *runs, true, 0, 2, true, XfsReadonlyProfile::linux_6_12_x86_64_clean, true);
@@ -5282,7 +5347,8 @@ auto resident_console(ResidentInput &input) -> aurora::uefi::ConsoleStatus {
     bool valid = received && endpoint.count >= 64;
     const Bytes reply{endpoint.bytes};
     const U64 status = valid ? reply.get(0) : 3, count = valid ? reply.get(8) : 0, revision = valid ? reply.get(16) : 0;
-    valid = valid && status <= 2 && count == (status ? 0 : output_size) && endpoint.count == 64 + count;
+    valid = valid && status <= (code == 16 ? 1U : 2U) && count == (status ? 0 : output_size) &&
+            endpoint.count == 64 + count;
     for (U64 at = 24; valid && at < 64; ++at)
         valid = endpoint.bytes[at] == std::byte{0};
     if (status)
@@ -5382,6 +5448,26 @@ auto resident_advance_shutdown(ResidentInput &input) -> aurora::bootstrap::Progr
     input.shutdown_terminal = true;
     return Progress::complete;
 }
+auto resident_terminal_cleanup(const ResidentInput &input) -> void {
+    if (!input.shutdown_terminal || input.shutdown_pending || residents[0].space || residents[1].space ||
+        endpoint.generation || endpoint_owner.observe().waiting() ||
+        service_root.phase() != aurora::service::Phase::absent || loading_image || mounted_owner || mounted_root ||
+        mounted_generation || mounted_sectors || mounted_service || block_service || block_generation ||
+        block_sectors || execution_owner.phase(0) != aurora::lifecycle::Phase::empty ||
+        execution_owner.phase(1) != aurora::lifecycle::Phase::empty)
+        fail("resident final cleanup receipt");
+    for (const auto &resident : residents) {
+        for (const auto word : resident.continuation)
+            if (word)
+                fail("resident continuation cleanup receipt");
+        for (const auto word : resident.initial)
+            if (word)
+                fail("resident initial cleanup receipt");
+    }
+    for (auto &byte : endpoint.bytes)
+        *static_cast<volatile std::byte *>(&byte) = std::byte{0};
+    resident_boundary(input);
+}
 auto resident_arguments(const Bytes &handoff) -> ResidentArguments {
     ResidentArguments arguments;
     arguments.volume = space.volume(handoff.get(Handoff::volume_bytes_word));
@@ -5478,6 +5564,121 @@ auto aurora::uefi::console_request(U64 arena,
     return input.console_result;
 }
 
+auto aurora::uefi::switch_storage_readonly(U64 arena, const Bytes &handoff) -> ConsoleResult {
+#ifdef AURORA_UEFI_NVME
+    // This is a single synchronous supervisor operation. No other RPC, runtime
+    // return or foreground execution can intervene between query and stop.
+    if (!enter_runtime(arena, handoff))
+        return {};
+    ConsoleResult result;
+    const auto transition = [&]() -> void {
+        if (!runtime_storage.mounted() || !nvme_mounted_committed() || !mounted_generation ||
+            mounted_service != ::endpoint.generation || !residents[0].space ||
+            residents[0].state.mounted_generation != mounted_generation ||
+            residents[0].state.mounted_sectors != mounted_sectors || residents[0].space->owner() != mounted_owner ||
+            residents[0].space->root() != mounted_root || !service_root.disk_ready(::endpoint.generation))
+            return;
+        auto supplied = resident_arguments(handoff);
+        supplied.console = static_cast<ConsoleOperation>(16);
+        supplied.expected = ::endpoint.generation;
+        ResidentInput query{supplied};
+        ResidentRoot::Operation console{aurora::resident::OperationKind::console, query};
+        resident_owner.open(console);
+        const U64 status = source_resident_console(resident_owner.storage());
+        if (status != static_cast<U64>(query.console_result.status))
+            fail("resident continuity query result");
+        result = query.console_result;
+        // Only a canonical success is authority to continue. Conflict returns
+        // before begin_shutdown and keeps the source namespace/incarnation.
+        if (result.status != ConsoleStatus::success) {
+            resident_owner.close(console);
+            if (::endpoint.generation != supplied.expected || !residents[0].space ||
+                !service_root.disk_ready(supplied.expected))
+                result = {ConsoleStatus::failed, 0, 0};
+            return;
+        }
+        const auto receipt = endpoint_owner.observe();
+        const U64 generation = ::endpoint.generation;
+        const U64 run = residents[0].state.run;
+        const U64 execution_generation = execution_owner.generation(0);
+        const auto continuation = residents[0].continuation;
+        const auto stopped = [&]() -> bool {
+            const auto current = endpoint_owner.observe();
+            return ResidentPlatform::quiet() && !execution_owner.entered() && !residents[1].space && !snapshot &&
+                   !::endpoint.caller && !::endpoint.caller_cancelled && !loading_image && !forced_execution &&
+                   !completed_output && !input_read.pending && !input_wait.active && !output_sink && !input_source &&
+                   residents[0].space && generation && generation == ::endpoint.generation &&
+                   generation == result.generation && current.incarnation == generation &&
+                   current.phase == aurora::endpoint::Phase::waiting && current.source == 0 && current.client == 0 &&
+                   current.transaction != 0 && current.transaction == receipt.transaction &&
+                   ::endpoint.request_operation == 16 && current.next == receipt.next &&
+                   receipt.phase == aurora::endpoint::Phase::waiting && receipt.source == 0 && receipt.client == 0 &&
+                   receipt.incarnation == generation && residents[0].state.run == run &&
+                   residents[0].state.service == generation &&
+                   residents[0].state.continuation == &residents[0].continuation &&
+                   residents[0].state.captured == &residents[0].continuation &&
+                   execution_owner.generation(0) == execution_generation &&
+                   execution_owner.phase(0) == aurora::lifecycle::Phase::parked &&
+                   input_frame_equal(continuation, residents[0].continuation) &&
+                   service_root.phase() == aurora::service::Phase::ready && service_root.disk_ready(generation) &&
+                   nvme_mounted_committed();
+        };
+        if (!stopped())
+            fail("resident continuity query receipt");
+        authenticate_stopped_frame(0, true);
+        resident_owner.close(console);
+        ResidentInput shutdown{resident_arguments(handoff)};
+        ResidentRoot::Operation stop{aurora::resident::OperationKind::stop, shutdown};
+        resident_owner.open(stop);
+        if (!stopped())
+            fail("resident continuity stop receipt");
+        const U64 terminal = source_resident_stop(resident_owner.storage());
+        const U64 expected = static_cast<U64>(shutdown.shutdown_failed ? aurora::bootstrap::Progress::failed
+                                                                       : aurora::bootstrap::Progress::complete);
+        if (!shutdown.shutdown_terminal || terminal != expected)
+            fail("resident stop result");
+        resident_terminal_cleanup(shutdown);
+        resident_owner.close(stop);
+        result = {ConsoleStatus::failed, 0, 0};
+        Serial::text("AURORA_RESIDENT_STOPPED: clean=");
+        Serial::number(shutdown.shutdown_failed ? 0 : 1);
+        Serial::text(" reclaimed=1 retained=1\r\n");
+        if (shutdown.shutdown_failed || !nvme_mounted_readonly())
+            return;
+        // Replacement is a new ordinary service operation after verified
+        // reclamation, never a refund of the old operation's spent start.
+        if (!service_root.close_operation() || !service_root.open_operation())
+            fail("resident readonly service operation");
+        ResidentInput preparation{resident_arguments(handoff)};
+        ResidentRoot::Operation prepare{aurora::resident::OperationKind::prepare, preparation};
+        resident_owner.open(prepare);
+        const U64 ready = source_resident_prepare(resident_owner.storage());
+        if (ready > 1 || (ready != 0) != service_root.disk_ready(::endpoint.generation) ||
+            (ready && ::endpoint.generation == generation))
+            fail("resident readonly preparation result");
+        resident_owner.close(prepare);
+        if (ready)
+            result = {ConsoleStatus::success, ::endpoint.generation, 0};
+        else {
+            // Full source mount failure is absorbing for this physical boot.
+            // Remove any surviving readonly process grant before revocation.
+            if (service_root.phase() != aurora::service::Phase::absent)
+                abandon_service();
+            nvme_mounted_abandon();
+        }
+        Serial::text(ready ? std::string_view{"AURORA_STORAGE_READONLY: ready\r\n"}
+                           : std::string_view{"AURORA_STORAGE_READONLY: unavailable\r\n"});
+    };
+    transition();
+    leave_runtime(handoff);
+    return result;
+#else
+    static_cast<void>(arena);
+    static_cast<void>(handoff);
+    return {};
+#endif
+}
+
 auto aurora::uefi::reject_program_service(U64 arena, const Bytes &handoff, U64 expected_generation) -> ConsoleStatus {
     if (!expected_generation)
         return ConsoleStatus::malformed;
@@ -5557,7 +5758,7 @@ auto resident_reject_effect(const void *binding, U64 epoch, const void *field) -
 auto resident_begin_shutdown_effect(const void *, U64, const void *) -> U64 asm("__au_runtime_resident_begin_shutdown")
     __attribute__((visibility("hidden")));
 auto resident_begin_shutdown_effect(const void *binding, U64 epoch, const void *field) -> U64 {
-    auto &operation = resident_owner.enter(binding, epoch, field, aurora::resident::OperationKind::shutdown);
+    auto &operation = resident_owner.enter_shutdown(binding, epoch, field);
     const auto result = resident_begin_shutdown(operation.input());
     resident_owner.leave(operation);
     return static_cast<U64>(result);
@@ -5565,7 +5766,7 @@ auto resident_begin_shutdown_effect(const void *binding, U64 epoch, const void *
 auto resident_advance_shutdown_effect(const void *, U64, const void *) -> U64
     asm("__au_runtime_resident_advance_shutdown") __attribute__((visibility("hidden")));
 auto resident_advance_shutdown_effect(const void *binding, U64 epoch, const void *field) -> U64 {
-    auto &operation = resident_owner.enter(binding, epoch, field, aurora::resident::OperationKind::shutdown, true);
+    auto &operation = resident_owner.enter_shutdown(binding, epoch, field, true);
     const auto result = resident_advance_shutdown(operation.input());
     resident_owner.leave(operation);
     return static_cast<U64>(result);
@@ -5575,12 +5776,7 @@ auto resident_finish_effect(const void *, U64, const void *) -> U64 asm("__au_ru
 auto resident_finish_effect(const void *binding, U64 epoch, const void *field) -> U64 {
     auto &operation = resident_owner.enter(binding, epoch, field, aurora::resident::OperationKind::shutdown, true);
     const auto &input = operation.input();
-    if (!input.shutdown_terminal || input.shutdown_pending || residents[0].space || endpoint.generation ||
-        endpoint_owner.observe().waiting() || service_root.phase() != aurora::service::Phase::absent)
-        fail("resident final cleanup receipt");
-    for (auto &byte : endpoint.bytes)
-        *static_cast<volatile std::byte *>(&byte) = std::byte{0};
-    resident_boundary(input);
+    resident_terminal_cleanup(input);
     const U64 result = input.shutdown_failed ? 1 : 0;
     resident_owner.consume(operation);
     resident_owner.leave(operation);

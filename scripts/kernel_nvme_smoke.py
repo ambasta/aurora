@@ -290,6 +290,7 @@ def run_process_xfs(
     mounted=False,
     mounted_small=False,
     mounted_loss=False,
+    mounted_confirm_failed=False,
     mounted_prepared_loss=False,
     mounted_cut=None,
     mounted_reference=None,
@@ -303,6 +304,8 @@ def run_process_xfs(
         if pair
         else "process-xfs-mounted-prepared-loss"
         if mounted_prepared_loss
+        else "process-xfs-mounted-confirm-failed"
+        if mounted_confirm_failed
         else "process-xfs-mounted-loss"
         if mounted_loss
         else "process-xfs-mounted-small"
@@ -619,6 +622,11 @@ def main():
     )
     mounted_mode = parser.add_mutually_exclusive_group()
     mounted_mode.add_argument(
+        "--mounted-confirm-failed",
+        action="store_true",
+        help="corrupt one checked-confirmation read after the fifth Flush; require failed shutdown and reclamation",
+    )
+    mounted_mode.add_argument(
         "--mounted-loss",
         action="store_true",
         help="inject source-owner termination after final Flush and verify RAM-only restart",
@@ -698,6 +706,10 @@ def main():
         "Recovery cut requires a dirty private recovery fixture",
     )
     need(bool(args.recovery_cut) == bool(args.recovery_reference), "Cut requires exact completed reference")
+    need(
+        not args.mounted_confirm_failed or args.process_xfs_mounted is not None,
+        "Confirmation failure requires mounted image",
+    )
     need(not args.mounted_loss or args.process_xfs_mounted is not None, "Owner loss requires mounted image")
     need(not args.mounted_prepared_loss or args.process_xfs_mounted is not None, "Prepared loss requires mounted image")
     need(not args.mounted_small or args.process_xfs_mounted is not None, "Small replacement requires mounted image")
@@ -720,6 +732,8 @@ def main():
         if pair
         else "process-xfs-mounted-prepared-loss"
         if args.mounted_prepared_loss
+        else "process-xfs-mounted-confirm-failed"
+        if args.mounted_confirm_failed
         else "process-xfs-mounted-loss"
         if args.mounted_loss
         else "process-xfs-mounted-small"
@@ -779,6 +793,7 @@ def main():
             mounted=args.process_xfs_mounted is not None,
             mounted_small=args.mounted_small,
             mounted_loss=args.mounted_loss,
+            mounted_confirm_failed=args.mounted_confirm_failed,
             mounted_prepared_loss=args.mounted_prepared_loss,
             mounted_cut=args.mounted_cut,
             mounted_reference=args.mounted_reference,

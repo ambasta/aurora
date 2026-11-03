@@ -13,3 +13,6 @@ auto process_resident_console(kernel::ServiceOwner& owner) -> builtin::ResidentS
 auto process_resident_reject(kernel::ServiceOwner& owner) -> builtin::ResidentStatus {
     return owner.reject();
 }
+auto process_resident_stop(kernel::ServiceOwner& owner) -> builtin::BootstrapProgress {
+    return owner.stop();
+}

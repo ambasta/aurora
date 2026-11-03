@@ -356,7 +356,8 @@ auto initialize_nvme_readonly(U64 arena, const Bytes &handoff, const NvmeControl
     readonly_open = true;
 }
 auto nvme_sector_count() -> U64 {
-    return readonly_open && recovery.permits_readonly() && !backend_failed && admitted_namespace
+    return readonly_open && recovery.permits_readonly() && mounted.permits_readonly() && !backend_failed &&
+                   admitted_namespace
                ? admitted_namespace->blocks()
                : 0;
 }
@@ -514,34 +515,43 @@ auto nvme_recovery_flush(const NvmeRecoveryContext &context) -> NvmeReadStatus {
     require(recovery.flushed(), "recovery-flush-state");
     return recovery_leave(NvmeReadStatus::success);
 }
-auto nvme_recovery_seal() -> bool {
-    if (backend_failed || !retained_io || !recovery.seal(retained_io->remaining_commands()))
-        return false;
-    require(!process_root && closed(), "recovery-seal-root");
+namespace {
+// Mechanism only: the caller has entered its one-shot sealing phase. Remove
+// just the write-data leaf and wait for a fresh invalidation completion. Queue
+// and read mappings and every DMA/IOMMU page remain pinned for this boot.
+auto revoke_write_data() -> bool {
     cache_valid = false;
     const auto leaf = address(backing.io[Backing::write_data].data()) | 1 | read_permission;
-    require(Bytes{backing.translations}.get(0x7000 / 4096 * 8) == leaf, "recovery-write-leaf");
+    require(Bytes{backing.translations}.get(0x7000 / 4096 * 8) == leaf, "writer-write-leaf");
     put(backing.translations, 0x7000 / 4096 * 8, 0);
     asm volatile("mfence" ::: "memory");
     // Boot-global phase already became sealing. Reconstructing a local batch
     // cannot repeat this transition or reuse an earlier completion observation.
     NvmeInvalidation batch{backing.commands, address(backing.commands.data())};
     if (!batch.prepare(iommu(0x2000), iommu(0x2008), iommu(0x2020)))
-        return quarantine(*retained_io, "recovery-revoke-prepare");
+        return quarantine(*retained_io, "writer-revoke-prepare");
     Window::write(iommu_base + 0x2008, 8, NvmeInvalidation::command_bytes);
     for (U64 i = 0; i < attempts; ++i) {
         const auto result = batch.observe(iommu(0x2000), iommu(0x2008), iommu(0x2020), iommu(0x2010), iommu(0x2018));
         if (result == NvmeInvalidation::Result::failed)
-            return quarantine(*retained_io, "recovery-revoke-completion");
+            return quarantine(*retained_io, "writer-revoke-completion");
         if (result == NvmeInvalidation::Result::complete) {
-            require(closed() && Bytes{backing.translations}.get(56) == 0, "recovery-revoke-window");
+            require(closed() && Bytes{backing.translations}.get(56) == 0, "writer-revoke-window");
             return true;
         }
         asm volatile("pause" ::: "memory");
     }
     batch.expire();
-    return quarantine(*retained_io, "recovery-revoke-timeout");
+    return quarantine(*retained_io, "writer-revoke-timeout");
 }
+} // namespace
+auto nvme_recovery_seal() -> bool {
+    if (backend_failed || !retained_io || !recovery.seal(retained_io->remaining_commands()))
+        return false;
+    require(!process_root && closed(), "recovery-seal-root");
+    return revoke_write_data();
+}
+
 auto nvme_recovery_retired() -> bool {
     if (backend_failed || !recovery.retired())
         return false;
@@ -609,7 +619,39 @@ auto nvme_mounted_flush(const NvmeMountedContext &context) -> NvmeReadStatus {
     require(mounted.flushed(), "mounted-flush-state");
     return mounted_leave(NvmeReadStatus::success);
 }
+auto nvme_mounted_committed() -> bool {
+    return !backend_failed && mounted.phase() == NvmeMountedPhase::Phase::committed;
+}
+auto nvme_mounted_seal() -> bool {
+    readonly_open = false;
+    if (backend_failed || !retained_io)
+        return mounted.fail();
+    // remaining_commands() is zero for an outstanding or quarantined command.
+    // Recheck the mounted remount reserve now: post-commit reads may have
+    // spent it. Recovery keeps its separate, larger readonly reserve.
+    if (!mounted.seal(retained_io->remaining_commands()))
+        return false;
+    require(!process_root && closed(), "mounted-seal-root");
+    if (!healthy() || status() != 1)
+        return quarantine(*retained_io, "mounted-seal-health");
+    return revoke_write_data();
+}
+auto nvme_mounted_retired() -> bool {
+    readonly_open = false;
+    if (backend_failed || !retained_io)
+        return mounted.fail();
+    if (!mounted.retired())
+        return false;
+    require(!process_root && closed() && Bytes{backing.translations}.get(56) == 0, "mounted-retired");
+    cache_valid = false;
+    readonly_open = true;
+    return true;
+}
+auto nvme_mounted_readonly() -> bool {
+    return mounted.phase() == NvmeMountedPhase::Phase::readonly && nvme_sector_count() != 0;
+}
 auto nvme_mounted_abandon() -> void {
+    readonly_open = false;
     static_cast<void>(mounted.fail());
     cache_valid = false;
 }
