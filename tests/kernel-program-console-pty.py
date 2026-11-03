@@ -1289,6 +1289,17 @@ def production_case_volume(source, programs, directory, service_case=None):
         ("quota", "p2.memsz=0x8000000"),
     ):
         entries.append((name.encode(), kernel_volume.elf(edits)))
+    # Existing-file data cases that the normalizing writer cannot create.
+    # These are never compiler input for the in-guest author/revise demonstration.
+    entries.extend(
+        (
+            (b"rev-crlf.txt", b"first\r\nsecond\n"),
+            (b"rev-tail.txt", b"first\ntail"),
+            (b"rev-bad.txt", b"first\rbroken\n"),
+            (b"rev-blank.txt", b"\n" * 16384),
+            (b"rev-full.txt", (b"x" * 255 + b"\n") * 64),
+        )
+    )
     entries.append((b"tree/seed", b""))
     path.write_bytes(kernel_volume.volume(entries))
     return target
@@ -1625,6 +1636,32 @@ def main():
                 )
                 need(part.count(b"write-source: saved\n") == (status == 0), "Writer publication acknowledgment")
                 return part
+
+            def revise_source(path, first, count, chunks, status=0, message=b"revise-source: saved\n"):
+                part = run_input(
+                    chunks,
+                    status,
+                    message,
+                    command=b"run bin/revise-source " + path + f" {first} {count}".encode(),
+                    ready=b"revise-source ready:",
+                )
+                need(part.count(b"revise-source: saved\n") == (status == 0), "Revision publication acknowledgment")
+                return part
+
+            def revision_result(arguments, status, expected):
+                begin = len(transcript)
+                part = run_input(
+                    [],
+                    status,
+                    expected,
+                    command=b"run bin/revise-source " + arguments,
+                    ready=b"Input closed; press Enter to return to the console.",
+                )
+                need(
+                    b"revise-source ready:" not in part and b"revise-source: saved\n" not in part,
+                    "View or rejected revision must not begin replacement input or commit",
+                )
+                return bytes(transcript[begin:])
 
             def finish_session():
                 begin = len(transcript)
@@ -2417,6 +2454,90 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 read_authored(replacement, b"z" * 256 + b"\n", b"ENTERED-SECOND")
                 metrics["same_boot_author_save_read_compile_run_replace"] = True
                 metrics["source_writer_cancel_control_line_limit_preserve"] = True
+                # Revise one existing source line rather than retyping the
+                # whole program. Numbered output is ordinary read-only viewing;
+                # the same guest compiler then executes the changed behavior.
+                numbered = b"".join(
+                    str(number).encode() + b": " + line
+                    for number, line in enumerate(replacement.splitlines(keepends=True), 1)
+                )
+                revision_result(b"main.au", 0, numbered)
+                marker_line = next(
+                    number
+                    for number, line in enumerate(replacement.splitlines(keepends=True), 1)
+                    if b"ENTERED-SECOND" in line
+                )
+                changed_line = replacement.splitlines(keepends=True)[marker_line - 1].replace(
+                    b"ENTERED-SECOND", b"ENTERED-THIRD"
+                )
+                revise_source(b"main.au", marker_line, 1, [changed_line[:-1], b"\r", b"\n", b"\x04"])
+                revised = replacement.replace(b"ENTERED-SECOND", b"ENTERED-THIRD")
+                run_command("run bin/aurorac --emit-executable --target aurora main.au -o app", "exited status=0")
+                current_text = b"z" * 256 + b"\n"
+                read_authored(revised, current_text, b"ENTERED-THIRD")
+                revise_source(b"main.au", 1, 0, [b"// inserted comment\n", b"\x04"])
+                read_authored(b"// inserted comment\n" + revised, current_text, b"ENTERED-THIRD")
+                revise_source(b"main.au", 1, 1, [b"\x04"])
+                read_authored(revised, current_text, b"ENTERED-THIRD")
+                for arguments in (b"main.au 0 1", b"main.au 999 0", b"main.au 1 999"):
+                    revision_result(arguments, 1, b"revise-source: invalid range\n")
+                    read_authored(revised, current_text, b"ENTERED-THIRD")
+                for chunks, message in (
+                    ([b"// cancelled\n", b"unfinished", b"\x03"], b"revise-source: input cancelled\n"),
+                    ([b"// waiting\n"], b"revise-source: input unavailable\n"),
+                    ([b"// staged\n", b"\x00"], b"revise-source: line rejected\n"),
+                    ([b"x" * 257], b"revise-source: line rejected\n"),
+                ):
+                    revise_source(b"main.au", 1, 1, chunks, 1, message)
+                    read_authored(revised, current_text, b"ENTERED-THIRD")
+                write_source(b"text.txt", [b"one\ntwo\nthree\n", b"\x04"])
+                revise_source(b"text.txt", 2, 1, [b"TWO", b"\x04"])
+                read_authored(revised, b"one\nTWO\nthree\n", b"ENTERED-THIRD")
+                revise_source(b"text.txt", 4, 0, [b"last\n", b"\x04"])
+                read_authored(revised, b"one\nTWO\nthree\nlast\n", b"ENTERED-THIRD")
+                revise_source(b"text.txt", 2, 2, [b"\x04"])
+                read_authored(revised, b"one\nlast\n", b"ENTERED-THIRD")
+                revise_source(b"text.txt", 1, 0, [b"zero\n", b"\x04"])
+                read_authored(revised, b"zero\none\nlast\n", b"ENTERED-THIRD")
+                revise_source(b"text.txt", 1, 3, [b"\x04"])
+                read_authored(revised, b"", b"ENTERED-THIRD")
+                empty_view = revision_result(b"text.txt", 0, b"")
+                need(b"1: " not in empty_view, "Empty source must have no phantom line")
+                revise_source(b"text.txt", 1, 0, [b"again\n", b"\x04"])
+                read_authored(revised, b"again\n", b"ENTERED-THIRD")
+                metrics["source_revision_view_replace_compile_insert_delete"] = True
+                metrics["source_revision_range_cancel_unavailable_preserve"] = True
+                if args.program_cases:
+                    raw = revision_result(b"rev-crlf.txt", 0, b"1: first\n2: second\n")
+                    need(b"1: first\r\n2: second\n" in raw, "View must preserve original CRLF")
+                    revise_source(b"rev-crlf.txt", 2, 1, [b"changed\n", b"\x04"])
+                    raw = revision_result(b"rev-crlf.txt", 0, b"1: first\n2: changed\n")
+                    need(b"1: first\r\n2: changed\n" in raw, "Untouched prefix lost original CRLF")
+                    revision_result(b"rev-tail.txt", 0, b"1: first\n2: tail\n[no final LF]\n")
+                    revision_result(b"rev-tail.txt 3 0", 1, b"revise-source: invalid range\n")
+                    revision_result(b"rev-tail.txt", 0, b"1: first\n2: tail\n[no final LF]\n")
+                    revise_source(b"rev-tail.txt", 2, 1, [b"\x04"])
+                    revision_result(b"rev-tail.txt", 0, b"1: first\n")
+                    revision_result(b"rev-bad.txt", 1, b"revise-source: invalid source\n")
+                    revision_result(b"rev-bad.txt 1 1", 1, b"revise-source: invalid source\n")
+                    run_command(
+                        "run probe file rev-bad.txt read @1 0",
+                        "exited status=0",
+                        b"2 read success 13 first\rbroken\n\n",
+                    )
+                    blanks = b"".join(f"{number}: \n".encode() for number in range(1, 16385))
+                    revision_result(b"rev-blank.txt", 0, blanks)
+                    # Exact file-boundary input is data in this private volume,
+                    # avoiding 16KiB of paced typing or a larger wait allowance.
+                    full_view = b"".join(f"{number}: ".encode() + b"x" * 255 + b"\n" for number in range(1, 65))
+                    revision_result(b"rev-full.txt", 0, full_view)
+                    revise_source(b"rev-full.txt", 1, 0, [b"\n", b"\x04"], 1, b"revise-source: file too large\n")
+                    revision_result(b"rev-full.txt", 0, full_view)
+                    revise_source(b"rev-full.txt", 1, 1, [b"\x04"])
+                    revise_source(b"rev-full.txt", 1, 0, [b"x" * 255 + b"\n", b"\x04"])
+                    revision_result(b"rev-full.txt", 0, full_view)
+                    metrics["source_revision_exact_file_bound_preserves_then_fits"] = True
+                    metrics["source_revision_original_crlf_tail_rejection_many_lines"] = True
                 run_command("run bin/aurorac --emit-object --target aurora sort.au -o sort.o", "exited status=0")
                 run_command("run bin/aurorac --link-object sort.o -o sorted", "exited status=0")
                 run_command("run sorted / sorted.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")

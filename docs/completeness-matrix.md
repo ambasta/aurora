@@ -106,7 +106,11 @@ The bounded foreground `write-source` application composes existing input and
 file loans to stage multiline ASCII/TAB files and publish once at EOF. It closes
 the source-authoring gap for same-boot compilation and execution, with a 256-byte
 line and 16 KiB normalized-file ceiling, not a full editor or persistent storage.
-Qualification of the new application remains tied to its final-source receipts.
+The companion `revise-source` application displays numbered source and replaces,
+inserts or deletes bounded line ranges using the same file/input loans. It
+validates the original before staging and preserves unchanged bytes through an
+immutable reader; it adds no kernel/compiler authority or full-screen framework.
+Qualification of these applications remains tied to their final-source receipts.
 
 The retained-run authority and transcript deduplication passed integrated
 qualification in [PR #242](https://github.com/ambasta/aurora/pull/242).

@@ -1,0 +1,517 @@
+module revise_source;
+import aurora.host;
+
+// Bounded application text policy, not a compiler syntax validator. Original
+// bytes stay behind one immutable reader until validation, copying and close.
+enum class LineEvent {
+    pending,
+    complete,
+    rejected
+};
+class SourceLine {
+    array<u8, 256> bytes;
+    i64 length;
+    bool submitted;
+    bool after_cr;
+public:
+    SourceLine() : bytes{}, length(0), submitted(false), after_cr(false) {
+    }
+    auto size() const -> i64 {
+        return length;
+    }
+    auto byte(i64 index) const -> u8 {
+        if (index < 0 || index >= length) {
+            return 0u8;
+        }
+        return bytes[index];
+    }
+    auto finish_input() -> LineEvent {
+        if (submitted || length == 0) {
+            return LineEvent::pending;
+        }
+        submitted = true;
+        return LineEvent::complete;
+    }
+    auto consume(u8 value) -> LineEvent {
+        if (submitted) {
+            length = 0;
+            submitted = false;
+        }
+        const bool suppressed = after_cr && value == '\n';
+        after_cr = value == '\r';
+        if (suppressed) {
+            return LineEvent::pending;
+        }
+        if (value == '\r' || value == '\n') {
+            submitted = true;
+            return LineEvent::complete;
+        }
+        if (value == '\b' || value == '\x7f') {
+            if (length > 0) {
+                length = length - 1;
+            }
+            return LineEvent::pending;
+        }
+        if ((value != '\t' && (value < ' ' || value > '~')) || length == 256) {
+            return LineEvent::rejected;
+        }
+        bytes[length] = value;
+        length = length + 1;
+        return LineEvent::pending;
+    }
+};
+
+class Word {
+    i64 first;
+    i64 length;
+public:
+    Word(i64 begin, i64 count) : first(begin), length(count) {
+    }
+    auto begin() const -> i64 {
+        return first;
+    }
+    auto count() const -> i64 {
+        return length;
+    }
+};
+
+// The NUL-terminated argument at ordinal `index`, or an empty range at -1.
+auto argument(builtin::span<const u8> arguments, i64 index) -> Word {
+    i64 at = 0;
+    i64 begin = 0;
+    i64 ordinal = 0;
+    while (at < arguments.size()) {
+        if (arguments.at(at) == 0u8) {
+            if (ordinal == index) {
+                const Word result = Word(begin, at - begin);
+                return result;
+            }
+            ordinal = ordinal + 1;
+            begin = at + 1;
+        }
+        at = at + 1;
+    }
+    const Word missing = Word(-1, 0);
+    return missing;
+}
+
+// Reject overflow before arithmetic; no argument can name more than 16385.
+auto number(builtin::span<const u8> text) -> i64 {
+    if (text.size() == 0) {
+        return -1;
+    }
+    i64 value = 0;
+    i64 at = 0;
+    while (at < text.size()) {
+        const u8 byte = text.at(at);
+        if (byte < '0' || byte > '9') {
+            return -1;
+        }
+        const i64 digit = i64(byte) - 48;
+        if (value > 1638 || (value == 1638 && digit > 5)) {
+            return -1;
+        }
+        value = value * 10 + digit;
+        at = at + 1;
+    }
+    return value;
+}
+
+class SourceInfo {
+public:
+    bool valid;
+    bool read_failed;
+    bool final_lf;
+    u64 size;
+    i64 lines;
+    u64 prefix;
+    u64 suffix;
+    SourceInfo() : valid(false), read_failed(false), final_lf(false), size(0u64), lines(0), prefix(0u64), suffix(0u64) {
+    }
+};
+
+// Inspect actual EOF, then require agreement with the open snapshot size. Boundaries are starts of
+// lines; the end boundary may equal EOF, without inventing a phantom line.
+auto inspect(builtin::HostFiles& files, u64 reader, i64 first, i64 count) -> SourceInfo {
+    SourceInfo info = SourceInfo();
+    i64 line = 1;
+    i64 length = 0;
+    bool after_cr = false;
+    bool at_start = true;
+    while (true) {
+        const builtin::HostChunk chunk = files.read(reader, info.size);
+        if (chunk.status != builtin::HostStatus::success) {
+            info.read_failed = true;
+            return info;
+        }
+        if (chunk.count == 0u64) {
+            if (after_cr) {
+                return info;
+            }
+            if (at_start) {
+                if (line == first) {
+                    info.prefix = info.size;
+                }
+                if (line == first + count) {
+                    info.suffix = info.size;
+                }
+                info.lines = line - 1;
+            } else {
+                info.lines = line;
+                if (line + 1 == first + count) {
+                    info.suffix = info.size;
+                }
+                if (line + 1 == first) {
+                    info.prefix = info.size;
+                }
+            }
+            info.valid = true;
+            return info;
+        }
+        if (chunk.count > 16384u64 - info.size) {
+            return info;
+        }
+        const array<u8, 504> bytes = chunk.bytes;
+        u64 at = 0u64;
+        while (at < chunk.count) {
+            if (at_start) {
+                if (line == first) {
+                    info.prefix = info.size + at;
+                }
+                if (line == first + count) {
+                    info.suffix = info.size + at;
+                }
+                at_start = false;
+            }
+            const u8 byte = bytes[i64(at)];
+            if (after_cr && byte != '\n') {
+                return info;
+            }
+            after_cr = byte == '\r';
+            info.final_lf = byte == '\n';
+            if (byte == '\n') {
+                line = line + 1;
+                length = 0;
+                at_start = true;
+            } else {
+                if (byte != '\r') {
+                    if ((byte != '\t' && (byte < ' ' || byte > '~')) || length == 256) {
+                        return info;
+                    }
+                    length = length + 1;
+                }
+            }
+            at = at + 1u64;
+        }
+        info.size = info.size + chunk.count;
+    }
+    return info;
+}
+
+auto fail_reader(builtin::HostFiles& files, u64 reader, builtin::span<const u8> reason) -> builtin::HostExit {
+    const builtin::HostStatus closed = files.close(reader);
+    files.print(builtin::HostStream::stderr, reason);
+    if (closed != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "revise-source: cleanup unconfirmed\n");
+    }
+    return builtin::HostExit::failure;
+}
+
+// Cleanup attempts are independent of diagnostic output success.
+auto abandon(builtin::HostFiles& files, u64 reader, u64 output, builtin::span<const u8> reason) -> builtin::HostExit {
+    const builtin::HostStatus closed = files.close(reader);
+    const builtin::HostStatus discarded = files.discard(output);
+    files.print(builtin::HostStream::stderr, reason);
+    if (closed != builtin::HostStatus::success || discarded != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "revise-source: cleanup unconfirmed\n");
+    }
+    return builtin::HostExit::failure;
+}
+
+// Batch numbered view output even for a file containing 16384 empty lines.
+class Display {
+    array<u8, 504> bytes;
+    i64 length;
+public:
+    Display() : bytes{}, length(0) {
+    }
+    auto size() const -> i64 {
+        return length;
+    }
+    auto byte(i64 index) const -> u8 {
+        if (index < 0 || index >= length) {
+            return 0u8;
+        }
+        return bytes[index];
+    }
+    auto clear() -> bool {
+        length = 0;
+        return true;
+    }
+    auto append(u8 byte) -> bool {
+        if (length == 504) {
+            return false;
+        }
+        bytes[length] = byte;
+        length = length + 1;
+        return true;
+    }
+    auto label(u64 value) -> bool {
+        array<u8, 5> digits = "00000";
+        i64 at = 5;
+        u64 rest = value;
+        while (at == 5 || rest > 0u64) {
+            at = at - 1;
+            digits[at] = u8(48u64 + rest % 10u64);
+            rest = rest / 10u64;
+        }
+        while (at < 5) {
+            if (!append(digits[at])) {
+                return false;
+            }
+            at = at + 1;
+        }
+        if (!append(':')) {
+            return false;
+        }
+        return append(' ');
+    }
+};
+
+auto display_flush(builtin::HostFiles& files, Display display) -> bool {
+    if (display.size() == 0) {
+        return true;
+    }
+    array<u8,
+        504> bytes =
+        "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+    i64 index = 0;
+    while (index < display.size()) {
+        bytes[index] = display.byte(index);
+        index = index + 1;
+    }
+    const builtin::span<const u8> all = borrow_bytes(bytes);
+    const builtin::span<const u8> part = all.subspan(0, display.size());
+    if (files.print(builtin::HostStream::stdout, part) != builtin::HostStatus::success) {
+        return false;
+    }
+    return true;
+}
+
+auto view(builtin::HostFiles& files, u64 reader, SourceInfo info) -> builtin::HostExit {
+    Display display = Display();
+    u64 offset = 0u64;
+    u64 line = 1u64;
+    bool at_start = true;
+    while (offset < info.size) {
+        const builtin::HostChunk chunk = files.read(reader, offset);
+        if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64 || chunk.count > info.size - offset) {
+            return fail_reader(files, reader, "revise-source: read failed\n");
+        }
+        const array<u8, 504> bytes = chunk.bytes;
+        u64 at = 0u64;
+        while (at < chunk.count) {
+            if (at_start) {
+                if (display.size() > 497) {
+                    if (!display_flush(files, display)) {
+                        return fail_reader(files, reader, "revise-source: print failed\n");
+                    }
+                    display.clear();
+                }
+                if (!display.label(line)) {
+                    return fail_reader(files, reader, "revise-source: print failed\n");
+                }
+                at_start = false;
+            }
+            const u8 byte = bytes[i64(at)];
+            if (display.size() == 504) {
+                if (!display_flush(files, display)) {
+                    return fail_reader(files, reader, "revise-source: print failed\n");
+                }
+                display.clear();
+            }
+            if (!display.append(byte)) {
+                return fail_reader(files, reader, "revise-source: print failed\n");
+            }
+            if (byte == '\n') {
+                at_start = true;
+                line = line + 1u64;
+            }
+            at = at + 1u64;
+        }
+        offset = offset + chunk.count;
+    }
+    if (info.size > 0u64 && !info.final_lf) {
+        const array<u8, 15> marker_bytes = "\n[no final LF]\n";
+        const builtin::span<const u8> marker = borrow_bytes(marker_bytes);
+        i64 at = 0;
+        while (at < marker.size()) {
+            if (display.size() == 504) {
+                if (!display_flush(files, display)) {
+                    return fail_reader(files, reader, "revise-source: print failed\n");
+                }
+                display.clear();
+            }
+            if (!display.append(marker.at(at))) {
+                return fail_reader(files, reader, "revise-source: print failed\n");
+            }
+            at = at + 1;
+        }
+    }
+    if (!display_flush(files, display)) {
+        return fail_reader(files, reader, "revise-source: print failed\n");
+    }
+    if (files.close(reader) != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "revise-source: close failed; cleanup unconfirmed\n");
+        return builtin::HostExit::failure;
+    }
+    return builtin::HostExit::success;
+}
+
+auto copy_range(builtin::HostFiles& files, u64 reader, u64 output, u64 begin, u64 end) -> bool {
+    u64 offset = begin;
+    while (offset < end) {
+        const builtin::HostChunk chunk = files.read(reader, offset);
+        if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64) {
+            return false;
+        }
+        u64 count = chunk.count;
+        if (count > end - offset) {
+            count = end - offset;
+        }
+        const array<u8, 504> bytes = chunk.bytes;
+        const builtin::span<const u8> all = borrow_bytes(bytes);
+        const builtin::span<const u8> part = all.subspan(0, i64(count));
+        if (files.write(output, part) != builtin::HostStatus::success) {
+            return false;
+        }
+        offset = offset + count;
+    }
+    return true;
+}
+
+auto append_line(builtin::HostFiles& files, u64 output, SourceLine line) -> bool {
+    array<u8,
+        257> bytes =
+        "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+    i64 index = 0;
+    while (index < line.size()) {
+        bytes[index] = line.byte(index);
+        index = index + 1;
+    }
+    bytes[index] = '\n';
+    const builtin::span<const u8> all = borrow_bytes(bytes);
+    const builtin::span<const u8> text = all.subspan(0, index + 1);
+    return files.write(output, text) == builtin::HostStatus::success;
+}
+
+auto main(builtin::HostFiles& files, builtin::InputStream& input,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const Word path_word = argument(arguments, 1);
+    const Word first_word = argument(arguments, 2);
+    const Word count_word = argument(arguments, 3);
+    const Word extra_word = argument(arguments, 4);
+    const bool editing = first_word.begin() >= 0;
+    if (path_word.count() == 0 || extra_word.begin() >= 0 || (editing && count_word.begin() < 0) || arguments.size()
+        == 0 || arguments.at(arguments.size() - 1) != 0u8) {
+        files.print(builtin::HostStream::stderr, "usage: revise-source PATH [FIRST COUNT]\n");
+        return builtin::HostExit::usage;
+    }
+    i64 first = 1;
+    i64 count = 0;
+    if (editing) {
+        first = number(arguments.subspan(first_word.begin(), first_word.count()));
+        count = number(arguments.subspan(count_word.begin(), count_word.count()));
+        if (first < 1 || count < 0) {
+            files.print(builtin::HostStream::stderr, "revise-source: invalid range\n");
+            return builtin::HostExit::failure;
+        }
+    }
+    const builtin::span<const u8> path = arguments.subspan(path_word.begin(), path_word.count());
+    const builtin::HostFileResult reader = files.open_file(path);
+    if (reader.status != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "revise-source: cannot open source\n");
+        return builtin::HostExit::failure;
+    }
+    const SourceInfo info = inspect(files, reader.id, first, count);
+    if (info.read_failed) {
+        return fail_reader(files, reader.id, "revise-source: read failed\n");
+    }
+    if (!info.valid || info.size != reader.size) {
+        return fail_reader(files, reader.id, "revise-source: invalid source\n");
+    }
+    if (!editing) {
+        return view(files, reader.id, info);
+    }
+    if (first > info.lines + 1 || count > info.lines - first + 1 || (first == info.lines + 1 && info.size > 0u64
+        && !info.final_lf)) {
+        return fail_reader(files, reader.id, "revise-source: invalid range\n");
+    }
+    const builtin::HostOutputResult output = files.create_output(path);
+    if (output.status != builtin::HostStatus::success) {
+        return fail_reader(files, reader.id, "revise-source: cannot create output\n");
+    }
+    // Reserve every unchanged byte before accepting replacement input.
+    u64 written = info.prefix + info.size - info.suffix;
+    if (!copy_range(files, reader.id, output.id, 0u64, info.prefix)) {
+        return abandon(files, reader.id, output.id, "revise-source: copy failed\n");
+    }
+    if (files.print(builtin::HostStream::stdout, "revise-source ready: no echo; Ctrl-D saves, Ctrl-C cancels\n")
+        != builtin::HostStatus::success) {
+        return abandon(files, reader.id, output.id, "revise-source: print failed\n");
+    }
+    SourceLine line = SourceLine();
+    bool ended = false;
+    while (!ended) {
+        const builtin::InputChunk chunk = input.read();
+        if (chunk.status == builtin::InputStatus::cancelled) {
+            return abandon(files, reader.id, output.id, "revise-source: input cancelled\n");
+        }
+        if (chunk.status == builtin::InputStatus::unavailable) {
+            return abandon(files, reader.id, output.id, "revise-source: input unavailable\n");
+        }
+        ended = chunk.status == builtin::InputStatus::eof;
+        const array<u8, 504> bytes = chunk.bytes;
+        u64 at = 0u64;
+        while (at < chunk.count || (ended && at == 0u64)) {
+            LineEvent event = LineEvent::pending;
+            if (ended) {
+                event = line.finish_input();
+            } else {
+                event = line.consume(bytes[i64(at)]);
+            }
+            if (event == LineEvent::rejected) {
+                return abandon(files, reader.id, output.id, "revise-source: line rejected\n");
+            }
+            if (event == LineEvent::complete) {
+                const u64 size = u64(line.size()) + 1u64;
+                if (size > 16384u64 - written) {
+                    return abandon(files, reader.id, output.id, "revise-source: file too large\n");
+                }
+                if (!append_line(files, output.id, line)) {
+                    return abandon(files, reader.id, output.id, "revise-source: write failed\n");
+                }
+                written = written + size;
+            }
+            at = at + 1u64;
+        }
+    }
+    if (!copy_range(files, reader.id, output.id, info.suffix, info.size)) {
+        return abandon(files, reader.id, output.id, "revise-source: copy failed\n");
+    }
+    if (files.close(reader.id) != builtin::HostStatus::success) {
+        // Publication is forbidden after an unconfirmed reader close.
+        files.discard(output.id);
+        files.print(builtin::HostStream::stderr, "revise-source: close failed; cleanup unconfirmed\n");
+        return builtin::HostExit::failure;
+    }
+    // Commit consumes output even on failure; never discard, replay or retry.
+    if (files.commit(output.id) != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "revise-source: commit unconfirmed; do not retry automatically\n");
+        return builtin::HostExit::failure;
+    }
+    if (files.print(builtin::HostStream::stdout, "revise-source: saved\n") != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    return builtin::HostExit::success;
+}
