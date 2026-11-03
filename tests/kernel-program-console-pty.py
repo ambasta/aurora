@@ -2454,60 +2454,60 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 read_authored(replacement, b"z" * 256 + b"\n", b"ENTERED-SECOND")
                 metrics["same_boot_author_save_read_compile_run_replace"] = True
                 metrics["source_writer_cancel_control_line_limit_preserve"] = True
-                # Revise one existing source line rather than retyping the
-                # whole program. Numbered output is ordinary read-only viewing;
-                # the same guest compiler then executes the changed behavior.
-                numbered = b"".join(
-                    str(number).encode() + b": " + line
-                    for number, line in enumerate(replacement.splitlines(keepends=True), 1)
-                )
-                revision_result(b"main.au", 0, numbered)
-                marker_line = next(
-                    number
-                    for number, line in enumerate(replacement.splitlines(keepends=True), 1)
-                    if b"ENTERED-SECOND" in line
-                )
-                changed_line = replacement.splitlines(keepends=True)[marker_line - 1].replace(
-                    b"ENTERED-SECOND", b"ENTERED-THIRD"
-                )
-                revise_source(b"main.au", marker_line, 1, [changed_line[:-1], b"\r", b"\n", b"\x04"])
-                revised = replacement.replace(b"ENTERED-SECOND", b"ENTERED-THIRD")
-                run_command("run bin/aurorac --emit-executable --target aurora main.au -o app", "exited status=0")
-                current_text = b"z" * 256 + b"\n"
-                read_authored(revised, current_text, b"ENTERED-THIRD")
-                revise_source(b"main.au", 1, 0, [b"// inserted comment\n", b"\x04"])
-                read_authored(b"// inserted comment\n" + revised, current_text, b"ENTERED-THIRD")
-                revise_source(b"main.au", 1, 1, [b"\x04"])
-                read_authored(revised, current_text, b"ENTERED-THIRD")
-                for arguments in (b"main.au 0 1", b"main.au 999 0", b"main.au 1 999"):
-                    revision_result(arguments, 1, b"revise-source: invalid range\n")
-                    read_authored(revised, current_text, b"ENTERED-THIRD")
-                for chunks, message in (
-                    ([b"// cancelled\n", b"unfinished", b"\x03"], b"revise-source: input cancelled\n"),
-                    ([b"// waiting\n"], b"revise-source: input unavailable\n"),
-                    ([b"// staged\n", b"\x00"], b"revise-source: line rejected\n"),
-                    ([b"x" * 257], b"revise-source: line rejected\n"),
-                ):
-                    revise_source(b"main.au", 1, 1, chunks, 1, message)
-                    read_authored(revised, current_text, b"ENTERED-THIRD")
-                write_source(b"text.txt", [b"one\ntwo\nthree\n", b"\x04"])
-                revise_source(b"text.txt", 2, 1, [b"TWO", b"\x04"])
-                read_authored(revised, b"one\nTWO\nthree\n", b"ENTERED-THIRD")
-                revise_source(b"text.txt", 4, 0, [b"last\n", b"\x04"])
-                read_authored(revised, b"one\nTWO\nthree\nlast\n", b"ENTERED-THIRD")
-                revise_source(b"text.txt", 2, 2, [b"\x04"])
-                read_authored(revised, b"one\nlast\n", b"ENTERED-THIRD")
-                revise_source(b"text.txt", 1, 0, [b"zero\n", b"\x04"])
-                read_authored(revised, b"zero\none\nlast\n", b"ENTERED-THIRD")
-                revise_source(b"text.txt", 1, 3, [b"\x04"])
-                read_authored(revised, b"", b"ENTERED-THIRD")
-                empty_view = revision_result(b"text.txt", 0, b"")
-                need(b"1: " not in empty_view, "Empty source must have no phantom line")
-                revise_source(b"text.txt", 1, 0, [b"again\n", b"\x04"])
-                read_authored(revised, b"again\n", b"ENTERED-THIRD")
-                metrics["source_revision_view_replace_compile_insert_delete"] = True
-                metrics["source_revision_range_cancel_unavailable_preserve"] = True
                 if args.program_cases:
+                    # Revise one existing source line rather than retyping the
+                    # whole program. Numbered output is ordinary read-only viewing;
+                    # the same guest compiler then executes the changed behavior.
+                    numbered = b"".join(
+                        str(number).encode() + b": " + line
+                        for number, line in enumerate(replacement.splitlines(keepends=True), 1)
+                    )
+                    revision_result(b"main.au", 0, numbered)
+                    marker_line = next(
+                        number
+                        for number, line in enumerate(replacement.splitlines(keepends=True), 1)
+                        if b"ENTERED-SECOND" in line
+                    )
+                    changed_line = replacement.splitlines(keepends=True)[marker_line - 1].replace(
+                        b"ENTERED-SECOND", b"ENTERED-THIRD"
+                    )
+                    revise_source(b"main.au", marker_line, 1, [changed_line[:-1], b"\r", b"\n", b"\x04"])
+                    revised = replacement.replace(b"ENTERED-SECOND", b"ENTERED-THIRD")
+                    run_command("run bin/aurorac --emit-executable --target aurora main.au -o app", "exited status=0")
+                    current_text = b"z" * 256 + b"\n"
+                    read_authored(revised, current_text, b"ENTERED-THIRD")
+                    revise_source(b"main.au", 1, 0, [b"// inserted comment\n", b"\x04"])
+                    read_authored(b"// inserted comment\n" + revised, current_text, b"ENTERED-THIRD")
+                    revise_source(b"main.au", 1, 1, [b"\x04"])
+                    read_authored(revised, current_text, b"ENTERED-THIRD")
+                    for arguments in (b"main.au 0 1", b"main.au 999 0", b"main.au 1 999"):
+                        revision_result(arguments, 1, b"revise-source: invalid range\n")
+                        read_authored(revised, current_text, b"ENTERED-THIRD")
+                    for chunks, message in (
+                        ([b"// cancelled\n", b"unfinished", b"\x03"], b"revise-source: input cancelled\n"),
+                        ([b"// waiting\n"], b"revise-source: input unavailable\n"),
+                        ([b"// staged\n", b"\x00"], b"revise-source: line rejected\n"),
+                        ([b"x" * 257], b"revise-source: line rejected\n"),
+                    ):
+                        revise_source(b"main.au", 1, 1, chunks, 1, message)
+                        read_authored(revised, current_text, b"ENTERED-THIRD")
+                    write_source(b"text.txt", [b"one\ntwo\nthree\n", b"\x04"])
+                    revise_source(b"text.txt", 2, 1, [b"TWO", b"\x04"])
+                    read_authored(revised, b"one\nTWO\nthree\n", b"ENTERED-THIRD")
+                    revise_source(b"text.txt", 4, 0, [b"last\n", b"\x04"])
+                    read_authored(revised, b"one\nTWO\nthree\nlast\n", b"ENTERED-THIRD")
+                    revise_source(b"text.txt", 2, 2, [b"\x04"])
+                    read_authored(revised, b"one\nlast\n", b"ENTERED-THIRD")
+                    revise_source(b"text.txt", 1, 0, [b"zero\n", b"\x04"])
+                    read_authored(revised, b"zero\none\nlast\n", b"ENTERED-THIRD")
+                    revise_source(b"text.txt", 1, 3, [b"\x04"])
+                    read_authored(revised, b"", b"ENTERED-THIRD")
+                    empty_view = revision_result(b"text.txt", 0, b"")
+                    need(b"1: " not in empty_view, "Empty source must have no phantom line")
+                    revise_source(b"text.txt", 1, 0, [b"again\n", b"\x04"])
+                    read_authored(revised, b"again\n", b"ENTERED-THIRD")
+                    metrics["source_revision_view_replace_compile_insert_delete"] = True
+                    metrics["source_revision_range_cancel_unavailable_preserve"] = True
                     raw = revision_result(b"rev-crlf.txt", 0, b"1: first\n2: second\n")
                     need(b"1: first\r\n2: second\n" in raw, "View must preserve original CRLF")
                     revise_source(b"rev-crlf.txt", 2, 1, [b"changed\n", b"\x04"])
