@@ -94,6 +94,12 @@ def rejected_sources():
         "mutable-word-parameter": "auto rejected(builtin::span<u64> output)->bool{return true;}",
         "mutable-scalar-call": "auto helper()->bool{return true;}" + function("return helper();"),
     }
+    for query in ("size_of", "type_id", "field_count"):
+        cases[f"mutable-reflection-{query}"] = f"auto test()->i64{{const i64 fact={query}({MUTABLE});return fact;}}"
+    for name, initializer in (("alias", "input"), ("subspan", "input.subspan(0,0)")):
+        cases[f"mutable-local-readonly-{name}"] = function(
+            f"const {MUTABLE} output={initializer};return true;", f"{READONLY} input"
+        )
     return cases
 
 

@@ -68,6 +68,12 @@ export namespace compiler_lowering {
         if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
             return fail(session, LoweringError::region_parameter_position, source);
         }
+        // Mutable byte views are admitted only at an invocation parameter.
+        // Reject the declared local type before an initializer can infer a
+        // readonly span and erase the annotation (for example borrow_bytes).
+        if (kind == compiler_resolver::ResolvedTypeKind::mutable_byte_span) {
+            return fail(session, LoweringError::invalid_span_initializer, source);
+        }
         if (is_span(session, type) && compiler_resolver::sw(session, declaration, 9) == 1) {
             return fail(session, LoweringError::span_binding_requires_const, source);
         }

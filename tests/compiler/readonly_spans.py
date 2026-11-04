@@ -408,6 +408,15 @@ def rejection_cases(suite):
     suite.reject("borrow origin cannot be a byte scalar", "u8 bytes=42u8;" + view() + done)
     for spelling in ("builtin::span<u8>", "builtin::span<const i64>", "span<const u8>", "std::span<const u8>"):
         suite.reject(f"unsupported span type {spelling}", base + f"const {spelling} v=borrow_bytes(bytes);" + done)
+    for origin_const in (False, True):
+        for binding in ("", "const "):
+            suite.reject(
+                f"mutable local from {'const' if origin_const else 'mutable'} array "
+                + f"with {binding or 'nonconst '}binding",
+                array("bytes", [1, 128, 255], const=origin_const)
+                + f"{binding}builtin::span<u8> v=borrow_bytes(bytes);"
+                + done,
+            )
     for query in ("size_of", "type_id", "field_count"):
         suite.reject(f"span rejects {query} reflection", f"const i64 fact={query}({SPAN});return u64(fact);")
     suite.reject("span rejects runtime metadata through type id", f"return u64(reflect_size(type_id({SPAN})));")

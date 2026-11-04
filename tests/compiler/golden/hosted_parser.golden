@@ -900,9 +900,16 @@ expr-typed-error/direct size_of(builtin::unknown);
 expr-typed-error/return size_of(builtin::unknown);
   program error AU2001 @59-66 expected 'array' (found 'unknown')
 expr-typed-error/direct size_of(builtin::span<u8>);
-  expr error AU2001 @22-24 expected 'const' (found 'u8')
+  expr next=9
+    (call size_of@0 close=)@25 :(kind18 builtin@8 last=span@17 close=>@24))
 expr-typed-error/return size_of(builtin::span<u8>);
-  program error AU2001 @64-66 expected 'const' (found 'u8')
+  program module typed_errors
+    syntax 0 preamble typed_errors@7 end=auto@21 binding=typed_errors@7
+    syntax 1 return return@35 end=}@69 expression=(call size_of@42 close=)@67 :(kind18 builtin@50 last=span@59 close=>@66))
+    syntax 2 block {@34 end=<eof>@70 body=1
+    syntax 3 function f@26 end=<eof>@70 type=(i64 i64@31) body=2
+    syntax 4 declaration f@26 end=<eof>@70 body=3
+    syntax 5 module module@0 end=<eof>@70 body=0 other=4
 expr-typed-error/direct size_of(builtin::span<const i64>);
   expr error AU2001 @28-31 expected 'u8' (found 'i64')
 expr-typed-error/return size_of(builtin::span<const i64>);
@@ -2627,9 +2634,11 @@ type-error/alone builtin::unknown;
 type-error/nested builtin::unknown;
   type error AU2001 @17-24 expected 'array' (found 'unknown')
 type-error/alone builtin::span<u8>;
-  type error AU2001 @14-16 expected 'const' (found 'u8')
+  type next=6
+    (kind18 builtin@0 last=span@9 close=>@16)
 type-error/nested builtin::span<u8>;
-  type error AU2001 @22-24 expected 'const' (found 'u8')
+  type next=7
+    (kind18 builtin@8 last=span@17 close=>@24)
 type-error/alone builtin::span<const i64>;
   type error AU2001 @20-23 expected 'u8' (found 'i64')
 type-error/nested builtin::span<const i64>;
@@ -5151,7 +5160,8 @@ raw size_of(array<i64>);
   raw 20 -1 0 5 17 0
     type 0 1 4 4 8 -1 -1 -1 0
 raw size_of(builtin::span<u8>);
-  raw 21 -1 0 6 22 0
+  raw 0 0 1 9 26 0
+    (call size_of@0 close=)@25 :(kind18 builtin@8 last=span@17 close=>@24))
 raw size_of(builtin::span<const i64>);
   raw 22 -1 0 7 28 0
 raw size_of(own<u8>);
@@ -5301,7 +5311,8 @@ raw-type/error array;
 raw-type/error own<i64>>;
   raw 18 -1 0 3 7 0
 raw-type/error builtin::span<u8>;
-  raw 21 -1 0 4 14 0
+  raw 0 0 0 6 17 0
+    (kind18 builtin@0 last=span@9 close=>@16)
 raw-type/error Box<i64,u8,bool>;
   raw 31 -1 0 6 11 0
     type 0 1 2 2 4 -1 -1 -1 0
