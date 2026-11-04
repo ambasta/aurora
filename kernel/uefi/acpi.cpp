@@ -1,6 +1,9 @@
 #include "acpi.hpp"
 #include "acpi-policy.hpp"
 #include "tables.hpp"
+#ifdef AURORA_UEFI_AP_WORKER
+#include "ap-worker-cases.hpp"
+#endif
 #if defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
 #include "ivrs-policy.hpp"
 #if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
@@ -12,6 +15,18 @@
 #endif
 #include "../console.hpp"
 namespace aurora::uefi {
+#ifdef AURORA_UEFI_AP_WORKER
+namespace {
+constinit std::optional<ApWorkerTopology> copied_ap_worker_topology;
+constinit std::optional<PmTimerAdmission> copied_ap_worker_timer;
+} // namespace
+auto discovered_ap_worker_topology() -> const std::optional<ApWorkerTopology> & {
+    return copied_ap_worker_topology;
+}
+auto discovered_ap_worker_timer() -> const std::optional<PmTimerAdmission> & {
+    return copied_ap_worker_timer;
+}
+#endif
 #if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
 [[gnu::noinline]] auto read_event_ivrs(std::span<const std::byte> bytes, unsigned bits) -> std::optional<EventIvrs> {
     return EventIvrs::parse_qemu_default(bytes, bits);
@@ -164,6 +179,10 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     defined(AURORA_PROCESS_FIXTURE)
     copied_timer_topology.reset();
 #endif
+#ifdef AURORA_UEFI_AP_WORKER
+    copied_ap_worker_topology.reset();
+    copied_ap_worker_timer.reset();
+#endif
     std::uint32_t a, b, c, d;
     asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
     if (!(d & (1U << 16)))
@@ -218,6 +237,9 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     if (!xsdt || !Acpi::xsdt(*xsdt, *xsdt_address))
         return false;
     U64 madt_address = 0;
+#ifdef AURORA_UEFI_AP_WORKER
+    U64 fadt_address = 0;
+#endif
 #if defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
     U64 ivrs_address = 0;
 #endif
@@ -234,6 +256,13 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
         const auto length = Bytes{header}.get(4, 4);
         if (length < 36 || length > Acpi::maximum_table || !ranges.readable(candidate, length))
             return false;
+#ifdef AURORA_UEFI_AP_WORKER
+        if (Acpi::signature(header, "FACP")) {
+            if (fadt_address)
+                return false;
+            fadt_address = candidate;
+        }
+#endif
 #ifdef AURORA_UEFI_PCI
         if (pci_row && Acpi::signature(header, "MCFG")) {
             if (mcfg_address)
@@ -281,9 +310,57 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
             return false;
     }
 #endif
+#ifdef AURORA_UEFI_AP_WORKER
+    const auto worker_case = static_cast<ap_worker::Case>(handoff.get(Handoff::worker_case_word));
+    if (worker_case == ap_worker::Case::malformed_topology) {
+        auto altered = bytes(arena + 0x70000, madt->size());
+        std::optional<std::uint64_t> first_id;
+        bool injected = false;
+        for (std::size_t at = 44; at < altered.size();) {
+            const Bytes fields{altered};
+            const auto type = fields.get(at, 1), length = fields.get(at + 1, 1);
+            if (length < 2 || length > altered.size() - at)
+                return false;
+            if (type == 0 && length == 8) {
+                if (first_id) {
+                    put(altered, at + 3, *first_id, 1);
+                    fix_checksum(altered);
+                    injected = true;
+                    break;
+                }
+                first_id = fields.get(at + 3, 1);
+            }
+            at += length;
+        }
+        if (!injected)
+            return false;
+    }
+#endif
     const auto topology = Topology::parse(*madt, physical_bits);
     if (!topology || !window.closed() || !tables.verify(arena, handoff))
         return false;
+#ifdef AURORA_UEFI_AP_WORKER
+    const auto worker_topology = ApWorkerTopology::copy(*topology);
+    if (!worker_topology || !fadt_address)
+        return false;
+    // The XSDT has been completely consumed. Reuse its bounded copy buffer,
+    // preserving the independent two-CPU value before parser temporaries die.
+    const auto fadt = window.table(fadt_address, bytes(arena + 0x60000, 276), "FACP");
+    if (!fadt)
+        return false;
+    if (worker_case == ap_worker::Case::unsupported_timer) {
+        auto altered = bytes(arena + 0x60000, fadt->size());
+        if (altered.size() < 116)
+            return false;
+        put(altered, 76, 0x604, 4);
+        if (altered.size() >= 220)
+            put(altered, 212, 0x604);
+        fix_checksum(altered);
+    }
+    const auto worker_timer = PmTimerAdmission::parse_q35(*fadt);
+    if (!worker_timer || !window.closed() || !tables.verify(arena, handoff))
+        return false;
+#endif
 #if defined(AURORA_UEFI_IVRS) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
     if (ivrs_row && topology->apic() != 0xfee00000)
         return false; // Explicit q35 profile; no unverified APIC alias.
@@ -373,6 +450,10 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||   \
     defined(AURORA_PROCESS_FIXTURE)
     copied_timer_topology.emplace(topology->timer_topology());
+#endif
+#ifdef AURORA_UEFI_AP_WORKER
+    copied_ap_worker_topology.emplace(*worker_topology);
+    copied_ap_worker_timer.emplace(*worker_timer);
 #endif
     return true;
 }

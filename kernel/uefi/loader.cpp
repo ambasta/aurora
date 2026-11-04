@@ -19,6 +19,9 @@
 #endif
 #endif
 #include "acpi-policy.hpp"
+#ifdef AURORA_UEFI_AP_WORKER
+#include "fw-cfg-fixture.hpp"
+#endif
 #if defined(AURORA_UEFI_BAR_CAPTURE) || (defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME))
 #include "bar-loader.hpp"
 #if defined(AURORA_PRODUCTION) && defined(AURORA_UEFI_NVME)
@@ -120,6 +123,20 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         fail("owned arena allocation");
     for (auto &byte : span(arena, Handoff::arena_bytes))
         byte = std::byte{0};
+#ifdef AURORA_UEFI_AP_WORKER
+    const auto worker_case = aurora::uefi::fw_cfg::FwCfg::read_case();
+    if (!worker_case || !aurora::uefi::ap_worker::admitted_case(*worker_case))
+        fail("worker case");
+    Serial::text("AURORA_AP_CASE: value=");
+    Serial::number(*worker_case);
+    Serial::text("\r\n");
+    U64 worker_low = 0xfffff, worker_block = 0xffffffffULL;
+    if (allocate(1, 1, 1, &worker_low) != 0 || worker_low < 4096 || worker_low > 0xff000 || worker_low % 4096 ||
+        allocate(1, 1, Handoff::worker_pages, &worker_block) != 0 || worker_block < 0x100000 || worker_block % 4096 ||
+        worker_block > 0x100000000ULL - Handoff::worker_pages * 4096 ||
+        (worker_block < arena + Handoff::arena_bytes && arena < worker_block + Handoff::worker_pages * 4096))
+        fail("worker backing allocation");
+#endif
 #ifdef AURORA_PROCESS_FIXTURE
     // The case word names the row's run list in the volume (process.md#guest-rows).
     const auto selected_case = aurora::uefi::fw_cfg::FwCfg::read_case();
@@ -213,6 +230,12 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     put(handoff, 0, Handoff::magic);
     put(handoff, 8, 1, 4);
     put(handoff, 12, Handoff::header, 4);
+#ifdef AURORA_UEFI_AP_WORKER
+    put(handoff, Handoff::worker_case_word, *worker_case);
+    put(handoff, Handoff::worker_low_word, worker_low);
+    put(handoff, Handoff::worker_block_word, worker_block);
+    put(handoff, Handoff::worker_pages_word, Handoff::worker_pages);
+#endif
 #ifdef AURORA_LOADER_FIXTURE
     put(handoff, Handoff::fixture_offset, static_cast<unsigned>(*selected));
 #endif
@@ -357,6 +380,13 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         if (flags && !tables.map(arena + offset, flags))
             fail("private tables");
     }
+#ifdef AURORA_UEFI_AP_WORKER
+    if (!tables.map(worker_low, 3 | aurora::uefi::PageTables::nx))
+        fail("worker startup mapping");
+    for (U64 offset = 0; offset < Handoff::worker_pages * 4096; offset += 4096)
+        if (!tables.map(worker_block + offset, 3 | aurora::uefi::PageTables::nx))
+            fail("worker backing mapping");
+#endif
 #ifdef AURORA_PLATFORM_FIXTURE
     if (injected(Fixture::early_bad_table) && !tables.map(0x10000, 3 | aurora::uefi::PageTables::nx))
         fail("bad-table injection");
@@ -370,7 +400,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     if (acpi && !tables.prepare_window())
         fail("firmware window tables");
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||   \
-    defined(AURORA_PROCESS_FIXTURE)
+    defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_UEFI_AP_WORKER)
     if (acpi && !tables.prepare_interrupts())
         fail("interrupt tables");
 #endif
@@ -423,6 +453,10 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         const aurora::uefi::MemoryMap map{span(arena + Handoff::map_offset, size), stride, version};
         if (!map.owns(arena, Handoff::arena_bytes))
             fail("final map ownership");
+#ifdef AURORA_UEFI_AP_WORKER
+        if (!map.owns(worker_low, 4096) || !map.owns(worker_block, Handoff::worker_pages * 4096))
+            fail("worker final map ownership");
+#endif
 #ifdef AURORA_UEFI_ACPI
         if (acpi) {
             const auto count = table.get(104), configuration = table.get(112);
@@ -491,6 +525,24 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         put(handoff, 40, stride);
         put(handoff, 48, version, 4);
         put(handoff, 52, attempt, 4);
+#ifdef AURORA_UEFI_AP_WORKER
+        if (*worker_case == static_cast<unsigned>(aurora::uefi::ap_worker::Case::invalid_low_ownership)) {
+            // Corrupt only the copied ownership evidence. Firmware's map/key
+            // and the real allocation are untouched; the payload must refuse.
+            bool changed = false;
+            for (U64 offset = 0; offset < size; offset += stride) {
+                const auto descriptor = span(arena + Handoff::map_offset + offset, stride);
+                const Bytes entry{descriptor};
+                if (entry.get(8) <= worker_low && worker_low < entry.get(8) + entry.get(24) * 4096) {
+                    put(descriptor, 0, 0, 4);
+                    changed = true;
+                    break;
+                }
+            }
+            if (!changed)
+                fail("worker ownership fixture");
+        }
+#endif
 #ifdef AURORA_PLATFORM_FIXTURE
         if ((injected(Fixture::early_stale) && attempt == 1) || injected(Fixture::early_stale_exhausted))
             key ^= 1;

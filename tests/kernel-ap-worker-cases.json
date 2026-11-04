@@ -1,0 +1,18 @@
+{
+  "results": [45397760, 45662976, 45929216, 46196480, 46464768, 46734080, 47004416, 47275776],
+  "cases": [
+    {"name": "normal", "selector": 0, "attempted": 1, "ready": true},
+    {"name": "fault", "selector": 1, "attempted": 1, "ready": true, "status": 3},
+    {"name": "withheld", "selector": 2, "attempted": 1, "ready": true, "status": 4},
+    {"name": "late", "selector": 3, "attempted": 1, "ready": true, "status": 4, "late": true},
+    {"name": "wrong-identity", "selector": 4, "attempted": 1, "ready": false, "status": 3},
+    {"name": "wrong-root", "selector": 5, "attempted": 1, "ready": false, "status": 3},
+    {"name": "stagnant-timer", "selector": 6, "attempted": 0, "ready": false, "status": 5},
+    {"name": "invalid-low-ownership", "selector": 7, "failure": "worker map ownership", "protected": false},
+    {"name": "malformed-topology", "selector": 8, "failure": "ACPI discovery", "protected": true},
+    {"name": "unsupported-timer", "selector": 9, "failure": "ACPI discovery", "protected": true},
+    {"name": "malformed-completion", "selector": 10, "attempted": 1, "ready": true, "status": 5},
+    {"name": "one-cpu", "selector": 0, "cpus": 1, "failure": "ACPI discovery", "protected": true},
+    {"name": "unsupported-vendor", "selector": 0, "cpu": "qemu64,vendor=AuthenticAMD", "failure": "AP worker", "protected": true}
+  ]
+}

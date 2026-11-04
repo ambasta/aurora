@@ -17,6 +17,18 @@ A Python literal (read with ast.literal_eval, never executed). Every rule whose
 
 RULES = [
     {
+        "profiles": ["uefi/ap-worker"],
+        "async_entries": ["ap_worker_enter", "ap_worker_vector_*"],
+        "ist_traps": ["ap_worker_vector_*"],
+        "import_free": ["ap-helper", "ap-worker-owner"],
+        "reachable": [
+            "__au_runtime_ap_worker_begin_start",
+            "__au_runtime_ap_worker_reserve",
+            "__au_runtime_ap_worker_observe",
+            "__au_runtime_ap_worker_sum_squares",
+        ],
+    },
+    {
         "profiles": ["*"],
         # Semantic stack authorities, not instruction identities. The checker
         # verifies exact storage operands, save depths, frame consumption and

@@ -167,6 +167,14 @@ authenticate interrupt frames and perform timer, address-space and reclamation
 effects; no source borrow crosses execution or an IRQ. This bounded single-BSP
 consumer does not supply production UEFI scheduling or SMP.
 
+The standalone [UEFI AP worker](ap-worker.md) executes bounded compiled Aurora
+scalar jobs on a second processor with independent pinned mappings and a
+CPU-local fault path. Its BSP-retained Aurora owner spends startup, sequence and
+cumulative work authority before native publication. This is an emulator-only
+multicore execution substrate, not production SMP scheduling: existing
+single-CPU process admission stays unchanged, and uncertain completion retains
+all startup-reachable backing without reset, replay or reclamation.
+
 The snapshot loader's per-page byte copy now uses an invocation-only writable
 byte parameter in compiled Aurora. Native code still authenticates source/frame
 identity, owns the temporary mapping and closes it after the effect-limited

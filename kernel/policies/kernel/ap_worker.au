@@ -1,0 +1,194 @@
+export module kernel.ap_worker;
+
+export namespace kernel {
+    enum class ApWorkerStage {
+        fresh,
+        startup_reserved,
+        starting,
+        idle,
+        reserved,
+        running,
+        completion_selected,
+        failed,
+        exhausted
+    };
+
+    // Copied observations never authenticate an AP, a boot root or an effect.
+    // Native code supplies them only after checking its fixed physical binding.
+    class ApWorkerObservation {
+        u64 observed_apic;
+        u64 observed_incarnation;
+        u64 observed_sequence;
+        i64 observed_result;
+        u64 observed_status;
+    public:
+        ApWorkerObservation(u64 apic, u64 incarnation, u64 sequence, i64 result, u64 status) : observed_apic(apic),
+            observed_incarnation(incarnation), observed_sequence(sequence), observed_result(result),
+            observed_status(status) {
+        }
+        auto apic() const -> u64 {
+            return observed_apic;
+        }
+        auto incarnation() const -> u64 {
+            return observed_incarnation;
+        }
+        auto sequence() const -> u64 {
+            return observed_sequence;
+        }
+        auto result() const -> i64 {
+            return observed_result;
+        }
+        auto status() const -> u64 {
+            return observed_status;
+        }
+    };
+
+    // The unique retained owner is borrowed only by the BSP, synchronously and
+    // without effects. No loan spans INIT/SIPI, mailbox access, polling or AP
+    // execution. Native storage and physical binding, not copied IDs, enforce
+    // uniqueness. One startup and eight jobs share a nonrenewable work budget.
+    class ApWorkerOwner {
+        ApWorkerStage current_stage;
+        u64 worker_apic;
+        u64 boot_incarnation;
+        u64 next_sequence;
+        u64 used_work;
+        i64 active_start;
+        i64 active_count;
+        i64 last_result;
+
+        auto binding(u64 apic, u64 incarnation) const -> bool {
+            return boot_incarnation != 0u64 && worker_apic == apic && boot_incarnation == incarnation;
+        }
+        auto same(u64 incarnation, u64 sequence, ApWorkerStage expected) const -> bool {
+            return current_stage == expected && boot_incarnation == incarnation && incarnation != 0u64 && sequence
+                > 0u64 && sequence < next_sequence && sequence == next_sequence - 1u64;
+        }
+    public:
+        ApWorkerOwner() : current_stage(ApWorkerStage::fresh), worker_apic(256u64), boot_incarnation(0u64),
+            next_sequence(1u64), used_work(0u64), active_start(0), active_count(0), last_result(0) {
+        }
+        auto begin_start(u64 apic, u64 incarnation) -> bool {
+            if (current_stage != ApWorkerStage::fresh || apic > 255u64 || incarnation == 0u64) {
+                return false;
+            }
+            worker_apic = apic;
+            boot_incarnation = incarnation;
+            // Spend the sole startup allowance before any native startup effect.
+            current_stage = ApWorkerStage::startup_reserved;
+            return true;
+        }
+        auto startup_sent(u64 apic, u64 incarnation) -> bool {
+            if (current_stage != ApWorkerStage::startup_reserved || !binding(apic, incarnation)) {
+                return false;
+            }
+            current_stage = ApWorkerStage::starting;
+            return true;
+        }
+        auto ready(u64 apic, u64 incarnation) -> bool {
+            if (current_stage != ApWorkerStage::starting || !binding(apic, incarnation)) {
+                return false;
+            }
+            current_stage = ApWorkerStage::idle;
+            return true;
+        }
+        auto reserve(i64 start, i64 count) -> bool {
+            if (current_stage != ApWorkerStage::idle || start < 0 || start > 65535 || count < 1 || count > 1024) {
+                return false;
+            }
+            if (next_sequence > 8u64 || used_work > 4096u64 || u64(count) > 4096u64 - used_work) {
+                current_stage = ApWorkerStage::exhausted;
+                return false;
+            }
+            // Both sequence and cumulative work are spent before publication.
+            // No completion, failure or timeout refunds either allowance.
+            next_sequence = next_sequence + 1u64;
+            used_work = used_work + u64(count);
+            active_start = start;
+            active_count = count;
+            last_result = 0;
+            current_stage = ApWorkerStage::reserved;
+            return true;
+        }
+        auto published(u64 incarnation, u64 sequence) -> bool {
+            if (!same(incarnation, sequence, ApWorkerStage::reserved)) {
+                return false;
+            }
+            current_stage = ApWorkerStage::running;
+            return true;
+        }
+        auto observe(ApWorkerObservation observed) -> bool {
+            if (current_stage == ApWorkerStage::failed || current_stage == ApWorkerStage::exhausted
+                || !binding(observed.apic(), observed.incarnation())) {
+                return false;
+            }
+            // Stale/duplicate/foreign receipts do not mutate the owner. A future
+            // response from the bound AP is a broken transport, not fresh work.
+            if (observed.sequence() >= next_sequence) {
+                return fail();
+            }
+            if (!same(observed.incarnation(), observed.sequence(), ApWorkerStage::running)) {
+                return false;
+            }
+            const i64 last = active_start + active_count - 1;
+            const i64 minimum = active_count * active_start * active_start;
+            const i64 maximum = active_count * last * last;
+            if (observed.status() != 0u64 || observed.result() < minimum || observed.result() > maximum) {
+                return fail();
+            }
+            last_result = observed.result();
+            current_stage = ApWorkerStage::completion_selected;
+            return true;
+        }
+        auto acknowledged(u64 incarnation, u64 sequence) -> bool {
+            if (!same(incarnation, sequence, ApWorkerStage::completion_selected)) {
+                return false;
+            }
+            // This acknowledges the trusted AP shim's final release and the
+            // native acquire receipt. The AP no longer touches this job until
+            // a new publication. It does not claim the CPU stopped or halted.
+            if (next_sequence > 8u64 || used_work == 4096u64) {
+                current_stage = ApWorkerStage::exhausted;
+            } else {
+                current_stage = ApWorkerStage::idle;
+            }
+            return true;
+        }
+        auto fail() -> bool {
+            if (current_stage != ApWorkerStage::exhausted) {
+                current_stage = ApWorkerStage::failed;
+            }
+            return false;
+        }
+        auto stage() const -> ApWorkerStage {
+            return current_stage;
+        }
+        auto sequence() const -> u64 {
+            return next_sequence - 1u64;
+        }
+        auto used() const -> u64 {
+            return used_work;
+        }
+        auto remaining() const -> u64 {
+            return 4096u64 - used_work;
+        }
+        auto jobs() const -> u64 {
+            return next_sequence - 1u64;
+        }
+        auto result() const -> i64 {
+            return last_result;
+        }
+        auto incarnation() const -> u64 {
+            return boot_incarnation;
+        }
+        auto target() const -> u64 {
+            return worker_apic;
+        }
+        auto start() const -> i64 {
+            return active_start;
+        }
+        auto count() const -> i64 {
+            return active_count;
+        }
+    };
+}
