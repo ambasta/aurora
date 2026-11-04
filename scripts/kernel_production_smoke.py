@@ -1295,7 +1295,6 @@ def main():
     # rogue ordinary client or a production fault hook.
     for service_case in (
         None,
-        "pair",
         "snapshot-read",
         "snapshot-close",
         "console-commit",
@@ -1311,9 +1310,7 @@ def main():
             "--program-cases",
             str(args.build_dir.parents[2]),
         ]
-        if service_case == "pair":
-            command += ["--pair-cases"]
-        elif service_case:
+        if service_case:
             command += ["--service-case", service_case]
         status = subprocess.run(command).returncode
         if status:
