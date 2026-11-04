@@ -229,6 +229,9 @@ auto AddressSpaces::deactivate(DomainHandle handle) -> bool {
         return false;
     return registry.deactivate(handle) && Protection::verify();
 }
+auto AddressSpaces::incarnation(DomainHandle handle) -> std::optional<std::uint64_t> {
+    return registry.incarnation(handle);
+}
 auto AddressSpaces::destroy(DomainHandle handle) -> bool {
     const auto slot = registry.index(handle);
     if (!slot || !registry.ready(handle) || !Protection::verify() || !scrub(handle))

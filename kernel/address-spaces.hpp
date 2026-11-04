@@ -16,6 +16,8 @@ public:
     [[nodiscard]] static auto scrub(DomainHandle handle) -> bool;
     [[nodiscard]] static auto stack_zero(DomainHandle handle) -> bool;
     [[nodiscard]] static auto stack_frame(DomainHandle handle, std::size_t page) -> std::optional<std::uint64_t>;
+    // Authenticated diagnostic identity; the scalar cannot construct a handle.
+    [[nodiscard]] static auto incarnation(DomainHandle handle) -> std::optional<std::uint64_t>;
     [[nodiscard]] static auto root(DomainHandle handle) -> std::optional<std::uint64_t>;
 };
 } // namespace aurora::user

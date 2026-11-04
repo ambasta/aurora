@@ -23,6 +23,15 @@ native_bios_object = custom_target('native-bios-policy',
     command: [python, '-B', native_fixture, '--compiler', aurorac,
               '--source', '@INPUT@', '--module-root', native_root / 'kernel/policies',
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+# The retained scheduling owner is shared by both existing lifecycle drivers.
+native_scheduler_object = custom_target('native-scheduler-owner',
+    input: '../../examples/kernel-scheduler-owner.au', output: 'scheduler-owner.o',
+    depfile: 'scheduler-owner.d',
+    command: [python, '-B', native_fixture, '--compiler', aurorac,
+              '--source', '@INPUT@', '--module-root', native_root / 'kernel/policies',
+              '--local-symbols', '--referenced-reflection-only',
+              '--bridge', native_root / 'kernel/scheduler-owner-entry.S',
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 native_uefi_object = custom_target('native-uefi-policy',
     input: '../../examples/kernel.au', output: 'uefi-policy.o',
     depfile: 'uefi-policy.d',
@@ -72,7 +81,7 @@ native_kernel_suites = ['full', 'merge', 'slow', 'integration']
 native_options = ['optimization=1', 'warning_level=3']
 native_drivers = {}
 foreach driver : [
-    ['bios-models', [native_bios_object], []],
+    ['bios-models', [native_bios_object, native_scheduler_object], []],
     ['uefi-tables', [native_uefi_object], ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page']],
     ['uefi-user', [native_uefi_object], ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page']],
     ['uefi-multipage', [native_uefi_object], ['-DAURORA_RUNTIME_MULTIPAGE=1', '-DAURORA_RUNTIME_IMAGE_POLICY=multipage']],
@@ -94,7 +103,7 @@ foreach driver : [
       cpp_args: driver[1], link_args: driver[2])}
 endforeach
 # The program lifecycle cases also run against the UEFI policy object's terminal producer.
-native_drivers += {'lifecycle-uefi-policy': executable('native-lifecycle-uefi-policy', native_uefi_object,
+native_drivers += {'lifecycle-uefi-policy': executable('native-lifecycle-uefi-policy', [native_uefi_object, native_scheduler_object],
     objects: native_drivers['bios-models'].extract_objects('bios-models.cpp'),
     native: true, install: false, link_args: ['-no-pie'])}
 foreach entry : [

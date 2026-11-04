@@ -82,6 +82,7 @@ def validate(status, text, mode, metadata):
         "AURORA_APIC_OK:",
         "AURORA_TIMER_DRAIN_OK:",
         "AURORA_TIMER_RETIRE_OK:",
+        "AURORA_SCHEDULER_OWNER_OK:",
         "AURORA_CONTEXT_OK:",
         "AURORA_SCHEDULE_REUSE_OK:",
         "AURORA_SCHEDULE_OK:",

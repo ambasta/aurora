@@ -214,6 +214,10 @@ def validate_native_abi(facts, source):
                 "kernel::MemoryVerdict",
                 "kernel::BudgetVerdict",
                 "kernel::BudgetCharge",
+                "kernel::SchedulerPhase",
+                "kernel::SchedulerSelect",
+                "kernel::SchedulerFinish",
+                "kernel::SchedulerTerminal",
                 "kernel::ServiceAction",
                 "kernel::ServicePhase",
                 "kernel::ServiceReason",
@@ -349,6 +353,31 @@ def validate_native_abi(facts, source):
             ("used", 0, "u64", False),
         ):
             borrowed_entry(nominal, "process_budget_" + name, ["u64"] * tail, result, mutable)
+
+    if "# RETAINED_SCHEDULER_ABI:" in source:
+        nominal = retained_root("kernel::SchedulerOwner", reservation=256)
+        enum("kernel::SchedulerPhase", "empty runnable dispatched observed retiring retired")
+        enum("kernel::SchedulerSelect", "rejected idle selected")
+        enum("kernel::SchedulerFinish", "rejected runnable retiring")
+        enum("kernel::SchedulerTerminal", "none tick returned bounds overflow division_zero shift_count")
+        entry("scheduler_owner_create", [], "kernel::SchedulerOwner")
+        for name, tail, result, mutable in (
+            ("admit", ["u64"] * 3, "bool", True),
+            ("select", [], "kernel::SchedulerSelect", True),
+            ("observe_tick", ["u64"] * 3, "bool", True),
+            ("observe_terminal", ["u64"] * 3 + ["kernel::SchedulerTerminal"], "bool", True),
+            ("finish_restore", ["u64"] * 3, "kernel::SchedulerFinish", True),
+            ("ack_retired", ["u64"] * 3, "bool", True),
+            ("active_slot", [], "u64", False),
+            ("active_stamp", [], "u64", False),
+            ("sequence", [], "u64", False),
+            ("phase", ["u64"], "kernel::SchedulerPhase", False),
+            ("used", ["u64"], "u64", False),
+            ("remaining", ["u64"], "u64", False),
+            ("reason", ["u64"], "kernel::SchedulerTerminal", False),
+            ("complete", [], "bool", False),
+        ):
+            borrowed_entry(nominal, "scheduler_owner_" + name, tail, result, mutable)
 
     if "# RETAINED_SERVICE_ABI:" in source:
         nominal = retained_root("kernel::ServiceIncarnation")

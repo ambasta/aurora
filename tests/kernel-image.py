@@ -5,7 +5,8 @@ from pathlib import Path
 import argparse
 import subprocess
 
-PAYLOAD_SECTORS = 127
+TRANSFERS = ((127, 0x1000, 1), (1, 0x1FE0, 128), (126, 0x2000, 129))
+PAYLOAD_SECTORS = sum(count for count, _, _ in TRANSFERS)
 LOAD_ADDRESS = 0x10000
 TRANSFER_END = LOAD_ADDRESS + PAYLOAD_SECTORS * 512
 IMAGE_BYTES = 1024 * 1024
@@ -21,20 +22,28 @@ def validate(boot: bytes, kernel: bytes, elf: bytes, packet_offset: int) -> None
     require(len(boot) == 512, f"Expected 512 boot bytes, got {len(boot)}")
     require(boot[510:] == b"\x55\xaa", "Missing BIOS signature")
     require(packet_offset % 4 == 0, "EDD packet is not four-byte aligned")
-    require(0 <= packet_offset <= 510 - 16, "Disk address packet outside boot sector")
-    packet = boot[packet_offset : packet_offset + 16]
-    require(packet[:2] == b"\x10\x00", "Invalid EDD packet header")
-    sectors = int.from_bytes(packet[2:4], "little")
-    offset = int.from_bytes(packet[4:6], "little")
-    segment = int.from_bytes(packet[6:8], "little")
-    require(sectors == PAYLOAD_SECTORS and 1 <= sectors <= 127, "Loader sector count disagrees with image budget")
-    require(segment * 16 + offset == LOAD_ADDRESS, "Loader destination disagrees with kernel entry")
-    require(offset + sectors * 512 <= 65536, "BIOS read crosses segment transfer window")
-    require(segment == 0x1000 and offset == 0, "Loader destination is not canonical 1000:0000")
-    require(int.from_bytes(packet[8:16], "little") == 1, "Loader LBA is not the image payload")
+    require(0 <= packet_offset <= 510 - 16 * len(TRANSFERS), "Disk address packets outside boot sector")
+    destination, lba = LOAD_ADDRESS, 1
+    for index, (expected_count, expected_segment, expected_lba) in enumerate(TRANSFERS):
+        begin = packet_offset + index * 16
+        packet = boot[begin : begin + 16]
+        require(packet[:2] == b"\x10\x00", "Invalid EDD packet header")
+        sectors = int.from_bytes(packet[2:4], "little")
+        offset = int.from_bytes(packet[4:6], "little")
+        segment = int.from_bytes(packet[6:8], "little")
+        address = segment * 16 + offset
+        require(sectors == expected_count and 1 <= sectors <= 127, "Loader sector count disagrees with image budget")
+        require(address == destination, "Loader destination disagrees with contiguous payload")
+        require(offset + sectors * 512 <= 65536, "BIOS read crosses segment transfer window")
+        require((address & 65535) + sectors * 512 <= 65536, "BIOS read crosses physical transfer window")
+        require(segment == expected_segment and offset == 0, "Loader destination is not canonical")
+        require(int.from_bytes(packet[8:16], "little") == expected_lba == lba, "Loader LBA is not contiguous payload")
+        destination += sectors * 512
+        lba += sectors
+    require(destination == TRANSFER_END and lba == PAYLOAD_SECTORS + 1, "Incomplete BIOS transfer coverage")
     require(
-        0 < len(kernel) <= sectors * 512,
-        f"Kernel payload {len(kernel)} bytes exceeds bounded BIOS capacity {sectors * 512} bytes",
+        0 < len(kernel) <= PAYLOAD_SECTORS * 512,
+        f"Kernel payload {len(kernel)} bytes exceeds bounded BIOS capacity {PAYLOAD_SECTORS * 512} bytes",
     )
     require(len(elf) >= 64 and elf[:6] == b"\x7fELF\x02\x01", "Expected little-endian ELF64")
     require(int.from_bytes(elf[16:18], "little") == 2, "Expected executable ELF")

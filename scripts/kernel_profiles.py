@@ -1039,12 +1039,19 @@ def bios_profile(mode):
             "kernel-interrupts",
             "kernel-main",
             "kernel-language",
+            "scheduler-owner",
         ]
         + (["serial-input", "kernel-interactive-console", "kernel-uart"] if console else []),
         closed=False,
         sealed=False,
         optimization="2",
-        languages={},
+        languages={
+            "scheduler-owner": dict(
+                source="examples/kernel-scheduler-owner.au",
+                bridge="kernel/scheduler-owner-entry.S",
+                roots=["kernel/policies"],
+            )
+        },
     )
 
 

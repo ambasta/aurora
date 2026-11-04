@@ -14,10 +14,43 @@ normalized:
     cld
     mov %dl, drive
     sti
-    mov $packet, %si
-    mov $0x42, %ah
+    /* Pinned SeaBIOS/QEMU IDE contract: 512-byte sectors, no retries.
+       The fixed stack ends at 90000; reject firmware-owned memory first. */
+    int $0x12
+    cmp $576, %ax
+    jb disk_error
+    xor %ax, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    cld
+    mov 0x40e, %ax
+    test %ax, %ax
+    jz memory_safe
+    cmp $0x9000, %ax
+    jb disk_error
+memory_safe:
+    mov drive, %dl
+    mov $0x55aa, %bx
+    mov $0x4100, %ax
     int $0x13
     jc disk_error
+    cmp $0xaa55, %bx
+    jne disk_error
+    test $1, %cx
+    jz disk_error
+    xor %ax, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    cld
+    mov $packet, %si
+    mov $127, %cx
+    call read_packet
+    add $16, %si
+    mov $1, %cx
+    call read_packet
+    add $16, %si
+    mov $126, %cx
+    call read_packet
     /* Bounded firmware E820 handoff: count at 0x5000, 24-byte entries at 0x5008. */
     xor %ebx, %ebx
     movw $0, 0x5000
@@ -73,9 +106,29 @@ memory_map_done:
     or $0x80000001, %eax
     mov %eax, %cr0
     ljmpl $8, $long_mode
+/* No source bytes execute until every read has completed in full. */
+read_packet:
+    incb stage
+    push %si
+    push %cx
+    mov drive, %dl
+    mov $0x4200, %ax
+    int $0x13
+    jc disk_error
+    test %ah, %ah
+    jnz disk_error
+    pop %cx
+    pop %si
+    xor %ax, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    cld
+    cmp %cx, 2(%si)
+    jne disk_error
+    ret
 disk_error:
-    mov $0x0e45, %ax
-    int $0x10
+    movzbl %cs:stage, %eax
+    out %eax, $0xf4
     cli
 1:  hlt
     jmp 1b
@@ -90,10 +143,19 @@ gdt_pointer:
 .balign 4
 packet:
     .byte 16, 0
-    /* Maximum conservative EDD count; stays within 1000:0000..fdff. */
+    /* Physical windows: [10000,1fe00), [1fe00,20000), [20000,2fc00). */
     .word 127
     .word 0, 0x1000
     .quad 1
+    .byte 16, 0
+    .word 1
+    .word 0, 0x1fe0
+    .quad 128
+    .byte 16, 0
+    .word 126
+    .word 0, 0x2000
+    .quad 129
+stage: .byte 0x20
 drive: .byte 0
 .code64
 long_mode:

@@ -45,25 +45,4 @@ public:
         return contract.classify(context);
     }
 };
-class SliceBudget final {
-    unsigned remaining_{};
-    unsigned used_{};
-
-public:
-    explicit constexpr SliceBudget(unsigned ticks) : remaining_(ticks) {
-    }
-    [[nodiscard]] auto consume() -> bool {
-        if (remaining_ == 0)
-            return false;
-        --remaining_;
-        ++used_;
-        return true;
-    }
-    [[nodiscard]] auto exhausted() const -> bool {
-        return remaining_ == 0;
-    }
-    [[nodiscard]] auto used() const -> unsigned {
-        return used_;
-    }
-};
 } // namespace aurora::user
