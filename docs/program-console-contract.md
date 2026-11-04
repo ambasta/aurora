@@ -51,16 +51,23 @@ CPU allowances. Each pair member has at most 4096 additional frames (16 MiB)
 beyond its admitted image charge; this is a growth ceiling, not a guaranteed
 minimum, and unused allowance never transfers to its sibling. Images, snapshots
 and both reservations must fit the existing allocator. Ordinary `run` keeps its
-existing memory admission. One endpoint transaction is completed, including the
-copied reply, before another client can use its buffers. A completed request, output
-record or timer park gives the other eligible client its next turn. This is
-bounded single-BSP scheduling, not SMP or a wall-clock fairness guarantee.
+existing memory admission. The retained `BatchOwner` tracks runnable, input,
+deferred file/output and active-RPC states. A pending bounded server pump permits
+one runnable sibling turn before returning to the active request. A sibling file
+call or output trap parks without changing shared endpoint bytes or transaction
+ordinals; source selects its dispatch only after the active reply has been copied.
+There is still one active caller and one endpoint buffer. A completed request,
+output record or timer park gives the other eligible client its next turn. This
+is bounded single-BSP scheduling, not SMP, an asynchronous process API or a
+wall-clock fairness guarantee. CPU, server and memory budgets are unchanged.
 
 An input-blocked first member retains its exact saved continuation while the
 second runs. Aurora selects a bounded input poll after each complete sibling
 turn, or one existing idle wait slice when no sibling is runnable. A poll takes
 at most 504 provider samples and publishes partial data without waiting to fill
-it. File RPCs remain indivisible scheduling turns. The nonrenewable input
+it. Input polls and idle waits are deferred while an RPC is active. Cancellation
+drains the dispatched request without sibling turns before cleanup; a terminal
+sibling's membership close also waits for the active reply to be copied. The nonrenewable input
 allowance charges only admitted supervisor LAPIC wait slices, not sibling CPU
 execution or RPC time; it is not a wall-clock timeout. CPU fuel remains separate.
 No timer role or source loan crosses a dispatch. Cancellation/EOF belongs only

@@ -1,13 +1,13 @@
 # event:status:value; status uses the production execution status encoding.
-fair success:0:0 success:0:0 success:0:0 parked:0:0 output:0:0 success:0:0 request:0:0 pending:0:0 success:0:0 terminal:0:22 success:0:0 terminal:0:11 success:0:0
+fair success:0:0 success:0:0 success:0:0 parked:0:0 output:0:0 success:0:0 request:0:0 success:0:0 pending:0:0 parked:0:0 success:0:0 terminal:0:22 success:0:0 terminal:0:11 success:0:0
 refused refused:6:0
 second-refused success:0:0 success:0:0 refused:5:0 terminal:8:0 success:0:0 success:0:0
 first-refused success:0:0 refused:3:0 success:0:0 success:0:0
 fault success:0:0 success:0:0 success:0:0 terminal:1:6 success:0:0 terminal:0:9 success:0:0
-service-loss success:0:0 success:0:0 success:0:0 terminal:0:7 success:0:0 request:0:0 service_lost:6:0 success:0:0
+service-loss success:0:0 success:0:0 success:0:0 terminal:0:7 success:0:0 request:0:0 success:0:0 service_lost:6:0 success:0:0
 output-loss success:0:0 success:0:0 success:0:0 output:0:0 output_failed:7:0 terminal:7:0 success:0:0 terminal:8:0 success:0:0
 rejected-receipts stale:0:0 parked:0:0 success:9:0 refused:6:0 success:0:0
-expired-rpc success:0:0 success:0:0 success:0:0 request:0:0 cancelled:2:0 terminal:2:0 success:0:0 terminal:0:13 success:0:0
+expired-rpc success:0:0 success:0:0 success:0:0 request:0:0 success:0:0 cancelled:2:0 terminal:2:0 success:0:0 terminal:0:13 success:0:0
 binding-good good
 binding-early-finish early-finish
 binding-double-issue double-issue
@@ -43,7 +43,7 @@ input-repeated success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 parked:
 input-sibling-terminal success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 terminal:0:22 success:0:0 pending:0:0 success:0:0 success:0:0 terminal:0:11 success:0:0
 input-sibling-fault success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 terminal:1:6 success:0:0 pending:0:0 success:0:0 success:0:0 terminal:0:11 success:0:0
 input-sibling-watchdog success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 terminal:2:0 success:0:0 pending:0:0 success:0:0 success:0:0 terminal:0:11 success:0:0
-input-rpc success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 request:0:0 pending:0:0 pending:0:0 success:0:0 success:0:0
+input-rpc success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 request:0:0 success:0:0 pending:0:0 pending:0:0 success:0:0 success:0:0
 input-output success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 output:0:0 success:0:0 success:0:0
 input-output-loss success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 output:0:0 output_failed:7:0 terminal:7:0 success:0:0 terminal:8:0 success:0:0
 input-service-loss success:0:0 success:0:0 success:0:0 input:0:0 service_lost:6:0 success:0:0
@@ -58,3 +58,17 @@ binding-forged-input-action forged-input-action
 binding-forged-input-status forged-input-status
 binding-forged-input-value forged-input-value
 binding-forged-input-ordinal forged-input-ordinal
+rpc-fair-turns success:0:0 success:0:0 success:0:0 request:0:0 success:0:0 pending:0:0 parked:0:0 pending:0:0 parked:0:0 success:0:0
+rpc-queued-file success:0:0 success:0:0 success:0:0 request:0:0 success:0:0 pending:0:0 request:0:0 pending:0:0 pending:0:0 success:0:0 success:0:0 pending:0:0 parked:0:0 success:0:0
+rpc-queued-output success:0:0 success:0:0 success:0:0 request:0:0 success:0:0 pending:0:0 output:0:0 pending:0:0 success:0:0 success:0:0
+rpc-queued-output-loss success:0:0 success:0:0 success:0:0 request:0:0 success:0:0 pending:0:0 output:0:0 pending:0:0 success:0:0 output_failed:7:0 terminal:7:0 success:0:0 terminal:8:0 success:0:0
+rpc-drain-cancel success:0:0 success:0:0 success:0:0 request:0:0 success:0:0 draining:0:0 draining:0:0 cancelled:8:0 terminal:8:0 success:0:0 terminal:0:22 success:0:0
+rpc-queued-cancel success:0:0 success:0:0 success:0:0 request:0:0 success:0:0 pending:0:0 request:0:0 draining:0:0 cancelled:2:0 terminal:2:0 success:0:0 success:0:0 success:0:0
+rpc-sibling-terminal success:0:0 success:0:0 success:0:0 request:0:0 success:0:0 pending:0:0 terminal:0:22 pending:0:0 success:0:0 success:0:0 terminal:0:11 success:0:0
+rpc-sibling-input success:0:0 success:0:0 success:0:0 parked:0:0 request:0:0 success:0:0 pending:0:0 input:0:0 pending:0:0 success:0:0 pending:0:0 parked:0:0 success:0:0
+rpc-queued-service-loss success:0:0 success:0:0 success:0:0 request:0:0 success:0:0 pending:0:0 request:0:0 service_lost:6:0 success:0:0
+rpc-terminal-service-loss success:0:0 success:0:0 success:0:0 request:0:0 success:0:0 pending:0:0 terminal:1:6 service_lost:6:0 success:0:0
+rpc-malformed success:0:0 success:0:0 success:0:0 request:0:0 pending:0:0 draining:0:0 stale:0:0 success:0:0 stale:0:0 draining:1:0 draining:0:1 output:0:0 request:0:0 input:0:0 draining:0:0
+binding-forged-dispatch-child forged-dispatch-child
+binding-forged-dispatch-action forged-dispatch-action
+binding-forged-dispatch-ordinal forged-dispatch-ordinal

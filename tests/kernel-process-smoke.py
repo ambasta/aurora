@@ -1075,6 +1075,71 @@ def validate(
             "No trap fallback, continuation or successful return after authority rejection",
         )
         return
+    if mode.startswith("process-deferred-"):
+        initial = frames(text)
+        case = PROCESS_CASES[mode][0]
+        need(text.count(f"AURORA_PROCESS_CASE_SELECTED: value={case}\n") == 1, "Deferred case selection")
+        captured = f"AURORA_DEFERRED_PROBE: case={case} kind=1 stage=captured\n"
+        need(text.count(captured) == (2 if case == 102 else 1), "Real request capture count")
+        if case == 102:
+            need(status == 33 and "AURORA_PROCESS_FAIL:" not in text, "Deferred positive exit")
+            clients = re.findall(
+                r"AURORA_DEFERRED_CLIENT_OK: client=(\d+) requests=(\d+) outputs=(\d+) bytes=(\d+) exact=1 retired=1\n",
+                text,
+            )
+            need(len(clients) == 2, "Both sequential clients complete")
+            for client, request, output, count in clients:
+                need(request == "1" and int(output) > 0 and count == "51", "Actual reply and exact output")
+            need([row[0] for row in clients] == ["2", "3"], "Sequential slot reuse")
+            ordered(
+                text,
+                (
+                    "AURORA_PROCESS_LOADED: run=2 ",
+                    "AURORA_PROCESS_RELEASED: run=2 ",
+                    "AURORA_DEFERRED_CLIENT_OK: client=2 ",
+                    "AURORA_PROCESS_LOADED: run=3 ",
+                    "AURORA_PROCESS_RELEASED: run=3 ",
+                    "AURORA_DEFERRED_CLIENT_OK: client=3 ",
+                    "AURORA_PROCESS_RELEASED: run=1 ",
+                    "AURORA_FILE_SERVICE_OK: clients=2 ",
+                    f"AURORA_PROCESS_RUNS_OK: runs=3 free={initial}\n",
+                ),
+            )
+        else:
+            failure = "AURORA_PROCESS_FAIL: deferred parked identity\n"
+            need(
+                status == 35 and text.count("AURORA_PROCESS_FAIL:") == 1 and text.count(failure) == 1,
+                "Actual dispatcher identity rejection",
+            )
+            markers = [captured]
+            if case == 106:
+                markers += [f"AURORA_DEFERRED_PROBE: case={case} kind=1 stage=completed-endpoint-free\n"]
+            if case == 107:
+                markers += [
+                    "AURORA_PROCESS_RELEASED: run=2 ",
+                    "AURORA_PROCESS_RELEASED: run=1 ",
+                    f"AURORA_DEFERRED_PROBE: case={case} kind=1 stage=abandoned-reclaimed\n",
+                ]
+            markers += [failure]
+            ordered(text, markers)
+            after = text[text.index(markers[-2]) :]
+            need(
+                not any(
+                    marker in after
+                    for marker in (
+                        "AURORA_DEFERRED_CLIENT_OK:",
+                        "AURORA_PROCESS_RUNS_OK:",
+                        "AURORA_FILE_SERVICE_OK:",
+                        "AURORA_PROCESS_RESUMED:",
+                        "AURORA_STDOUT:",
+                        "AURORA_STDERR:",
+                        "AURORA_PROCESS_KERNEL_FAULT:",
+                        "AURORA_PROCESS_LOADED: run=3 ",
+                    )
+                ),
+                "No output, continuation, next client or fallback after rejection boundary",
+            )
+        return
     if mode.startswith("process-presentation-"):
         frames(text)
         case = PROCESS_CASES[mode][0]

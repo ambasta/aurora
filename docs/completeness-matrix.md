@@ -106,11 +106,16 @@ native ABI/backend correctness or an ABA guarantee.
 Production `run-pair` schedules two admitted clients beside the file service on
 one BSP. Aurora owns admission, dispatch, terminal results and cleanup; native
 code authenticates physical transitions. Shared RAM handles are incarnation-bound,
-RPCs are serialized, and pair disk access stays read-only. The first member may
+RPCs retain one active caller/buffer, and pair disk access stays read-only. Source
+selects one runnable sibling turn between bounded server pumps; sibling file/output
+traps defer dispatch until the active reply is copied. Native authenticates scalar
+and full-frame receipts, not a second scheduling ledger. Input polls wait during
+active RPCs, and cancellation drains without sibling turns. The first member may
 own foreground input: source-owned polling/idle-wait decisions let its sibling
-progress while a read is parked, with distinct cumulative CPU and charged-wait
-allowances and authenticated cleanup. This is not SMP,
-a background job system, a pipeline or a wall-clock scheduling guarantee.
+progress while a read is parked, with unchanged cumulative CPU, server and
+charged-wait allowances and authenticated cleanup. This is not SMP, an
+asynchronous process API, a background job system, a pipeline or a wall-clock
+scheduling guarantee; final-source qualification remains required.
 
 The bounded foreground `write-source` application composes existing input and
 file loans to stage multiline ASCII/TAB files and publish once at EOF. It closes

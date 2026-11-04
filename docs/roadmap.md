@@ -187,8 +187,12 @@ or arbitrary mutable reborrows.
 
 Production pairs now also retain a first-member input wait while the second
 client runs. Source-owned bounded polls and idle wait slices preserve one serial
-owner, cumulative allowance and exact continuation identity. This is a fixed
-foreground wait consumer, not a general event reactor or asynchronous child API.
+owner, cumulative allowance and exact continuation identity. Their retained
+Aurora batch owner also selects one runnable sibling turn between bounded RPC
+pumps, with file/output dispatch deferred until the single active reply is copied.
+Active RPCs defer input polls; cancellation drains without sibling turns. These
+fixed foreground consumers preserve existing budgets and do not provide a general
+event reactor, asynchronous child API or production SMP scheduling.
 
 Next: general program/service lifetimes and scheduling, restart-safe storage,
 partial I/O/backpressure and durable mounted writes. Gate each step with actual

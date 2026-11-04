@@ -365,6 +365,17 @@ for number, mode in enumerate(PRESENTATION_PROBES, 99):
             (32, 0, 8192, "bin/probe", "probe print hello exit success"),
         ),
     )
+# Real parked deferred receipt boundaries, within the existing process fixture.
+DEFERRED_PROBES = tuple(f"process-deferred-{number}" for number in range(102, 108))
+for number, mode in enumerate(DEFERRED_PROBES, 102):
+    PROCESS_CASES[mode] = (
+        number,
+        (
+            (64, 0, 16384, "bin/file-service", "file-service"),
+            (32, 0, 8192, "bin/probe", "probe file missing.txt print deferred-ok exit success"),
+            (32, 0, 8192, "bin/probe", "probe file missing.txt print deferred-ok exit success"),
+        ),
+    )
 # Internal cold boots of the existing kernel-require row, not a new family.
 MAPPING_AUTHORITY_PROBES = (
     "process-authority-foreign",
@@ -462,7 +473,7 @@ SELF_HOST_CASES = frozenset({6})
 # The self-host row's compiler charges about 600 MiB at its peak.
 PROCESS_MEMORY = {
     "process-run": "256M",
-    **{mode: "256M" for mode in (*INPUT_PROBES, *PRESENTATION_PROBES)},
+    **{mode: "256M" for mode in (*INPUT_PROBES, *PRESENTATION_PROBES, *DEFERRED_PROBES)},
     "process-execution-authority-69": "256M",
     "process-execution-authority-71": "256M",
     "process-hostile": "256M",
@@ -1621,7 +1632,7 @@ GUEST_FAMILIES = {
     "process-hostile process-memory process-files process-compile process-lifecycle process-service "
     "process-service-hostile process-xfs process-frame-require-kernel process-frame-require-process "
     "process-require-user process-nested-fault "
-    + " ".join((*EXECUTION_AUTHORITY_PROBES, *INPUT_PROBES, *PRESENTATION_PROBES)),
+    + " ".join((*EXECUTION_AUTHORITY_PROBES, *INPUT_PROBES, *PRESENTATION_PROBES, *DEFERRED_PROBES)),
     # The release suite's row (tests/native/meson.build), minutes under TCG.
     "self-host": "process-self-host",
 }

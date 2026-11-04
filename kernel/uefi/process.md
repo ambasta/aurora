@@ -55,6 +55,35 @@ existing fixed process endpoint, not the separate legacy fixture Mailbox, a
 general IPC abstraction, scheduler or asynchronous ownership feature. Final-source
 hosted, stack, image and guest qualification remains required.
 
+### Bounded production pair RPC waits
+
+Production `run-pair` uses retained Aurora `BatchOwner` state to select deferred
+file/output dispatch and one runnable sibling turn between bounded server pumps.
+Native code retains only each parked call's scalar identity, decoded arguments
+and complete saved frame; payload bytes stay in the parked client's pages until
+source selects dispatch. Before copying, native effects reauthenticate the
+service/run incarnation, slot generation, MM epoch/root, full continuation and
+decoded call under the admitted client root. No source loan crosses that switch.
+
+The endpoint still has one active caller and one shared buffer. Sibling traps do
+not overwrite it or advance its ordinal; request completion includes copying the
+reply before deferred dispatch or membership cleanup may reuse the endpoint.
+Input polling/idle waits are postponed during an active RPC. Cancellation drains
+without sibling turns, and retirement or service loss revokes deferred receipts.
+Existing cumulative CPU, server and input-wait budgets remain unchanged. This is
+a fixed single-BSP scheduling consumer, not SMP or an asynchronous process API.
+Final-source qualification remains required.
+
+The focused production pair observes phase-3 staged-write-tail overlap: sibling
+CPU progress and a queued file call, with exact, distinct 64 KiB readbacks. It does
+not establish phase-5 service-timer-park overlap. Six boot-selected cases in the
+existing process fixture exercise the same capture and dispatch helpers: genuine
+reply/output completion with sequential client reuse, mismatched saved frame,
+root and lifecycle generation, replay after actual reply completion, and explicit
+service abandonment followed by stale dispatch. Abandonment checks exact frame
+reclamation; it is not natural service death or a sibling queued behind an active
+RPC. Capture expiry and those unobserved paths are not qualified by these cases.
+
 ### Fixed source execution owner
 
 `kernel.execution_lifecycle` retains one 272-byte owner: a private 16-byte

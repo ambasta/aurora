@@ -235,6 +235,7 @@ def validate_native_abi(facts, source):
                 "kernel::EndpointCompletion",
                 "kernel::BatchAction",
                 "kernel::BatchEvent",
+                "kernel::BatchState",
                 "kernel::LoadAction",
                 "kernel::LoadResult",
                 "kernel::FileStatus",
@@ -553,12 +554,15 @@ def validate_native_abi(facts, source):
 
     if "# EXECUTION_BATCH_ABI:" in source:
         nominal = retained_root("kernel::BatchOwner", reservation=160)
+        enum("kernel::BatchState", "runnable input output file active_rpc")
         enum(
-            "kernel::BatchAction", "admit load activate output request retire close abandon done input_poll input_wait"
+            "kernel::BatchAction",
+            "admit load activate output request retire close abandon done input_poll input_wait dispatch",
         )
         enum(
             "kernel::BatchEvent",
-            "success refused parked output request terminal pending service_lost output_failed cancelled input",
+            "success refused parked output request terminal pending service_lost "
+            "output_failed cancelled input draining",
         )
         record(
             "kernel::BatchRequest",

@@ -12,7 +12,8 @@ export namespace kernel {
         abandon,
         done,
         input_poll,
-        input_wait
+        input_wait,
+        dispatch
     };
     enum class BatchEvent {
         success,
@@ -25,7 +26,15 @@ export namespace kernel {
         service_lost,
         output_failed,
         cancelled,
-        input
+        input,
+        draining
+    };
+    enum class BatchState {
+        runnable,
+        input,
+        output,
+        file,
+        active_rpc
     };
     class BatchRequest {
     public:
@@ -53,11 +62,11 @@ export namespace kernel {
     // Private synchronous policy root. It owns no bytes or execution authority.
     // Native authenticates the pinned operation and every selected physical effect.
     class BatchOwner {
-        // Fixed scalar layout: selected action, blocked1, child, ordinal, outstanding, admission, admitted, cleanup,
+        // Fixed scalar layout: selected action, state1, child, ordinal, outstanding, admission, admitted, cleanup,
         // live1, live2, member1, member2, terminal1, terminal2,
-        // status1, value1, status2, value2, reserved[2].
+        // status1, value1, status2, value2, state2, active_rpc.
         BatchAction selected_action;
-        u64 blocked1;
+        BatchState state1;
         u64 selected_child;
         u64 sequence;
         u64 outstanding;
@@ -74,14 +83,30 @@ export namespace kernel {
         u64 value1;
         u64 status2;
         u64 value2;
-        u64 reserved1;
-        u64 reserved2;
+        BatchState state2;
+        u64 active_rpc;
         auto live(u64 child) const -> bool {
             builtin::require(child == 1u64 || child == 2u64);
             if (child == 1u64) {
                 return live1 != 0u64;
             }
             return live2 != 0u64;
+        }
+        auto state(u64 child) const -> BatchState {
+            builtin::require(child == 1u64 || child == 2u64);
+            if (child == 1u64) {
+                return state1;
+            }
+            return state2;
+        }
+        auto set_state(u64 child, BatchState value) -> bool {
+            builtin::require(child == 1u64 || child == 2u64);
+            if (child == 1u64) {
+                state1 = value;
+            } else {
+                state2 = value;
+            }
+            return true;
         }
         auto child_status(u64 child) const -> u64 {
             builtin::require(child == 1u64 || child == 2u64);
@@ -115,12 +140,13 @@ export namespace kernel {
             builtin::require(child == 1u64 || child == 2u64);
             if (child == 1u64) {
                 live1 = 0u64;
-                blocked1 = 0u64;
+                state1 = BatchState::runnable;
                 terminal1 = 1u64;
                 status1 = status;
                 value1 = value;
             } else {
                 live2 = 0u64;
+                state2 = BatchState::runnable;
                 terminal2 = 1u64;
                 status2 = status;
                 value2 = value;
@@ -142,21 +168,42 @@ export namespace kernel {
             }
             return select(BatchAction::done, 0u64);
         }
+        auto ready(u64 child) -> bool {
+            builtin::require(active_rpc == 0u64 && live(child));
+            if (state(child) == BatchState::output) {
+                return select(BatchAction::output, child);
+            }
+            if (state(child) == BatchState::file) {
+                return select(BatchAction::dispatch, child);
+            }
+            builtin::require(state(child) == BatchState::runnable);
+            return select(BatchAction::activate, child);
+        }
         auto schedule(u64 previous) -> bool {
+            // Every sibling CPU turn returns directly to the single endpoint owner.
+            if (active_rpc != 0u64) {
+                return select(BatchAction::request, active_rpc);
+            }
             if (cleanup_selected != 0u64) {
                 return cleanup();
             }
-            // A pending reader gets a poll after each complete sibling turn.
-            // A pending RPC is one turn, including every service pump.
-            if (blocked1 != 0u64) {
+            // A sibling can terminate while the endpoint is busy. Its membership
+            // close is deferred until the active reply has actually been copied.
+            if (live1 == 0u64 && member1 != 0u64) {
+                return select(BatchAction::close, 1u64);
+            }
+            if (live2 == 0u64 && member2 != 0u64) {
+                return select(BatchAction::close, 2u64);
+            }
+            if (state1 == BatchState::input) {
                 return select(BatchAction::input_poll, 1u64);
             }
             const u64 other = 3u64 - previous;
             if (live(other)) {
-                return select(BatchAction::activate, other);
+                return ready(other);
             }
             if (live(previous)) {
-                return select(BatchAction::activate, previous);
+                return ready(previous);
             }
             return cleanup();
         }
@@ -168,10 +215,10 @@ export namespace kernel {
             return select(BatchAction::abandon, 0u64);
         }
     public:
-        BatchOwner() : selected_action(BatchAction::admit), blocked1(0u64), selected_child(0u64), sequence(0u64),
-            outstanding(0u64), admission_status(6u64), admitted(0u64), cleanup_selected(0u64), live1(0u64), live2(0u64),
-            member1(0u64), member2(0u64), terminal1(0u64), terminal2(0u64), status1(8u64), value1(0u64), status2(8u64),
-            value2(0u64), reserved1(0u64), reserved2(0u64) {
+        BatchOwner() : selected_action(BatchAction::admit), state1(BatchState::runnable), selected_child(0u64),
+            sequence(0u64), outstanding(0u64), admission_status(6u64), admitted(0u64), cleanup_selected(0u64),
+            live1(0u64), live2(0u64), member1(0u64), member2(0u64), terminal1(0u64), terminal2(0u64), status1(8u64),
+            value1(0u64), status2(8u64), value2(0u64), state2(BatchState::runnable), active_rpc(0u64) {
         }
         auto next() -> BatchRequest {
             if (selected_action != BatchAction::done && outstanding == 0u64) {
@@ -211,18 +258,21 @@ export namespace kernel {
                     == BatchEvent::request || event == BatchEvent::terminal || (event == BatchEvent::input && child
                     == 1u64);
             }
+            if (action == BatchAction::dispatch) {
+                valid = valid || event == BatchEvent::success;
+            }
             if (action == BatchAction::output) {
                 valid = valid || event == BatchEvent::success || event == BatchEvent::output_failed;
             }
             if (action == BatchAction::request) {
                 valid = valid || event == BatchEvent::success || event == BatchEvent::pending || event
-                    == BatchEvent::cancelled;
+                    == BatchEvent::cancelled || event == BatchEvent::draining;
             }
-            if (action == BatchAction::input_poll && child == 1u64 && blocked1 != 0u64) {
+            if (action == BatchAction::input_poll && child == 1u64 && state1 == BatchState::input) {
                 valid = valid || event == BatchEvent::success || event == BatchEvent::pending || event
                     == BatchEvent::cancelled;
             }
-            if (action == BatchAction::input_wait && child == 1u64 && blocked1 != 0u64) {
+            if (action == BatchAction::input_wait && child == 1u64 && state1 == BatchState::input) {
                 valid = valid || event == BatchEvent::success;
             }
             if (action == BatchAction::retire) {
@@ -252,8 +302,8 @@ export namespace kernel {
                 valid = false;
             }
             if ((event == BatchEvent::success || event == BatchEvent::parked || event == BatchEvent::output || event
-                == BatchEvent::request || event == BatchEvent::pending || event == BatchEvent::input) && (status != 0u64
-                || value != 0u64)) {
+                == BatchEvent::request || event == BatchEvent::pending || event == BatchEvent::input || event
+                == BatchEvent::draining) && (status != 0u64 || value != 0u64)) {
                 valid = false;
             }
             if (!valid) {
@@ -294,21 +344,42 @@ export namespace kernel {
             if (action == BatchAction::activate) {
                 if (event == BatchEvent::terminal) {
                     terminal(child, status, value);
+                    if (active_rpc != 0u64) {
+                        return schedule(child);
+                    }
                     return select(BatchAction::close, child);
                 }
                 if (event == BatchEvent::input) {
-                    blocked1 = 1u64;
+                    state1 = BatchState::input;
+                    if (active_rpc != 0u64) {
+                        return schedule(child);
+                    }
                     return select(BatchAction::input_poll, 1u64);
                 }
                 if (event == BatchEvent::output) {
+                    set_state(child, BatchState::output);
+                    if (active_rpc != 0u64) {
+                        return schedule(child);
+                    }
                     return select(BatchAction::output, child);
                 }
                 if (event == BatchEvent::request) {
-                    return select(BatchAction::request, child);
+                    set_state(child, BatchState::file);
+                    if (active_rpc != 0u64) {
+                        return schedule(child);
+                    }
+                    return select(BatchAction::dispatch, child);
                 }
                 return schedule(child);
             }
+            if (action == BatchAction::dispatch) {
+                builtin::require(active_rpc == 0u64 && state(child) == BatchState::file);
+                active_rpc = child;
+                set_state(child, BatchState::active_rpc);
+                return select(BatchAction::request, child);
+            }
             if (action == BatchAction::output) {
+                set_state(child, BatchState::runnable);
                 if (event == BatchEvent::output_failed) {
                     set_status(child, 7u64);
                     cleanup_selected = 1u64;
@@ -317,9 +388,19 @@ export namespace kernel {
                 return schedule(child);
             }
             if (action == BatchAction::request) {
+                builtin::require(active_rpc == child && state(child) == BatchState::active_rpc);
                 if (event == BatchEvent::pending) {
+                    const u64 other = 3u64 - child;
+                    if (live(other) && state(other) == BatchState::runnable) {
+                        return select(BatchAction::activate, other);
+                    }
                     return select(BatchAction::request, child);
                 }
+                if (event == BatchEvent::draining) {
+                    return select(BatchAction::request, child);
+                }
+                active_rpc = 0u64;
+                set_state(child, BatchState::runnable);
                 if (event == BatchEvent::cancelled) {
                     set_status(child, status);
                     return select(BatchAction::retire, child);
@@ -330,7 +411,7 @@ export namespace kernel {
             if (action == BatchAction::input_poll) {
                 if (event == BatchEvent::pending) {
                     if (live2 != 0u64) {
-                        return select(BatchAction::activate, 2u64);
+                        return ready(2u64);
                     }
                     return select(BatchAction::input_wait, 1u64);
                 }
@@ -339,7 +420,7 @@ export namespace kernel {
                     return select(BatchAction::retire, 1u64);
                 }
                 // Only an actual copied completion unblocks the reader.
-                blocked1 = 0u64;
+                state1 = BatchState::runnable;
                 return schedule(1u64);
             }
             if (action == BatchAction::input_wait) {
@@ -367,11 +448,15 @@ export namespace kernel {
             }
             member1 = 0u64;
             member2 = 0u64;
+            state1 = BatchState::runnable;
+            state2 = BatchState::runnable;
+            active_rpc = 0u64;
             return select(BatchAction::done, 0u64);
         }
         auto result() const -> BatchResult {
             builtin::require(selected_action == BatchAction::done && outstanding == 0u64 && live1 == 0u64 && live2
-                == 0u64 && member1 == 0u64 && member2 == 0u64 && blocked1 == 0u64);
+                == 0u64 && member1 == 0u64 && member2 == 0u64 && state1 == BatchState::runnable && state2
+                == BatchState::runnable && active_rpc == 0u64);
             const BatchResult result = BatchResult(admission_status, status1, value1, status2, value2);
             return result;
         }

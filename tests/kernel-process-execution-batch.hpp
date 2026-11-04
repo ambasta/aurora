@@ -74,6 +74,22 @@ auto binding_case(const std::string &kind) -> bool {
                 if (kind == "forged-input-ordinal")
                     --request.ordinal;
             }
+            if (kind.starts_with("forged-dispatch-")) {
+                for (int at = 0; at < 3; ++at) {
+                    root.begin_effect(request);
+                    root.accept(batch::Event::success);
+                    request = root.next();
+                }
+                root.begin_effect(request);
+                root.accept(batch::Event::request);
+                request = root.next();
+                if (kind == "forged-dispatch-child")
+                    request.child = 2;
+                if (kind == "forged-dispatch-action")
+                    request.action = batch::Action::request;
+                if (kind == "forged-dispatch-ordinal")
+                    --request.ordinal;
+            }
             if (kind == "forged-quota")
                 request.quota = 4096;
             if (kind == "forged-child")
@@ -81,7 +97,7 @@ auto binding_case(const std::string &kind) -> bool {
             if (kind == "stale-parent")
                 Platform::stale = true;
             root.begin_effect(request);
-            if (kind.starts_with("forged-input-"))
+            if (kind.starts_with("forged-input-") || kind.starts_with("forged-dispatch-"))
                 _exit(80); // A forgery must fail at authentication, not a later receipt.
             if (kind == "double-effect")
                 root.begin_effect(request);
@@ -104,8 +120,18 @@ auto binding_case(const std::string &kind) -> bool {
         usage("batch binding rejection missing");
     return expected == 0;
 }
-constexpr const char *actions[] = {
-    "admit", "load", "activate", "output", "request", "retire", "close", "abandon", "done", "input_poll", "input_wait"};
+constexpr const char *actions[] = {"admit",
+                                   "load",
+                                   "activate",
+                                   "output",
+                                   "request",
+                                   "retire",
+                                   "close",
+                                   "abandon",
+                                   "done",
+                                   "input_poll",
+                                   "input_wait",
+                                   "dispatch"};
 constexpr const char *events[] = {"success",
                                   "refused",
                                   "parked",
@@ -116,7 +142,8 @@ constexpr const char *events[] = {"success",
                                   "service_lost",
                                   "output_failed",
                                   "cancelled",
-                                  "input"};
+                                  "input",
+                                  "draining"};
 auto event(const std::string &name) -> batch::Event {
     for (U64 at = 0; at < std::size(events); ++at)
         if (name == events[at])
@@ -179,8 +206,12 @@ auto execution_batch_mode(const char *cases) -> int {
                 usage("batch outstanding observation changed");
             const bool stale = fields[0] == "stale";
             const auto event = stale ? fixture::batch::Event::success : fixture::event(fields[0]);
+            std::byte before[160];
+            std::memcpy(before, storage, sizeof(storage));
             const bool accepted = fixture::batch::__au_runtime_batch_accept(
                 storage, stale ? request.ordinal - 1 : request.ordinal, event, number(fields[1]), number(fields[2]));
+            if (!accepted && std::memcmp(before, storage, sizeof(storage)) != 0)
+                usage("rejected batch observation changed state");
             output << ' ';
             fixture::show(request, output);
             output << '/' << fields[0] << '=' << accepted;
