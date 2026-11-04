@@ -1,0 +1,37 @@
+fair admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/parked=1 activate.2#5q0/output=1 output.2#6q0/success=1 activate.1#7q0/request=1 request.1#8q0/pending=1 request.1#9q0/success=1 activate.2#10q0/terminal=1 close.2#11q0/success=1 activate.1#12q0/terminal=1 close.1#13q0/success=1 final=done.0#13q0:0,0,11,0,22
+refused admit.0#1q0/refused=1 final=done.0#1q0:6,8,0,8,0
+second-refused admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/refused=1 retire.1#4q0/terminal=1 close.1#5q0/success=1 close.2#6q0/success=1 final=done.0#6q0:5,8,0,8,0
+first-refused admit.0#1q0/success=1 load.1#2q4096/refused=1 close.1#3q0/success=1 close.2#4q0/success=1 final=done.0#4q0:3,8,0,8,0
+fault admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/terminal=1 close.1#5q0/success=1 activate.2#6q0/terminal=1 close.2#7q0/success=1 final=done.0#7q0:0,1,6,0,9
+service-loss admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/terminal=1 close.1#5q0/success=1 activate.2#6q0/request=1 request.2#7q0/service_lost=1 abandon.0#8q0/success=1 final=done.0#8q0:0,0,7,6,0
+output-loss admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/output=1 output.1#5q0/output_failed=1 retire.1#6q0/terminal=1 close.1#7q0/success=1 retire.2#8q0/terminal=1 close.2#9q0/success=1 final=done.0#9q0:0,7,0,8,0
+rejected-receipts admit.0#1q0/stale=0 admit.0#1q0/parked=0 admit.0#1q0/success=0 admit.0#1q0/refused=1 done.0#1q0/success=0 final=done.0#1q0:6,8,0,8,0
+expired-rpc admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/request=1 request.1#5q0/cancelled=1 retire.1#6q0/terminal=1 close.1#7q0/success=1 activate.2#8q0/terminal=1 close.2#9q0/success=1 final=done.0#9q0:0,2,0,0,13
+binding-good accepted
+binding-early-finish denied
+binding-double-issue denied
+binding-forged-child denied
+binding-stale-parent denied
+binding-double-effect denied
+binding-unsettled denied
+binding-unfinished denied
+binding-forged-quota denied
+binding-forged-load-quota denied
+withdraw-slot1 accepted
+withdraw-slot2-prior-source accepted
+withdraw-wrong-slot denied
+withdraw-out-of-range-slot denied
+withdraw-foreign-caller denied
+withdraw-missing-caller denied
+withdraw-missing-client denied
+withdraw-missing-generation denied
+withdraw-foreign-client denied
+withdraw-stale-generation denied
+withdraw-absent denied
+withdraw-initial denied
+withdraw-waiting denied
+withdraw-delivery denied
+withdraw-processing denied
+withdraw-replied denied
+withdraw-completion denied
+withdraw-revoked denied

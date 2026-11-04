@@ -12,8 +12,9 @@ public:
     enum class Domain : U64 {
         slot0 = 0,
         slot1 = 1,
-        snapshot = 2,
-        global = 3
+        slot2 = 2,
+        snapshot = 3,
+        global = 4
     };
     class SharedEvidence final {
     public:
@@ -23,11 +24,12 @@ public:
     };
     // The complete named field order is independently matched to compiler facts
     // before this image is admitted. These are not caller-supplied offsets.
-    static constexpr std::size_t root_bytes = 496, slot0_offset = 160, slot_stride = 104;
-    static constexpr std::size_t snapshot_offset = 368, staged_offset = 472, active_offset = 480,
-                                 operation_offset = 488;
-    static constexpr U64 reservation_words = 2 * process::memory_records * 3;
-    static constexpr U64 stage_base = reservation_words + 396, stage_limit = 19;
+    static constexpr std::size_t root_bytes = 512, slot0_offset = 176, slot_stride = 104;
+    static constexpr std::size_t snapshot_offset = 384, staged_offset = 488, active_offset = 496,
+                                 operation_offset = 504;
+    static constexpr U64 reservation_words = 3 * process::memory_records * 3;
+    static constexpr U64 stage_base = reservation_words + 466, stage_limit = 19;
+    static constexpr U64 slot2_base = reservation_words + 504, slot2_words = 13;
     static constexpr U64 snapshot_base = KernelSpace::extension + (U64{2} << 30);
     static constexpr U64 invalid = ~U64{0}, count_mask = U64{1023} << 4;
 
@@ -125,26 +127,39 @@ private:
         const U64 root = current_root();
         asm volatile("mov %0, %%cr3" : : "r"(root) : "memory");
     }
-    [[nodiscard]] auto offset(U64 domain) const -> std::size_t {
-        require(domain <= 2);
-        return domain == 2 ? snapshot_offset : slot0_offset + domain * slot_stride;
+    // Slot2 metadata lives in the exact granted reservation-bank tail, not
+    // at a fabricated root-field offset. Only this issuer reads physical banks.
+    [[nodiscard]] auto slot_scalar(U64 slot, U64 field) const -> U64 {
+        require(slot < 3 && field < slot2_words);
+        if (slot == 2)
+            return bank(2, slot2_base + field);
+        return scalar(slot0_offset + slot * slot_stride + field * sizeof(U64));
+    }
+    [[nodiscard]] auto domain_scalar(U64 domain, U64 field) const -> U64 {
+        require(domain <= 3);
+        if (domain == 3) {
+            require(field < 6);
+            return scalar(snapshot_offset + field * sizeof(U64));
+        }
+        return slot_scalar(domain, field);
     }
     [[nodiscard]] auto selected() const -> U64 {
         const auto selected = scalar(active_offset);
-        require(selected <= 2 && (domain_ == Domain::global || selected == static_cast<U64>(domain_)));
-        const auto at = offset(selected);
-        const auto phase = scalar(at + 16), epoch = scalar(at + 8);
-        require(phase >= 1 && phase <= 3 && epoch && scalar(at) >= frames::first_owner);
+        require(selected <= 3 && (domain_ == Domain::global || selected == static_cast<U64>(domain_)));
+        const auto selected_domain = selected;
+        const auto phase = domain_scalar(selected_domain, 2), epoch = domain_scalar(selected_domain, 1);
+        require(phase >= 1 && phase <= 3 && epoch && domain_scalar(selected_domain, 0) >= frames::first_owner);
         if (domain_ != Domain::global)
             require(epoch == expected_epoch_ + (beginning_ ? 1 : 0));
-        const U64 root_ticket = scalar(at + 24);
+        const U64 root_ticket = domain_scalar(selected_domain, 3);
         // During the first staged root allocation there is no published root
         // identity yet. Every later effect authenticates its canonical generation.
         if (root_ticket || phase != 1) {
             const U64 index = root_ticket & 0xffffffff, record = bank(0, index);
             require((root_ticket >> 60) == 0 && frames::state(record) == 2 &&
-                    frames::generation(record) == root_ticket >> 32 && frames::word(record) == scalar(at) &&
-                    bank(1, index) == (selected == 2 ? snapshot_base | 5 : 12));
+                    frames::generation(record) == root_ticket >> 32 &&
+                    frames::word(record) == domain_scalar(selected_domain, 0) &&
+                    bank(1, index) == (selected == 3 ? snapshot_base | 5 : 12));
         }
         return selected;
     }
@@ -158,7 +173,7 @@ private:
         const U64 record = bank(0, index);
         const auto domain = selected();
         require(frames::state(record) == static_cast<U64>(frames::State::allocated) &&
-                frames::generation(record) == generation && frames::word(record) == scalar(offset(domain)));
+                frames::generation(record) == generation && frames::word(record) == domain_scalar(domain, 0));
         const auto physical = ranges_->address(index);
         require(physical && *physical < physical_limit_ && *physical % frames::page == 0);
         return {index, *physical, bank(1, index)};
@@ -184,15 +199,15 @@ private:
         const auto value = frame(ticket);
         const U64 tag = value.mapping & 15;
         if (tag >= 9 && tag <= 12) {
-            require(selected() < 2);
+            require(selected() < 3);
             const U64 level = tag - 8, prefix = value.mapping & ~U64{16383};
             require(((value.mapping & count_mask) >> 4) <= 512 && prefix < (U64{1} << 47) &&
                     (level == 4 ? prefix == 0 : prefix % (U64{1} << (12 + 9 * level)) == 0));
             if (level == 4)
-                require(scalar(offset(selected()) + 24) == ticket);
+                require(domain_scalar(selected(), 3) == ticket);
             return {value, level, prefix, false};
         }
-        require(selected() == 2 && (tag == 4 || tag == 5));
+        require(selected() == 3 && (tag == 4 || tag == 5));
         const U64 prefix = value.mapping & ~U64{4095};
         require((tag == 5 && value.mapping == (snapshot_base | 5)) ||
                 (tag == 4 && prefix >= snapshot_base && prefix < snapshot_base + (U64{1} << 26) &&
@@ -252,7 +267,7 @@ private:
             return;
         }
         const auto selected_slot = selected();
-        const auto root_ticket = scalar(offset(selected_slot) + 24);
+        const auto root_ticket = domain_scalar(selected_slot, 3);
         const auto root = frame(root_ticket);
         const auto current = current_root();
         if (current == root.physical)
@@ -280,8 +295,8 @@ private:
             return;
         // Reject a mismatched address space before opening any physical window.
         // INVLPG under some other live root cannot invalidate this translation.
-        require(domain < 2 && scalar(offset(domain) + 16) == 2);
-        const U64 root_ticket = scalar(offset(domain) + 24);
+        require(domain < 3 && domain_scalar(domain, 2) == 2);
+        const U64 root_ticket = domain_scalar(domain, 3);
         const auto physical = ranges_->address(root_ticket & 0xffffffff);
         require(physical.has_value() && *physical == current);
     }
@@ -349,9 +364,10 @@ private:
                     scalar(snapshot_offset + 8) == epoch && scalar(snapshot_offset + 16) == 1);
             return;
         }
-        require(domain == Domain::slot0 || domain == Domain::slot1);
-        const auto at = offset(static_cast<U64>(domain));
-        require(scalar(at + 8) == epoch && scalar(at + 16) == 1 && scalar(at) >= frames::first_owner);
+        require(domain == Domain::slot0 || domain == Domain::slot1 || domain == Domain::slot2);
+        const auto selected_domain = static_cast<U64>(domain);
+        require(domain_scalar(selected_domain, 1) == epoch && domain_scalar(selected_domain, 2) == 1 &&
+                domain_scalar(selected_domain, 0) >= frames::first_owner);
         if (purpose == ScopePurpose::map_arguments) {
             require(source_kind_ == SourceKind::arguments);
             return;
@@ -359,8 +375,8 @@ private:
         require(purpose == ScopePurpose::map_image &&
                 (source_kind_ == SourceKind::boot || source_kind_ == SourceKind::snapshot));
         if (source_kind_ == SourceKind::snapshot) {
-            require(scalar(snapshot_offset) == scalar(at) && scalar(snapshot_offset + 24) == source_ticket_ &&
-                    scalar(snapshot_offset + 32) == source_bytes_);
+            require(scalar(snapshot_offset) == domain_scalar(selected_domain, 0) &&
+                    scalar(snapshot_offset + 24) == source_ticket_ && scalar(snapshot_offset + 32) == source_bytes_);
             validate_snapshot_identity(source_epoch_);
         }
     }
@@ -415,7 +431,7 @@ public:
         if (binding_ || owner_ || !binding.live_ || !binding.attached_ || !binding.identity() ||
             binding.root_bytes_ != root_bytes || binding.bank_count_ != 4 || !binding.has_authority_ ||
             binding.authority_offset_ != 64 || binding.banks_[0].count != ranges.frames() ||
-            binding.banks_[1].count != ranges.frames() || binding.banks_[2].count != reservation_words + 512 ||
+            binding.banks_[1].count != ranges.frames() || binding.banks_[2].count != reservation_words + 1024 ||
             binding.banks_[3].count != 512 || physical_bits < 36 || physical_bits > 52 || shared.slots > 2 ||
             !space.closed() || !interrupts_off() || current_root() != kernel_root || kernel_root % frames::page)
             return false;
@@ -442,9 +458,9 @@ public:
     [[nodiscard]] auto empty_epoch(Domain domain) const -> U64 {
         pin_ready();
         require(domain != Domain::global);
-        const auto at = offset(static_cast<U64>(domain));
-        require(scalar(at + 16) == 0);
-        return scalar(at + 8);
+        const auto selected_domain = static_cast<U64>(domain);
+        require(domain_scalar(selected_domain, 2) == 0);
+        return domain_scalar(selected_domain, 1);
     }
     auto attach_boot_volume(std::span<const std::byte> volume) -> void {
         require(binding_ && !scoped_ && !parser_pinned_ && source_kind_ == SourceKind::none && !boot_bytes_ &&
@@ -554,7 +570,8 @@ public:
     // process-root accessibility permits disjoint mapping effects, not owner
     // consumption. This guard runs before opening a consuming words scope.
     auto admit_finish() const -> void {
-        require(!attached() || (interrupts_off() && current_root() == kernel_root_ && idle()));
+        require(!attached() || (interrupts_off() && current_root() == kernel_root_ && idle() && binding_->live_ &&
+                                binding_->attached_ && binding_->identity() && slot_scalar(2, 2) == 0));
     }
     // No source call or temporary word loan: usable inside words::accessible.
     [[nodiscard]] auto accessible_root(U64 root) const -> bool {
@@ -564,31 +581,32 @@ public:
             return true;
         if (!binding_->live_ || !binding_->attached_)
             return false;
-        for (U64 slot = 0; slot < 2; ++slot) {
-            const auto at = slot0_offset + slot * slot_stride;
-            if (scalar(at + 16) != 2 || scalar(at + 8) == 0)
+        for (U64 slot = 0; slot < 3; ++slot) {
+            const auto selected_domain = slot;
+            if (domain_scalar(selected_domain, 2) != 2 || domain_scalar(selected_domain, 1) == 0)
                 continue;
-            const auto ticket = scalar(at + 24), index = ticket & 0xffffffff;
+            const auto ticket = domain_scalar(selected_domain, 3), index = ticket & 0xffffffff;
             if ((ticket >> 60) || index >= binding_->banks_[0].count)
                 continue;
             const auto record = bank(0, index);
             const auto physical = ranges_->address(index);
             if (physical && *physical == root && frames::state(record) == 2 &&
-                frames::generation(record) == ticket >> 32 && frames::word(record) == scalar(at) &&
-                bank(1, index) == 12)
+                frames::generation(record) == ticket >> 32 &&
+                frames::word(record) == domain_scalar(selected_domain, 0) && bank(1, index) == 12)
                 return true;
         }
         return false;
     }
     [[nodiscard]] auto activation_root(Domain domain, U64 epoch) const -> U64 {
-        require(domain == Domain::slot0 || domain == Domain::slot1);
+        require(domain == Domain::slot0 || domain == Domain::slot1 || domain == Domain::slot2);
         require(idle() && binding_->live_ && binding_->attached_ && binding_->identity() &&
                 current_root() == kernel_root_ && interrupts_off() && scalar(staged_offset) == 0);
-        const auto at = offset(static_cast<U64>(domain));
-        const U64 owner = scalar(at), ticket = scalar(at + 24), index = ticket & 0xffffffff;
-        require(epoch && scalar(at + 8) == epoch && scalar(at + 16) == 2 && owner >= frames::first_owner &&
-                (ticket >> 60) == 0 && index < binding_->banks_[0].count && bank(1, index) == 12 &&
-                (scalar(snapshot_offset + 16) == 0 || scalar(snapshot_offset) != owner));
+        const auto selected_domain = static_cast<U64>(domain);
+        const U64 owner = domain_scalar(selected_domain, 0), ticket = domain_scalar(selected_domain, 3),
+                  index = ticket & 0xffffffff;
+        require(epoch && domain_scalar(selected_domain, 1) == epoch && domain_scalar(selected_domain, 2) == 2 &&
+                owner >= frames::first_owner && (ticket >> 60) == 0 && index < binding_->banks_[0].count &&
+                bank(1, index) == 12 && (scalar(snapshot_offset + 16) == 0 || scalar(snapshot_offset) != owner));
         const U64 record = bank(0, index);
         const auto physical = ranges_->address(index);
         require(physical.has_value() && *physical < physical_limit_ && frames::state(record) == 2 &&
@@ -609,12 +627,12 @@ public:
             : authority_(authority), words_(bound(authority), access), purpose_(purpose) {
             require(!authority.scoped_ && !authority.parser_pinned_ && authority.space_->closed() && interrupts_off() &&
                     authority.accessible_root(current_root()) && authority.scalar(operation_offset) == 0 &&
-                    static_cast<U64>(domain) <= 3);
+                    static_cast<U64>(domain) <= 4);
             if (domain != Domain::global) {
-                const auto at = authority.offset(static_cast<U64>(domain));
-                require(
-                    authority.scalar(at + 8) == epoch &&
-                    (beginning ? authority.scalar(at + 16) == 0 && epoch != invalid : authority.scalar(at + 16) != 0));
+                const auto selected_domain = static_cast<U64>(domain);
+                require(authority.domain_scalar(selected_domain, 1) == epoch &&
+                        (beginning ? authority.domain_scalar(selected_domain, 2) == 0 && epoch != invalid
+                                   : authority.domain_scalar(selected_domain, 2) != 0));
             }
             authority.validate_purpose(purpose, domain, epoch, beginning, access);
             authority.domain_ = domain;
@@ -819,7 +837,7 @@ public:
         require(self.scope_purpose_ == ScopePurpose::fill_snapshot_chunk);
         self.validate_purpose(self.scope_purpose_, self.domain_, self.expected_epoch_, false, words::Access::write);
         self.mutation();
-        require(self.selected() == 2 && self.source_kind_ == SourceKind::chunk &&
+        require(self.selected() == 3 && self.source_kind_ == SourceKind::chunk &&
                 snapshot_epoch == self.source_epoch_ && self.scalar(snapshot_offset + 8) == snapshot_epoch &&
                 self.scalar(snapshot_offset + 16) == 1 && source <= self.source_bytes_ &&
                 count <= self.source_bytes_ - source && destination <= self.scalar(snapshot_offset + 32) &&
@@ -935,7 +953,7 @@ public:
         auto &self = admitted(token, epoch);
         self.mutation();
         const auto table = self.table(ticket);
-        require(!table.snapshot && table.level == 4 && self.scalar(self.offset(self.selected()) + 16) == 1);
+        require(!table.snapshot && table.level == 4 && self.domain_scalar(self.selected(), 2) == 1);
         auto *view = self.space_->open(table.frame.physical);
         require(view);
         for (U64 slot = 256; slot < 512; ++slot)
@@ -952,7 +970,7 @@ public:
         require(slot < 512 && shared < self.shared_.slots);
         const auto table = self.table(ticket);
         require(!table.snapshot && table.level == 2 && address(table, slot) == self.shared_.slot[shared] &&
-                self.scalar(self.offset(self.selected()) + 16) == 1);
+                self.domain_scalar(self.selected(), 2) == 1);
         auto *view = self.space_->open(table.frame.physical);
         require(view && reinterpret_cast<volatile U64 *>(view)[slot] == 0);
         reinterpret_cast<volatile U64 *>(view)[slot] = self.shared_.entry[shared];
@@ -966,7 +984,7 @@ public:
         require(slot < 512 && shared < self.shared_.slots);
         const auto table = self.table(ticket);
         require(!table.snapshot && table.level == 2 && address(table, slot) == self.shared_.slot[shared] &&
-                self.scalar(self.offset(self.selected()) + 16) == 3 && current_root() == self.kernel_root_);
+                self.domain_scalar(self.selected(), 2) == 3 && current_root() == self.kernel_root_);
         auto *view = self.space_->open(table.frame.physical);
         require(view);
         const U64 actual = reinterpret_cast<volatile U64 *>(view)[slot];
@@ -981,7 +999,7 @@ public:
         self.mutation();
         const auto table = self.table(ticket);
         require(!table.snapshot && table.level == 4 && current_root() == self.kernel_root_ &&
-                table.frame.physical != self.kernel_root_ && self.scalar(self.offset(self.selected()) + 16) == 3);
+                table.frame.physical != self.kernel_root_ && self.domain_scalar(self.selected(), 2) == 3);
         return true;
     }
     [[nodiscard]] static auto shared_upper(const void *token, U64 epoch, U64 slot) -> U64 {

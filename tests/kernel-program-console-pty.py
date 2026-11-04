@@ -1258,6 +1258,7 @@ def production_case_volume(source, programs, directory, service_case=None):
         if service_case == "source-writer":
             replacement = (programs / "source-writer-service-aurora").read_bytes()
             entries.append((b"probe", (programs / "host-files-probe-aurora").read_bytes()))
+            entries.append((b"lifecycle", (programs / "process-lifecycle-aurora").read_bytes()))
             entries.extend((name, b"old\n") for name in (b"ws-write.au", b"ws-failed.au", b"ws-lost.au"))
         elif service_case == "console-commit":
             replacement = (programs / "console-commit-hostile-aurora").read_bytes()
@@ -1329,7 +1330,14 @@ def main():
         ),
         help="private designated-service payload using --program-cases build products",
     )
+    parser.add_argument(
+        "--pair-cases", action="store_true", help="bounded pair lifecycle cases in existing private ESP"
+    )
     args = parser.parse_args()
+    need(
+        not args.pair_cases or (args.mode == "program-console" and args.program_cases and not args.service_case),
+        "Pair cases require production private programs without service replacement",
+    )
     args.append_recovery |= args.mode in APPEND_RECOVERY_MODES or (
         args.mode.startswith("program-append-") and args.mode in APPEND_FAILSTOP_REASONS
     )
@@ -1596,6 +1604,30 @@ def main():
                 )
                 return part
 
+            def run_pair_command(line, statuses=None, admission=None):
+                begin = len(transcript)
+                send(line.encode("ascii") + b"\n")
+                receive(b"aurora> ", begin)
+                part = bytes(transcript[begin:]).replace(b"\r\n", b"\n")
+                need(part.count(b"aurora> ") == 1, "Pair must finish with exactly one prompt")
+                need(
+                    b"AURORA_PROCESS_KERNEL_FAULT" not in part and b"AURORA_PROCESS_FAIL" not in part,
+                    "Pair escaped its process boundary",
+                )
+                if admission is not None:
+                    need(
+                        part.count(("run-pair: " + admission + "\n").encode()) == 1
+                        and b"[1] " not in part
+                        and b"[2] " not in part,
+                        "Rejected pair entered a child or exposed partial output",
+                    )
+                else:
+                    for member, status in enumerate(statuses, 1):
+                        result = (f"[{member}] run: " + status + "\n").encode()
+                        need(part.count(result) == 1, "Pair must report each member exactly once")
+                        need(part.index(result) < part.index(b"aurora> "), "Pair printed a premature prompt")
+                return part
+
             def run_input(
                 chunks,
                 status,
@@ -1774,6 +1806,29 @@ def main():
                         and text.count("AURORA_FILE_SERVICE_LOST:") == 1,
                         "Writer failure must reclaim the caller and start only one fresh owner",
                     )
+                    pair = run_pair_command(
+                        "run-pair probe file pair-lost -- lifecycle A",
+                        ("file service unavailable", "file service unavailable"),
+                    )
+                    need(
+                        re.findall(
+                            rb"AURORA_FILE_SERVICE_LOST: generation=(\d+) transaction=[1-9]\d* "
+                            rb"cause=exit status=0 volatile_data=lost\n",
+                            pair,
+                        )
+                        == [b"2"]
+                        and b"1 file " not in pair
+                        and b"run: exited" not in pair,
+                        "Lost pair service must retire both admitted clients without reply or replay",
+                    )
+                    run_command("run probe file ws-lost.au read @1 0", "exited status=0", b"2 read success 4 old\n\n")
+                    text = bytes(transcript).decode("ascii")
+                    need(
+                        re.findall(r"AURORA_FILE_SERVICE_READY: generation=(\d+)\r?\n", text) == ["1", "2", "3"]
+                        and text.count("AURORA_FILE_SERVICE_LOST:") == 2,
+                        "Pair loss must reclaim both clients and start exactly one fresh owner",
+                    )
+                    metrics["run_pair_service_loss_both_clients_reclaimed"] = True
                     metrics["source_writer_write_failure_commit_uncertainty_loss"] = True
                     finish_session()
                     print("PASS: writer precommit refusal, committed-but-failed reply and actual reply loss")
@@ -1998,6 +2053,27 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 need(part.count(expected) == 1, "Exact guest-authored source and data readback")
                 return part
 
+            if args.pair_cases:
+                pair = run_pair_command("run-pair lifecycle A -- lifecycle B", ("exited status=0", "exited status=0"))
+                for marker in (b"[1] A ready", b"[2] B ready", b"[1] A retained", b"[2] B retained"):
+                    need(pair.count(marker) == 1, "Pair must retain distinct live address spaces")
+                need(
+                    max(pair.index(b"[1] A ready"), pair.index(b"[2] B ready"))
+                    < min(pair.index(b"[1] A retained"), pair.index(b"[2] B retained")),
+                    "Both memory consumers must progress before either finishes",
+                )
+                run_pair_command(
+                    "run-pair lifecycle fault -- bin/sort / ps input.txt", ("fault vector=6", "exited status=0")
+                )
+                run_pair_command("run-pair hostile spin -- bin/sort / ps input.txt", ("watchdog", "exited status=0"))
+                run_pair_command("run-pair lifecycle rpc -- bin/sort / ps input.txt", ("watchdog", "exited status=0"))
+                run_command("run probe file tree/rpc-pending", "exited status=0", b"1 file not_found 0 ")
+                run_command("run bin/sort / pair-clean ps", "exited status=0", b"3 lines: 5 3 6\n")
+                metrics["run_pair_memory_fault_budget_rpc_cleanup"] = True
+                command_upper(b"healthy after paired programs\n", "HEALTHY AFTER PAIRED PROGRAMS")
+                finish_session()
+                print("PASS: paired live memory, faults, budgets, RPC cleanup and quiescent exit")
+                return
             if args.mode == "program-console" and args.program_cases and not args.service_case:
                 # The separate pristine production boot covers the common console,
                 # input and authoring workflow. This private-volume boot keeps
@@ -2534,6 +2610,26 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                         b"Usage: run PATH" in part and b"AURORA_PROCESS_LOADED:" not in part,
                         "Malformed run launched a child",
                     )
+                for line in ("run-pair", "run-pair a --", "run-pair -- b", "run-pair a -- b -- c"):
+                    begin = len(transcript)
+                    send(line.encode() + b"\n")
+                    receive(b"aurora> ", begin)
+                    part = bytes(transcript[begin:])
+                    need(
+                        b"Usage: run-pair PATH" in part and b"[1] " not in part and b"[2] " not in part,
+                        "Malformed pair launched a child",
+                    )
+                run_pair_command("run-pair bin/sort -- absent", admission="program not found")
+                run_pair_command("run-pair bin/sort -- bin/line-echo", admission="invalid executable or arguments")
+                paired = run_pair_command(
+                    "run-pair bin/cat / pc input.txt -- bin/sort / ps input.txt", ("exited status=0", "exited status=0")
+                )
+                need(
+                    b"[1] input.txt" in paired and b"[2] " in paired.split(b"[1] run: ")[0],
+                    "Both real file programs must emit tagged output",
+                )
+                run_command("run bin/sort / pair-check ps", "exited status=0", b"3 lines: 5 3 6\n")
+                metrics["run_pair_admission_tagged_results_console_recovery"] = True
                 run_command("run absent", "program not found")
                 run_command("run sort.au", "invalid executable or arguments")
                 run_command("run bin/sort", "exited status=2", b"usage: host-sort DIRECTORY OUTPUT FILE...\n")
@@ -2563,6 +2659,11 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 metrics["directory_discovery_before_guest_compile_run"] = True
                 run_command("run bin/aurorac --emit-executable --target aurora main.au -o app", "exited status=0")
                 read_authored(source, text, b"ENTERED-FIRST")
+                paired = run_pair_command(
+                    "run-pair app -- bin/sort / ps input.txt", ("exited status=0", "exited status=0")
+                )
+                need(b"[1] ENTERED-FIRST\nSOURCE-BEGIN\n" in paired, "Pair must execute the guest-authored RAM program")
+                metrics["run_pair_guest_authored_program"] = True
                 replacement = source.replace(b"ENTERED-FIRST", b"ENTERED-SECOND")
                 write_source(b"main.au", [replacement, b"\x04"])
                 run_command("run bin/aurorac --emit-executable --target aurora main.au -o app", "exited status=0")

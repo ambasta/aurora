@@ -50,6 +50,9 @@ template <class Platform> class Root final {
 
 public:
     constexpr Root() = default;
+    auto inactive() const -> bool {
+        return !live_ && !borrowed_;
+    }
     Root(const Root &) = delete;
     Root(Root &&) = delete;
     auto operator=(const Root &) -> Root & = delete;

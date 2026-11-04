@@ -1,0 +1,334 @@
+export module kernel.execution_batch;
+
+export namespace kernel {
+    enum class BatchAction {
+        admit,
+        load,
+        activate,
+        output,
+        request,
+        retire,
+        close,
+        abandon,
+        done
+    };
+    enum class BatchEvent {
+        success,
+        refused,
+        parked,
+        output,
+        request,
+        terminal,
+        pending,
+        service_lost,
+        output_failed,
+        cancelled
+    };
+    class BatchRequest {
+    public:
+        BatchAction action;
+        u64 child;
+        u64 ordinal;
+        u64 status;
+        u64 value;
+        u64 quota;
+        BatchRequest(BatchAction a, u64 c, u64 o, u64 s, u64 v, u64 q) : action(a), child(c), ordinal(o), status(s),
+            value(v), quota(q) {
+        }
+    };
+    class BatchResult {
+    public:
+        u64 admission;
+        u64 status1;
+        u64 value1;
+        u64 status2;
+        u64 value2;
+        BatchResult(u64 a, u64 s1, u64 v1, u64 s2, u64 v2) : admission(a), status1(s1), value1(v1), status2(s2),
+            value2(v2) {
+        }
+    };
+    // Private synchronous policy root. It owns no bytes or execution authority.
+    // Native authenticates the pinned operation and every selected physical effect.
+    class BatchOwner {
+        // Fixed scalar layout: selected action, reserved, child, ordinal, outstanding, admission, admitted, cleanup,
+        // live1, live2, member1, member2, terminal1, terminal2,
+        // status1, value1, status2, value2, reserved[3].
+        BatchAction selected_action;
+        u64 reserved0;
+        u64 selected_child;
+        u64 sequence;
+        u64 outstanding;
+        u64 admission_status;
+        u64 admitted;
+        u64 cleanup_selected;
+        u64 live1;
+        u64 live2;
+        u64 member1;
+        u64 member2;
+        u64 terminal1;
+        u64 terminal2;
+        u64 status1;
+        u64 value1;
+        u64 status2;
+        u64 value2;
+        u64 reserved1;
+        u64 reserved2;
+        auto live(u64 child) const -> bool {
+            builtin::require(child == 1u64 || child == 2u64);
+            if (child == 1u64) {
+                return live1 != 0u64;
+            }
+            return live2 != 0u64;
+        }
+        auto child_status(u64 child) const -> u64 {
+            builtin::require(child == 1u64 || child == 2u64);
+            if (child == 1u64) {
+                return status1;
+            }
+            return status2;
+        }
+        auto child_value(u64 child) const -> u64 {
+            builtin::require(child == 1u64 || child == 2u64);
+            if (child == 1u64) {
+                return value1;
+            }
+            return value2;
+        }
+        auto set_status(u64 child, u64 status) -> bool {
+            builtin::require(child == 1u64 || child == 2u64);
+            if (child == 1u64) {
+                status1 = status;
+            } else {
+                status2 = status;
+            }
+            return true;
+        }
+        auto select(BatchAction action, u64 child) -> bool {
+            selected_action = action;
+            selected_child = child;
+            return true;
+        }
+        auto terminal(u64 child, u64 status, u64 value) -> bool {
+            builtin::require(child == 1u64 || child == 2u64);
+            if (child == 1u64) {
+                live1 = 0u64;
+                terminal1 = 1u64;
+                status1 = status;
+                value1 = value;
+            } else {
+                live2 = 0u64;
+                terminal2 = 1u64;
+                status2 = status;
+                value2 = value;
+            }
+            return true;
+        }
+        auto cleanup() -> bool {
+            if (live1 != 0u64) {
+                return select(BatchAction::retire, 1u64);
+            }
+            if (live2 != 0u64) {
+                return select(BatchAction::retire, 2u64);
+            }
+            if (member1 != 0u64) {
+                return select(BatchAction::close, 1u64);
+            }
+            if (member2 != 0u64) {
+                return select(BatchAction::close, 2u64);
+            }
+            return select(BatchAction::done, 0u64);
+        }
+        auto schedule(u64 previous) -> bool {
+            if (cleanup_selected != 0u64) {
+                return cleanup();
+            }
+            const u64 other = 3u64 - previous;
+            if (live(other)) {
+                return select(BatchAction::activate, other);
+            }
+            if (live(previous)) {
+                return select(BatchAction::activate, previous);
+            }
+            return cleanup();
+        }
+        auto lose_service() -> bool {
+            if (admitted == 0u64) {
+                admission_status = 6u64;
+            }
+            cleanup_selected = 1u64;
+            return select(BatchAction::abandon, 0u64);
+        }
+    public:
+        BatchOwner() : selected_action(BatchAction::admit), reserved0(0u64), selected_child(0u64), sequence(0u64),
+            outstanding(0u64), admission_status(6u64), admitted(0u64), cleanup_selected(0u64), live1(0u64), live2(0u64),
+            member1(0u64), member2(0u64), terminal1(0u64), terminal2(0u64), status1(8u64), value1(0u64), status2(8u64),
+            value2(0u64), reserved1(0u64), reserved2(0u64) {
+        }
+        auto next() -> BatchRequest {
+            if (selected_action != BatchAction::done && outstanding == 0u64) {
+                builtin::require(sequence != 18446744073709551615u64);
+                sequence = sequence + 1u64;
+                outstanding = 1u64;
+            }
+            u64 status = 0u64;
+            u64 value = 0u64;
+            if (selected_child != 0u64) {
+                status = child_status(selected_child);
+                value = child_value(selected_child);
+            }
+            // Each admitted image may reserve at most 4096 additional frames.
+            // MM may clip this allowance or refuse admission; it is not a minimum.
+            // Loading occurs once per child, so allowances never reset or transfer.
+            u64 quota = 0u64;
+            if (selected_action == BatchAction::load) {
+                quota = 4096u64;
+            }
+            const BatchRequest result = BatchRequest(selected_action, selected_child, sequence, status, value, quota);
+            return result;
+        }
+        auto accept(u64 ordinal, BatchEvent event, u64 status, u64 value) -> bool {
+            if (outstanding == 0u64 || ordinal != sequence || status > 8u64 || selected_action == BatchAction::done) {
+                return false;
+            }
+            const BatchAction action = selected_action;
+            const u64 child = selected_child;
+            // Reject impossible observation combinations without advancing policy.
+            bool valid = event == BatchEvent::service_lost && action != BatchAction::abandon;
+            if (action == BatchAction::admit || action == BatchAction::load) {
+                valid = valid || event == BatchEvent::success || event == BatchEvent::refused;
+            }
+            if (action == BatchAction::activate) {
+                valid = valid || event == BatchEvent::parked || event == BatchEvent::output || event
+                    == BatchEvent::request || event == BatchEvent::terminal;
+            }
+            if (action == BatchAction::output) {
+                valid = valid || event == BatchEvent::success || event == BatchEvent::output_failed;
+            }
+            if (action == BatchAction::request) {
+                valid = valid || event == BatchEvent::success || event == BatchEvent::pending || event
+                    == BatchEvent::cancelled;
+            }
+            if (action == BatchAction::retire) {
+                valid = valid || event == BatchEvent::terminal;
+            }
+            if (action == BatchAction::close || action == BatchAction::abandon) {
+                valid = valid || event == BatchEvent::success;
+            }
+            if (event == BatchEvent::refused && (status < 3u64 || status > 6u64 || value != 0u64)) {
+                valid = false;
+            }
+            if (event == BatchEvent::terminal && status != 0u64 && status != 1u64 && status != 2u64 && status != 7u64
+                && status != 8u64) {
+                valid = false;
+            }
+            if (event == BatchEvent::cancelled && (status != 2u64 && status != 8u64)) {
+                valid = false;
+            }
+            if (event == BatchEvent::service_lost && (status != 6u64 || value != 0u64)) {
+                valid = false;
+            }
+            if (event == BatchEvent::output_failed && (status != 7u64 || value != 0u64)) {
+                valid = false;
+            }
+            if ((event == BatchEvent::success || event == BatchEvent::parked || event == BatchEvent::output || event
+                == BatchEvent::request || event == BatchEvent::pending) && (status != 0u64 || value != 0u64)) {
+                valid = false;
+            }
+            if (!valid) {
+                return false;
+            }
+            outstanding = 0u64;
+            if (event == BatchEvent::service_lost) {
+                return lose_service();
+            }
+            if (action == BatchAction::admit) {
+                if (event == BatchEvent::refused) {
+                    admission_status = status;
+                    return select(BatchAction::done, 0u64);
+                }
+                member1 = 1u64;
+                member2 = 1u64;
+                return select(BatchAction::load, 1u64);
+            }
+            if (action == BatchAction::load) {
+                if (event == BatchEvent::refused) {
+                    // A refused load has already reclaimed its partial MM/snapshot.
+                    admission_status = status;
+                    cleanup_selected = 1u64;
+                    return cleanup();
+                }
+                if (child == 1u64) {
+                    live1 = 1u64;
+                } else {
+                    live2 = 1u64;
+                }
+                if (child == 1u64) {
+                    return select(BatchAction::load, 2u64);
+                }
+                admission_status = 0u64;
+                admitted = 1u64;
+                return select(BatchAction::activate, 1u64);
+            }
+            if (action == BatchAction::activate) {
+                if (event == BatchEvent::terminal) {
+                    terminal(child, status, value);
+                    return select(BatchAction::close, child);
+                }
+                if (event == BatchEvent::output) {
+                    return select(BatchAction::output, child);
+                }
+                if (event == BatchEvent::request) {
+                    return select(BatchAction::request, child);
+                }
+                return schedule(child);
+            }
+            if (action == BatchAction::output) {
+                if (event == BatchEvent::output_failed) {
+                    set_status(child, 7u64);
+                    cleanup_selected = 1u64;
+                    return select(BatchAction::retire, child);
+                }
+                return schedule(child);
+            }
+            if (action == BatchAction::request) {
+                if (event == BatchEvent::pending) {
+                    return select(BatchAction::request, child);
+                }
+                if (event == BatchEvent::cancelled) {
+                    set_status(child, status);
+                    return select(BatchAction::retire, child);
+                }
+                // Success means copied reply completion, not merely server reply.
+                return schedule(child);
+            }
+            if (action == BatchAction::retire) {
+                terminal(child, status, value);
+                return select(BatchAction::close, child);
+            }
+            if (action == BatchAction::close) {
+                if (child == 1u64) {
+                    member1 = 0u64;
+                } else {
+                    member2 = 0u64;
+                }
+                return schedule(child);
+            }
+            // Abandon acknowledges actual service and dependent-client reclamation.
+            if (terminal1 == 0u64) {
+                terminal(1u64, 6u64, 0u64);
+            }
+            if (terminal2 == 0u64) {
+                terminal(2u64, 6u64, 0u64);
+            }
+            member1 = 0u64;
+            member2 = 0u64;
+            return select(BatchAction::done, 0u64);
+        }
+        auto result() const -> BatchResult {
+            builtin::require(selected_action == BatchAction::done && outstanding == 0u64 && live1 == 0u64 && live2
+                == 0u64 && member1 == 0u64 && member2 == 0u64);
+            const BatchResult result = BatchResult(admission_status, status1, value1, status2, value2);
+            return result;
+        }
+    };
+}

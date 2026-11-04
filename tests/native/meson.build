@@ -396,14 +396,22 @@ if get_option('kernel_images')
   endforeach
   # The production image: its protected program console through the PTY oracle,
   # then serial commands plus the graphical terminal's framebuffer in one guest.
+  production_guest_programs = [process_programs['aurora:process-hostile'],
+                process_programs['aurora:process-lifecycle'], process_programs['aurora:host-files-probe'],
+                process_programs['assembly:process-isolation-3'], process_programs['assembly:process-isolation-6'],
+                process_programs['aurora:console-commit-hostile'], process_programs['aurora:source-writer-service']]
   test('guest-uefi-production', python,
        args: ['-B', files('../../scripts/kernel_production_smoke.py'),
               '--build-dir', meson.project_build_root() / 'kernel-images/uefi/production',
               '--renderer', graphical_terminal_host],
-       depends: kernel_profile_images['uefi/production'] + [graphical_terminal_host,
-                process_programs['aurora:process-hostile'], process_programs['aurora:process-lifecycle'],
-                process_programs['aurora:host-files-probe'], process_programs['assembly:process-isolation-3'],
-                process_programs['assembly:process-isolation-6'], process_programs['aurora:console-commit-hostile'],
-                process_programs['aurora:source-writer-service']],
+       depends: kernel_profile_images['uefi/production'] + [graphical_terminal_host] + production_guest_programs,
        suite: ['guest', 'guest-production'], workdir: native_root, timeout: 480)
+  # Independent pair lifecycle coverage reuses the same image and private ESP.
+  # Its cost is additional to, not substituted for, the existing production gate.
+  test('guest-uefi-production-pair', python,
+       args: ['-B', files('../kernel-program-console-pty.py'), '--mode', 'program-console',
+              '--build-dir', meson.project_build_root() / 'kernel-images/uefi/production',
+              '--program-cases', meson.project_build_root(), '--pair-cases'],
+       depends: kernel_profile_images['uefi/production'] + production_guest_programs,
+       suite: ['guest', 'guest-production'], workdir: native_root, is_parallel: false, timeout: 180)
 endif

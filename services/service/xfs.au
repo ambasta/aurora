@@ -91,8 +91,8 @@ export namespace service {
                 if (depth == 0) {
                     first = begin;
                     first_length = length;
-                    if (((volume == 0u64 && length == 4) || (volume == 1u64 && length == 5
-                        && path.at(begin + 4) == 50u8)) && path.at(begin) == 100u8 && path.at(begin + 1) == 105u8 && path.at(begin + 2)
+                    if (((volume == 0u64 && length == 4) || (volume == 1u64 && length == 5 && path.at(begin + 4)
+                        == 50u8)) && path.at(begin) == 100u8 && path.at(begin + 1) == 105u8 && path.at(begin + 2)
                         == 115u8 && path.at(begin + 3) == 107u8) {
                         touched = true;
                     }
@@ -148,7 +148,10 @@ export namespace service {
     // Zero routes to Store; otherwise the returned operation belongs to XFS.
     // A relative disk path beneath the live boot root is the only cross-owner
     // traversal. Arbitrary boot subdirectories and stale handles cannot use it.
-    auto xfs_operation(Store& store, builtin::span<const u8> path, u64 operation, u64 id) -> u64 {
+    auto xfs_operation_for(Store& store, u64 source, builtin::span<const u8> path, u64 operation, u64 id) -> u64 {
+        if (!store.contains(source)) {
+            return 0u64;
+        }
         if (operation == 16u64 || operation == 18u64 || operation == 21u64) {
             const XfsPath parsed = xfs_path(path);
             if (parsed.kind != 0u64) {
@@ -160,7 +163,7 @@ export namespace service {
                 return operation;
             }
             const XfsPath parsed = xfs_path(path);
-            if (store.is_root_directory(id) && parsed.kind != 0u64 && kernel::valid_path(path)
+            if (store.is_root_directory_for(source, id) && parsed.kind != 0u64 && kernel::valid_path(path)
                 && !kernel::escapes(path)) {
                 return 18u64;
             }
@@ -172,11 +175,20 @@ export namespace service {
         return 0u64;
     }
 
+    auto xfs_operation(Store& store, builtin::span<const u8> path, u64 operation, u64 id) -> u64 {
+        const u64 source = store.singleton_source();
+        if (source == 0u64) {
+            return 0u64;
+        }
+        return xfs_operation_for(store, source, path, operation, id);
+    }
+
     // The mount and this table are sibling linear owners: nested owning fields
     // are not a language feature. No device capability is stored in either.
     class XfsFiles {
         builtin::OwnedBytes table;
         builtin::array<u64, 16> cursors;
+        builtin::OwnedBytes owners;
         builtin::OwnedBytes payload;
         builtin::OwnedBytes path_bytes;
         i64 path_length;
@@ -188,6 +200,10 @@ export namespace service {
         u64 handle_count;
         u64 device;
         u64 client;
+        u64 second_client;
+        // A surviving pair member never acquires singleton disk-write rights.
+        bool paired;
+        u64 request_source;
         u64 root_inode;
         u64 slot;
         u64 pending;
@@ -225,14 +241,29 @@ export namespace service {
             }
             return usable;
         }
-        auto find(u64 id, u64 kind) const -> i64 {
-            if (id == 0u64 || (id - 1u64) % 64u64 < handle_base
-                || (id - 1u64) % 64u64 >= handle_base + handle_count || !mounted || client == 0u64 || !ok()) {
+        auto owner(u64 row) const -> u64 {
+            const builtin::span<const u8> bytes = borrow_bytes(owners);
+            const std::ByteReadResult read = std::read_le64(bytes, i64(row * 8u64));
+            return read.value_or(0u64);
+        }
+        auto set_owner(u64 row, u64 source) -> bool {
+            i64 at = 0;
+            while (at < 8) {
+                if (!owners.set(i64(row * 8u64) + at, u8((source >> (at * 8)) & 255u64))) {
+                    usable = false;
+                }
+                at = at + 1;
+            }
+            return usable;
+        }
+        auto find(u64 source, u64 id, u64 kind) const -> i64 {
+            if (id == 0u64 || (id - 1u64) % 64u64 < handle_base || (id - 1u64) % 64u64 >= handle_base + handle_count
+                || !mounted || !contains(source) || !ok()) {
                 return -1;
             }
             const u64 row = (id - 1u64) % 64u64 - handle_base;
             const u64 state = word(row, 0u64);
-            if (state == 0u64 || (kind != 0u64 && state != kind)) {
+            if (owner(row) != source || state == 0u64 || (kind != 0u64 && state != kind)) {
                 return -1;
             }
             if (word(row, 1u64) != (id - 1u64) / 64u64) {
@@ -241,6 +272,9 @@ export namespace service {
             return i64(row);
         }
         auto claim(u64 kind, u64 size, u64 inode) -> bool {
+            if (!contains(request_source)) {
+                return fail(kernel::FileStatus::failed);
+            }
             const u64 next = word(slot, 1u64) + 1u64;
             if (next >= 288230376151711744u64) {
                 set_result(kernel::FileStatus::exhausted);
@@ -248,6 +282,7 @@ export namespace service {
                 return false;
             }
             cursors[i64(slot)] = 0u64;
+            set_owner(slot, request_source);
             set_word(slot, 0u64, kind);
             set_word(slot, 1u64, next);
             set_word(slot, 2u64, inode);
@@ -261,16 +296,16 @@ export namespace service {
         }
     public:
         XfsFiles(builtin::ByteRegion region, u64 volume_generation, u64 sectors) : table(region.try_allocate(5120)),
-            cursors{}, payload(region.try_allocate(504)), path_bytes(region.try_allocate(4095)), path_length(0),
-            directory(0u64), parent(0u64), directory_open(false), generation(volume_generation), handle_base(40u64),
-            handle_count(16u64), device(3u64), client(0u64),
-            root_inode(0u64), slot(0u64), pending(0u64), offset(0u64), desired(0u64), copied(0u64),
-            usable(volume_generation != 0u64 && sectors != 0u64), mounted(false),
-            result_status(kernel::FileStatus::failed), result_count(0u64), result_id(0u64), result_size(0u64),
-            result_inode(0u64) {
+            cursors{}, owners(region.try_allocate(128)), payload(region.try_allocate(504)),
+            path_bytes(region.try_allocate(4095)), path_length(0), directory(0u64), parent(0u64), directory_open(false),
+            generation(volume_generation), handle_base(40u64), handle_count(16u64), device(3u64), client(0u64),
+            second_client(0u64), paired(false), request_source(0u64), root_inode(0u64), slot(0u64), pending(0u64),
+            offset(0u64), desired(0u64), copied(0u64), usable(volume_generation != 0u64 && sectors != 0u64),
+            mounted(false), result_status(kernel::FileStatus::failed), result_count(0u64), result_id(0u64),
+            result_size(0u64), result_inode(0u64) {
         }
         auto configure_volume(u64 volume) -> bool {
-            if (mounted || client != 0u64 || pending != 0u64 || volume > 1u64 || handle_count != 16u64) {
+            if (mounted || !clients_idle() || pending != 0u64 || volume > 1u64 || handle_count != 16u64) {
                 return false;
             }
             handle_base = 40u64 + volume * 8u64;
@@ -279,19 +314,20 @@ export namespace service {
             return true;
         }
         // Observation only: rejection and known EOF remain usable with no I/O.
-        auto required_commands(u64 operation, u64 id, u64 position, builtin::span<const u8> path) const -> u64 {
-            if (!ready() || client == 0u64 || pending != 0u64) {
+        auto required_commands_for(u64 source, u64 operation, u64 id, u64 position,
+            builtin::span<const u8> path) const -> u64 {
+            if (!ready() || !contains(source) || pending != 0u64) {
                 return 0u64;
             }
             if (operation == 19u64) {
-                const i64 found = find(id, 2u64);
+                const i64 found = find(source, id, 2u64);
                 if (found < 0 || position > 9223372036854775807u64 || position >= word(u64(found), 3u64)) {
                     return 0u64;
                 }
                 return 6u64;
             }
             if (operation == 25u64) {
-                const i64 found = find(id, 1u64);
+                const i64 found = find(source, id, 1u64);
                 if (position != 0u64 || path.size() != 0 || found < 0 || cursors[found] == 17u64) {
                     return 0u64;
                 }
@@ -304,7 +340,7 @@ export namespace service {
                 return 0u64;
             }
             if (operation == 17u64) {
-                if (find(id, 1u64) < 0 || kernel::escapes(path)) {
+                if (find(source, id, 1u64) < 0 || kernel::escapes(path)) {
                     return 0u64;
                 }
             } else {
@@ -343,16 +379,40 @@ export namespace service {
             }
             return 0u64;
         }
-        auto admit_commands(u64 operation, u64 id, u64 position, builtin::span<const u8> path,
+        auto admit_commands_for(u64 source, u64 operation, u64 id, u64 position, builtin::span<const u8> path,
             u64 remaining) -> bool {
-            if (required_commands(operation, id, position, path) > remaining) {
+            if (!contains(source) || pending != 0u64) {
+                return false;
+            }
+            if (required_commands_for(source, operation, id, position, path) > remaining) {
                 set_result(kernel::FileStatus::failed);
                 return false;
             }
             return true;
         }
+        auto required_commands(u64 operation, u64 id, u64 position, builtin::span<const u8> path) const -> u64 {
+            return required_commands_for(singleton_source(), operation, id, position, path);
+        }
+        auto admit_commands(u64 operation, u64 id, u64 position, builtin::span<const u8> path, u64 remaining) -> bool {
+            return admit_commands_for(singleton_source(), operation, id, position, path, remaining);
+        }
+        auto read_byte(u64 at) const -> u8 {
+            return read_byte_for(singleton_source(), at);
+        }
+        auto output_valid(u64 id) const -> bool {
+            return output_valid_for(singleton_source(), id);
+        }
+        auto create_output(builtin::span<const u8> path, u64 inode) -> bool {
+            return create_output_for(singleton_source(), path, inode);
+        }
+        auto release_output(u64 id, kernel::FileStatus status) -> bool {
+            return release_output_for(singleton_source(), id, status);
+        }
+        auto prepare(u64 operation, u64 id, u64 position, builtin::span<const u8> path) -> bool {
+            return prepare_for(singleton_source(), operation, id, position, path);
+        }
         auto resources_ok() const -> bool {
-            return table.ok() && payload.ok() && path_bytes.ok();
+            return table.ok() && owners.ok() && payload.ok() && path_bytes.ok();
         }
         auto ok() const -> bool {
             return usable && resources_ok();
@@ -361,7 +421,7 @@ export namespace service {
             return ok() && mounted;
         }
         auto continuity_idle() const -> bool {
-            if (!ready() || client != 0u64 || pending != 0u64) {
+            if (!ready() || !clients_idle() || pending != 0u64) {
                 return false;
             }
             u64 row = 0u64;
@@ -383,7 +443,31 @@ export namespace service {
             return pending == 3u64;
         }
         auto active() const -> u64 {
-            return client;
+            if (client != 0u64) {
+                return client;
+            }
+            return second_client;
+        }
+        auto contains(u64 source) const -> bool {
+            return source != 0u64 && (client == source || second_client == source);
+        }
+        auto clients_idle() const -> bool {
+            return client == 0u64 && second_client == 0u64;
+        }
+        auto singleton(u64 source) const -> bool {
+            return !paired && contains(source);
+        }
+        auto singleton_source() const -> u64 {
+            if (paired) {
+                return 0u64;
+            }
+            return active();
+        }
+        auto can_admit(u64 first, u64 second) const -> bool {
+            return first != 0u64 && first != second && clients_idle() && pending == 0u64;
+        }
+        auto can_finish(u64 source) const -> bool {
+            return contains(source) && pending == 0u64;
         }
         auto response() const -> Reply {
             Reply result = reply(result_status);
@@ -401,8 +485,9 @@ export namespace service {
             }
             return result;
         }
-        auto read_byte(u64 at) const -> u8 {
-            if (!ready() || result_status != kernel::FileStatus::success || at >= result_count || at >= copied) {
+        auto read_byte_for(u64 source, u64 at) const -> u8 {
+            if (!contains(source) || request_source != source || !ready() || result_status
+                != kernel::FileStatus::success || at >= result_count || at >= copied) {
                 return 0u8;
             }
             return payload.at(i64(at));
@@ -428,30 +513,50 @@ export namespace service {
             mounted = true;
             return true;
         }
-        auto begin(u64 incarnation) -> bool {
-            if (incarnation == 0u64 || client != 0u64 || pending != 0u64) {
+        auto admit_clients(u64 first, u64 second) -> bool {
+            if (!can_admit(first, second)) {
                 return false;
             }
-            client = incarnation;
+            client = first;
+            second_client = second;
+            paired = second != 0u64;
+            request_source = 0u64;
             copied = 0u64;
             set_result(kernel::FileStatus::failed);
             return true;
         }
+        auto begin(u64 incarnation) -> bool {
+            return admit_clients(incarnation, 0u64);
+        }
         auto finish(u64 incarnation) -> bool {
-            if (incarnation == 0u64 || client != incarnation || pending != 0u64) {
+            if (!can_finish(incarnation)) {
                 return false;
             }
             if (table.ok()) {
                 u64 row = 0u64;
                 while (row < handle_count) {
-                    set_word(row, 0u64, 0u64);
-                    cursors[i64(row)] = 0u64;
+                    if (owner(row) == incarnation) {
+                        set_word(row, 0u64, 0u64);
+                        cursors[i64(row)] = 0u64;
+                        set_owner(row, 0u64);
+                    }
                     row = row + 1u64;
                 }
             }
-            client = 0u64;
-            copied = 0u64;
-            set_result(kernel::FileStatus::failed);
+            if (client == incarnation) {
+                client = 0u64;
+            }
+            if (second_client == incarnation) {
+                second_client = 0u64;
+            }
+            if (clients_idle()) {
+                paired = false;
+            }
+            if (request_source == incarnation) {
+                request_source = 0u64;
+                copied = 0u64;
+                set_result(kernel::FileStatus::failed);
+            }
             // An absent/failed disk must not prevent boot Store client cleanup.
             return true;
         }
@@ -500,13 +605,20 @@ export namespace service {
         auto respond(kernel::FileStatus status) -> bool {
             return set_result(status);
         }
-        auto output_valid(u64 id) const -> bool {
-            return find(id, 3u64) >= 0;
+        auto owns(u64 source, u64 id) const -> bool {
+            return find(source, id, 0u64) >= 0;
         }
-        auto create_output(builtin::span<const u8> path, u64 inode) -> bool {
-            if (!ready() || client == 0u64 || pending != 0u64 || inode == 0u64) {
+        auto output_valid_for(u64 source, u64 id) const -> bool {
+            return find(source, id, 3u64) >= 0;
+        }
+        auto create_output_for(u64 source, builtin::span<const u8> path, u64 inode) -> bool {
+            if (!contains(source) || pending != 0u64) {
+                return false;
+            }
+            if (!ready() || !singleton(source) || inode == 0u64) {
                 return fail(kernel::FileStatus::failed);
             }
+            request_source = source;
             const XfsPath parsed = xfs_path_volume(path, device - 3u64);
             if (parsed.kind != 2u64) {
                 return fail(kernel::FileStatus::denied);
@@ -528,7 +640,8 @@ export namespace service {
                 return fail(kernel::FileStatus::not_found);
             }
             slot = 0u64;
-            while (slot < handle_count && (word(slot, 0u64) != 0u64 || word(slot, 1u64) + 1u64 >= 288230376151711744u64)) {
+            while (slot < handle_count && (word(slot, 0u64) != 0u64 || word(slot, 1u64) + 1u64
+                >= 288230376151711744u64)) {
                 slot = slot + 1u64;
             }
             if (slot == handle_count) {
@@ -536,20 +649,25 @@ export namespace service {
             }
             return claim(3u64, 0u64, inode);
         }
-        auto release_output(u64 id, kernel::FileStatus status) -> bool {
-            const i64 row = find(id, 3u64);
+        auto release_output_for(u64 source, u64 id, kernel::FileStatus status) -> bool {
+            if (!contains(source) || pending != 0u64) {
+                return false;
+            }
+            const i64 row = find(source, id, 3u64);
             if (row < 0) {
                 return fail(kernel::FileStatus::invalid_handle);
             }
             set_word(u64(row), 0u64, 0u64);
+            set_owner(u64(row), 0u64);
             pending = 0u64;
             copied = 0u64;
             return set_result(status);
         }
-        auto prepare(u64 operation, u64 id, u64 position, builtin::span<const u8> path) -> bool {
-            if (pending != 0u64) {
-                return poison();
+        auto prepare_for(u64 source, u64 operation, u64 id, u64 position, builtin::span<const u8> path) -> bool {
+            if (!contains(source) || pending != 0u64) {
+                return false;
             }
+            request_source = source;
             copied = 0u64;
             set_result(kernel::FileStatus::failed);
             if (operation == 21u64) {
@@ -562,19 +680,19 @@ export namespace service {
                 }
             }
             if (operation >= 22u64 && operation <= 24u64) {
-                if (find(id, 0u64) < 0) {
+                if (find(source, id, 0u64) < 0) {
                     return fail(kernel::FileStatus::invalid_handle);
                 }
                 return fail(kernel::FileStatus::denied);
             }
-            if (!ready() || client == 0u64) {
+            if (!ready() || !contains(source)) {
                 return fail(kernel::FileStatus::failed);
             }
             if (operation == 25u64) {
                 if (position != 0u64 || path.size() != 0) {
                     return fail(kernel::FileStatus::failed);
                 }
-                const i64 found = find(id, 1u64);
+                const i64 found = find(source, id, 1u64);
                 if (found < 0) {
                     return fail(kernel::FileStatus::invalid_handle);
                 }
@@ -590,13 +708,14 @@ export namespace service {
                 if (operation == 20u64) {
                     kind = 0u64;
                 }
-                const i64 found = find(id, kind);
+                const i64 found = find(source, id, kind);
                 if (found < 0) {
                     return fail(kernel::FileStatus::invalid_handle);
                 }
                 slot = u64(found);
                 if (operation == 20u64) {
                     set_word(slot, 0u64, 0u64);
+                    set_owner(slot, 0u64);
                     cursors[i64(slot)] = 0u64;
                     set_result(kernel::FileStatus::success);
                     return true;
@@ -625,7 +744,7 @@ export namespace service {
             parent = root_inode;
             directory_open = operation == 16u64;
             if (operation == 17u64) {
-                const i64 found = find(id, 1u64);
+                const i64 found = find(source, id, 1u64);
                 if (found < 0) {
                     return fail(kernel::FileStatus::invalid_handle);
                 }
@@ -699,7 +818,8 @@ export namespace service {
                 return fail(kernel::FileStatus::escape);
             }
             slot = 0u64;
-            while (slot < handle_count && (word(slot, 0u64) != 0u64 || word(slot, 1u64) + 1u64 >= 288230376151711744u64)) {
+            while (slot < handle_count && (word(slot, 0u64) != 0u64 || word(slot, 1u64) + 1u64
+                >= 288230376151711744u64)) {
                 slot = slot + 1u64;
             }
             if (slot == handle_count) {
@@ -800,11 +920,9 @@ export namespace service {
     // Atomic source-resource and initial command admission for the real pump.
     auto admit_dual_mounts(XfsFiles& first, XfsFiles& second, fs::XfsReadonlyMount& first_mount,
         fs::XfsReadonlyMount& second_mount, u64 volumes, u64 remaining) -> bool {
-        if (!first.resources_ok() || !second.resources_ok()
-            || first_mount.status() == fs::XfsMountStatus::invalid_request
-            || second_mount.status() == fs::XfsMountStatus::invalid_request
-            || volumes == 0u64 || volumes > 2u64
-            || remaining < volumes * 18458u64) {
+        if (!first.resources_ok() || !second.resources_ok() || first_mount.status()
+            == fs::XfsMountStatus::invalid_request || second_mount.status() == fs::XfsMountStatus::invalid_request
+            || volumes == 0u64 || volumes > 2u64 || remaining < volumes * 18458u64) {
             first.poison();
             second.poison();
             return false;

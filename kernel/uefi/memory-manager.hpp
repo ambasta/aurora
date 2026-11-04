@@ -60,7 +60,7 @@ public:
     using U64 = std::uint64_t;
     using Audit = frames::FrameAudit;
     using Result = ManagerResult;
-    static constexpr std::size_t root_bytes = 496;
+    static constexpr std::size_t root_bytes = 512;
 
 private:
     friend auto register_loader_source(MemoryManager &manager) -> void;
@@ -77,8 +77,8 @@ private:
             words::fail();
     }
     [[nodiscard]] static auto domain(U64 slot) -> Domain {
-        require(slot < 2);
-        return slot == 0 ? Domain::slot0 : Domain::slot1;
+        require(slot < 3);
+        return slot == 0 ? Domain::slot0 : slot == 1 ? Domain::slot1 : Domain::slot2;
     }
     [[nodiscard]] static auto arguments(std::initializer_list<U64> input) -> std::array<U64, 5> {
         require(input.size() <= 5);
@@ -136,7 +136,7 @@ public:
                             U64 tables,
                             U64 metadata) -> bool {
         if (binding_.created() || allocation.size() != ranges.frames() || mapping.size() != allocation.size() ||
-            reservations.size() != 2 * process::memory_records * 3 + 512 || scratch.size() != 512 ||
+            reservations.size() != 3 * process::memory_records * 3 + 1024 || scratch.size() != 512 ||
             allocation.empty() || allocation.size() > 0xffffffffULL || tables >= allocation.size() ||
             metadata >= allocation.size() - tables)
             return false;

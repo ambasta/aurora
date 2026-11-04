@@ -191,3 +191,94 @@ case load-regions-share-leaf
   retire slot=0 released=8
   audit ok=1
   end ok=1
+case three-resident-owners
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  prepare slot=1 accepted=1 epoch=1
+  region slot=1 ok=1
+  live slot=1 ok=1
+  prepare slot=2 accepted=0 epoch=0
+  prepare slot=2 accepted=0 epoch=0
+  prepare slot=2 accepted=1 epoch=1
+  region slot=2 ok=1
+  live slot=2 ok=1
+  map slot=0 outcome=0 value=70368744177664
+  commit slot=0 ok=1
+  map slot=1 outcome=0 value=70368744177664
+  commit slot=1 ok=1
+  map slot=2 outcome=0 value=18446744073709551610
+  map slot=2 outcome=0 value=70368744177664
+  commit slot=2 ok=1
+  verify slot=0 ok=1
+  verify slot=1 ok=1
+  verify slot=2 ok=1
+  corrupt kind=owner slot=2 verify=0
+  corrupt kind=generation slot=2 verify=0
+  snapshot accepted=0 epoch=0
+  snapshot accepted=0 epoch=0
+  audit ok=1
+  unmap slot=2 outcome=0 value=0
+  verify slot=0 ok=1
+  verify slot=1 ok=1
+  unmap slot=0 outcome=0 value=0
+  unmap slot=1 outcome=0 value=0
+  retire slot=1 released=5
+  prepare slot=1 accepted=0 epoch=1
+  snapshot accepted=1 epoch=1
+  fill offset=0 count=32 ok=1
+  seal ok=1
+  snapshot-verify ok=1
+  verify slot=0 ok=1
+  verify slot=2 ok=1
+  audit ok=1
+  discard ok=1
+  retire slot=2 released=5
+  prepare slot=2 accepted=1 epoch=2
+  region slot=2 ok=1
+  live slot=2 ok=1
+  stale slot=2 verify=0
+  verify slot=2 ok=1
+  audit ok=1
+  retire slot=0 released=5
+  retire slot=2 released=5
+  audit ok=1
+  end ok=1
+case snapshot-third-owner
+  prepare slot=0 accepted=1 epoch=1
+  region slot=0 ok=1
+  live slot=0 ok=1
+  snapshot accepted=1 epoch=1
+  fill offset=0 count=32 ok=1
+  seal ok=1
+  prepare slot=2 accepted=1 epoch=1
+  region slot=2 ok=1
+  live slot=2 ok=0
+  snapshot-verify ok=1
+  verify slot=2 ok=1
+  audit ok=1
+  discard ok=1
+  live slot=2 ok=1
+  verify slot=2 ok=1
+  audit ok=1
+  retire slot=2 released=5
+  retire slot=0 released=5
+  end ok=1
+case third-slot-rollback-generation-boundary
+  prepare slot=2 accepted=1 epoch=1
+  region slot=2 ok=1
+  live slot=2 ok=1
+  generation-boundary free=53 audit=1
+  map slot=2 outcome=0 value=70368744177664
+  commit slot=2 ok=1
+  unmap slot=2 outcome=0 value=0
+  map slot=2 outcome=0 value=70368744247296
+  commit slot=2 ok=1
+  unmap slot=2 outcome=0 value=0
+  map slot=2 outcome=0 value=70368744316928
+  commit-rollback slot=2 refused=1 unchanged=1 audit=1
+  verify slot=2 ok=1
+  audit ok=1
+  unmap slot=2 outcome=0 value=0
+  retire slot=2 released=5
+  end ok=1

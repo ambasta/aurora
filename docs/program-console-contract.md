@@ -34,6 +34,40 @@ observations, not handles. The utility closes its directory on normal failure
 or EOF and reports an incomplete listing on errors, output failure or its entry
 limit; it never retries a lost request. Concurrent mutation is not a snapshot.
 
+## Bounded foreground pair
+
+`run-pair PATH [args] -- PATH [args]` admits two programs under one foreground
+command. The existing 64-byte line limit still applies, with at most 16 words
+per program and exactly one standalone `--`. There are no pipes, quoting,
+background jobs or InputStream grants. Both executable images must be admitted
+before either client executes. Admission failure reclaims prepared clients and
+preserves the file owner when its transport remains healthy.
+
+One retained Aurora batch owner selects admissions, round-robin turns, request
+progress, terminal results and cleanup. The file service occupies slot zero;
+the two clients have distinct roots, incarnations, frame owners and cumulative
+CPU allowances. Each pair member has at most 4096 additional frames (16 MiB)
+beyond its admitted image charge; this is a growth ceiling, not a guaranteed
+minimum, and unused allowance never transfers to its sibling. Images, snapshots
+and both reservations must fit the existing allocator. Ordinary `run` keeps its
+existing memory admission. One endpoint transaction is completed, including the
+copied reply, before another client can use its buffers. A completed request, output
+record or timer park gives the other eligible client its next turn. This is
+bounded single-BSP scheduling, not SMP or a wall-clock fairness guarantee.
+
+Output records carry `[1]` or `[2]`, and each child gets its own terminal result.
+An ordinary child fault or exhausted CPU allowance does not kill its sibling.
+Output transport failure cancels the remaining pair; service loss invalidates
+both dependents and discards volatile files. No failed operation is replayed.
+
+Both clients see the shared committed RAM namespace. Existing aggregate handle
+and staging limits are unchanged; handles, cursors and private outputs carry
+owner-incarnation tags. Retirement closes only that client's resources. RAM
+replacement is last successful publication wins, with already-open readers
+retaining their old version. Pair clients can read mounted disk files but cannot
+write them, even after the other client exits. Ordinary singleton `run` retains
+its existing mounted-writer contract. This adds no general job service or shell.
+
 ## Production program launch
 
 The production command `run PATH [args]` loads a static Aurora ELF from the
@@ -59,7 +93,7 @@ Stdout and stderr are copied to the same serial terminal and framebuffer grid.
 The sink runs only at the supervisor root; no Console or Display loan exists
 while the process owns the architecture. A parked foreground child may temporarily
 yield that architecture for a bounded live paint after output delivery or before
-an input read. Source execution ownership freezes both resident slots during this
+an input read. Source execution ownership freezes all live resident slots during this
 excursion; native code authenticates their exact identities and continuation
 words before admission and after restoring the same mappings and metadata banks.
 No service operation closes, frame is released, serial byte is replayed or CPU/input

@@ -106,3 +106,10 @@ presentation-output prepare:1 run:1:5:19:0 present:0 present:1 state:1 pending:1
 presentation-global incarnation:0:7 incarnation:1:7 prepare:0 prepare:1 run:1:15:23:0 present:1 can-prepare:0 can-prepare:1 prepare:0 prepare:1 run:0:6:0:0 run:1:6:0:0 force:0:14:16:0 force:1:14:16:0 complete:0 complete:1 state:0 state:1 pending:1 present-finish:1:1 complete:1 run:1:6:0:0 run:0:6:0:0 finish
 presentation-exhaust prepare:1 run:1:5:0:0 presentation-turns:1:32 present:1 complete:1 run:1:15:0:0 present:1 pending:1 complete:1 run:1:6:0:0 prepare:1 run:1:15:0:0 present:1 present-finish:1:1 complete:1 run:1:6:0:0 finish
 finish-presenting source:finish-presenting
+# Third resident and source-selected cleanup of both dependent clients.
+three-slots prepare:0 prepare:1 prepare:2 run:2:2:0:0 run:1:6:11:0 run:2:6:22:0 run:0:6:0:0 state:2 finish
+slot2-reuse prepare:2 run:2:6:3:0 prepare:2 run:2:6:4:0 state:2 finish
+natural-service-two-prepared incarnation:0:7 incarnation:1:7 incarnation:2:7 prepare:0 prepare:1 prepare:2 run:0:8:14:0 state:1 state:2 state:0 finish
+natural-service-two-parked incarnation:0:7 incarnation:1:7 incarnation:2:7 prepare:0 prepare:1 prepare:2 run:1:2:0:0 run:2:4:0:0 run:0:6:42:1 state:1 state:2 state:0 finish
+foreign-second-client incarnation:0:7 incarnation:2:8 prepare:0 prepare:2 state:2 run:0:6:0:0 finish
+presentation-second prepare:1 prepare:2 run:2:5:19:0 present:2 state:2 can-prepare:0 run:1:6:8:0 present-finish:2:1 complete:2 run:2:6:7:0 run:1:6:8:0 finish

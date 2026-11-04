@@ -1157,38 +1157,10 @@ auto production_input(void *) -> console::Sample {
     require(response.payload(std::as_bytes(std::span{message.data(), message.size()})), "storage switch response");
     return program_write_response(response);
 }
-[[nodiscard]] __attribute__((noinline)) auto production_run(const program::Submission &input, bool &input_quarantine)
-    -> bool {
-    require(ProgramInputPlatform::quiet() && terminal_mapping(), "production run entry ownership");
-    program::RunArguments arguments;
-    program::Response response{program::Response::Kind::file_reply};
-    if (!arguments.parse(input)) {
-        constexpr std::string_view usage = "Usage: run PATH [args]; no quotes/escapes; at most 16 words.";
-        require(response.payload(std::as_bytes(std::span{usage.data(), usage.size()})), "run usage");
-        return program_write_response(response);
-    }
-    const auto previous_cr2 = production_process_enter();
-    const auto result = run_program(arena,
-                                    *handoff,
-                                    arguments.path(),
-                                    arguments.arguments(),
-                                    production_output,
-                                    nullptr,
-                                    production_input,
-                                    input.after_cr() != 0,
-                                    production_present);
-    production_process_leave(previous_cr2);
-    input_quarantine = result.input_quarantine;
-    if (input_quarantine) {
-        // Bound the physical FIFO cleanup even under continuous input. The
-        // next source console turn quarantines the remaining suffix through a
-        // delimiter; UART bytes themselves have no authenticated child epoch.
-        for (unsigned int index = 0; index < 16; ++index)
-            if (!ProgramSerial::next().present)
-                break;
-    }
+[[nodiscard]] auto production_run_result(const RunResult &result, std::string_view prefix, bool more = false) -> bool {
     if (result.status == RunStatus::output_failed)
         return false; // Never retry output or print a prompt after transport failure.
+    program::Response response{more ? program::Response::Kind::file_part : program::Response::Kind::file_reply};
     std::array<std::byte, 64> message{};
     std::size_t size = 0;
     const auto append = [&](std::string_view text) {
@@ -1197,7 +1169,7 @@ auto production_input(void *) -> console::Sample {
             message[size++] = std::byte{static_cast<unsigned char>(byte)};
         }
     };
-    append("\r\nrun: ");
+    append(prefix);
     switch (result.status) {
     case RunStatus::exited:
         append("exited status=");
@@ -1238,6 +1210,73 @@ auto production_input(void *) -> console::Sample {
     }
     require(response.payload(std::span<const std::byte>{message}.first(size)), "run result response");
     return program_write_response(response);
+}
+auto production_pair_output(void *context, std::size_t member, bool error, std::span<const std::byte> bytes) -> bool {
+    require(member < 2, "pair output member");
+    if (bytes.empty())
+        return true;
+    const std::string_view tag = member == 0 ? "[1] " : "[2] ";
+    return production_output(context, error, std::as_bytes(std::span{tag.data(), tag.size()})) &&
+           production_output(context, error, bytes);
+}
+[[nodiscard]] __attribute__((noinline)) auto production_run_pair(const program::Submission &input) -> bool {
+    require(ProgramInputPlatform::quiet() && terminal_mapping(), "production pair entry ownership");
+    program::RunPairArguments arguments;
+    if (!arguments.parse(input)) {
+        program::Response response{program::Response::Kind::file_reply};
+        constexpr std::string_view usage = "Usage: run-pair PATH [args] -- PATH [args]; no quotes/escapes.";
+        require(response.payload(std::as_bytes(std::span{usage.data(), usage.size()})), "pair usage");
+        return program_write_response(response);
+    }
+    const auto previous_cr2 = production_process_enter();
+    const auto result = run_program_pair(arena,
+                                         *handoff,
+                                         arguments.first().path(),
+                                         arguments.first().arguments(),
+                                         arguments.second().path(),
+                                         arguments.second().arguments(),
+                                         production_pair_output,
+                                         nullptr,
+                                         production_present);
+    production_process_leave(previous_cr2);
+    if (result.admission != RunStatus::exited)
+        return production_run_result(RunResult{result.admission, 0, false}, "\r\nrun-pair: ");
+    if (result.members[0].status == RunStatus::output_failed || result.members[1].status == RunStatus::output_failed)
+        return false;
+    return production_run_result(result.members[0], "\r\n[1] run: ", true) &&
+           production_run_result(result.members[1], "[2] run: ");
+}
+[[nodiscard]] __attribute__((noinline)) auto production_run(const program::Submission &input, bool &input_quarantine)
+    -> bool {
+    require(ProgramInputPlatform::quiet() && terminal_mapping(), "production run entry ownership");
+    program::RunArguments arguments;
+    program::Response response{program::Response::Kind::file_reply};
+    if (!arguments.parse(input)) {
+        constexpr std::string_view usage = "Usage: run PATH [args]; no quotes/escapes; at most 16 words.";
+        require(response.payload(std::as_bytes(std::span{usage.data(), usage.size()})), "run usage");
+        return program_write_response(response);
+    }
+    const auto previous_cr2 = production_process_enter();
+    const auto result = run_program(arena,
+                                    *handoff,
+                                    arguments.path(),
+                                    arguments.arguments(),
+                                    production_output,
+                                    nullptr,
+                                    production_input,
+                                    input.after_cr() != 0,
+                                    production_present);
+    production_process_leave(previous_cr2);
+    input_quarantine = result.input_quarantine;
+    if (input_quarantine) {
+        // Bound the physical FIFO cleanup even under continuous input. The
+        // next source console turn quarantines the remaining suffix through a
+        // delimiter; UART bytes themselves have no authenticated child epoch.
+        for (unsigned int index = 0; index < 16; ++index)
+            if (!ProgramSerial::next().present)
+                break;
+    }
+    return production_run_result(result, "\r\nrun: ");
 }
 #endif
 __attribute__((noinline)) auto run_program_console() -> void {
@@ -1286,6 +1325,10 @@ __attribute__((noinline)) auto run_program_console() -> void {
 #ifdef AURORA_PRODUCTION
         case Effect::storage_readonly:
             effect = session.advance(Event::response, production_storage_readonly());
+            copied.scrub();
+            continue;
+        case Effect::run_pair:
+            effect = session.advance(Event::response, production_run_pair(copied));
             copied.scrub();
             continue;
         case Effect::run:

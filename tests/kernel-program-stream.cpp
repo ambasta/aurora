@@ -133,6 +133,10 @@ auto program_input() -> void {
         {"write a x\n", "write a x", Action::command, 0, "write a x\r\n"},
         {"run bin/cat file\r", "run bin/cat file", Action::run, 1, "run bin/cat file\r\n"},
         {"run\n", "run", Action::run, 0, "run\r\n"},
+        {"run-pair a -- b\n", "run-pair a -- b", Action::run_pair, 0, "run-pair a -- b\r\n"},
+        {"run-pair a -- b\r", "run-pair a -- b", Action::run_pair, 1, "run-pair a -- b\r\n"},
+        {"run-pair\n", "run-pair", Action::run_pair, 0, "run-pair\r\n"},
+        {"run-pairs a -- b\n", "run-pairs a -- b", Action::command, 0, "run-pairs a -- b\r\n"},
         {"storage readonly\n", "storage readonly", Action::storage_readonly, 0, "storage readonly\r\n"},
         {"storage readonly x\n", "storage readonly x", Action::command, 0, "storage readonly x\r\n"},
         {"upper\nstorage readonly\n",
@@ -201,7 +205,8 @@ auto program_input() -> void {
         "wc <name>          LF lines / words / bytes (file-call profile only)\r\n"
         "crc <name>         CRC32C over the file (file-call profile only)\r\n"
         "ls / rm <name>     List / remove RAM files\r\nrun <path> [args]  Run a volume or committed program "
-        "(production only)\r\nstorage readonly  Retire a confirmed disk writer; refuses live RAM state\r\nhelp    Show "
+        "(production only)\r\nrun-pair PATH [args] -- PATH [args]  Run two noninteractive programs\r\nstorage readonly "
+        " Retire a confirmed disk writer; refuses live RAM state\r\nhelp    Show "
         "commands\r\n"
         "status  Show console state\r\nexit    Close this QEMU session\r\naurora> "
         "status\r\nstatus: protected Aurora programs; bounded copied data; timer budgets; capacity=64\r\naurora> "
@@ -275,11 +280,11 @@ auto submission_records() -> void {
         return submission.valid();
     };
     Submission::Record record{};
-    for (std::uint64_t action = 0; action < 6; ++action) {
+    for (std::uint64_t action = 0; action < 7; ++action) {
         record.action = action;
         for (std::uint64_t carry = 0; carry < 2; ++carry) {
             record.after_cr = carry;
-            need(accepts(record) == (action != 0 && action != 4 && action != 5),
+            need(accepts(record) == (action != 0 && action != 4 && action != 5 && action != 6),
                  "empty command/payload/terminal distinction");
         }
     }
@@ -306,7 +311,7 @@ auto submission_records() -> void {
         bad.count = count;
         need(!accepts(bad), "copied submission signed count bounds");
     }
-    for (const auto action : {std::uint64_t{2}, std::uint64_t{3}, std::uint64_t{5}, std::uint64_t{6}, maximum}) {
+    for (const auto action : {std::uint64_t{2}, std::uint64_t{3}, std::uint64_t{5}, std::uint64_t{7}, maximum}) {
         auto bad = record;
         bad.action = action;
         need(!accepts(bad), "terminal payload and unknown actions reject");
@@ -403,6 +408,7 @@ auto program_response() -> void {
         {ResponseKind::file_missing, "", "File is missing.\r\naurora> "},
         {ResponseKind::note_saved, "", "Note saved.\r\naurora> "},
         {ResponseKind::file_saved, "", "File saved.\r\naurora> "},
+        {ResponseKind::file_part, "[1] run: exited status=0", "[1] run: exited status=0\r\n"},
         {ResponseKind::file_reply, "a b c", "a b c\r\naurora> "},
         {ResponseKind::file_reply, "", "\r\naurora> "},
         {ResponseKind::file_reply, std::string(64, ' '), std::string(64, ' ') + "\r\naurora> "},
@@ -441,8 +447,8 @@ auto program_response() -> void {
     const auto reject = [](const Response::Record &record) {
         auto response = copied_response(record);
         script("later\n");
-        need(response.canonical_kind() == (record.kind <= 8), "native response enum boundary");
-        if (record.kind <= 8)
+        need(response.canonical_kind() == (record.kind <= 9), "native response enum boundary");
+        if (record.kind <= 9)
             need(present_response(response) == 0, "Aurora malformed response rejection");
         need(transcript.empty() && output_attempts == 0 && sample_index == 0,
              "malformed response had an input/output effect");
@@ -463,14 +469,14 @@ auto program_response() -> void {
         bad.count = count;
         reject(bad);
     }
-    for (std::uint64_t kind = 0; kind <= 8; ++kind) {
-        if (kind == 1 || kind == 6)
+    for (std::uint64_t kind = 0; kind <= 9; ++kind) {
+        if (kind == 1 || kind == 6 || kind == 9)
             continue;
         auto bad = record;
         bad.kind = kind;
         reject(bad);
     }
-    for (const auto kind : {std::uint64_t{9}, maximum}) {
+    for (const auto kind : {std::uint64_t{10}, maximum}) {
         auto bad = record;
         bad.kind = kind;
         reject(bad); // Do not pass noncanonical enum bits into typed Aurora.
@@ -496,6 +502,58 @@ auto program_response() -> void {
     expect_input(read_input(input.after_cr()), "q", Action::command, 0);
     need(sample_index == samples.size() && transcript == "upper\r\ntext> hi\r\noutput> HI\r\naurora> q\r\n",
          "reader/response copied transcript and CRLF carry");
+}
+
+auto run_pair_arguments() -> void {
+    struct Case {
+        std::string line, first, second;
+        bool accepted;
+    };
+    const Case cases[] = {
+        {"run-pair a -- b", std::string{"a\0", 2}, std::string{"b\0", 2}, true},
+        {"run-pair  a x  --  b y  ", std::string{"a\0x\0", 4}, std::string{"b\0y\0", 4}, true},
+        {"run-pair a --b -- c", std::string{"a\0--b\0", 6}, std::string{"c\0", 2}, true},
+        {"run-pair " + std::string(50, 'a') + " -- b", std::string(50, 'a') + '\0', std::string{"b\0", 2}, true},
+        {"run-pair a b c d e f g h i j k l m n o p -- q",
+         std::string{"a\0b\0c\0d\0e\0f\0g\0h\0i\0j\0k\0l\0m\0n\0o\0p\0", 32},
+         std::string{"q\0", 2},
+         true},
+        {"run-pair z -- a b c d e f g h i j k l m n o p",
+         std::string{"z\0", 2},
+         std::string{"a\0b\0c\0d\0e\0f\0g\0h\0i\0j\0k\0l\0m\0n\0o\0p\0", 32},
+         true},
+        {"run-pair", "", "", false},
+        {"run-pair a b", "", "", false},
+        {"run-pair -- b", "", "", false},
+        {"run-pair a --", "", "", false},
+        {"run-pair a -- b -- c", "", "", false},
+        {"run-pair a -- --", "", "", false},
+        {"run-pair a--b", "", "", false},
+        {"run-pair a -- 'b'", "", "", false},
+        {"run-pair a\\x -- b", "", "", false},
+        {"run-pair \"a\" -- b", "", "", false},
+        {"run-pair a b c d e f g h i j k l m n o p q -- z", "", "", false},
+        {"run-pair z -- a b c d e f g h i j k l m n o p q", "", "", false},
+    };
+    aurora::program::RunPairArguments args;
+    for (const auto &test : cases) {
+        script(test.line + "\n");
+        need(args.parse(read_input()) == test.accepted, "pair exact separator and per-child grammar");
+        if (test.accepted) {
+            const auto first = args.first().arguments(), second = args.second().arguments();
+            need(first.size() == test.first.size() && second.size() == test.second.size() &&
+                     std::memcmp(first.data(), test.first.data(), first.size()) == 0 &&
+                     std::memcmp(second.data(), test.second.data(), second.size()) == 0,
+                 "pair keeps separate NUL-delimited argument copies");
+        } else {
+            need(args.first().arguments().empty() && args.second().arguments().empty(),
+                 "pair rejected parse exposes no partial arguments");
+        }
+    }
+    script("upper\nrun-pair a -- b\n");
+    need(!args.parse(read_input()), "upper payload cannot dispatch pair");
+    script("run a -- b\n");
+    need(!args.parse(read_input()), "single command cannot dispatch pair");
 }
 
 auto run_arguments() -> void {
@@ -1032,6 +1090,7 @@ auto main(int argc, char **argv) -> int {
     program_input();
     input_handoff();
     run_arguments();
+    run_pair_arguments();
     submission_records();
     program_response();
     Stream bounded{1};

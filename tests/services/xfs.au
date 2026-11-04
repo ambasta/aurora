@@ -63,6 +63,180 @@ auto directory_result(service::Store& store, u64 id, u64 kind, builtin::span<con
     return true;
 }
 
+auto pair_status(service::Reply result, kernel::FileStatus expected) -> bool {
+    return result.status == expected;
+}
+
+auto test_store_pair(service::Store& store) -> bool {
+    bool passed = !store.can_admit(0u64, 72u64) && !store.can_admit(71u64, 71u64) && store.can_admit(71u64, 72u64)
+        && store.admit_clients(71u64, 72u64) && !store.clients_idle() && !store.singleton(71u64)
+        && !store.singleton(72u64) && !store.begin(73u64) && !store.can_finish(73u64);
+    const service::Reply root_a = store.open_for(71u64, 0u64, 0u64, "/");
+    const service::Reply root_b = store.open_for(72u64, 0u64, 0u64, "/");
+    passed = pair_status(root_a, kernel::FileStatus::success) && pair_status(root_b, kernel::FileStatus::success)
+        && !store.is_root_directory_for(72u64, root_a.id) && store.is_root_directory_for(71u64, root_a.id)
+        && pair_status(store.open_for(72u64, 1u64, root_a.id, "tree/a"), kernel::FileStatus::invalid_handle)
+        && pair_status(store.close_for(72u64, root_a.id), kernel::FileStatus::invalid_handle) && passed;
+    const service::Reply cursor_a = store.next_entry_for(71u64, root_a.id);
+    passed = cursor_a.count == 4u64 && store.read_byte_for(71u64, 0u64) == 116u8 && store.read_byte_for(72u64, 0u64)
+        == 0u8 && passed;
+    const service::Reply cursor_b = store.next_entry_for(72u64, root_b.id);
+    passed = cursor_b.count == 4u64 && store.read_byte_for(72u64, 0u64) == 116u8 && passed;
+    const service::Reply stage_a = store.create_for(71u64, "/tree/pair");
+    const service::Reply stage_b = store.create_for(72u64, "/tree/pair");
+    passed = pair_status(stage_a, kernel::FileStatus::success) && pair_status(stage_b, kernel::FileStatus::success)
+        && pair_status(store.write_file_for(72u64, stage_a.id, "bad"), kernel::FileStatus::invalid_handle)
+        && pair_status(store.discard_for(71u64, stage_b.id), kernel::FileStatus::invalid_handle)
+        && pair_status(store.write_file_for(71u64, stage_a.id, "A"), kernel::FileStatus::success)
+        && pair_status(store.write_file_for(72u64, stage_b.id, "B"), kernel::FileStatus::success)
+        && pair_status(store.commit_for(71u64, stage_a.id), kernel::FileStatus::success) && passed;
+    const service::Reply old = store.open_for(72u64, 2u64, 0u64, "/tree/pair");
+    passed = pair_status(store.commit_for(72u64, stage_b.id), kernel::FileStatus::success) && passed;
+    const service::Reply latest = store.open_for(71u64, 2u64, 0u64, "/tree/pair");
+    passed = old.inode < latest.inode && pair_status(store.read_file_for(72u64, old.id, 0u64),
+        kernel::FileStatus::success) && store.read_byte_for(72u64, 0u64) == 65u8
+        && pair_status(store.read_file_for(71u64, latest.id, 0u64), kernel::FileStatus::success)
+        && store.read_byte_for(71u64, 0u64) == 66u8 && passed;
+    const service::Reply survivor = store.create_for(72u64, "/tree/survivor");
+    passed = pair_status(survivor, kernel::FileStatus::success) && store.finish(71u64) && store.contains(72u64)
+        && !store.contains(71u64) && !store.singleton(72u64) && !store.begin(73u64) && !store.finish(71u64)
+        && pair_status(store.read_file_for(72u64, old.id, 0u64), kernel::FileStatus::success)
+        && store.read_byte_for(72u64, 0u64) == 65u8 && pair_status(store.write_file_for(72u64, survivor.id, "kept"),
+        kernel::FileStatus::success) && pair_status(store.commit_for(72u64, survivor.id), kernel::FileStatus::success)
+        && store.finish(72u64) && store.clients_idle() && !store.continuity_idle() && passed;
+    passed = store.admit_clients(73u64, 74u64) && pair_status(store.read_file_for(73u64, old.id, 0u64),
+        kernel::FileStatus::invalid_handle) && pair_status(store.read_file_for(72u64, old.id, 0u64),
+        kernel::FileStatus::invalid_handle) && passed;
+    builtin::array<u64, 32> held = {
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64
+    };
+    u64 slot = 0u64;
+    while (slot < 32u64) {
+        const service::Reply opened = store.open_for(73u64 + slot % 2u64, 2u64, 0u64, "/tree/pair");
+        passed = pair_status(opened, kernel::FileStatus::success) && passed;
+        held[i64(slot)] = opened.id;
+        slot = slot + 1u64;
+    }
+    passed = pair_status(store.open_for(73u64, 2u64, 0u64, "/tree/pair"), kernel::FileStatus::exhausted) && passed;
+    slot = 0u64;
+    while (slot < 4u64) {
+        passed = pair_status(store.create_for(73u64 + slot % 2u64, "/tree/pending"), kernel::FileStatus::success)
+            && passed;
+        slot = slot + 1u64;
+    }
+    passed = pair_status(store.create_for(74u64, "/tree/extra"), kernel::FileStatus::exhausted) && store.finish(73u64)
+        && pair_status(store.read_file_for(74u64, held[1], 0u64), kernel::FileStatus::success)
+        && store.read_byte_for(74u64, 0u64) == 66u8 && passed;
+    const service::Reply reused = store.open_for(74u64, 2u64, 0u64, "/tree/pair");
+    passed = pair_status(reused, kernel::FileStatus::success) && reused.id != held[0] && !store.owns(74u64, held[0])
+        && pair_status(store.read_file_for(74u64, held[0], 0u64), kernel::FileStatus::invalid_handle)
+        && pair_status(store.create_for(74u64, "/tree/reused"), kernel::FileStatus::success) && store.finish(74u64)
+        && store.begin(75u64) && store.singleton(75u64) && store.finish(75u64) && passed;
+    return passed;
+}
+
+auto test_xfs_pair(builtin::ByteRegion region) -> bool {
+    service::XfsFiles disk = service::XfsFiles(region, 1u64, 512u64);
+    bool passed = disk.admit(96u64) && !disk.can_admit(0u64, 82u64) && !disk.can_admit(81u64, 81u64)
+        && disk.admit_clients(81u64, 82u64) && !disk.singleton(81u64) && !disk.singleton(82u64)
+        && disk.singleton_source() == 0u64 && !disk.begin(83u64) && !disk.can_finish(83u64);
+    passed = disk.prepare_for(81u64, 16u64, 0u64, 0u64, "/disk") && passed;
+    const service::Reply root_a = disk.response();
+    passed = disk.prepare_for(82u64, 16u64, 0u64, 0u64, "/disk") && passed;
+    const service::Reply root_b = disk.response();
+    passed = root_a.status == kernel::FileStatus::success && root_b.status == kernel::FileStatus::success
+        && disk.owns(81u64, root_a.id) && !disk.owns(82u64, root_a.id) && !disk.prepare_for(82u64, 20u64, root_a.id,
+        0u64, "") && passed;
+    const service::Reply foreign_close = disk.response();
+    passed = foreign_close.status == kernel::FileStatus::invalid_handle && disk.owns(81u64, root_a.id)
+        && !disk.prepare_for(82u64, 17u64, root_a.id, 0u64, "hello") && passed;
+    const service::Reply foreign_open = disk.response();
+    passed = foreign_open.status == kernel::FileStatus::invalid_handle && !disk.prepare_for(99u64, 16u64, 0u64, 0u64,
+        "/disk") && disk.ready() && !disk.admit_commands_for(99u64, 16u64, 0u64, 0u64, "/disk", 99999u64)
+        && !disk.prepare(16u64, 0u64, 0u64, "/disk") && !disk.create_output_for(81u64, "/disk/hello", 97u64)
+        && disk.finish(81u64) && !disk.owns(81u64, root_a.id) && disk.owns(82u64, root_b.id) && disk.active() == 82u64
+        && !disk.singleton(82u64) && disk.singleton_source() == 0u64 && !disk.create_output_for(82u64, "/disk/hello",
+        97u64) && !disk.prepare(16u64, 0u64, 0u64, "/disk") && !disk.begin(83u64) && !disk.finish(81u64) && passed;
+    passed = disk.prepare_for(82u64, 25u64, root_b.id, 0u64, "") && !disk.can_finish(82u64) && !disk.prepare_for(99u64,
+        16u64, 0u64, 0u64, "/disk") && disk.enumerating() && disk.entry_byte(0u64, 65u8) && disk.complete_entry(1u64,
+        1u64) && disk.read_byte_for(82u64, 0u64) == 65u8 && disk.read_byte_for(81u64, 0u64) == 0u8
+        && disk.read_byte(0u64) == 0u8 && disk.finish(82u64) && disk.clients_idle() && disk.continuity_idle()
+        && disk.admit_clients(83u64, 84u64) && !disk.owns(83u64, root_b.id) && passed;
+    builtin::array<u64, 16> held = {
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64
+    };
+    u64 row = 0u64;
+    while (row < 16u64) {
+        passed = disk.prepare_for(83u64 + row % 2u64, 16u64, 0u64, 0u64, "/disk") && passed;
+        const service::Reply opened = disk.response();
+        passed = opened.status == kernel::FileStatus::success && passed;
+        held[i64(row)] = opened.id;
+        row = row + 1u64;
+    }
+    passed = !disk.prepare_for(83u64, 16u64, 0u64, 0u64, "/disk") && passed;
+    const service::Reply exhausted = disk.response();
+    passed = exhausted.status == kernel::FileStatus::exhausted && disk.finish(83u64) && disk.owns(84u64, held[1])
+        && disk.prepare_for(84u64, 16u64, 0u64, 0u64, "/disk") && passed;
+    const service::Reply reused = disk.response();
+    passed = reused.status == kernel::FileStatus::success && reused.id != held[0] && !disk.owns(84u64, held[0])
+        && disk.finish(84u64) && disk.begin(85u64) && disk.singleton(85u64) && disk.create_output_for(85u64,
+        "/disk/hello", 97u64) && passed;
+    const service::Reply output = disk.response();
+    passed = disk.output_valid_for(85u64, output.id) && !disk.output_valid_for(84u64, output.id)
+        && !disk.release_output_for(84u64, output.id, kernel::FileStatus::success) && disk.output_valid_for(85u64,
+        output.id) && disk.release_output_for(85u64, output.id, kernel::FileStatus::success) && disk.finish(85u64)
+        && disk.continuity_idle() && passed;
+    service::XfsFiles absent = service::XfsFiles(region, 0u64, 0u64);
+    return absent.admit_clients(86u64, 87u64) && absent.finish(86u64) && absent.finish(87u64) && absent.clients_idle()
+        && passed;
+}
+
 auto test_store_directory(builtin::HostFiles& files, builtin::ByteRegion region, u64 image, u64 size) -> bool {
     service::Store store = service::Store(region, i64(size));
     u64 loaded = 0u64;
@@ -219,6 +393,7 @@ auto test_store_directory(builtin::HostFiles& files, builtin::ByteRegion region,
     passed = store.finish(7u64) && store.begin(8u64) && passed;
     const service::Reply old_client = store.next_entry(tree.id);
     passed = old_client.status == kernel::FileStatus::invalid_handle && store.finish(8u64) && passed;
+    passed = test_store_pair(store) && test_xfs_pair(region) && passed;
     return passed;
 }
 
@@ -1363,8 +1538,8 @@ auto nested_tree(builtin::HostFiles& files, builtin::ByteRegion region, builtin:
     return builtin::HostExit::failure;
 }
 
-auto check_dual_admission(builtin::ByteRegion region, u64 volumes, u64 remaining,
-    bool missing_cache, bool expected) -> bool {
+auto check_dual_admission(builtin::ByteRegion region, u64 volumes, u64 remaining, bool missing_cache,
+    bool expected) -> bool {
     builtin::OwnedBytes cache = region.try_allocate(1536);
     i64 second_size = 1536;
     if (missing_cache) {
@@ -1385,24 +1560,23 @@ auto check_dual_admission(builtin::ByteRegion region, u64 volumes, u64 remaining
         second.poison();
     }
     const bool admitted = service::admit_dual_mounts(first, second, mount, mount2, volumes, remaining);
-    return admitted == expected && first.ok() == expected && second.ok() == expected
-        && !first.ready() && !second.ready() && mount.status() == fs::XfsMountStatus::reading_superblock
-        && mount.requested_lba() == 0u64 && mount2.requested_lba() == 0u64;
+    return admitted == expected && first.ok() == expected && second.ok() == expected && !first.ready()
+        && !second.ready() && mount.status() == fs::XfsMountStatus::reading_superblock && mount.requested_lba() == 0u64
+        && mount2.requested_lba() == 0u64;
 }
 
 auto check_dual_tables(builtin::ByteRegion region) -> bool {
     service::XfsFiles first = service::XfsFiles(region, 1u64, 1024u64);
     service::XfsFiles second = service::XfsFiles(region, 1u64, 2048u64);
-    if (!first.configure_volume(0u64) || !second.configure_volume(1u64)
-        || !first.admit(128u64) || !second.admit(128u64) || !first.begin(7u64) || !second.begin(7u64)) {
+    if (!first.configure_volume(0u64) || !second.configure_volume(1u64) || !first.admit(128u64) || !second.admit(128u64)
+        || !first.begin(7u64) || !second.begin(7u64)) {
         return false;
     }
     const service::XfsPath root2 = service::xfs_path_volume("/disk2", 1u64);
     const service::XfsPath sibling = service::xfs_path_volume("/disk2", 0u64);
     const service::XfsPath escape = service::xfs_path_volume("/disk2/../tree", 1u64);
-    if (root2.kind != 1u64 || sibling.kind != 0u64 || escape.kind != 3u64
-        || first.required_commands(18u64, 0u64, 0u64, "/disk/hello") != 2049u64
-        || second.required_commands(18u64, 0u64, 0u64, "/disk2/hello") != 2049u64
+    if (root2.kind != 1u64 || sibling.kind != 0u64 || escape.kind != 3u64 || first.required_commands(18u64, 0u64, 0u64,
+        "/disk/hello") != 2049u64 || second.required_commands(18u64, 0u64, 0u64, "/disk2/hello") != 2049u64
         || second.required_commands(18u64, 0u64, 0u64, "/disk2/../hello") != 0u64) {
         return false;
     }
@@ -1410,15 +1584,14 @@ auto check_dual_tables(builtin::ByteRegion region) -> bool {
     second.prepare(16u64, 0u64, 0u64, "/disk2");
     const service::Reply a = first.response();
     const service::Reply b = second.response();
-    if (a.status != kernel::FileStatus::success || b.status != kernel::FileStatus::success
-        || (a.id - 1u64) % 64u64 != 40u64 || (b.id - 1u64) % 64u64 != 48u64
-        || a.inode != b.inode || a.device != 3u64 || b.device != 4u64
-        || first.required_commands(25u64, a.id, 0u64, "") != 1u64
-        || first.required_commands(20u64, a.id, 0u64, "") != 0u64) {
+    if (a.status != kernel::FileStatus::success || b.status != kernel::FileStatus::success || (a.id - 1u64) % 64u64
+        != 40u64 || (b.id - 1u64) % 64u64 != 48u64 || a.inode != b.inode || a.device != 3u64 || b.device != 4u64
+        || first.required_commands(25u64, a.id, 0u64, "") != 1u64 || first.required_commands(20u64, a.id, 0u64, "")
+        != 0u64) {
         return false;
     }
-    if (first.admit_commands(25u64, a.id, 0u64, "", 0u64) || !first.ready()
-        || !first.admit_commands(25u64, a.id, 0u64, "", 1u64)) {
+    if (first.admit_commands(25u64, a.id, 0u64, "", 0u64) || !first.ready() || !first.admit_commands(25u64, a.id, 0u64,
+        "", 1u64)) {
         return false;
     }
     first.prepare(25u64, a.id, 0u64, "");
@@ -1427,9 +1600,8 @@ auto check_dual_tables(builtin::ByteRegion region) -> bool {
     }
     first.fail(kernel::FileStatus::failed);
     if (second.admit_commands(18u64, 0u64, 0u64, "/disk2/hello", 2048u64) || !second.ready()
-        || !second.admit_commands(18u64, 0u64, 0u64, "/disk2/hello", 2049u64)
-        || !second.admit_commands(18u64, 0u64, 0u64, "/disk2/hello/", 0u64)
-        || !first.admit_commands(20u64, a.id, 0u64, "", 0u64)
+        || !second.admit_commands(18u64, 0u64, 0u64, "/disk2/hello", 2049u64) || !second.admit_commands(18u64, 0u64,
+        0u64, "/disk2/hello/", 0u64) || !first.admit_commands(20u64, a.id, 0u64, "", 0u64)
         || !first.admit_commands(22u64, a.id, 0u64, "", 0u64)) {
         return false;
     }
@@ -1444,8 +1616,8 @@ auto check_dual_tables(builtin::ByteRegion region) -> bool {
         second.prepare(16u64, 0u64, 0u64, "/disk2");
         const service::Reply left = first.response();
         const service::Reply right = second.response();
-        if (left.status != kernel::FileStatus::success || right.status != kernel::FileStatus::success
-            || (left.id - 1u64) % 64u64 != 40u64 + slot || (right.id - 1u64) % 64u64 != 48u64 + slot) {
+        if (left.status != kernel::FileStatus::success || right.status != kernel::FileStatus::success || (left.id
+            - 1u64) % 64u64 != 40u64 + slot || (right.id - 1u64) % 64u64 != 48u64 + slot) {
             return false;
         }
         slot = slot + 1u64;
@@ -1461,11 +1633,10 @@ auto check_dual_tables(builtin::ByteRegion region) -> bool {
     first.prepare(18u64, 0u64, 0u64, "/disk/hello");
     first.opened(1024u64, 129u64, 128u64, 128u64);
     const service::Reply file = first.response();
-    if (first.admit_commands(19u64, file.id, 511u64, "", 5u64) || !first.ready()
-        || !first.admit_commands(19u64, file.id, 511u64, "", 6u64)
-        || !first.admit_commands(19u64, file.id, 1024u64, "", 0u64)
-        || first.required_commands(19u64, file.id, 511u64, "") != 6u64
-        || first.required_commands(19u64, file.id, 1024u64, "") != 0u64) {
+    if (first.admit_commands(19u64, file.id, 511u64, "", 5u64) || !first.ready() || !first.admit_commands(19u64,
+        file.id, 511u64, "", 6u64) || !first.admit_commands(19u64, file.id, 1024u64, "", 0u64)
+        || first.required_commands(19u64, file.id, 511u64, "") != 6u64 || first.required_commands(19u64, file.id,
+        1024u64, "") != 0u64) {
         return false;
     }
     second.prepare(20u64, b.id, 0u64, "");
@@ -1479,11 +1650,9 @@ auto check_dual_tables(builtin::ByteRegion region) -> bool {
 
 auto main(builtin::HostFiles& files, builtin::ByteRegion region,
     builtin::span<const u8> arguments) -> builtin::HostExit {
-    if (!check_mounted_output(region) || !check_dual_tables(region)
-        || !check_dual_admission(region, 1u64, 18457u64, false, false)
-        || !check_dual_admission(region, 1u64, 18458u64, false, true)
-        || !check_dual_admission(region, 2u64, 36915u64, false, false)
-        || !check_dual_admission(region, 2u64, 36916u64, false, true)
+    if (!check_mounted_output(region) || !check_dual_tables(region) || !check_dual_admission(region, 1u64, 18457u64,
+        false, false) || !check_dual_admission(region, 1u64, 18458u64, false, true) || !check_dual_admission(region,
+        2u64, 36915u64, false, false) || !check_dual_admission(region, 2u64, 36916u64, false, true)
         || !check_dual_admission(region, 2u64, 36916u64, true, false)) {
         return builtin::HostExit::failure;
     }

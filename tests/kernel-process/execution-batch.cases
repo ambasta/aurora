@@ -1,0 +1,39 @@
+# event:status:value; status uses the production execution status encoding.
+fair success:0:0 success:0:0 success:0:0 parked:0:0 output:0:0 success:0:0 request:0:0 pending:0:0 success:0:0 terminal:0:22 success:0:0 terminal:0:11 success:0:0
+refused refused:6:0
+second-refused success:0:0 success:0:0 refused:5:0 terminal:8:0 success:0:0 success:0:0
+first-refused success:0:0 refused:3:0 success:0:0 success:0:0
+fault success:0:0 success:0:0 success:0:0 terminal:1:6 success:0:0 terminal:0:9 success:0:0
+service-loss success:0:0 success:0:0 success:0:0 terminal:0:7 success:0:0 request:0:0 service_lost:6:0 success:0:0
+output-loss success:0:0 success:0:0 success:0:0 output:0:0 output_failed:7:0 terminal:7:0 success:0:0 terminal:8:0 success:0:0
+rejected-receipts stale:0:0 parked:0:0 success:9:0 refused:6:0 success:0:0
+expired-rpc success:0:0 success:0:0 success:0:0 request:0:0 cancelled:2:0 terminal:2:0 success:0:0 terminal:0:13 success:0:0
+binding-good good
+binding-early-finish early-finish
+binding-double-issue double-issue
+binding-forged-child forged-child
+binding-stale-parent stale-parent
+binding-double-effect double-effect
+binding-unsettled unsettled
+binding-unfinished unfinished
+binding-forged-quota forged-quota
+binding-forged-load-quota forged-load-quota
+# withdrawal: slot caller client generation phase observed-client incarnation source
+withdraw-slot1 1 1 7 9 3 7 9 0
+withdraw-slot2-prior-source 2 2 8 9 3 8 9 7
+withdraw-wrong-slot 0 0 7 9 3 7 9 0
+withdraw-out-of-range-slot 3 3 7 9 3 7 9 0
+withdraw-foreign-caller 1 2 7 9 3 7 9 0
+withdraw-missing-caller 1 0 7 9 3 7 9 0
+withdraw-missing-client 1 1 0 9 3 0 9 0
+withdraw-missing-generation 1 1 7 0 3 7 0 0
+withdraw-foreign-client 1 1 7 9 3 8 9 0
+withdraw-stale-generation 1 1 7 9 3 7 8 0
+withdraw-absent 1 1 7 9 0 7 9 0
+withdraw-initial 1 1 7 9 1 7 9 0
+withdraw-waiting 1 1 7 9 2 7 9 0
+withdraw-delivery 1 1 7 9 4 7 9 0
+withdraw-processing 1 1 7 9 5 7 9 0
+withdraw-replied 1 1 7 9 6 7 9 0
+withdraw-completion 1 1 7 9 7 7 9 0
+withdraw-revoked 1 1 7 9 8 7 9 0

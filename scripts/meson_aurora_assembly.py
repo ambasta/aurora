@@ -233,6 +233,8 @@ def validate_native_abi(facts, source):
                 "kernel::EndpointConsume",
                 "kernel::EndpointCancel",
                 "kernel::EndpointCompletion",
+                "kernel::BatchAction",
+                "kernel::BatchEvent",
                 "kernel::LoadAction",
                 "kernel::LoadResult",
                 "kernel::FileStatus",
@@ -549,6 +551,41 @@ def validate_native_abi(facts, source):
         ):
             borrowed_entry(nominal, "process_endpoint_" + name, tail, result, mutable)
 
+    if "# EXECUTION_BATCH_ABI:" in source:
+        nominal = retained_root("kernel::BatchOwner", reservation=160)
+        enum("kernel::BatchAction", "admit load activate output request retire close abandon done")
+        enum(
+            "kernel::BatchEvent",
+            "success refused parked output request terminal pending service_lost output_failed cancelled",
+        )
+        record(
+            "kernel::BatchRequest",
+            48,
+            [
+                ("action", "kernel::BatchAction", 0),
+                ("child", "u64", 0),
+                ("ordinal", "u64", 0),
+                ("status", "u64", 0),
+                ("value", "u64", 0),
+                ("quota", "u64", 0),
+            ],
+        )
+        record(
+            "kernel::BatchResult",
+            40,
+            [
+                ("admission", "u64", 0),
+                ("status1", "u64", 0),
+                ("value1", "u64", 0),
+                ("status2", "u64", 0),
+                ("value2", "u64", 0),
+            ],
+        )
+        entry("process_batch_create", [], "kernel::BatchOwner")
+        borrowed_entry(nominal, "process_batch_next", [], "kernel::BatchRequest", True)
+        borrowed_entry(nominal, "process_batch_accept", ["u64", "kernel::BatchEvent", "u64", "u64"], "bool", True)
+        borrowed_entry(nominal, "process_batch_result", [], "kernel::BatchResult", False)
+
     if "# COMMITTED_LOAD_ABI:" in source:
         nominal = retained_root("kernel::CommittedLoad", reservation=48)
         enum("kernel::LoadAction", "open reserve read fill seal discard_close close load discard_done done")
@@ -633,7 +670,7 @@ def validate_native_abi(facts, source):
             borrowed_entry(nominal, "process_frames_" + name, ["u64"] * tail, result, mutable)
 
     if "# MEMORY_MANAGER_ABI:" in source:
-        nominal = retained_root("kernel::MemoryManager", reservation=496)
+        nominal = retained_root("kernel::MemoryManager", reservation=512)
         fields = [
             (name, "__au_owned_words", 0) for name in ("words", "mapping_words", "reservation_words", "scratch_words")
         ]
@@ -649,6 +686,8 @@ def validate_native_abi(facts, source):
                 "count0",
                 "owner1",
                 "count1",
+                "owner2",
+                "count2",
             )
         ]
         fields += [("initialized", "bool", 0), ("poison", "bool", 0)]
@@ -681,13 +720,13 @@ def validate_native_abi(facts, source):
         fields += [(name, "u64", 0) for name in ("staged_count", "active_slot", "operation")]
         # Complete private layout, not just the first descriptor or copied
         # caller claims: native authentication reads exactly these fields.
-        record("kernel::MemoryManager", 496, fields, alignment=16)
+        record("kernel::MemoryManager", 512, fields, alignment=16)
         # These values describe verified literal-return IR bodies, not source
         # comments or caller-supplied AIR annotations. They authenticate the
         # fixed partition vocabulary used by private source layout helpers.
         layout = {}
         expected_layout = dict(
-            slot_count=2,
+            slot_count=3,
             record_count=16384,
             record_stride=3,
             region_count=10,
@@ -695,7 +734,9 @@ def validate_native_abi(facts, source):
             shared_count=256,
             stage_count=19,
             stage_stride=2,
-            tail_words=512,
+            tail_words=1024,
+            slot2_offset=504,
+            slot2_words=13,
             scratch_words=512,
         )
         literals = facts.get("literal_results", {})
@@ -726,13 +767,24 @@ def validate_native_abi(facts, source):
         shared = records + regions
         staged = shared + layout["shared_count"]
         used = staged + layout["stage_count"] * layout["stage_stride"]
+        slot2 = records + layout["slot2_offset"]
+        metadata_end = slot2 + layout["slot2_words"]
         extent = records + layout["tail_words"]
         # Word offsets below are relative to the reservation bank. Allocation
         # and mapping extents remain inventory-dependent native grants; they
         # are not compile-time facts. Native BankLayout checks their physical
         # nonoverlap, page rounding and the separately granted scratch page.
-        if (records, shared, staged, used, extent, layout["scratch_words"]) != (98304, 98444, 98700, 98738, 98816, 512):
+        if (records, shared, staged, used, extent, layout["scratch_words"]) != (
+            147456,
+            147666,
+            147922,
+            147960,
+            148480,
+            512,
+        ):
             raise ValueError("MemoryManager reservation partition differs from native admission")
+        if (slot2, metadata_end) != (147960, 147973) or used != slot2 or metadata_end > extent:
+            raise ValueError("MemoryManager slot2 metadata differs from native admission")
         if records % 512 or extent % 512 or used > extent or layout["scratch_words"] != 512:
             raise ValueError("MemoryManager bank partition is unaligned or overlaps its extent")
         record("kernel::FrameAllocation", 24, [("index", "u64", 0), ("generation", "u64", 0), ("valid", "bool", 0)])
@@ -795,11 +847,11 @@ def validate_native_abi(facts, source):
         borrowed_entry(nominal, "manager_map_region", ["u64", "u64", "kernel::ProcessRegion", "u64"], "bool", True)
 
     if "# EXECUTION_LIFECYCLE_ABI:" in source:
-        nominal = retained_root("kernel::ExecutionOwner", reservation=272)
+        nominal = retained_root("kernel::ExecutionOwner", reservation=400)
         record(
             "kernel::ExecutionOwner",
-            272,
-            [("authority", "__au_execution_authority", 0), ("state", "u64", 32)],
+            400,
+            [("authority", "__au_execution_authority", 0), ("state", "u64", 48)],
             alignment=16,
         )
         record(
@@ -870,7 +922,7 @@ def validate_native_abi(facts, source):
         enum(
             "console::ProgramEffect",
             "invalid ready file_ready input note files upper read_note upper_note file peek wc crc unknown "
-            "note_saved file_reply abort_file exited failed run storage_readonly",
+            "note_saved file_reply abort_file exited failed run storage_readonly run_pair",
         )
         record(
             "console::ProgramSessionUpdate",

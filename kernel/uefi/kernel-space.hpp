@@ -27,9 +27,9 @@ public:
     // 8-byte mapping word per frame (process-space.hpp), then process pages:
     // the running process's memory records when the image runs processes
     // (process_pages, process::memory_records of them), none otherwise.
-    static constexpr U64 process_slots = 2;
+    static constexpr U64 process_slots = 3;
     static constexpr U64 process_pages = process::memory_records * sizeof(process::MemoryRecord) / frames::page;
-    static constexpr U64 reservation_tail_pages = 1, observation_pages = 1, words_per_page = frames::page / sizeof(U64);
+    static constexpr U64 reservation_tail_pages = 2, observation_pages = 1, words_per_page = frames::page / sizeof(U64);
     class Plan final {
     public:
         U64 metadata = 0, metadata_tables = 0, volume = 0, volume_tables = 0, tables = 0, records = 0, process = 0;
@@ -47,7 +47,7 @@ public:
             return std::nullopt;
         result.records = (frames * 8 + frames::page - 1) / frames::page;
         result.process = process;
-        // Process ownership retains one page of region/shared/staging metadata
+        // Process ownership retains two pages of region/shared/staging and slot2 metadata
         // after the fixed reservation records, plus a disjoint observation page.
         result.reservation_tail = process ? reservation_tail_pages : 0;
         result.scratch = process ? observation_pages : 0;
@@ -184,7 +184,7 @@ public:
         built_ = true;
         return true;
     }
-    // One atomic issuer receives allocation, mapping, both resident reservation
+    // One atomic issuer receives allocation, mapping, three resident reservation
     // banks and their private tail, and a disjoint table-observation page. Native
     // mutable aliases are scoped to this one-shot inactive constructor handoff.
     template <class Owner> [[nodiscard]] auto handoff_manager(Owner &owner, const frames::Ranges &ranges) -> bool {

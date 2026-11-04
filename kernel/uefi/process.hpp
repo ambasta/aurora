@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include "handoff.hpp"
 #include "../console-uart.hpp"
 namespace aurora::uefi {
@@ -35,6 +36,23 @@ using ProcessPresentation = bool (*)(bool);
                                ProcessInput input = nullptr,
                                bool input_after_cr = false,
                                ProcessPresentation presentation = nullptr) -> RunResult;
+
+// Member indices are 0 and 1. Admission failure means neither child entered.
+class RunPairResult final {
+public:
+    RunStatus admission = RunStatus::unavailable;
+    std::array<RunResult, 2> members{};
+};
+using ProcessPairOutput = bool (*)(void *, std::size_t, bool, std::span<const std::byte>);
+[[nodiscard]] auto run_program_pair(std::uint64_t arena,
+                                    const Bytes &handoff,
+                                    std::span<const std::byte> first_path,
+                                    std::span<const std::byte> first_arguments,
+                                    std::span<const std::byte> second_path,
+                                    std::span<const std::byte> second_arguments,
+                                    ProcessPairOutput output,
+                                    void *context,
+                                    ProcessPresentation presentation = nullptr) -> RunPairResult;
 
 // Exact production NVMe composition only: admit its readonly mount before the
 // first prompt. A valid unavailable mount preserves the boot/console owner.

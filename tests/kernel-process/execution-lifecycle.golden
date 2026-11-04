@@ -103,3 +103,9 @@ presentation-output prepare=1 run=5:19:1 present=0 present=1 state=6:1 pending=5
 presentation-global prepare=1 prepare=1 run=15:23:1 present=1 can-prepare=0 can-prepare=0 prepare=0 prepare=0 run=0:0:1 run=0:0:1 force=0:0:1 force=0:0:1 complete=0 complete=0 state=1:1 state=6:1 pending=15 present-finish=1 complete=1 run=6:0:1 run=6:0:1 finish=1 enter=0 enter=1 retire=1:6:6 enter=0 invalidate=0 retire=0:6:6
 presentation-exhaust prepare=1 run=5:0:1 presentation-turns=1:32 present=0 complete=1 run=15:0:1 present=0 pending=15 complete=1 run=6:0:1 prepare=1 run=15:0:2 present=1 present-finish=1 complete=1 run=6:0:2 finish=1 enter=0 enter=1 enter=1 retire=1:6:6 enter=0 enter=1 retire=1:6:6
 finish-presenting denied=source
+three-slots prepare=1 prepare=1 prepare=1 run=2:0:1 run=6:11:1 run=6:22:1 run=6:0:1 state=0:1 finish=1 enter=0 enter=0 retire=1:6:6 enter=1 retire=2:6:6 enter=0 retire=0:6:6
+slot2-reuse prepare=1 run=6:3:1 prepare=1 run=6:4:2 state=0:2 finish=1 enter=0 retire=2:6:6 enter=0 retire=2:6:6
+natural-service-two-prepared prepare=1 prepare=1 prepare=1 run=8:14:1 state=0:1 state=0:1 state=0:1 finish=1 enter=0 invalidate=0 retire=1:14:12 retire=2:14:12 retire=0:8:8
+natural-service-two-parked prepare=1 prepare=1 prepare=1 run=2:0:1 run=4:0:1 run=10:0:1 state=0:1 state=0:1 state=0:1 finish=1 enter=0 enter=0 enter=0 invalidate=0 retire=1:14:12 retire=2:14:12 retire=0:6:10
+foreign-second-client prepare=1 prepare=0 state=0:0 run=6:0:1 finish=1 enter=0 invalidate=0 retire=0:6:6
+presentation-second prepare=1 prepare=1 run=5:19:1 present=1 state=6:1 can-prepare=0 run=0:0:1 present-finish=1 complete=1 run=6:7:1 run=6:8:1 finish=1 enter=0 enter=1 retire=2:6:6 enter=0 retire=1:6:6

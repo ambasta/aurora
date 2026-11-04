@@ -22,7 +22,8 @@ export namespace console {
         exited,
         failed,
         run,
-        storage_readonly
+        storage_readonly,
+        run_pair
     };
 
     // Copied session policy only, not Console, store or protected-run authority.
@@ -78,11 +79,14 @@ export namespace console {
                 phase = input;
                 return ProgramEffect::input;
             }
-            if (event == input && phase == input && value <= 5u64 && carry <= 1u64) {
+            if (event == input && phase == input && value <= 6u64 && carry <= 1u64) {
                 after_cr = carry;
-                if (value == 4u64 || value == 5u64) {
+                if (value >= 4u64) {
                     phase = response;
                     if (profile == 2u64) {
+                        if (value == 6u64) {
+                            return ProgramEffect::run_pair;
+                        }
                         if (value == 5u64) {
                             return ProgramEffect::storage_readonly;
                         }

@@ -24,6 +24,7 @@
 #include "../kernel/retained-service.hpp"
 #include "../kernel/retained-endpoint.hpp"
 #include "../kernel/committed-load.hpp"
+#include "../kernel/execution-batch.hpp"
 #include "../kernel/uefi/frames.hpp"
 #include "../kernel/uefi/kernel-space.hpp"
 #include "kernel-process-files.hpp"
@@ -327,20 +328,20 @@ auto grant_case(const std::string &name) -> void {
             using Space = aurora::uefi::KernelSpace;
             constexpr U64 process_pages = Space::process_slots * Space::process_pages;
             if (name == "layout-minimum") {
-                const auto plan = Space::plan(200, 0, process_pages);
-                if (Space::plan(199, 0, process_pages) || !plan || plan->metadata != 196 || plan->tables != 3 ||
-                    plan->process != 192 || plan->reservation_tail != 1 || plan->scratch != 1)
+                const auto plan = Space::plan(297, 0, process_pages);
+                if (Space::plan(296, 0, process_pages) || !plan || plan->metadata != 293 || plan->tables != 3 ||
+                    plan->process != 288 || plan->reservation_tail != 2 || plan->scratch != 1)
                     _exit(3);
-                const auto layout = Space::bank_layout(*plan, 200);
-                if (!layout || layout->word_offsets != std::array<U64, 4>{0, 512, 1024, 99840} ||
-                    layout->word_counts != std::array<U64, 4>{200, 200, 98816, 512} || layout->tail_offset != 99328 ||
-                    layout->tail_words != 512 || layout->metadata_words != 100352)
+                const auto layout = Space::bank_layout(*plan, 297);
+                if (!layout || layout->word_offsets != std::array<U64, 4>{0, 512, 1024, 149504} ||
+                    layout->word_counts != std::array<U64, 4>{297, 297, 148480, 512} || layout->tail_offset != 148480 ||
+                    layout->tail_words != 1024 || layout->metadata_words != 150016)
                     _exit(3);
             } else if (name == "layout-table-boundary") {
-                const auto before = Space::plan(81408, 0, process_pages), after = Space::plan(81409, 0, process_pages);
-                if (!before || !after || before->metadata != 512 || before->metadata_tables != 1 ||
-                    before->tables != 3 || after->metadata != 514 || after->metadata_tables != 2 ||
-                    after->tables != 4 || !Space::bank_layout(*before, 81408) || !Space::bank_layout(*after, 81409))
+                const auto before = Space::plan(56320, 0, process_pages), after = Space::plan(56321, 0, process_pages);
+                if (!before || !after || before->metadata != 511 || before->metadata_tables != 1 ||
+                    before->tables != 3 || after->metadata != 513 || after->metadata_tables != 2 ||
+                    after->tables != 4 || !Space::bank_layout(*before, 56320) || !Space::bank_layout(*after, 56321))
                     _exit(3);
             } else if (name == "layout-slot-bounds") {
                 if (Space::plan(65536, 0, process_pages + 1) ||
@@ -2127,6 +2128,7 @@ auto service_incarnation_mode(const char *cases) -> int {
 
 #include "kernel-process-endpoint.hpp"
 #include "kernel-process-committed-load.hpp"
+#include "kernel-process-execution-batch.hpp"
 #include "kernel-process-resident.hpp"
 #include "kernel-process-execution-lifecycle.hpp"
 
@@ -2139,7 +2141,7 @@ auto manager_mode(const char *path) -> int {
     if (!input)
         usage("manager cases");
     std::unique_ptr<Device> device;
-    std::array<U64, 2> epochs{}, previous{}, bases{};
+    std::array<U64, aurora::uefi::KernelSpace::process_slots> epochs{}, previous{}, bases{};
     U64 snapshot_epoch = 0;
     std::string line;
     while (std::getline(input, line)) {
@@ -2281,9 +2283,14 @@ auto manager_mode(const char *path) -> int {
                 const auto mappings = host.mappings, incoming = host.incoming, allocations = host.allocations;
                 // Semantic reservations/regions/shared evidence, excluding the
                 // private unpublished staging tail whose dead bytes may differ.
-                const std::vector<U64> reservations(host.reservations.begin(), host.reservations.begin() + 98700);
+                const std::vector<U64> reservations(host.reservations.begin(),
+                                                    host.reservations.begin() + Device::reservation_records + 466);
                 std::array<std::byte, 312> owner_state{};
-                std::copy_n(host.root.begin() + 160, owner_state.size(), owner_state.begin());
+                std::copy_n(host.root.begin() + 176, owner_state.size(), owner_state.begin());
+                std::array<U64, 13> third_slot{};
+                std::copy_n(host.reservations.begin() + Device::reservation_records + 504,
+                            third_slot.size(),
+                            third_slot.begin());
                 const U64 published = host.publishes, cleared = host.clears, anchor = host.anchor;
                 const auto before = host.copied<frames::FrameAudit>(__au_runtime_manager_frames_audit, {});
                 const bool committed =
@@ -2296,9 +2303,12 @@ auto manager_mode(const char *path) -> int {
                 const bool unchanged =
                     identities && mappings == host.mappings && incoming == host.incoming &&
                     std::equal(reservations.begin(), reservations.end(), host.reservations.begin()) &&
-                    std::equal(owner_state.begin(), owner_state.end(), host.root.begin() + 160) &&
+                    std::equal(owner_state.begin(), owner_state.end(), host.root.begin() + 176) &&
+                    std::equal(third_slot.begin(),
+                               third_slot.end(),
+                               host.reservations.begin() + Device::reservation_records + 504) &&
                     host.publishes == published && host.clears == cleared && host.anchor == anchor &&
-                    host.scalar(472) == 0 && host.scalar(488) == 0 && !host.window &&
+                    host.scalar(488) == 0 && host.scalar(504) == 0 && !host.window &&
                     before.allocated == after.allocated;
                 std::cout << "  commit-rollback slot=" << slot << " refused=" << !committed
                           << " unchanged=" << unchanged << " audit=" << after.consistent << '\n';
@@ -2492,7 +2502,8 @@ auto manager_frame_benchmark(U64 count) -> int {
     // The hosted scope permits only terminal authority consumption; all named
     // hardware effects still require the separate Device and fail without one.
     aurora::manager_host::FrameBenchmarkScope hosted;
-    std::vector<U64> records(count), mappings(count), reservations(98816), scratch(512);
+    std::vector<U64> records(count), mappings(count), reservations(aurora::manager_host::Device::reservation_words),
+        scratch(aurora::manager_host::Device::observation_words);
     aurora::uefi::MemoryManager table;
     if (!table.bind(records, mappings, reservations, scratch, ranges, plan->tables, plan->metadata))
         usage("benchmark manager bind");
@@ -2585,6 +2596,8 @@ auto main(int argc, char **argv) -> int {
         return resident_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "bootstrap")
         return bootstrap_mode(argv[2]);
+    if (argc == 3 && std::string{argv[1]} == "execution-batch")
+        return execution_batch_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "committed-load")
         return committed_load_mode(argv[2]);
     if (argc == 3 && std::string{argv[1]} == "endpoint")

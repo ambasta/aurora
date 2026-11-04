@@ -104,52 +104,63 @@ export namespace service {
             return all.subspan(0, count);
         }
     };
-    auto file_operation(service::Store& store, builtin::span<const u8> payload, u64 operation, u64 id,
+    auto handle_operation(u64 operation) -> bool {
+        return operation == 17u64 || operation == 19u64 || operation == 20u64 || (operation >= 22u64 && operation
+            <= 25u64);
+    }
+    auto file_operation_for(service::Store& store, u64 source, builtin::span<const u8> payload, u64 operation, u64 id,
         u64 offset) -> service::Reply {
         if (operation == 25u64) {
             if (offset != 0u64 || payload.size() != 0) {
                 return service::reply(kernel::FileStatus::failed);
             }
-            const service::Reply result = store.next_entry(id);
+            const service::Reply result = store.next_entry_for(source, id);
             return result;
         }
         if (operation == 16u64) {
-            const service::Reply reply = store.open(0u64, id, payload);
+            const service::Reply reply = store.open_for(source, 0u64, id, payload);
             return reply;
         }
         if (operation == 17u64) {
-            const service::Reply reply = store.open(1u64, id, payload);
+            const service::Reply reply = store.open_for(source, 1u64, id, payload);
             return reply;
         }
         if (operation == 18u64) {
-            const service::Reply reply = store.open(2u64, id, payload);
+            const service::Reply reply = store.open_for(source, 2u64, id, payload);
             return reply;
         }
         if (operation == 19u64) {
-            const service::Reply reply = store.read_file(id, offset);
+            const service::Reply reply = store.read_file_for(source, id, offset);
             return reply;
         }
         if (operation == 20u64) {
-            const service::Reply reply = store.close(id);
+            const service::Reply reply = store.close_for(source, id);
             return reply;
         }
         if (operation == 21u64) {
-            const service::Reply reply = store.create(payload);
+            const service::Reply reply = store.create_for(source, payload);
             return reply;
         }
         if (operation == 22u64) {
-            const service::Reply reply = store.write_file(id, payload);
+            const service::Reply reply = store.write_file_for(source, id, payload);
             return reply;
         }
         if (operation == 23u64) {
-            const service::Reply reply = store.commit(id);
+            const service::Reply reply = store.commit_for(source, id);
             return reply;
         }
         if (operation == 24u64) {
-            const service::Reply reply = store.discard(id);
+            const service::Reply reply = store.discard_for(source, id);
             return reply;
         }
         return service::reply(kernel::FileStatus::failed);
+    }
+
+    auto file_operation(service::Store& store, builtin::span<const u8> payload, u64 operation, u64 id,
+        u64 offset) -> service::Reply {
+        const u64 source = store.singleton_source();
+        const service::Reply result = file_operation_for(store, source, payload, operation, id, offset);
+        return result;
     }
 
     class RequestHeader {
@@ -249,17 +260,17 @@ export namespace service {
             admitted = store.admit_volume();
             accepted = admitted;
         }
-        if (operation == 4u64 && admitted && count == 0u64) {
+        if (operation == 4u64 && admitted && offset == 0u64 && count == 0u64) {
             accepted = store.begin(id);
         }
-        if (operation == 5u64 && admitted && count == 0u64) {
+        if (operation == 5u64 && admitted && offset == 0u64 && count == 0u64) {
             accepted = store.finish(id);
         }
-        if (operation == 6u64 && admitted && count == 0u64 && store.active() == 0u64) {
+        if (operation == 6u64 && admitted && count == 0u64 && store.clients_idle()) {
             accepted = true;
             exiting = true;
         }
-        if (operation == 7u64 && admitted && count == 0u64 && offset == 0u64 && id < 64u64 && store.active() == 0u64) {
+        if (operation == 7u64 && admitted && count == 0u64 && offset == 0u64 && id < 64u64 && store.clients_idle()) {
             const service::Reply selected = store.export_select(id);
             accepted = response.header(selected);
             if (selected.status == kernel::FileStatus::success) {
@@ -269,8 +280,8 @@ export namespace service {
             }
             export_reply = true;
         }
-        if ((operation == 8u64 || operation == 9u64) && admitted && count == 0u64 && id == 0u64 && store.active()
-            == 0u64) {
+        if ((operation == 8u64 || operation == 9u64) && admitted && count == 0u64 && id == 0u64
+            && store.clients_idle()) {
             const service::Reply selected = store.export_read(offset, operation == 8u64);
             accepted = response.header(selected);
             reply_count = 64u64 + selected.count;
@@ -281,7 +292,7 @@ export namespace service {
             }
             export_reply = true;
         }
-        if (operation >= 10u64 && operation <= 14u64 && admitted && offset == 0u64 && store.active() == 0u64) {
+        if (operation >= 10u64 && operation <= 14u64 && admitted && offset == 0u64 && store.clients_idle()) {
             if (count > 512u64) {
                 return false;
             }
@@ -326,15 +337,15 @@ export namespace service {
 
 export namespace service {
     // Payload projection is shared without borrowing a span across owners.
-    auto copy_client_payload(service::Store& store, service::XfsFiles& disk, Response& response,
-        u64 count, bool disk_request) -> bool {
+    auto copy_client_payload(service::Store& store, service::XfsFiles& disk, Response& response, u64 source, u64 count,
+        bool disk_request) -> bool {
         u64 byte = 0u64;
         while (byte < count) {
             u8 value = 0u8;
             if (disk_request) {
-                value = disk.read_byte(byte);
+                value = disk.read_byte_for(source, byte);
             } else {
-                value = store.read_byte(byte);
+                value = store.read_byte_for(source, byte);
             }
             if (!response.set_byte(i64(64u64 + byte), value)) {
                 return false;

@@ -185,6 +185,11 @@ def mounted_golden(size, cold):
 
     if not cold:
         command("run bin/cat /disk old hello", ["hello 64\n", "run: exited status=0"])
+        command("run bin/aurorac --emit-executable --target aurora a -o test", ["", "run: exited status=0"])
+        command(
+            "run-pair test -- bin/cat /disk /disk/hello hello",
+            ["[2] cannot create output\n", "[1] run: exited status=2", "[2] run: exited status=1"],
+        )
         command("run bin/aurorac --emit-object --target aurora a -o /disk/hello", ["", "run: exited status=0"])
     command("run bin/cat /disk saved hello", [f"hello {size}\n", "run: exited status=0"])
     command("run bin/aurorac --link-object /disk/hello -o test", ["", "run: exited status=0"])
