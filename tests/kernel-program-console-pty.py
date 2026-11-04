@@ -1243,7 +1243,7 @@ def snapshot_service_program(path, mode):
     return bytes(data)
 
 
-def production_case_volume(source, programs, directory, service_case=None):
+def production_case_volume(source, programs, directory, service_case=None, pair_cases=False):
     """Untrusted file payloads in a private ESP; the production kernel is unchanged."""
     target = directory / "esp"
     shutil.copytree(source, target)
@@ -1288,6 +1288,8 @@ def production_case_volume(source, programs, directory, service_case=None):
         ("raw-write", "process-isolation-6"),
     ):
         entries.append((name.encode(), (programs / binary).read_bytes()))
+    if pair_cases:
+        entries.append((b"input", (programs / "process-input").read_bytes()))
     for name, edits in (
         ("wx", "p1.flags=7"),
         ("interp", "p3.type=3"),
@@ -1386,7 +1388,7 @@ def main():
     )
     firmware, code, variables, *firmware_args = selected.decode().split("\0")[:-1]
     esp = (
-        production_case_volume(build / "esp", args.program_cases, output, args.service_case)
+        production_case_volume(build / "esp", args.program_cases, output, args.service_case, args.pair_cases)
         if args.program_cases
         else build / "esp"
     )
@@ -1604,12 +1606,99 @@ def main():
                 )
                 return part
 
-            def run_pair_command(line, statuses=None, admission=None):
+            def run_pair_command(
+                line,
+                statuses=None,
+                admission=None,
+                ready=None,
+                chunks=(),
+                quarantine=False,
+                parked_before_ready=False,
+                expect_idle=False,
+                launch=b"\n",
+            ):
+                parked_pattern = (
+                    rb"AURORA_PAIR_INPUT_PARKED: run=(\d+) sequence=(\d+) remaining=(\d+) child=1 pending=1\n"
+                )
+                idle_pattern = (
+                    rb"AURORA_PAIR_INPUT_IDLE: run=(\d+) sequence=(\d+) before=(\d+) after=(\d+) "
+                    rb"charge=(\d+) armed=(\d+) cpu_before=(\d+) cpu_after=(\d+) sibling_closed=1 drained=1\n"
+                )
                 begin = len(transcript)
-                send(line.encode("ascii") + b"\n")
-                receive(b"aurora> ", begin)
+                send(line.encode("ascii") + launch)
+                if ready is not None:
+                    receive(ready, begin)
+                    need(
+                        b"run: " not in transcript[begin:] and b"aurora> " not in transcript[begin:],
+                        "Sibling must progress before foreground input bytes are supplied",
+                    )
+                    if parked_before_ready:
+                        before_input = bytes(transcript[begin:]).replace(b"\r\n", b"\n")
+                        parked = list(re.finditer(parked_pattern, before_input))
+                        need(
+                            len(parked) == before_input.count(b"AURORA_PAIR_INPUT_PARKED:") == 1
+                            and parked[0].end() <= before_input.index(ready)
+                            and all(int(value) > 0 for value in parked[0].groups()),
+                            "Actual pending input receipt must precede sibling output and injected bytes",
+                        )
+                for chunk in chunks:
+                    send(chunk)
+                if quarantine:
+                    closed = b"Input closed; press Enter to return to the console."
+                    receive(closed, begin)
+                    before_handoff = bytes(transcript[begin:])
+                    need(
+                        before_handoff.count(b"aurora> ") == 1
+                        and before_handoff.index(b"aurora> ") < before_handoff.index(closed),
+                        "Interactive pair has only its provisional result prompt before quarantine",
+                    )
+                    # Like singleton input, the result renderer's provisional
+                    # prompt is not a handoff. Wait from the banner for a fresh
+                    # prompt after discarding the queued child suffix/delimiter.
+                    handoff = len(transcript)
+                    send(b"stale-pair-command\r\n")
+                    receive(b"aurora> ", handoff)
+                    need(
+                        transcript[handoff:].count(b"aurora> ") == 1 and b"Unknown command" not in transcript[handoff:],
+                        "Pair quarantine must discard suffix and return exactly one fresh prompt",
+                    )
+                else:
+                    receive(b"aurora> ", begin)
                 part = bytes(transcript[begin:]).replace(b"\r\n", b"\n")
-                need(part.count(b"aurora> ") == 1, "Pair must finish with exactly one prompt")
+                need(
+                    part.count(b"aurora> ") == 1 + int(quarantine),
+                    "Pair has one result prompt and only the required fresh quarantine prompt",
+                )
+                parked = list(re.finditer(parked_pattern, part))
+                idle = list(re.finditer(idle_pattern, part))
+                need(
+                    len(parked) == part.count(b"AURORA_PAIR_INPUT_PARKED:") <= 1
+                    and len(idle) == part.count(b"AURORA_PAIR_INPUT_IDLE:") <= 1,
+                    "Pair input receipts must be well formed and bounded to one each",
+                )
+                if expect_idle:
+                    need(len(parked) == len(idle) == 1, "Pending reader must reach actual final idle settlement")
+                    owner, sequence, remaining = map(int, parked[0].groups())
+                    idle_owner, idle_sequence, before, after, charge, armed, cpu_before, cpu_after = map(
+                        int, idle[0].groups()
+                    )
+                    need(
+                        owner > 0
+                        and sequence > 0
+                        and remaining >= before
+                        and (owner, sequence) == (idle_owner, idle_sequence)
+                        and 0 < charge <= armed
+                        and before - charge == after == 0
+                        and cpu_before == cpu_after
+                        and parked[0].end() <= idle[0].start()
+                        and idle[0].end() <= part.index(b"[1] run: "),
+                        "Parked read must exhaust a drained slice after sibling retirement without CPU charge",
+                    )
+                need(
+                    part.count(b"Input closed; press Enter to return to the console.") == int(quarantine)
+                    and b"Unknown command" not in part,
+                    "Pair input handoff must have exactly its expected quarantine without suffix replay",
+                )
                 need(
                     b"AURORA_PROCESS_KERNEL_FAULT" not in part and b"AURORA_PROCESS_FAIL" not in part,
                     "Pair escaped its process boundary",
@@ -1622,10 +1711,15 @@ def main():
                         "Rejected pair entered a child or exposed partial output",
                     )
                 else:
+                    need(
+                        len(re.findall(rb"\[[12]\] run: [^\n]*\n", part)) == 2, "Pair has exactly two terminal results"
+                    )
                     for member, status in enumerate(statuses, 1):
                         result = (f"[{member}] run: " + status + "\n").encode()
                         need(part.count(result) == 1, "Pair must report each member exactly once")
                         need(part.index(result) < part.index(b"aurora> "), "Pair printed a premature prompt")
+                        if quarantine:
+                            need(part.index(result) < part.index(closed), "Pair quarantined before both outcomes")
                 return part
 
             def run_input(
@@ -2070,9 +2164,74 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 run_command("run probe file tree/rpc-pending", "exited status=0", b"1 file not_found 0 ")
                 run_command("run bin/sort / pair-clean ps", "exited status=0", b"3 lines: 5 3 6\n")
                 metrics["run_pair_memory_fault_budget_rpc_cleanup"] = True
+                # This existing compiled consumer's first operation is read(),
+                # with no output or file RPC before input. Require the actual
+                # pending-state receipt before sibling listing and injected
+                # bytes: startup ordering alone would not exclude preemption.
+                # CRLF launch also checks carry suppression: the consumer only
+                # accepts literal A data, never the command's trailing LF.
+                run_pair_command(
+                    "run-pair input -- bin/list-files tree",
+                    ("exited status=0", "exited status=0"),
+                    ready=b"[2] f seed",
+                    chunks=(b"A", b"\x04"),
+                    quarantine=True,
+                    parked_before_ready=True,
+                    launch=b"\r\n",
+                )
+                pair = run_pair_command(
+                    "run-pair bin/write-source pair.au -- bin/list-files tree",
+                    ("exited status=0", "exited status=0"),
+                    ready=b"[2] f seed",
+                    chunks=(b"module paired;\n", b"\x04"),
+                    quarantine=True,
+                )
+                need(
+                    pair.count(b"[1] write-source: saved\n") == 1
+                    and pair.index(b"[2] f seed") < pair.index(b"[1] write-source: saved\n"),
+                    "Real paired writer must save after sibling listing progresses",
+                )
+                run_command(
+                    "run probe file pair.au read @1 0", "exited status=0", b"2 read success 15 module paired;\n\n"
+                )
+                pair = run_pair_command(
+                    "run-pair bin/write-source pair.au -- bin/list-files tree",
+                    ("exited status=1", "exited status=0"),
+                    ready=b"[2] f seed",
+                    chunks=(b"unfinished", b"\x03"),
+                    quarantine=True,
+                )
+                need(
+                    pair.count(b"[1] write-source: input cancelled\n") == 1 and b"write-source: saved" not in pair,
+                    "Paired Ctrl-C must cancel without publishing",
+                )
+                run_command(
+                    "run probe file pair.au read @1 0", "exited status=0", b"2 read success 15 module paired;\n\n"
+                )
+                run_pair_command(
+                    "run-pair bin/list-files tree -- input",
+                    admission="invalid executable or arguments",
+                )
+                run_pair_command(
+                    "run-pair input -- absent",
+                    admission="program not found",
+                    quarantine=True,
+                )
+                run_command("run bin/list-files tree", "exited status=0", b"f seed\n")
+                # No bytes: correlate the first parked read with actual final
+                # charged idle settlement after sibling retirement, then require
+                # both real terminal results. Sticky status alone cannot show
+                # that a wait occurred; receipts are observations, not authority.
+                run_pair_command(
+                    "run-pair input -- lifecycle fault",
+                    ("exited status=0", "fault vector=6"),
+                    quarantine=True,
+                    expect_idle=True,
+                )
+                metrics["run_pair_parked_input_idle_settlement_writer_cancel_admission_quarantine"] = True
                 command_upper(b"healthy after paired programs\n", "HEALTHY AFTER PAIRED PROGRAMS")
                 finish_session()
-                print("PASS: paired live memory, faults, budgets, RPC cleanup and quiescent exit")
+                print("PASS: paired memory, pending input, writer, cancellation, faults, budgets, RPC cleanup and exit")
                 return
             if args.mode == "program-console" and args.program_cases and not args.service_case:
                 # The separate pristine production boot covers the common console,

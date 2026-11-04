@@ -37,3 +37,24 @@ withdraw-processing 1 1 7 9 5 7 9 0
 withdraw-replied 1 1 7 9 6 7 9 0
 withdraw-completion 1 1 7 9 7 7 9 0
 withdraw-revoked 1 1 7 9 8 7 9 0
+# Input scheduling: literal physical observations and reviewed action traces.
+input-ready success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 parked:0:0 success:0:0 terminal:0:22 success:0:0 terminal:0:11 success:0:0
+input-repeated success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 parked:0:0 pending:0:0 parked:0:0 success:0:0
+input-sibling-terminal success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 terminal:0:22 success:0:0 pending:0:0 success:0:0 success:0:0 terminal:0:11 success:0:0
+input-sibling-fault success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 terminal:1:6 success:0:0 pending:0:0 success:0:0 success:0:0 terminal:0:11 success:0:0
+input-sibling-watchdog success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 terminal:2:0 success:0:0 pending:0:0 success:0:0 success:0:0 terminal:0:11 success:0:0
+input-rpc success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 request:0:0 pending:0:0 pending:0:0 success:0:0 success:0:0
+input-output success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 output:0:0 success:0:0 success:0:0
+input-output-loss success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 output:0:0 output_failed:7:0 terminal:7:0 success:0:0 terminal:8:0 success:0:0
+input-service-loss success:0:0 success:0:0 success:0:0 input:0:0 service_lost:6:0 success:0:0
+input-wait-service-loss success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 terminal:0:22 success:0:0 pending:0:0 service_lost:6:0 success:0:0
+input-cancelled success:0:0 success:0:0 success:0:0 input:0:0 cancelled:8:0 terminal:8:0 success:0:0 terminal:0:22 success:0:0
+input-malformed success:0:0 success:0:0 success:0:0 input:0:0 stale:0:0 pending:1:0 pending:0:1 cancelled:2:0 cancelled:8:1 input:0:0 success:0:0
+input-wait-malformed success:0:0 success:0:0 success:0:0 input:0:0 pending:0:0 terminal:0:22 success:0:0 pending:0:0 pending:0:0 cancelled:8:0 success:0:1 success:0:0
+input-child2-refused success:0:0 success:0:0 success:0:0 parked:0:0 input:0:0 parked:0:0
+input-trap-malformed success:0:0 success:0:0 success:0:0 input:1:0 input:0:1 input:0:0
+binding-forged-input-child forged-input-child
+binding-forged-input-action forged-input-action
+binding-forged-input-status forged-input-status
+binding-forged-input-value forged-input-value
+binding-forged-input-ordinal forged-input-ordinal

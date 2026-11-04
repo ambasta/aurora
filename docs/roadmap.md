@@ -185,6 +185,11 @@ identity, owns the temporary mapping and closes it after the effect-limited
 helper returns. This does not add source-issued mutable loans, mapping ownership
 or arbitrary mutable reborrows.
 
+Production pairs now also retain a first-member input wait while the second
+client runs. Source-owned bounded polls and idle wait slices preserve one serial
+owner, cumulative allowance and exact continuation identity. This is a fixed
+foreground wait consumer, not a general event reactor or asynchronous child API.
+
 Next: general program/service lifetimes and scheduling, restart-safe storage,
 partial I/O/backpressure and durable mounted writes. Gate each step with actual
 compiled consumers, stale/foreign authority, exhaustion, cancellation, owner death
