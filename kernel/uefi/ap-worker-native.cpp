@@ -2,8 +2,12 @@
 
 namespace aurora::uefi {
 extern auto enter() -> void asm("ap_worker_enter") __attribute__((visibility("hidden")));
-extern auto helper(std::int64_t, std::int64_t) -> std::int64_t asm("__au_runtime_ap_worker_sum_squares")
-    __attribute__((visibility("hidden")));
+class ChecksumResult final {
+public:
+    std::uint64_t status, value;
+};
+extern auto helper(ChecksumResult *, const std::byte *, std::int64_t, std::int64_t, std::int64_t)
+    -> void asm("__au_runtime_ap_worker_crc32c") __attribute__((visibility("hidden")));
 namespace {
 using U64 = std::uint64_t;
 using U32 = std::uint32_t;
@@ -17,12 +21,14 @@ class alignas(64) Request final {
 public:
     U64 publication, closed, incarnation, apic, bsp, root, stack_bottom, stack_top, reply, apic_base, pat, fixture;
     std::int64_t start, count;
+    U64 payload, release;
 };
 class alignas(64) Reply final {
 public:
     U64 state, apic, incarnation, sequence;
     std::int64_t result;
     U64 root, stack, apic_base, vector, error, rip, cr2, trap_guard;
+    U64 started;
 };
 static_assert(offsetof(Reply, vector) == 64 && offsetof(Reply, cr2) == 88 && offsetof(Reply, trap_guard) == 96);
 static_assert(__atomic_always_lock_free(sizeof(U64), nullptr));
@@ -61,6 +67,11 @@ auto read_root() -> U64 {
     asm volatile("mov %%cr3,%0" : "=r"(value));
     return value;
 }
+auto write_protected() -> bool {
+    U64 value;
+    asm volatile("mov %%cr0,%0" : "=r"(value));
+    return (value & 0x10000) != 0;
+}
 auto overlap(U64 a, U64 n, U64 b, U64 m) -> bool {
     return a < b + m && b < a + n;
 }
@@ -69,7 +80,7 @@ auto expected_leaf(U64 block, U64 low, U64 va, bool startup) -> U64 {
         return va | 1;
     if (startup && va == low)
         return va | 1;
-    if (va == block + L::request || va == block + L::idt)
+    if (va == block + L::request || va == block + L::idt || va == block + L::payload)
         return va | 1 | L::nx;
     if (va == block + L::reply || va == block + L::descriptors ||
         (va >= block + L::stack_bottom && va < block + L::stack_top) ||
@@ -153,8 +164,8 @@ auto verify_root(U64 base, unsigned used, U64 block, U64 low, bool startup) -> b
         }
     }
     const auto code_pages = (address(&text_end) - address(&text_begin)) / L::page;
-    // request/reply/descriptors/IDT + four main-stack + two IST pages.
-    return tables == used && leaves == code_pages + 10 + (startup ? 1 : 0);
+    // request/reply/descriptors/IDT/payload + four main-stack + two IST pages.
+    return tables == used && leaves == code_pages + 11 + (startup ? 1 : 0);
 }
 } // namespace
 
@@ -216,21 +227,56 @@ auto ap_worker_main(const Request *input) -> void {
             for (;;)
                 asm volatile("cli; hlt");
         }
-        // Copy scalars after acquire; no owner, pointer, view or source loan crosses CPUs.
+        // Copy bounded coordinates after acquire; the AP constructs its own invocation-only view.
+        // No source owner or source loan crosses CPUs.
         const auto start = input->start, count = input->count;
         if (input->fixture == U64(ApWorkerFixture::fault))
             asm volatile("ud2");
-        const auto result = helper(start, count);
+        if (start < 0 || count < 0 || count > 1024 || start > 4096 - count ||
+            input->payload != input->reply - L::reply + L::payload) {
+            __atomic_store_n(&output->trap_guard, U64{1}, __ATOMIC_RELEASE);
+            output->vector = 258;
+            __atomic_store_n(&output->state, state_fault, __ATOMIC_RELEASE);
+            for (;;)
+                asm volatile("cli; hlt");
+        }
+        // This receipt precedes helper entry, rather than withholding a result.
+        __atomic_store_n(&output->started, sequence, __ATOMIC_RELEASE);
+        if (input->fixture == U64(ApWorkerFixture::overlap)) {
+            U64 spins = 0;
+            while (__atomic_load_n(&input->release, __ATOMIC_ACQUIRE) != sequence) {
+                if (__atomic_load_n(&input->closed, __ATOMIC_ACQUIRE))
+                    for (;;)
+                        asm volatile("cli; hlt");
+                if (++spins == poll_limit) {
+                    __atomic_store_n(&output->trap_guard, U64{1}, __ATOMIC_RELEASE);
+                    output->vector = 259;
+                    __atomic_store_n(&output->state, state_fault, __ATOMIC_RELEASE);
+                    for (;;)
+                        asm volatile("cli; hlt");
+                }
+                asm volatile("pause");
+            }
+        }
+        ChecksumResult result{};
+        helper(&result, reinterpret_cast<const std::byte *>(input->payload), 4096, start, count);
+        if (result.status != 0 || result.value > 0xffffffffULL) {
+            __atomic_store_n(&output->trap_guard, U64{1}, __ATOMIC_RELEASE);
+            output->vector = 260;
+            __atomic_store_n(&output->state, state_fault, __ATOMIC_RELEASE);
+            for (;;)
+                asm volatile("cli; hlt");
+        }
         if (input->fixture == U64(ApWorkerFixture::withheld))
             for (;;)
                 asm volatile("pause");
         if (input->fixture == U64(ApWorkerFixture::late))
             while (!__atomic_load_n(&input->closed, __ATOMIC_ACQUIRE))
                 asm volatile("pause");
-        output->result = result;
+        output->result = static_cast<std::int64_t>(result.value);
         previous = sequence;
         // After release no access to this job's arguments/result remains. The
-        // BSP may reuse payload only after acquiring this exact completion.
+        // BSP may publish new control only after this exact completion is settled.
         __atomic_store_n(&output->state,
                          input->fixture == U64(ApWorkerFixture::malformed_status) ? U64{4} : state_done,
                          __ATOMIC_RELAXED);
@@ -241,9 +287,9 @@ auto ap_worker_main(const Request *input) -> void {
 auto ApWorkerNative::prepare(
     const ApWorkerAdmission &grant, const MemoryMap &map, U64 block, U64 low, U64 incarnation, ApWorkerFixture fixture)
     -> bool {
-    if (prepared_ || closed_ || !incarnation || U64(fixture) > U64(ApWorkerFixture::malformed_status) ||
-        block % L::page || block < 0x100000 || block > 0x100000000ULL - L::bytes || low % L::page || !low ||
-        low > 0xff000 || !map.owns(block, L::bytes) || !map.owns(low, L::page) ||
+    if (prepared_ || closed_ || !incarnation || U64(fixture) > U64(ApWorkerFixture::overlap) || block % L::page ||
+        block < 0x100000 || block > 0x100000000ULL - L::bytes || low % L::page || !low || low > 0xff000 ||
+        !map.owns(block, L::bytes) || !map.owns(low, L::page) ||
         overlap(block, L::bytes, grant.owned_arena(), Handoff::arena_bytes) || overlap(block, L::bytes, low, L::page) ||
         address(&text_begin) % L::page || address(&text_end) % L::page || address(&text_begin) >= address(&text_end) ||
         address(&text_begin) < grant.owned_arena() + Handoff::payload_offset ||
@@ -283,6 +329,10 @@ auto ApWorkerNative::prepare(
     in.apic_base = ApWorkerAdmission::physical_address | 0x800;
     in.pat = read_msr(0x277);
     in.fixture = U64(fixture);
+    in.payload = block + L::payload;
+    // Initialized once before sealing. This backing never changes or reclaims.
+    for (U64 i = 0; i < L::page; ++i)
+        reinterpret_cast<std::byte *>(in.payload)[i] = std::byte((i * 37 + 11) & 255);
     // Boot-selected negative observations cannot change the actual grant/root.
     if (fixture == ApWorkerFixture::wrong_identity)
         in.apic ^= 1;
@@ -348,7 +398,8 @@ auto ApWorkerNative::bsp_leaf(U64 va) const -> U64 * {
 }
 
 auto ApWorkerNative::seal() -> bool {
-    if (!prepared_ || sealed_ || closed_ || !verify_roots() || read_root() != grant_->kernel_root())
+    if (!prepared_ || sealed_ || closed_ || !verify_roots() || read_root() != grant_->kernel_root() ||
+        !write_protected())
         return false;
     for (unsigned pass = 0; pass != 2; ++pass) {
         for (U64 index = 0; index <= L::bytes / L::page; ++index) {
@@ -428,10 +479,10 @@ auto ApWorkerNative::fault_or_timeout(ApWorkerStatus status) -> ApWorkerResult {
     close();
     ApWorkerResult result;
     result.status = status;
-    result.apic = grant_->ap_id();
+    result.apic = grant_ ? grant_->ap_id() : 0;
     result.incarnation = incarnation_;
     result.sequence = sequence_;
-    if (status == ApWorkerStatus::fault) {
+    if (prepared_ && status == ApWorkerStatus::fault) {
         const auto &out = reply(block_);
         result.vector = out.vector;
         result.error = out.error;
@@ -440,42 +491,33 @@ auto ApWorkerNative::fault_or_timeout(ApWorkerStatus status) -> ApWorkerResult {
     }
     return result;
 }
-auto ApWorkerNative::await(bool readiness) -> ApWorkerResult {
+auto ApWorkerNative::await_ready() -> ApWorkerResult {
     const auto begin = clock();
     const auto &out = reply(block_);
     for (U64 count = 0; count != poll_limit; ++count) {
         const auto state = __atomic_load_n(&out.state, __ATOMIC_ACQUIRE);
         if (state == state_fault)
             return fault_or_timeout(ApWorkerStatus::fault);
-        if ((readiness && state == state_ready) ||
-            (!readiness && __atomic_load_n(&out.sequence, __ATOMIC_ACQUIRE) == sequence_)) {
-            if (!readiness) {
-                const auto committed_state = __atomic_load_n(&out.state, __ATOMIC_ACQUIRE);
-                if (committed_state == state_fault)
-                    return fault_or_timeout(ApWorkerStatus::fault);
-                if (committed_state != state_done)
-                    return fault_or_timeout(ApWorkerStatus::rejected);
-            }
+        if (state == state_ready) {
             if (out.apic != grant_->ap_id() || out.incarnation != incarnation_ || out.root != permanent_root() ||
                 out.stack < block_ + L::stack_bottom || out.stack >= block_ + L::stack_top ||
                 out.apic_base != (ApWorkerAdmission::physical_address | 0x800))
                 return fault_or_timeout(ApWorkerStatus::rejected);
             ApWorkerResult result;
-            result.status = readiness ? ApWorkerStatus::ready : ApWorkerStatus::done;
+            result.status = ApWorkerStatus::ready;
             result.apic = out.apic;
             result.incarnation = out.incarnation;
-            result.sequence = readiness ? 0 : sequence_;
-            result.value = readiness ? 0 : out.result;
             return result;
         }
-        if (grant_->pm_timer().delta(begin, clock()) >= wait_limit)
-            return fault_or_timeout(ApWorkerStatus::timeout);
+        if (state != 0 || grant_->pm_timer().delta(begin, clock()) >= wait_limit)
+            return fault_or_timeout(state != 0 ? ApWorkerStatus::rejected : ApWorkerStatus::timeout);
         asm volatile("pause");
     }
     return fault_or_timeout(ApWorkerStatus::timeout);
 }
 auto ApWorkerNative::start() -> ApWorkerResult {
-    if (!prepared_ || !sealed_ || started_ || closed_ || read_root() != grant_->kernel_root() || !verify_roots())
+    if (!prepared_ || !sealed_ || started_ || closed_ || read_root() != grant_->kernel_root() || !write_protected() ||
+        !verify_roots())
         return ApWorkerResult{};
     auto *apic = reinterpret_cast<volatile U32 *>(ApWorkerAdmission::virtual_address);
     if (!grant_->matches_registers(apic[0x20 / 4], apic[0x30 / 4]) || !wait_ticks(PmTimerAdmission::ticks_200us))
@@ -489,24 +531,92 @@ auto ApWorkerNative::start() -> ApWorkerResult {
         return fault_or_timeout(ApWorkerStatus::timeout);
     if (__atomic_load_n(&reply(block_).state, __ATOMIC_ACQUIRE) == 0 && !send_ipi(0x600 | U32(low_ >> 12)))
         return fault_or_timeout(ApWorkerStatus::timeout);
-    auto result = await(true);
+    auto result = await_ready();
     ready_ = result.status == ApWorkerStatus::ready;
     return result;
 }
-auto ApWorkerNative::submit(U64 incarnation, U64 sequence, std::int64_t start_value, std::int64_t count)
-    -> ApWorkerResult {
-    if (!ready_ || closed_ || incarnation != incarnation_ || !sequence || sequence_ == ~U64{0} ||
-        sequence != sequence_ + 1 || read_root() != grant_->kernel_root()) {
-        ApWorkerResult result;
-        result.status = ApWorkerStatus::rejected;
-        return result;
+auto ApWorkerNative::publish(U64 incarnation, U64 sequence, std::int64_t offset, std::int64_t count) -> ApWorkerResult {
+    if (!ready_ || closed_ || outstanding_ || incarnation != incarnation_ || !sequence || sequence_ == ~U64{0} ||
+        sequence != sequence_ + 1 || read_root() != grant_->kernel_root() || !write_protected() || offset < 0 ||
+        count < 0 || count > 1024 || offset > 4096 - count) {
+        return fault_or_timeout(ApWorkerStatus::rejected);
     }
     auto &in = request(block_);
-    in.start = start_value;
-    in.count = count;
+    outstanding_ = true;
+    terminal_ = false;
+    started_observation_ = 0;
     sequence_ = sequence;
+    in.start = offset;
+    in.count = count;
+    previous_sample_ = clock();
     __atomic_store_n(&in.publication, sequence, __ATOMIC_RELEASE);
-    return await(false);
+    ApWorkerResult result;
+    result.status = ApWorkerStatus::pending;
+    result.apic = grant_->ap_id();
+    result.incarnation = incarnation_;
+    result.sequence = sequence_;
+    return result;
+}
+auto ApWorkerNative::progress(U64 incarnation, U64 sequence, U64 ordinal) -> ApWorkerResult {
+    if (!ready_ || closed_ || !outstanding_ || terminal_ || incarnation != incarnation_ || sequence != sequence_ ||
+        !ordinal || observation_ == ~U64{0} || ordinal != observation_ + 1 || read_root() != grant_->kernel_root() ||
+        !write_protected())
+        return fault_or_timeout(ApWorkerStatus::rejected);
+    // Native tracks protocol freshness only. Source owns all work/time budgets.
+    observation_ = ordinal;
+    const auto &out = reply(block_);
+    const auto completed = __atomic_load_n(&out.sequence, __ATOMIC_ACQUIRE);
+    const auto state = __atomic_load_n(&out.state, __ATOMIC_ACQUIRE);
+    const auto begun = __atomic_load_n(&out.started, __ATOMIC_ACQUIRE);
+    const auto sampled = clock();
+    ApWorkerResult result;
+    result.ticks = grant_->pm_timer().delta(previous_sample_, sampled);
+    previous_sample_ = sampled;
+    result.ordinal = ordinal;
+    if (state == state_fault)
+        return fault_or_timeout(ApWorkerStatus::fault);
+    if (out.apic != grant_->ap_id() || out.incarnation != incarnation_ || out.root != permanent_root() ||
+        out.stack < block_ + L::stack_bottom || out.stack >= block_ + L::stack_top ||
+        out.apic_base != (ApWorkerAdmission::physical_address | 0x800) || completed < sequence_ - 1 ||
+        completed > sequence_ || begun < sequence_ - 1 || begun > sequence_ ||
+        (state == state_ready && sequence_ != 1) || (completed == sequence_ && begun != sequence_) ||
+        (state != state_ready && state != state_done) || (completed == sequence_ && state != state_done))
+        return fault_or_timeout(ApWorkerStatus::rejected);
+    result.status = completed == sequence_ ? ApWorkerStatus::done : ApWorkerStatus::pending;
+    result.apic = out.apic;
+    result.incarnation = out.incarnation;
+    result.sequence = sequence_;
+    result.started = begun == sequence_;
+    if (result.started)
+        started_observation_ = ordinal;
+    if (result.status == ApWorkerStatus::done) {
+        if (out.result < 0 || static_cast<U64>(out.result) > 0xffffffffULL)
+            return fault_or_timeout(ApWorkerStatus::rejected);
+        result.value = out.result;
+        terminal_ = true;
+    }
+    return result;
+}
+auto ApWorkerNative::settle(U64 incarnation, U64 sequence) -> bool {
+    if (closed_ || !outstanding_ || !terminal_ || incarnation != incarnation_ || sequence != sequence_ ||
+        read_root() != grant_->kernel_root() || !write_protected()) {
+        close();
+        return false;
+    }
+    outstanding_ = false;
+    terminal_ = false;
+    return true;
+}
+auto ApWorkerNative::release_overlap(U64 incarnation, U64 sequence, U64 ordinal) -> bool {
+    if (fixture_ != ApWorkerFixture::overlap || closed_ || !outstanding_ || terminal_ || incarnation != incarnation_ ||
+        sequence != sequence_ || !ordinal || ordinal != started_observation_ || ordinal != observation_ ||
+        read_root() != grant_->kernel_root() || !write_protected() ||
+        __atomic_load_n(&request(block_).release, __ATOMIC_ACQUIRE) >= sequence_) {
+        close();
+        return false;
+    }
+    __atomic_store_n(&request(block_).release, sequence, __ATOMIC_RELEASE);
+    return true;
 }
 auto ApWorkerNative::late_completion_seen() const -> bool {
     if (!closed_ || !started_)

@@ -51,7 +51,7 @@ native_snapshot_copy_object = custom_target('native-snapshot-copy',
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 native_ap_objects = []
 foreach ap_source : [['ap-worker', 'ap-worker-owner', ['--module-root', native_root / 'kernel/policies']],
-                     ['ap-helper', 'ap-worker-helper', []]]
+                     ['ap-helper', 'ap-worker-helper', ['--module-root', native_root / 'library']]]
   native_ap_objects += custom_target('native-' + ap_source[0],
       input: '../../examples/kernel-' + ap_source[0] + '.au', output: ap_source[0] + '.o',
       depfile: ap_source[0] + '.d',
@@ -127,7 +127,7 @@ foreach driver : [
     ['kernel-api', [], []],
 ]
   native_drivers += {driver[0]: executable('native-' + driver[0], files(driver[0] + '.cpp') +
-      (driver[0] == 'uefi-devices' ? [native_nvme_transport_object] + native_ap_objects : []),
+      (driver[0] == 'uefi-devices' ? [native_nvme_transport_object, ap_worker_budget_object] + native_ap_objects : []),
       native: true, install: false, override_options: ['optimization=1', 'warning_level=2'],
       cpp_args: driver[1], link_args: driver[2])}
 endforeach

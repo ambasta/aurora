@@ -9,6 +9,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+extern "C" bool __au_test_ap_worker_budget_case(bool);
+
 namespace kernel_ap_worker {
 namespace ap = aurora::ap;
 using ap::I64;
@@ -53,46 +55,53 @@ auto ready(Owner &owner) -> void {
     check(owner.startup_sent(1, 7));
     check(owner.ready(1, 7));
 }
-auto observation(const ap::Plan &plan, I64 result) -> ap::Observation {
-    return {1, plan.incarnation, plan.sequence, result, 0};
+auto observation(const ap::Plan &plan, I64 result, U64 status = 0) -> ap::Observation {
+    return {1, plan.incarnation, plan.sequence, result, status};
 }
 auto complete(Owner &owner, const ap::Plan &plan, I64 result) -> void {
     check(plan.incarnation == 7 && plan.sequence && owner.stage() == ap::Stage::reserved);
     check(owner.published(plan.incarnation, plan.sequence));
-    check(owner.observe(observation(plan, result)));
+    const auto ordinal = owner.reserve_observation(plan.incarnation, plan.sequence);
+    check(ordinal && owner.observe(observation(plan, result), ordinal, 3579546));
     check(owner.stage() == ap::Stage::completion_selected && owner.result() == result);
     check(owner.acknowledged(plan.incarnation, plan.sequence));
 }
 auto helper_cases() -> void {
-    // Reviewed golden sums. The 1024-term endpoints use n(n+1)(2n+1)/6,
-    // independently of the helper's iterative implementation.
+    // Published CRC32C check vector and empty CRC; no duplicate CRC algorithm.
+    std::uint8_t bytes[4096]{};
+    constexpr char vector[] = "123456789";
+    for (unsigned i = 0; i != 9; ++i)
+        bytes[i] = vector[i];
     struct Case {
-        I64 start, count, result;
+        I64 offset, count, length;
+        U64 status, result;
     };
     constexpr Case cases[] = {
-        {0, 1, 0},
-        {1, 1, 1},
-        {1, 3, 14},
-        {2, 4, 54},
-        {5, 3, 110},
-        {10, 4, 534},
-        {65535, 1, 4294836225},
-        {65535, 2, 8589803521},
-        {65535, 1024, 4466921004544},
-        {0, 1024, 357389824},
-        {1, 1024, 358438400},
-        {-1, 1, -1},
-        {65536, 1, -1},
-        {0, 0, -1},
-        {0, -1, -1},
-        {0, 1025, -1},
-        {std::numeric_limits<I64>::min(), 1, -1},
-        {std::numeric_limits<I64>::max(), 1, -1},
-        {0, std::numeric_limits<I64>::min(), -1},
-        {0, std::numeric_limits<I64>::max(), -1},
+        {0, 9, 4096, 0, 0xe3069283},
+        {0, 0, 4096, 0, 0},
+        {4096, 0, 4096, 0, 0},
+        {4095, 1, 4096, 0, 0x527d5351},
+        {-1, 1, 4096, 1, 0},
+        {4097, 0, 4096, 1, 0},
+        {4096, 1, 4096, 1, 0},
+        {0, -1, 4096, 1, 0},
+        {0, 1025, 4096, 1, 0},
+        {4090, 7, 4096, 1, 0},
+        {0, 0, 4095, 1, 0},
+        {0, 0, -1, 1, 0},
+        {0, std::numeric_limits<I64>::min(), 4096, 1, 0},
+        {std::numeric_limits<I64>::min(), 1, 4096, 1, 0},
+        {std::numeric_limits<I64>::max(), 1, 4096, 1, 0},
+        {0, std::numeric_limits<I64>::max(), 4096, 1, 0},
     };
-    for (const auto &item : cases)
-        check(ap::__au_runtime_ap_worker_sum_squares(item.start, item.count) == item.result);
+    for (const auto &item : cases) {
+        ap::ChecksumResult result;
+        ap::__au_runtime_ap_worker_crc32c(&result, bytes, item.length, item.offset, item.count);
+        check(result.status == item.status && result.value == item.result);
+    }
+    ap::ChecksumResult maximum;
+    ap::__au_runtime_ap_worker_crc32c(&maximum, bytes, 4096, 3072, 1024);
+    check(maximum.status == 0 && maximum.value <= UINT32_MAX);
 }
 auto startup_cases() -> void {
     Owner owner;
@@ -113,79 +122,104 @@ auto startup_cases() -> void {
 auto receipt_cases() -> void {
     Owner owner;
     ready(owner);
-    for (const auto pair :
-         {ap::Plan{0, 0, -1, 1}, ap::Plan{0, 0, 65536, 1}, ap::Plan{0, 0, 0, 0}, ap::Plan{0, 0, 0, 1025}})
+    for (const auto pair : {ap::Plan{0, 0, -1, 1},
+                            ap::Plan{0, 0, 4097, 0},
+                            ap::Plan{0, 0, 4096, 1},
+                            ap::Plan{0, 0, 0, -1},
+                            ap::Plan{0, 0, 0, 1025}})
         check(!owner.reserve(pair.start, pair.count).sequence);
     check(owner.stage() == ap::Stage::idle && owner.used() == 0 && owner.sequence() == 0);
     const auto first = owner.reserve(10, 4);
     check(first.sequence == 1 && first.start == 10 && first.count == 4);
     check(owner.used() == 4 && owner.remaining() == 4092 && owner.jobs() == 1);
-    check(!owner.reserve(1, 1).sequence && !owner.observe(observation(first, 534)));
+    check(!owner.reserve(1, 1).sequence && !owner.reserve_observation(7, 1));
     check(!owner.acknowledged(7, 1) && !owner.published(8, 1) && !owner.published(7, 2));
-    check(owner.stage() == ap::Stage::reserved && owner.used() == 4 && owner.published(7, 1));
-    check(!owner.published(7, 1) && !owner.acknowledged(7, 1));
+    check(owner.published(7, 1) && !owner.published(7, 1));
+    const auto ordinal = owner.reserve_observation(7, 1);
+    check(ordinal == 1 && owner.attempts() == 1 && !owner.reserve_observation(7, 1));
     for (const auto foreign :
-         {ap::Observation{2, 7, 1, 534, 0}, ap::Observation{1, 8, 1, 534, 0}, ap::Observation{1, 7, 0, 534, 0}})
-        check(!owner.observe(foreign) && owner.stage() == ap::Stage::running && owner.used() == 4);
-    check(owner.observe(observation(first, 534)) && !owner.observe(observation(first, 534)));
-    check(owner.stage() == ap::Stage::completion_selected && owner.acknowledged(7, 1));
-    check(!owner.acknowledged(7, 1) && !owner.observe(observation(first, 534)));
-    const auto second = owner.reserve(5, 3);
-    check(second.sequence == 2 && owner.used() == 7 && owner.jobs() == 2);
+         {ap::Observation{2, 7, 1, 0, 0}, ap::Observation{1, 8, 1, 0, 0}, ap::Observation{1, 7, 0, 0, 0}})
+        check(!owner.observe(foreign, ordinal, 0) && owner.stage() == ap::Stage::observation_reserved);
+    check(!owner.observe(observation(first, 0), 0, 0));
+    check(owner.observe(observation(first, 0, 1), ordinal, 17));
+    check(owner.stage() == ap::Stage::running && owner.ticks() == 3579529 && owner.attempts() == 1);
+    check(!owner.observe(observation(first, 0), ordinal, 0));
+    const auto second_ordinal = owner.reserve_observation(7, 1);
+    check(second_ordinal == 2 && !owner.observe(observation(first, 0), ordinal, 0));
+    check(owner.observe(observation(first, 0), second_ordinal, 16777215));
+    check(!owner.observe(observation(first, 0), second_ordinal, 0) && owner.acknowledged(7, 1));
+    check(!owner.acknowledged(7, 1));
+    const auto second = owner.reserve(4096, 0);
+    check(second.sequence == 2 && owner.used() == 4 && owner.attempts() == 0 && owner.ticks() == 3579546);
     check(owner.published(7, 2));
-    check(!owner.observe(observation(first, 534)) && owner.stage() == ap::Stage::running);
-    check(owner.observe(observation(second, 110)) && owner.acknowledged(7, 2));
-    check(owner.stage() == ap::Stage::idle && owner.sequence() == 2 && owner.result() == 110);
+    const auto third_ordinal = owner.reserve_observation(7, 2);
+    check(third_ordinal == 3 && !owner.observe(observation(first, 0), second_ordinal, 0));
+    check(owner.observe(observation(second, 0), third_ordinal, 0) && owner.acknowledged(7, 2));
+    check(owner.stage() == ap::Stage::idle && owner.result() == 0);
 }
 auto exhaustion_cases() -> void {
-    {
+    for (bool empty : {false, true}) {
         Owner owner;
         ready(owner);
-        for (U64 sequence = 1; sequence <= 8; ++sequence) {
-            const auto plan = owner.reserve(1, 1);
-            check(plan.sequence == sequence);
-            complete(owner, plan, 1);
-        }
-        check(owner.stage() == ap::Stage::exhausted && owner.jobs() == 8 && owner.used() == 8);
-        check(!owner.reserve(1, 1).sequence && !owner.fail() && owner.stage() == ap::Stage::exhausted);
-        check(!owner.begin_start(1, 8) && !owner.acknowledged(7, 8) && owner.sequence() == 8);
+        const U64 limit = empty ? 8 : 4;
+        for (U64 sequence = 1; sequence <= limit; ++sequence)
+            complete(owner, owner.reserve(empty ? 4096 : 0, empty ? 0 : 1024), 0);
+        check(owner.stage() == ap::Stage::exhausted && owner.jobs() == limit && owner.used() == (empty ? 0 : 4096));
+        check(!owner.reserve(0, 0).sequence && !owner.fail() && owner.stage() == ap::Stage::exhausted);
+        check(!owner.begin_start(1, 8) && !owner.acknowledged(7, limit));
     }
-    {
-        Owner owner;
-        ready(owner);
-        for (U64 sequence = 1; sequence <= 4; ++sequence)
-            complete(owner, owner.reserve(0, 1024), 357389824);
-        check(owner.stage() == ap::Stage::exhausted && owner.used() == 4096 && owner.remaining() == 0);
-        check(!owner.reserve(0, 1).sequence && owner.jobs() == 4);
-    }
-    {
-        Owner owner;
-        ready(owner);
-        for (U64 sequence = 1; sequence <= 3; ++sequence)
-            complete(owner, owner.reserve(0, 1024), 357389824);
-        complete(owner, owner.reserve(0, 1023), 356343295);
-        check(owner.remaining() == 1 && !owner.reserve(0, 2).sequence);
-        check(owner.stage() == ap::Stage::exhausted && owner.used() == 4095 && owner.sequence() == 4);
-    }
+    Owner owner;
+    ready(owner);
+    for (unsigned i = 0; i != 3; ++i)
+        complete(owner, owner.reserve(0, 1024), 0);
+    complete(owner, owner.reserve(0, 1023), 0);
+    check(owner.remaining() == 1 && !owner.reserve(0, 2).sequence);
+    check(owner.stage() == ap::Stage::exhausted && owner.used() == 4095 && owner.sequence() == 4);
 }
 auto malformed_cases() -> void {
     for (const auto bad : {ap::Observation{1, 7, 1, -1, 0},
-                           ap::Observation{1, 7, 1, 677, 0},
-                           ap::Observation{1, 7, 1, 534, 1},
-                           ap::Observation{1, 7, 2, 534, 0},
-                           ap::Observation{1, 7, UINT64_MAX, 534, 0}}) {
+                           ap::Observation{1, 7, 1, 4294967296, 0},
+                           ap::Observation{1, 7, 1, 0, 2},
+                           ap::Observation{1, 7, 2, 0, 0},
+                           ap::Observation{1, 7, UINT64_MAX, 0, 0}}) {
         Owner owner;
         ready(owner);
         const auto plan = owner.reserve(10, 4);
-        check(owner.published(7, 1) && !owner.observe(bad));
-        check(owner.stage() == ap::Stage::failed && owner.used() == 4 && owner.sequence() == 1);
-        check(!owner.observe(observation(plan, 534)) && !owner.acknowledged(7, 1));
+        check(owner.published(7, 1));
+        const auto ordinal = owner.reserve_observation(7, 1);
+        check(!owner.observe(bad, ordinal, 0) && owner.stage() == ap::Stage::failed);
+        check(owner.used() == 4 && owner.sequence() == 1 && owner.attempts() == 1);
+        check(!owner.observe(observation(plan, 0), ordinal, 0) && !owner.acknowledged(7, 1));
         check(!owner.reserve(1, 1).sequence && !owner.begin_start(1, 8));
-        check(owner.stage() == ap::Stage::failed && owner.result() == 0);
     }
+    // A bound future ordinal closes even before any observation was reserved.
+    Owner owner;
+    ready(owner);
+    const auto plan = owner.reserve(0, 0);
+    check(!owner.observe(observation(plan, 0), 1, 0) && owner.stage() == ap::Stage::failed);
+}
+auto timing_cases() -> void {
+    for (U64 delta : {U64(3579546), U64(3579547), U64(16777215), U64(16777216), U64(UINT64_MAX)}) {
+        Owner owner;
+        ready(owner);
+        const auto plan = owner.reserve(0, 0);
+        check(owner.published(7, 1));
+        const auto ordinal = owner.reserve_observation(7, 1);
+        check(!owner.observe(observation(plan, 0, 1), ordinal, delta));
+        check(owner.stage() == ap::Stage::failed && !owner.reserve_observation(7, 1));
+    }
+    Owner owner;
+    ready(owner);
+    const auto plan = owner.reserve(0, 0);
+    check(owner.published(7, 1));
+    auto ordinal = owner.reserve_observation(7, 1);
+    check(owner.observe(observation(plan, 0, 1), ordinal, 3579545) && owner.ticks() == 1);
+    ordinal = owner.reserve_observation(7, 1);
+    check(!owner.observe(observation(plan, 0, 1), ordinal, 1) && owner.stage() == ap::Stage::failed);
+    check(owner.attempts() == 2 && !owner.observe(observation(plan, 0), ordinal, 0));
 }
 auto failure_cases() -> void {
-    for (unsigned step = 0; step <= 6; ++step) {
+    for (unsigned step = 0; step <= 7; ++step) {
         Owner owner;
         create(owner);
         if (step >= 1)
@@ -199,12 +233,15 @@ auto failure_cases() -> void {
         if (step >= 5)
             check(owner.published(7, 1));
         if (step >= 6)
-            check(owner.observe({1, 7, 1, 1, 0}));
-        const auto used = owner.used(), sequence = owner.sequence();
+            check(owner.reserve_observation(7, 1) == 1);
+        if (step >= 7)
+            check(owner.observe({1, 7, 1, 1, 0}, 1, 0));
+        const auto used = owner.used(), sequence = owner.sequence(), attempts = owner.attempts();
         check(!owner.fail() && owner.stage() == ap::Stage::failed && !owner.fail());
         check(!owner.begin_start(1, 7) && !owner.startup_sent(1, 7) && !owner.ready(1, 7));
         check(!owner.reserve(1, 1).sequence && !owner.published(7, 1) && !owner.acknowledged(7, 1));
-        check(owner.used() == used && owner.sequence() == sequence && owner.stage() == ap::Stage::failed);
+        check(!owner.reserve_observation(7, 1) && !owner.observe({1, 7, 1, 0, 0}, 1, 0));
+        check(owner.used() == used && owner.sequence() == sequence && owner.attempts() == attempts);
     }
 }
 auto context_cases() -> void {
@@ -248,6 +285,9 @@ auto main() -> int {
     receipt_cases();
     exhaustion_cases();
     malformed_cases();
+    timing_cases();
+    check(__au_test_ap_worker_budget_case(false));
+    check(__au_test_ap_worker_budget_case(true));
     failure_cases();
     context_cases();
     std::printf("AP worker: %u checks passed\n", checks);

@@ -12,6 +12,7 @@ enum class Stage : U64 {
     idle,
     reserved,
     running,
+    observation_reserved,
     completion_selected,
     failed,
     exhausted
@@ -26,6 +27,10 @@ struct Observation final {
     U64 status;
 };
 static_assert(sizeof(Observation) == 40 && offsetof(Observation, result) == 24);
+struct ChecksumResult final {
+    U64 status{}, value{};
+};
+static_assert(sizeof(ChecksumResult) == 16 && offsetof(ChecksumResult, value) == 8);
 extern "C" {
 void __au_runtime_ap_worker_create(void *);
 bool __au_runtime_ap_worker_begin_start(void *, U64, U64);
@@ -33,7 +38,11 @@ bool __au_runtime_ap_worker_startup_sent(void *, U64, U64);
 bool __au_runtime_ap_worker_ready(void *, U64, U64);
 bool __au_runtime_ap_worker_reserve(void *, I64, I64);
 bool __au_runtime_ap_worker_published(void *, U64, U64);
-bool __au_runtime_ap_worker_observe(void *, const Observation *);
+U64 __au_runtime_ap_worker_reserve_observation(void *, U64, U64);
+bool __au_runtime_ap_worker_observe(void *, const Observation *, U64, U64);
+U64 __au_runtime_ap_worker_ordinal(const void *);
+U64 __au_runtime_ap_worker_attempts(const void *);
+U64 __au_runtime_ap_worker_ticks(const void *);
 bool __au_runtime_ap_worker_acknowledged(void *, U64, U64);
 bool __au_runtime_ap_worker_fail(void *);
 Stage __au_runtime_ap_worker_stage(const void *);
@@ -46,7 +55,7 @@ U64 __au_runtime_ap_worker_incarnation(const void *);
 U64 __au_runtime_ap_worker_target(const void *);
 I64 __au_runtime_ap_worker_start(const void *);
 I64 __au_runtime_ap_worker_count(const void *);
-I64 __au_runtime_ap_worker_sum_squares(I64, I64);
+void __au_runtime_ap_worker_crc32c(ChecksumResult *, const std::uint8_t *, I64, I64, I64);
 }
 
 // Bootstrap storage and synchronous exclusion, not a second lifecycle policy.
@@ -125,7 +134,7 @@ public:
                     __au_runtime_ap_worker_count(storage_)};
             require(__au_runtime_ap_worker_stage(storage_) == Stage::reserved && plan.incarnation && plan.sequence &&
                     plan.sequence <= 8 && plan.start == start && plan.count == count && plan.start >= 0 &&
-                    plan.start <= 65535 && plan.count > 0 && plan.count <= 1024);
+                    plan.start <= 4096 && plan.count >= 0 && plan.count <= 1024 && plan.count <= 4096 - plan.start);
         }
         leave();
         return plan;
@@ -133,8 +142,23 @@ public:
     auto published(U64 incarnation, U64 sequence) -> bool {
         return transition<__au_runtime_ap_worker_published>(incarnation, sequence);
     }
-    auto observe(Observation observed) -> bool {
-        return transition<__au_runtime_ap_worker_observe>(&observed);
+    auto reserve_observation(U64 incarnation, U64 sequence) -> U64 {
+        enter(true);
+        const auto ordinal = __au_runtime_ap_worker_reserve_observation(storage_, incarnation, sequence);
+        leave();
+        return ordinal;
+    }
+    auto observe(Observation observed, U64 ordinal, U64 ticks) -> bool {
+        return transition<__au_runtime_ap_worker_observe>(&observed, ordinal, ticks);
+    }
+    auto ordinal() const -> U64 {
+        return query<__au_runtime_ap_worker_ordinal>();
+    }
+    auto attempts() const -> U64 {
+        return query<__au_runtime_ap_worker_attempts>();
+    }
+    auto ticks() const -> U64 {
+        return query<__au_runtime_ap_worker_ticks>();
     }
     auto acknowledged(U64 incarnation, U64 sequence) -> bool {
         return transition<__au_runtime_ap_worker_acknowledged>(incarnation, sequence);

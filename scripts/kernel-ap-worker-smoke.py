@@ -2,8 +2,12 @@
 """Cold-boot the one standalone UEFI AP-worker image through its closed cases.
 
 Uses the original QEMU clock, stock pinned QEMU and the clean CODE/VARS fixture.
-The reviewed results are sums of squares over the eight intervals [3+i, 515+i).
+The reviewed results are CRC32C over an immutable 4096-byte (i*37+11)&255
+pattern: (offset,count) = (4096,0), (4095,1), (1,511), (512,512),
+(1024,512), (1536,512), (2048,1024), (3072,1024).
 Serial completion also requires the ordinary BSP memory/readback/release checks.
+The overlap case requires BSP work while an authenticated AP job is outstanding;
+it does not establish simultaneous instruction execution or a speedup.
 Retained backing and a closed owner are not AP-stop or reclamation evidence.
 """
 
@@ -129,9 +133,14 @@ def validate(status, text, case, results):
             expected.append("AURORA_AP_LATE_IGNORED")
         expected.append(f"AURORA_AP_QUARANTINED: status={case['status']} retained=1 retry=0")
     else:
-        expected += [
-            f"AURORA_AP_RESULT: sequence={sequence} value={value}" for sequence, value in enumerate(results, 1)
-        ]
+        for sequence, value in enumerate(results, 1):
+            if case.get("overlap"):
+                expected += [
+                    f"AURORA_AP_STARTED: sequence={sequence}",
+                    f"AURORA_AP_BSP_WORK: sequence={sequence} value={case['bsp_work']}",
+                    f"AURORA_AP_RELEASED: sequence={sequence}",
+                ]
+            expected.append(f"AURORA_AP_RESULT: sequence={sequence} value={value}")
         expected.append("AURORA_AP_EXHAUSTED: jobs=8 work=4096 retained=1")
     need(ap_lines == expected, "AP transcript differs from reviewed results/quarantine sequence")
     need(

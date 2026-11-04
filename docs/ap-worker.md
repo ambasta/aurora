@@ -1,7 +1,7 @@
 # Bounded second-CPU execution
 
-The standalone UEFI `ap-worker` image executes compiled Aurora arithmetic on a
-second processor. It is a multicore kernel substrate, not production SMP
+The standalone UEFI `ap-worker` image executes the existing compiled Aurora CRC32C library over
+immutable bytes on a second processor without blocking the BSP caller. It is a multicore kernel substrate, not production SMP
 scheduling. The ordinary process/console timer admission still requires one
 enabled processor; this mode does not run those consumers.
 
@@ -16,18 +16,39 @@ neither a numeric selector nor the firmware description itself grants access.
 
 `kernel::ApWorkerOwner` remains exclusively on the BSP. It owns the single
 startup attempt, lifecycle, eight nonreused job sequences and 4096 cumulative
-work units. Reservation spends the allowance before publication. The native
+input bytes. Reservation spends the allowance before publication. Zero-length
+ranges spend a sequence but no bytes. Publication is recorded in source immediately
+after the physical release, before BSP work or progress sampling. The native
 adapter authenticates the exact retained root, BSP and CR3, with interrupts
 disabled, before and after each synchronous loan. No loan crosses MMIO,
 polling, a CPU switch or AP execution. Native sequence tracking authenticates
 the physical mailbox protocol; it does not duplicate source quota policy.
 
-The AP runs one closed scalar operation: sum the squares of `count` consecutive
-integers beginning at `start`. Admission requires `0 <= start <= 65535` and
-`1 <= count <= 1024`; every intermediate and result fits signed 64-bit
-arithmetic. The helper has no imports, allocation, callbacks, pointers or
-borrowed owners. This does not introduce concurrent Aurora objects or a general
-language memory model.
+The AP runs the checked `std::crc32c` library over a dedicated 4096-byte page.
+Admission requires `0 <= offset <= 4096`, `0 <= count <= 1024` and
+`count <= 4096 - offset`. Empty ranges are valid and CRC zero is a value, not an
+error marker. The authenticated bridge constructs an invocation-only readonly
+span; no lexical borrow crosses processors. Its complete imported code and trap
+closure are mapped and checked. There is no allocation, callback, arbitrary AP
+program, concurrent Aurora object or general language memory-model extension.
+
+Publication, progress and settlement are separate operations. Only one job can
+be outstanding. Each source-reserved observation spends one of 50,000,000 attempts
+per job before the native acquire sample, including a terminal sample. Ordinals
+are unique across jobs. Pending calls never renew authority. Source acknowledgment
+and exact native settlement are both required before another range can publish.
+Source failure after publication fail-stops; it never becomes an unsubmitted job.
+
+Each job also starts with 3,579,546 PM ticks of observation allowance. Pending
+samples subtract the width-masked delta since the preceding sample; reaching the
+remaining allowance closes the worker. Completion wins over expiry on the final
+authorized sample, preserving the previous synchronous behavior. The counters
+reset only on a new admitted job, never on a progress call or intervening BSP work.
+Accumulated deltas represent elapsed time only if every intersample gap is shorter
+than the 24-bit counter period (about 4.69 seconds). Whole wraps are not detectable.
+This is a bounded observation protocol with conditional elapsed-time detection,
+**not an unconditional one-second deadline**. Finite work does not bound physical
+time; backing safety never depends on that timing assumption.
 
 ## Startup and memory
 
@@ -38,12 +59,17 @@ enters a reclaimable allocator.
 
 Startup and permanent AP roots have independent, software-frozen ancestors.
 Their whitelist contains only the page-separated AP code/helper, private
-descriptors, guarded stack/IST, readonly request and writable reply. The
+descriptors, guarded stack/IST, readonly request and payload, and writable reply. The
 permanent root omits the low startup page. BSP owner state, allocators, general
 kernel data, firmware windows and page-table storage are absent. The complete
 BSP tree is checked after sealing the low page and all worker pages readonly,
 except its writable request page. No writable executable alias is admitted.
-Expected hardware accessed/dirty updates do not confer software mutation rights.
+The payload is initialized before startup and readonly in both roots; CR0.WP
+remains required. All aliases and ancestors are checked, not just its designated
+leaf. The separate writable request/control page is governed by the one-job
+protocol and is not described as globally immutable. No payload resealing,
+mutation or reclamation is supported. Expected hardware accessed/dirty updates
+do not confer software mutation rights.
 
 Directed INIT/SIPI occurs after ExitBootServices. A unique checked FADT admits
 only the pinned q35 PM-timer port `0x608`, read with a 32-bit input instruction.
@@ -91,11 +117,20 @@ one unchanged image, the existing fw_cfg case word and the existing QEMU
 transport, with a 30-second cap for each cold boot.
 
 Normal acceptance requires actual BSP0/AP1 execution with distinct roots, eight
-different exact results, source exhaustion and subsequent BSP page
+exact CRC results (including empty and boundary ranges), source exhaustion and subsequent BSP page
 allocation/write/read/release and language execution. Other rows exercise a
 real AP invalid-opcode fault, withheld/late completion, expected-identity/root
 mismatch, nonadvancing timing, invalid copied low-page ownership, malformed
 copied MADT/FADT, malformed AP completion, and unsupported topology/vendor.
+The overlap row uses an exact job-start receipt before helper entry, followed by
+actual BSP physical-page allocation/write/read/release, then a bounded fixture
+release and AP completion. This proves an outstanding AP job no longer blocks
+BSP work, not simultaneous instruction execution or a speedup. Normal operation
+has no such handshake. Three further rows exercise real native refusal of a second
+publication, repeated observation ordinal and premature settlement. All retain
+backing and close permanently. This remains a substrate/library consumer, not
+production boot validation or production SMP integration.
+
 Hosted tests execute the compiled owner/helper and cover stale/foreign/duplicate
 receipts and boundary arithmetic; they do not replace physical guest evidence.
 The checked startup-attempt record denotes the native ICR-write boundary, not

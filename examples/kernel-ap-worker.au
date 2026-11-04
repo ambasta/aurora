@@ -22,8 +22,9 @@ auto ap_worker_owner_reserve(kernel::ApWorkerOwner& owner, i64 start, i64 count)
 auto ap_worker_owner_published(kernel::ApWorkerOwner& owner, u64 incarnation, u64 sequence) -> bool {
     return owner.published(incarnation, sequence);
 }
-auto ap_worker_owner_observe(kernel::ApWorkerOwner& owner, kernel::ApWorkerObservation observed) -> bool {
-    return owner.observe(observed);
+auto ap_worker_owner_observe(kernel::ApWorkerOwner& owner, kernel::ApWorkerObservation observed, u64 ordinal,
+    u64 ticks) -> bool {
+    return owner.observe(observed, ordinal, ticks);
 }
 auto ap_worker_owner_acknowledged(kernel::ApWorkerOwner& owner, u64 incarnation, u64 sequence) -> bool {
     return owner.acknowledged(incarnation, sequence);
@@ -60,4 +61,16 @@ auto ap_worker_owner_start(const kernel::ApWorkerOwner& owner) -> i64 {
 }
 auto ap_worker_owner_count(const kernel::ApWorkerOwner& owner) -> i64 {
     return owner.count();
+}
+auto ap_worker_owner_reserve_observation(kernel::ApWorkerOwner& owner, u64 incarnation, u64 sequence) -> u64 {
+    return owner.reserve_observation(incarnation, sequence);
+}
+auto ap_worker_owner_attempts(const kernel::ApWorkerOwner& owner) -> u64 {
+    return owner.attempts();
+}
+auto ap_worker_owner_ticks(const kernel::ApWorkerOwner& owner) -> u64 {
+    return owner.ticks();
+}
+auto ap_worker_owner_ordinal(const kernel::ApWorkerOwner& owner) -> u64 {
+    return owner.ordinal();
 }
