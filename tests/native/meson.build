@@ -378,8 +378,7 @@ if get_option('kernel_images')
   uefi_smoke = files('../../scripts/kernel-uefi-smoke.sh')
   test('guest-uefi-ap-worker', python,
        args: ['-B', files('../../scripts/kernel-ap-worker-smoke.py'), '--run-only',
-              meson.project_build_root() / 'kernel-images/uefi/ap-worker', '--output-dir',
-              meson.project_build_root() / 'ap-worker-guests'],
+              meson.project_build_root() / 'kernel-images/uefi/ap-worker'],
        depends: kernel_profile_images['uefi/ap-worker'],
        suite: ['guest', 'guest-ap-worker'], workdir: native_root, timeout: 120, is_parallel: false)
   foreach family : profile_data['guests'].split('|')
