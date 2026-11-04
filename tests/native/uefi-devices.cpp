@@ -3,6 +3,7 @@
 #include "../kernel-uefi-bar-record.cpp"
 #include "../kernel-uefi-ivrs.cpp"
 #include "../kernel-nvme-queues-api.cpp"
+#include "../kernel-ap-worker.cpp"
 #include "driver.hpp"
 
 auto main(int argc, char **argv) -> int {
@@ -13,5 +14,6 @@ auto main(int argc, char **argv) -> int {
                                   {"kernel-uefi-bar-record", kernel_uefi_bar_record::main},
                                   {"kernel-uefi-ivrs", kernel_uefi_ivrs::main},
                                   {"kernel-nvme-queues-api", kernel_nvme_queues_api::main},
+                                  {"kernel-ap-worker", kernel_ap_worker::main},
                               });
 }

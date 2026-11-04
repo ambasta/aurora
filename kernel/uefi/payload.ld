@@ -2,7 +2,16 @@ ENTRY(uefi_payload_entry)
 PHDRS { text PT_LOAD FLAGS(5); read PT_LOAD FLAGS(4); data PT_LOAD FLAGS(6); }
 SECTIONS {
  . = 0;
- .text : { *(.text.entry) *(.text .text.*) } :text
+ .text : {
+   *(.text.entry)
+#ifdef AURORA_UEFI_AP_WORKER
+   . = ALIGN(4096); __ap_worker_text_begin = .;
+   *(.text.ap_worker .text.ap_worker.*)
+   *ap-helper.o(.text .text.*)
+   . = ALIGN(4096); __ap_worker_text_end = .;
+#endif
+   *(.text .text.*)
+ } :text
  . = ALIGN(4096); __payload_text_end = .;
  .rodata : { *(.rodata .rodata.*) } :read
  . = ALIGN(4096); __payload_read_end = .;

@@ -512,6 +512,7 @@ BIOS_FIXTURE_MODES = {
 # Base flags plus bounded variants mirror the existing admitted profiles.
 UEFI_FAMILIES = [
     ([], {"normal": []}),
+    (["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_AP_WORKER"], {"ap-worker": []}),
     # The boot volume, frame allocator, export and processes (kernel/uefi/process.md),
     # selected by a fw_cfg row and case word read at loader entry.
     (
@@ -1179,6 +1180,7 @@ def uefi_profile(profile_mode, flags):
     event = mode == "iommu-event"
     nvme = mode in ("nvme", "process-fixture") or profile_mode == "production"
     process = mode == "process-fixture" or profile_mode == "production"
+    ap_worker = mode == "ap-worker"
     user_mode = "normal"
     if mode.startswith("runtime-") and mode[8:] in ("owned-text", "fixture"):
         user_mode = mode[8:]
@@ -1295,6 +1297,11 @@ def uefi_profile(profile_mode, flags):
         for name in ("payload-entry", "memory", "transition")
     }
     runtime_objects = []
+    if ap_worker:
+        for name in ("ap-worker-native", "ap-worker"):
+            cpp[name] = "kernel/uefi/" + name + ".cpp"
+        for name in ("ap-worker-start", "ap-worker-traps"):
+            assembly[name] = dict(source="kernel/uefi/" + name + ".S", flags=["--64"])
     if runtime:
         runtime_flags = (["--defsym", "AURORA_IPC=1"] if ipc else []) + (
             ["--defsym", "AURORA_SERVICE_BUDGET=1"] if budget else []
@@ -1380,6 +1387,8 @@ def uefi_profile(profile_mode, flags):
         (process, "snapshot-copy", "snapshot-copy", "snapshot-copy", []),
         (process, "budget-root", "budget-root", "budget-root", ["kernel/policies"]),
         (nvme, "nvme-transport-owner", "nvme-transport", "nvme-transport-owner", ["kernel/policies"]),
+        (ap_worker, "ap-worker-owner", "ap-worker", "ap-worker-owner", ["kernel/policies"]),
+        (ap_worker, "ap-helper", "ap-helper", "ap-worker-helper", []),
         (process, "execution-lifecycle", "execution-lifecycle", "execution-lifecycle", ["kernel/policies"]),
         (process, "service-root", "service-root", "service-root", ["kernel/policies"]),
         (process, "endpoint-root", "endpoint-root", "endpoint-root", ["kernel/policies"]),
@@ -1419,6 +1428,7 @@ def uefi_profile(profile_mode, flags):
         + (["framebuffer"] if framebuffer else [])
         + (["event-intake"] if event else [])
         + (["nvme"] if nvme else [])
+        + (["ap-worker-native", "ap-worker", "ap-worker-start", "ap-worker-traps"] if ap_worker else [])
         + (["process", "process-user", "process-exceptions"] if process else []),
         closed=program,
         # Closed objects keep local symbols and referenced reflection only.

@@ -3,6 +3,9 @@
 #include <cstdint>
 #include <span>
 #include "runtime-layout.hpp"
+#ifdef AURORA_UEFI_AP_WORKER
+#include "ap-worker-cases.hpp"
+#endif
 #if defined(AURORA_PLATFORM_FIXTURE) || defined(AURORA_DISPLAY_FIXTURE) || defined(AURORA_DEVICE_FIXTURE) ||           \
     defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_SNAPSHOT_FIXTURE) || defined(AURORA_TEXT_FIXTURE) ||             \
     defined(AURORA_PROCESS_FIXTURE)
@@ -132,7 +135,17 @@ public:
     static constexpr std::size_t readonly_profile_word = case_word;
     static constexpr std::size_t bar_record_word = 160;
     static constexpr std::size_t composition_word = 176;
-#if defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_PRODUCTION)
+#if defined(AURORA_UEFI_AP_WORKER)
+    // Standalone worker mode: a separate boot-owned startup page and pinned
+    // execution block. Neither address is authority without final-map evidence.
+    static constexpr std::size_t worker_case_word = 128;
+    static constexpr std::size_t worker_low_word = 136;
+    static constexpr std::size_t worker_block_word = 144;
+    static constexpr std::size_t worker_pages_word = 152;
+    static constexpr std::uint64_t worker_pages = 64;
+    static constexpr std::uint64_t worker_request_offset = 0x20000;
+    static constexpr std::size_t header = 160;
+#elif defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_PRODUCTION)
     static constexpr std::size_t fixture_offset = 168;
     static constexpr std::size_t header = 184;
 #elif defined(AURORA_LOADER_FIXTURE)
@@ -213,6 +226,14 @@ public:
         if (bytes.size() != header)
             return false;
         const Bytes h{bytes};
+#ifdef AURORA_UEFI_AP_WORKER
+        const auto low = h.get(worker_low_word), block = h.get(worker_block_word);
+        if (h.get(8, 4) != 2 || !ap_worker::admitted_case(h.get(worker_case_word)) ||
+            h.get(worker_pages_word) != worker_pages || low < 4096 || low > 0xff000 || low % 4096 || block < 0x100000 ||
+            block % 4096 || block > 0x100000000ULL - worker_pages * 4096 ||
+            (block < actual + arena_bytes && actual < block + worker_pages * 4096))
+            return false;
+#endif
 #ifdef AURORA_LOADER_FIXTURE
         if (!loader_fixture::admitted(h.get(fixture_offset)))
             return false;

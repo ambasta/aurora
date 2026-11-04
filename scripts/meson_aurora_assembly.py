@@ -216,6 +216,7 @@ def validate_native_abi(facts, source):
                 "kernel::MemoryVerdict",
                 "kernel::BudgetVerdict",
                 "kernel::BudgetCharge",
+                "kernel::ApWorkerStage",
                 "kernel::TransportStage",
                 "kernel::TransportCompletionKind",
                 "kernel::SchedulerPhase",
@@ -420,6 +421,52 @@ def validate_native_abi(facts, source):
             ("poisoned", [], "bool", False),
         ):
             borrowed_entry(nominal, "nvme_transport_owner_" + name, tail, result, mutable)
+
+    if "# RETAINED_AP_WORKER_ABI:" in source:
+        nominal = retained_root("kernel::ApWorkerOwner", reservation=128)
+        enum(
+            "kernel::ApWorkerStage",
+            "fresh startup_reserved starting idle reserved running completion_selected failed exhausted",
+        )
+        record(
+            "kernel::ApWorkerObservation",
+            40,
+            [
+                (name, "i64" if name == "observed_result" else "u64", 0)
+                for name in (
+                    "observed_apic",
+                    "observed_incarnation",
+                    "observed_sequence",
+                    "observed_result",
+                    "observed_status",
+                )
+            ],
+        )
+        entry("ap_worker_owner_create", [], "kernel::ApWorkerOwner")
+        for name, tail, result, mutable in (
+            ("begin_start", ["u64", "u64"], "bool", True),
+            ("startup_sent", ["u64", "u64"], "bool", True),
+            ("ready", ["u64", "u64"], "bool", True),
+            ("reserve", ["i64", "i64"], "bool", True),
+            ("published", ["u64", "u64"], "bool", True),
+            ("observe", ["kernel::ApWorkerObservation"], "bool", True),
+            ("acknowledged", ["u64", "u64"], "bool", True),
+            ("fail", [], "bool", True),
+            ("stage", [], "kernel::ApWorkerStage", False),
+            ("sequence", [], "u64", False),
+            ("used", [], "u64", False),
+            ("remaining", [], "u64", False),
+            ("jobs", [], "u64", False),
+            ("result", [], "i64", False),
+            ("incarnation", [], "u64", False),
+            ("target", [], "u64", False),
+            ("start", [], "i64", False),
+            ("count", [], "i64", False),
+        ):
+            borrowed_entry(nominal, "ap_worker_owner_" + name, tail, result, mutable)
+
+    if "# AP_WORKER_HELPER_ABI:" in source:
+        entry("ap_worker_sum_squares", ["i64", "i64"], "i64")
 
     if "# RETAINED_SERVICE_ABI:" in source:
         nominal = retained_root("kernel::ServiceIncarnation")

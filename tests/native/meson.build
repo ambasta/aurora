@@ -49,6 +49,17 @@ native_snapshot_copy_object = custom_target('native-snapshot-copy',
               '--source', '@INPUT@', '--local-symbols', '--referenced-reflection-only',
               '--bridge', native_root / 'kernel/uefi/snapshot-copy-entry.S',
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+native_ap_objects = []
+foreach ap_source : [['ap-worker', 'ap-worker-owner', ['--module-root', native_root / 'kernel/policies']],
+                     ['ap-helper', 'ap-worker-helper', []]]
+  native_ap_objects += custom_target('native-' + ap_source[0],
+      input: '../../examples/kernel-' + ap_source[0] + '.au', output: ap_source[0] + '.o',
+      depfile: ap_source[0] + '.d',
+      command: [python, '-B', native_fixture, '--compiler', aurorac,
+                '--source', '@INPUT@', '--local-symbols', '--referenced-reflection-only',
+                '--bridge', native_root / 'kernel/uefi' / (ap_source[1] + '-entry.S'),
+                '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'] + ap_source[2])
+endforeach
 native_uefi_object = custom_target('native-uefi-policy',
     input: '../../examples/kernel.au', output: 'uefi-policy.o',
     depfile: 'uefi-policy.d',
@@ -116,7 +127,7 @@ foreach driver : [
     ['kernel-api', [], []],
 ]
   native_drivers += {driver[0]: executable('native-' + driver[0], files(driver[0] + '.cpp') +
-      (driver[0] == 'uefi-devices' ? [native_nvme_transport_object] : []),
+      (driver[0] == 'uefi-devices' ? [native_nvme_transport_object] + native_ap_objects : []),
       native: true, install: false, override_options: ['optimization=1', 'warning_level=2'],
       cpp_args: driver[1], link_args: driver[2])}
 endforeach
@@ -345,7 +356,7 @@ endforeach
 foreach entry : [['iommu-models', 'kernel-dormant-tables'], ['iommu-models', 'kernel-dormant-decoder'],
                  ['iommu-models', 'kernel-iommu-oracle'], ['iommu-models', 'kernel-iommu-event-completion'],
                  ['kernel-api', 'kernel-dormant-api'], ['kernel-api', 'kernel-pin-api'],
-                 ['uefi-devices', 'kernel-nvme-queues-api']]
+                 ['uefi-devices', 'kernel-nvme-queues-api'], ['uefi-devices', 'kernel-ap-worker']]
   test(entry[1], native_drivers[entry[0]], args: [entry[1]], suite: ['full', 'merge', 'slow', 'integration'],
        env: native_test_env, timeout: 120)
 endforeach
@@ -365,6 +376,11 @@ endif
 # is also in the release suite.
 if get_option('kernel_images')
   uefi_smoke = files('../../scripts/kernel-uefi-smoke.sh')
+  test('guest-uefi-ap-worker', python,
+       args: ['-B', files('../../scripts/kernel-ap-worker-smoke.py'), '--run-only',
+              meson.project_build_root() / 'kernel-images/uefi/ap-worker'],
+       depends: kernel_profile_images['uefi/ap-worker'],
+       suite: ['guest', 'guest-ap-worker'], workdir: native_root, timeout: 120, is_parallel: false)
   foreach family : profile_data['guests'].split('|')
     foreach mode : profile_data['guests.' + family].split('|')
       canonical = profile_data.get('aliases.uefi/' + mode, 'uefi/' + mode)

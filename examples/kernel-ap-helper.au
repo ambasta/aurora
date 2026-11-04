@@ -1,0 +1,18 @@
+module kernel_ap_helper;
+
+// Closed AP execution leaf: scalar inputs and result, no imported service,
+// allocator, retained root, callback or mutable global. Guards precede every
+// multiplication; at most 1024 terms, each <= 66558 squared, fit signed i64.
+auto ap_worker_sum_squares(i64 start, i64 count) -> i64 {
+    if (start < 0 || start > 65535 || count < 1 || count > 1024) {
+        return -1;
+    }
+    i64 total = 0;
+    i64 index = 0;
+    while (index < count) {
+        const i64 value = start + index;
+        total = total + value * value;
+        index = index + 1;
+    }
+    return total;
+}

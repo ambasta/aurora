@@ -4,6 +4,9 @@
 #include "tables.hpp"
 #include "acpi.hpp"
 #include "runtime.hpp"
+#ifdef AURORA_UEFI_AP_WORKER
+#include "ap-worker.hpp"
+#endif
 #ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
 #include "graphical-console.hpp"
 #endif
@@ -107,6 +110,11 @@ auto payload_main(U64 arena, U64 size) -> void {
         span(arena + Handoff::map_offset, h.get(32)), h.get(40), static_cast<std::uint32_t>(h.get(48, 4))};
     if (!map.owns(arena, Handoff::arena_bytes))
         fail("map ownership");
+#ifdef AURORA_UEFI_AP_WORKER
+    if (!map.owns(h.get(Handoff::worker_low_word), 4096) ||
+        !map.owns(h.get(Handoff::worker_block_word), Handoff::worker_pages * 4096))
+        fail("worker map ownership");
+#endif
     U64 cr4;
     asm volatile("mov %%cr4, %0" : "=r"(cr4));
     if (cr4 & ((1ULL << 7) | (1ULL << 12) | (1ULL << 17)))
@@ -130,7 +138,13 @@ auto payload_main(U64 arena, U64 size) -> void {
         if ((tables.entry(arena + offset) & ~0x60ULL) != expected)
             fail("mapping permissions");
     }
-    if (tables.entry(0) != 0 || tables.entry(0x10000) != 0 || tables.entry(0xfee00000) != 0)
+    if (tables.entry(0) != 0 ||
+#ifdef AURORA_UEFI_AP_WORKER
+        (h.get(Handoff::worker_low_word) != 0x10000 && tables.entry(0x10000) != 0) ||
+#else
+        tables.entry(0x10000) != 0 ||
+#endif
+        tables.entry(0xfee00000) != 0)
         fail("inherited mapping");
     Serial::text("AURORA_UEFI_OWNERSHIP_OK: arena=");
     Serial::number(arena);
@@ -184,6 +198,10 @@ auto payload_main(U64 arena, U64 size) -> void {
     if (!aurora::uefi::run_protected(arena, h))
 #endif
         fail("protected runtime");
+#endif
+#ifdef AURORA_UEFI_AP_WORKER
+    if (!aurora::uefi::run_ap_worker(arena, h))
+        fail("AP worker");
 #endif
     auto page = pool.acquire();
     if (!page)

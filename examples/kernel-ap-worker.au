@@ -1,0 +1,63 @@
+module kernel_ap_worker;
+import kernel.ap_worker;
+
+// BSP-only synchronous root entries. Their caller closes each loan before
+// accessing the AP mailbox, MMIO, polling or allowing another AP operation.
+auto ap_worker_owner_create() -> kernel::ApWorkerOwner {
+    const kernel::ApWorkerOwner owner = kernel::ApWorkerOwner();
+    return owner;
+}
+auto ap_worker_owner_begin_start(kernel::ApWorkerOwner& owner, u64 apic, u64 incarnation) -> bool {
+    return owner.begin_start(apic, incarnation);
+}
+auto ap_worker_owner_startup_sent(kernel::ApWorkerOwner& owner, u64 apic, u64 incarnation) -> bool {
+    return owner.startup_sent(apic, incarnation);
+}
+auto ap_worker_owner_ready(kernel::ApWorkerOwner& owner, u64 apic, u64 incarnation) -> bool {
+    return owner.ready(apic, incarnation);
+}
+auto ap_worker_owner_reserve(kernel::ApWorkerOwner& owner, i64 start, i64 count) -> bool {
+    return owner.reserve(start, count);
+}
+auto ap_worker_owner_published(kernel::ApWorkerOwner& owner, u64 incarnation, u64 sequence) -> bool {
+    return owner.published(incarnation, sequence);
+}
+auto ap_worker_owner_observe(kernel::ApWorkerOwner& owner, kernel::ApWorkerObservation observed) -> bool {
+    return owner.observe(observed);
+}
+auto ap_worker_owner_acknowledged(kernel::ApWorkerOwner& owner, u64 incarnation, u64 sequence) -> bool {
+    return owner.acknowledged(incarnation, sequence);
+}
+auto ap_worker_owner_fail(kernel::ApWorkerOwner& owner) -> bool {
+    return owner.fail();
+}
+auto ap_worker_owner_stage(const kernel::ApWorkerOwner& owner) -> kernel::ApWorkerStage {
+    return owner.stage();
+}
+auto ap_worker_owner_sequence(const kernel::ApWorkerOwner& owner) -> u64 {
+    return owner.sequence();
+}
+auto ap_worker_owner_used(const kernel::ApWorkerOwner& owner) -> u64 {
+    return owner.used();
+}
+auto ap_worker_owner_remaining(const kernel::ApWorkerOwner& owner) -> u64 {
+    return owner.remaining();
+}
+auto ap_worker_owner_jobs(const kernel::ApWorkerOwner& owner) -> u64 {
+    return owner.jobs();
+}
+auto ap_worker_owner_result(const kernel::ApWorkerOwner& owner) -> i64 {
+    return owner.result();
+}
+auto ap_worker_owner_incarnation(const kernel::ApWorkerOwner& owner) -> u64 {
+    return owner.incarnation();
+}
+auto ap_worker_owner_target(const kernel::ApWorkerOwner& owner) -> u64 {
+    return owner.target();
+}
+auto ap_worker_owner_start(const kernel::ApWorkerOwner& owner) -> i64 {
+    return owner.start();
+}
+auto ap_worker_owner_count(const kernel::ApWorkerOwner& owner) -> i64 {
+    return owner.count();
+}

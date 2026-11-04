@@ -167,7 +167,7 @@ public:
             return std::nullopt;
         return static_cast<Fixture>(value);
     }
-#if defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_UEFI_NVME)
+#if defined(AURORA_PROCESS_FIXTURE) || defined(AURORA_UEFI_NVME) || defined(AURORA_UEFI_AP_WORKER)
     // The image's case word: the decimal 1..255 in opt/aurora/case,
     // 0 when the file is absent (process.md#guest-rows), nullopt otherwise.
     [[nodiscard]] static auto read_case() -> std::optional<unsigned> {

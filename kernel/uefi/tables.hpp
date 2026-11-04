@@ -2,6 +2,9 @@
 #include "handoff.hpp"
 #include "service-budget-policy.hpp"
 #include "framebuffer-policy.hpp"
+#ifdef AURORA_UEFI_AP_WORKER
+#include "ap-worker-policy.hpp"
+#endif
 #include <array>
 // Share large helpers only inside the existing Event build family.
 #if defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_NVME)
@@ -162,9 +165,27 @@ public:
     }
     // Keep one verifier body in every profile. Only the explicit
     // four-argument overload below creates an authorized framebuffer view.
-    AURORA_UEFI_EVENT_OUTLINE [[nodiscard]] auto
-    verify(std::uint64_t arena, const Bytes &h, const LocalApicAdmission *apic = nullptr) const -> bool {
+    AURORA_UEFI_EVENT_OUTLINE [[nodiscard]] auto verify(std::uint64_t arena,
+                                                        const Bytes &h,
+                                                        const LocalApicAdmission *apic = nullptr
+#ifdef AURORA_UEFI_AP_WORKER
+                                                        ,
+                                                        const ApWorkerAdmission *worker = nullptr,
+                                                        bool worker_sealed = false
+#endif
+    ) const -> bool {
         const auto *framebuffer = framebuffer_;
+#ifdef AURORA_UEFI_AP_WORKER
+        if ((worker && (worker->owned_arena() != arena || worker->kernel_root() != base_ || apic || framebuffer)) ||
+            (worker_sealed && !worker))
+            return false;
+        const auto worker_flags = [&](std::uint64_t address) -> std::uint64_t {
+            return 1 | nx |
+                   ((!worker_sealed || address == h.get(Handoff::worker_block_word) + Handoff::worker_request_offset)
+                        ? 2
+                        : 0);
+        };
+#endif
         if (used_ == 0 || used_ > Handoff::table_pages || base_ != arena + Handoff::tables_offset ||
             (apic && apic->owned_arena() != arena) ||
             (framebuffer && (framebuffer->owned_arena() != arena || h.get(8, 4) != 5 || apic)))
@@ -211,6 +232,21 @@ public:
                 traversal[++depth] = {value & 0x000ffffffffff000ULL, address, 0};
             } else {
                 const auto canonical = (address & (1ULL << 47)) ? address | 0xffff000000000000ULL : address;
+#ifdef AURORA_UEFI_AP_WORKER
+                const auto worker_low = h.get(Handoff::worker_low_word);
+                const auto worker_block = h.get(Handoff::worker_block_word);
+                if (canonical == worker_low ||
+                    (canonical >= worker_block && canonical < worker_block + Handoff::worker_pages * 4096)) {
+                    if (value != (canonical | worker_flags(canonical)))
+                        return false;
+                    continue;
+                }
+                if (worker && canonical == ApWorkerAdmission::virtual_address) {
+                    if (value != worker->mapping(canonical))
+                        return false;
+                    continue;
+                }
+#endif
                 if (apic && canonical == LocalApicAdmission::virtual_address) {
                     if (value != (LocalApicAdmission::physical_address | LocalApicAdmission::leaf_flags))
                         return false;
@@ -231,6 +267,21 @@ public:
         for (std::size_t i = 0; i < used_; ++i)
             if (!visited[i])
                 return false;
+#ifdef AURORA_UEFI_AP_WORKER
+        // This is the pre-start view only. The execution transport seals these
+        // mappings and checks its exact final whitelist before any IPI.
+        const auto worker_low = h.get(Handoff::worker_low_word);
+        const auto worker_block = h.get(Handoff::worker_block_word);
+        if ((entry(worker_low) & ~0x60ULL) != (worker_low | worker_flags(worker_low)))
+            return false;
+        for (std::uint64_t offset = 0; offset < Handoff::worker_pages * 4096; offset += 4096)
+            if ((entry(worker_block + offset) & ~0x60ULL) !=
+                ((worker_block + offset) | worker_flags(worker_block + offset)))
+                return false;
+        if (worker && (entry(ApWorkerAdmission::virtual_address) & ~0x60ULL) !=
+                          worker->mapping(ApWorkerAdmission::virtual_address))
+            return false;
+#endif
         for (std::uint64_t offset = 0; offset < Handoff::arena_bytes; offset += 4096) {
             const auto flags = expected_flags(offset, h);
             const auto expected = flags ? (arena + offset) | flags : 0;
