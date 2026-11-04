@@ -337,6 +337,58 @@ auto recovered_pair(builtin::HostFiles& files, builtin::ByteRegion region) -> bu
     return builtin::HostExit::success;
 }
 
+// The paired callers use distinct paths and salts, including the last short
+// write chunk. Read every byte back through HostFiles, then verify EOF and close.
+auto bulk(builtin::HostFiles& files, builtin::span<const u8> view, u8 selected,
+    builtin::span<const u8> path) -> builtin::HostExit {
+    const builtin::HostOutputResult output = files.create_output(path);
+    if (output.status != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    if (files.write(output.id, view) != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    if (files.commit(output.id) != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    const builtin::HostFileResult input = files.open_file(path);
+    if (input.status != builtin::HostStatus::success || input.size != 65536u64) {
+        return builtin::HostExit::failure;
+    }
+    u64 offset = 0u64;
+    while (offset < 65536u64) {
+        const builtin::HostChunk chunk = files.read(input.id, offset);
+        if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64 || chunk.count > 65536u64 - offset) {
+            return builtin::HostExit::failure;
+        }
+        const array<u8, 504> contents = chunk.bytes;
+        u64 index = 0u64;
+        while (index < chunk.count) {
+            if (contents[i64(index)] != pattern(i64(offset + index), selected)) {
+                return builtin::HostExit::failure;
+            }
+            index = index + 1u64;
+        }
+        offset = offset + chunk.count;
+    }
+    const builtin::HostChunk end = files.read(input.id, 65536u64);
+    if (end.status != builtin::HostStatus::success || end.count != 0u64 || files.close(input.id)
+        != builtin::HostStatus::success) {
+        return builtin::HostExit::failure;
+    }
+    if (selected == 'c') {
+        if (files.print(builtin::HostStream::stdout, "bulk c retained\n") != builtin::HostStatus::success
+            || files.print(builtin::HostStream::stderr, "bulk c stderr retained\n") != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+    } else {
+        if (files.print(builtin::HostStream::stdout, "bulk retained\n") != builtin::HostStatus::success) {
+            return builtin::HostExit::failure;
+        }
+    }
+    return builtin::HostExit::success;
+}
+
 auto main(builtin::HostFiles& files, builtin::ByteRegion region,
     builtin::span<const u8> arguments) -> builtin::HostExit {
     const u8 selected = mode(arguments);
@@ -448,42 +500,12 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
             }
         }
     }
-    if (selected == 'b') {
-        const builtin::HostOutputResult output = files.create_output("tree/bulk");
-        if (output.status != builtin::HostStatus::success) {
-            return builtin::HostExit::failure;
+    if (selected == 'b' || selected == 'c') {
+        const builtin::span<const u8> view = borrow_bytes(bytes);
+        if (selected == 'c') {
+            return bulk(files, view, selected, "tree/bulk-c");
         }
-        {
-            const builtin::span<const u8> view = borrow_bytes(bytes);
-            if (files.write(output.id, view) != builtin::HostStatus::success) {
-                return builtin::HostExit::failure;
-            }
-        }
-        if (files.commit(output.id) != builtin::HostStatus::success) {
-            return builtin::HostExit::failure;
-        }
-        const builtin::HostFileResult input = files.open_file("tree/bulk");
-        if (input.status != builtin::HostStatus::success || input.size != 65536u64) {
-            return builtin::HostExit::failure;
-        }
-        u64 offset = 0u64;
-        while (offset < 65536u64) {
-            const builtin::HostChunk chunk = files.read(input.id, offset);
-            if (chunk.status != builtin::HostStatus::success || chunk.count == 0u64) {
-                return builtin::HostExit::failure;
-            }
-            const array<u8, 504> contents = chunk.bytes;
-            u64 index = 0u64;
-            while (index < chunk.count) {
-                if (contents[i64(index)] != pattern(i64(offset + index), selected)) {
-                    return builtin::HostExit::failure;
-                }
-                index = index + 1u64;
-            }
-            offset = offset + chunk.count;
-        }
-        files.print(builtin::HostStream::stdout, "bulk retained\n");
-        return builtin::HostExit::success;
+        return bulk(files, view, selected, "tree/bulk");
     }
     if (selected == 'B') {
         // This exceeds the original reservation, moves to a new address, then

@@ -656,6 +656,37 @@ public:
 };
 constinit InputPending input_read;
 
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+#ifdef AURORA_PRODUCTION
+class PairBinding;
+constinit PairBinding *active_pair = nullptr;
+#else
+constinit bool deferred_fixture_scope = false;
+constinit U64 deferred_probe_case = 0;
+#endif
+auto deferred_scope_active() -> bool {
+#ifdef AURORA_PRODUCTION
+    return active_pair != nullptr;
+#else
+    return deferred_fixture_scope;
+#endif
+}
+// Physical trap receipts only. The source batch owns eligibility and ordering.
+// Parked client pages retain the payload; no second endpoint buffer is created.
+class DeferredCall final {
+public:
+    U64 kind = 0, owner = 0, service = 0, generation = 0, epoch = 0, root = 0;
+    process::KernelCall call{};
+    std::array<U64, frame_words> frame{};
+};
+constinit std::array<DeferredCall, 2> deferred_calls;
+auto revoke_deferred(U64 owner = 0) -> void {
+    for (auto &call : deferred_calls)
+        if (!owner || call.owner == owner)
+            call = {};
+}
+#endif
+
 // Compare the complete fixed-size saved frame inside the native effect body.
 // This word reduction avoids importing the separate assembly memcmp boundary.
 auto input_frame_equal(const std::array<U64, frame_words> &left, const std::array<U64, frame_words> &right) -> bool {
@@ -1307,15 +1338,13 @@ auto message_header(U64 operation, U64 id, U64 offset, U64 count) -> void {
     aurora::uefi::put(endpoint.bytes, 24, count);
     endpoint.count = 64 + count;
 }
-// Copy and validate all caller authority before parking. Neither this decoded
-// call nor any message field can choose the endpoint or reply destination.
-auto file_request(const process::KernelCall &call, volatile U64 *frame) -> bool {
+// Validate under the authenticated caller root. Copy only after source-owned
+// endpoint admission; a deferred trap never changes shared bytes or ordinals.
+auto file_request_bytes(const process::KernelCall &call, bool copy) -> bool {
     using Action = process::CallAction;
     const auto action = static_cast<Action>(call.action);
     const bool path = action == Action::open_directory || action == Action::open_beneath ||
                       action == Action::open_file || action == Action::create_output;
-    if (endpoint.caller || !endpoint.generation)
-        return false;
     const U64 operation = action == Action::open_directory  ? 16
                           : action == Action::open_beneath  ? 17
                           : action == Action::open_file     ? 18
@@ -1350,11 +1379,8 @@ auto file_request(const process::KernelCall &call, volatile U64 *frame) -> bool 
             return false;
         length = call.length < Endpoint::capacity - 64 ? call.length : Endpoint::capacity - 64;
     }
-    {
-        EndpointTrapScope scope;
-        if (!endpoint_owner.stage_client(running.run))
-            return false;
-    }
+    if (!copy)
+        return true;
     message_header(operation, call.value, action == Action::read ? call.length : 0, length);
     for (U64 at = 0; at < length; ++at)
         endpoint.bytes[64 + at] = (*source)[at];
@@ -1362,6 +1388,44 @@ auto file_request(const process::KernelCall &call, volatile U64 *frame) -> bool 
     endpoint.written = length;
     endpoint.caller = running_client_slot();
     endpoint.caller_cancelled = false;
+    return true;
+}
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+auto capture_deferred(const process::KernelCall &call, volatile U64 *frame, U64 kind) -> bool {
+    const auto slot = running_client_slot();
+    auto &saved = deferred_calls[slot - 1];
+    if (!deferred_scope_active() || !running.external || running.service || !endpoint.generation || saved.kind ||
+        (kind != 1 && kind != 2))
+        return false;
+    saved.kind = kind;
+    saved.owner = running.run;
+    saved.service = endpoint.generation;
+    saved.generation = execution_owner.canonical(slot, aurora::lifecycle::Field::generation);
+    saved.epoch = running.space->epoch();
+    saved.root = running.space->root();
+    saved.call = call;
+    saved.frame = *running.captured;
+    execution_capture.event = kind == 1 ? aurora::lifecycle::Event::request : aurora::lifecycle::Event::output;
+    save_frame(frame);
+    return true;
+}
+#endif
+auto file_request(const process::KernelCall &call, volatile U64 *frame) -> bool {
+    if (!endpoint.generation)
+        return false;
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+    if (deferred_scope_active())
+        return file_request_bytes(call, false) && capture_deferred(call, frame, 1);
+#endif
+    if (endpoint.caller || !file_request_bytes(call, false))
+        return false;
+    {
+        EndpointTrapScope scope;
+        if (!endpoint_owner.stage_client(running.run))
+            return false;
+    }
+    if (!file_request_bytes(call, true))
+        fail("admitted file call changed");
     execution_capture.event = aurora::lifecycle::Event::request;
     save_frame(frame);
     return true;
@@ -1453,6 +1517,13 @@ auto kernel_call(volatile U64 *frame) -> U64 {
     if (action == process::CallAction::print && !running.service) {
         if (const auto bytes = user_bytes(decoded->base, decoded->length, false)) {
             if (output_sink && running.external && !running.service) {
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+                if (deferred_scope_active()) {
+                    if (!capture_deferred(*decoded, frame, 2))
+                        fail("pair output trap capture");
+                    return 1;
+                }
+#endif
                 for (U64 at = 0; at < decoded->length; ++at)
                     endpoint.bytes[at] = (*bytes)[at];
                 endpoint.count = decoded->length;
@@ -2903,6 +2974,9 @@ auto invalidate_service_physical(std::size_t slot) -> void {
     const bool had_snapshot = snapshot.has_value();
     const U64 client = residents[1].space ? residents[1].state.run : 0;
     loading_image = false;
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+    revoke_deferred();
+#endif
     endpoint.caller.reset();
     if (generation && !endpoint_owner.invalidate(generation))
         fail("endpoint invalidation");
@@ -2938,6 +3012,9 @@ auto abandon_service_observed(ServiceLoss loss) -> void {
         fail("absent file service physical owner");
     }
     // No process may see a late reply or a writable staging alias after loss.
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+    revoke_deferred();
+#endif
     loading_image = false;
     endpoint.caller.reset();
     // Startup may fail before it ever binds an endpoint. A service intent is
@@ -4079,6 +4156,69 @@ auto finish_service_shutdown() -> void {
     acknowledge_service_cleanup(generation);
 }
 
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+// A source-selected dispatch authenticates the same complete parked trap.
+// No saved pointer grants authority, and no source loan crosses the root switch.
+auto dispatch_deferred(std::size_t slot, U64 kind) -> void {
+    using namespace aurora::lifecycle;
+    if (!deferred_scope_active() || !slot || slot >= residents.size() || (kind != 1 && kind != 2) ||
+        execution_owner.busy() || execution_owner.entered() || running.space || root() != kernel_root ||
+        !Timer::irq_off() || Timer::read(0x390) || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
+        fail("deferred dispatch boundary");
+    const auto &saved = deferred_calls[slot - 1];
+    auto &resident = residents[slot];
+    const auto observed = endpoint_owner.observe();
+    const auto event = kind == 1 ? Event::request : Event::output;
+    if (saved.kind != kind || !saved.owner || !saved.service || !resident.space || saved.owner != resident.state.run ||
+        saved.service != endpoint.generation || service_root.phase() != aurora::service::Phase::ready ||
+        service_root.generation() != saved.service || !residents[0].space ||
+        residents[0].state.service != saved.service || endpoint.caller || endpoint.caller_cancelled ||
+        observed.phase != aurora::endpoint::Phase::waiting || observed.client ||
+        observed.incarnation != saved.service || execution_owner.phase(slot) != Phase::parked ||
+        execution_owner.pending(slot) != static_cast<U64>(event) ||
+        execution_owner.generation(slot) != saved.generation || resident.space->epoch() != saved.epoch ||
+        resident.space->root() != saved.root || !input_frame_equal(saved.frame, resident.continuation) ||
+        resident.state.space != &*resident.space || resident.state.budget != &resident.budget ||
+        resident.state.captured != &resident.continuation || resident.state.continuation != &resident.continuation ||
+        resident.space->owner() != frames::first_owner + saved.owner ||
+        resident.initial[4] != table.activation_root(slot, saved.epoch))
+        fail("deferred parked identity");
+    const auto decoded = process::call(saved.frame[frame_rax],
+                                       saved.frame[frame_rdi],
+                                       saved.frame[frame_rsi],
+                                       saved.frame[frame_rdx],
+                                       saved.frame[frame_r10]);
+    if (!decoded || decoded->action != saved.call.action || decoded->value != saved.call.value ||
+        decoded->length != saved.call.length || decoded->base != saved.call.base ||
+        decoded->record != saved.call.record ||
+        (kind == 2) != (saved.call.action == static_cast<U64>(process::CallAction::print)))
+        fail("deferred decoded trap changed");
+    if (kind == 1 && !endpoint_owner.stage_client(saved.owner))
+        fail("deferred endpoint admission");
+    running = resident.state;
+    const U64 admitted = table.activation_root(slot, saved.epoch);
+    asm volatile("mov %0, %%cr3" : : "r"(admitted) : "memory");
+    if (kind == 1) {
+        if (!file_request_bytes(saved.call, true))
+            fail("deferred file range changed");
+    } else {
+        const auto bytes = user_bytes(saved.call.base, saved.call.length, false);
+        if (!bytes || saved.call.length > Endpoint::capacity)
+            fail("deferred output range changed");
+        for (U64 at = 0; at < saved.call.length; ++at)
+            endpoint.bytes[at] = (*bytes)[at];
+        endpoint.count = saved.call.length;
+        output_error_stream = saved.call.value == 2;
+    }
+    asm volatile("mov %0, %%cr3" : : "r"(kernel_root) : "memory");
+    running.space = nullptr;
+    if (root() != kernel_root || !input_frame_equal(saved.frame, resident.continuation) ||
+        resident.space->epoch() != saved.epoch || resident.space->root() != saved.root)
+        fail("deferred copy restoration");
+    revoke_deferred(saved.owner);
+}
+#endif
+
 #ifndef AURORA_PRODUCTION
 // Every legacy golden describes an independent namespace. Its companion is
 // the same source service as production, with a fresh incarnation per case;
@@ -4716,6 +4856,10 @@ auto execution_cancel_fixture(std::span<const std::byte> volume,
 // The first run is a kernel-designated server, never a role selected by its
 // argv or exported symbols. The remaining entries are ordinary HostFiles
 // clients. Committed files live only in that server's private ByteRegion.
+#ifdef AURORA_PROCESS_FIXTURE
+#include "process-deferred-fixture.inc"
+#endif
+
 auto run_external(std::span<const std::byte> view,
                   std::span<const std::byte> runs,
                   bool disk = false,
@@ -4726,6 +4870,9 @@ auto run_external(std::span<const std::byte> view,
                   bool mounted = false,
                   bool cancel_delivered = false) -> U64 {
     static_cast<void>(cancel_delivered);
+#ifdef AURORA_PROCESS_FIXTURE
+    const U64 deferred_service_baseline = table.free();
+#endif
     if (residents[0].space || clients_live() || !service_root.open_operation())
         fail("file service restart state");
     const auto service = process::run(runs, first);
@@ -4817,7 +4964,13 @@ auto run_external(std::span<const std::byte> view,
             }
             fail("file service client admission");
         }
-        if (!run_file_client()) {
+#ifdef AURORA_PROCESS_FIXTURE
+        const bool client_ok =
+            deferred_probe_case ? run_deferred_fixture_client(deferred_service_baseline) : run_file_client();
+#else
+        const bool client_ok = run_file_client();
+#endif
+        if (!client_ok) {
             abandon_service();
             if (recover) {
                 close_service_operation();
@@ -5068,6 +5221,10 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 #ifdef AURORA_PROCESS_FIXTURE
     if (selected >= 82 && selected <= 97)
         input_probe_case = selected;
+    if (selected >= 102 && selected <= 107) {
+        deferred_probe_case = selected;
+        output_sink = deferred_fixture_output;
+    }
     if (selected >= 99 && selected <= 101) {
         presentation_probe_case = selected;
         presentation_sink = presentation_probe;
@@ -5198,7 +5355,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
 #endif
     if ((selected >= 1 && selected <= 6) || selected == 43 || selected == 44 || (selected >= 63 && selected <= 71))
         count = run_independent(view, *runs);
-    if (selected == 8 || (selected >= 82 && selected <= 97) || (selected >= 99 && selected <= 101))
+    if (selected == 8 || (selected >= 82 && selected <= 97) || (selected >= 99 && selected <= 107))
         count = run_external(view, *runs);
     if (selected == 10) {
         const auto baseline = table.free();
@@ -5750,12 +5907,12 @@ public:
     std::array<ExecutionBinding, 2> members{};
     // Diagnostic suppression only; never scheduling or cleanup authority.
     bool input_parked_recorded = false, input_idle_recorded = false;
+    U64 rpc_turn_records = 0; // At most one diagnostic for each of three actual turn kinds.
     explicit PairBinding(ResidentInput &value) : input(value) {
         members[0].slot = 1;
         members[1].slot = 2;
     }
 };
-constinit PairBinding *active_pair = nullptr;
 constinit aurora::uefi::ProcessPairOutput pair_output = nullptr;
 constinit void *pair_output_context = nullptr;
 constinit std::size_t pair_output_member = 0;
@@ -5790,7 +5947,8 @@ public:
         const auto observed = endpoint_owner.observe();
         return active_pair && binding == active_pair && !clients_live() && !snapshot && !loading_image &&
                !endpoint.caller && !observed.delivery() && !observed.completion() && !active_pair->members[0].client &&
-               !active_pair->members[1].client && audit_residents();
+               !active_pair->members[1].client && !deferred_calls[0].kind && !deferred_calls[1].kind &&
+               audit_residents();
     }
     static auto release_parent(aurora::resident::Parent parent) -> void {
         resident_owner.release_parent(parent);
@@ -5801,7 +5959,8 @@ public:
 };
 auto resident_pair(ResidentInput &input) -> aurora::execution::Result {
     using namespace aurora::batch;
-    if (active_pair || clients_live() || !pair_output || input.arguments.mode != RunMode::pair)
+    if (active_pair || clients_live() || !pair_output || input.arguments.mode != RunMode::pair ||
+        deferred_calls[0].kind || deferred_calls[1].kind)
         fail("pair admission boundary");
     PairBinding binding{input};
     active_pair = &binding;
@@ -5874,7 +6033,49 @@ auto resident_pair(ResidentInput &input) -> aurora::execution::Result {
             break;
         }
         case Action::activate: {
+            const auto caller = endpoint.caller;
+            const auto before_rpc = endpoint_owner.observe();
+            U64 caller_run = 0, before_cpu = 0, before_quantum = 0;
+            if (caller) {
+                if (*caller == member->slot || !residents[*caller].space || endpoint.caller_cancelled ||
+                    before_rpc.client != residents[*caller].state.run)
+                    fail("pair active RPC turn");
+                caller_run = residents[*caller].state.run;
+                before_cpu = residents[member->slot].budget.used();
+                before_quantum = residents[member->slot].budget.quantum();
+            }
             const auto result = ExecutionEffects::advance(*member);
+            if (caller) {
+                const auto after_rpc = endpoint_owner.observe();
+                if (endpoint.caller != caller || endpoint.caller_cancelled ||
+                    residents[*caller].state.run != caller_run || before_rpc.incarnation != after_rpc.incarnation ||
+                    before_rpc.phase != after_rpc.phase || before_rpc.transaction != after_rpc.transaction ||
+                    before_rpc.next != after_rpc.next || before_rpc.source != after_rpc.source ||
+                    before_rpc.client != after_rpc.client)
+                    fail("pair sibling changed pending RPC");
+                const U64 kind = result.state == aurora::execution::Step::request  ? 1
+                                 : result.state == aurora::execution::Step::output ? 2
+                                                                                   : 0;
+                if (residents[member->slot].space && !(binding.rpc_turn_records & (1ULL << kind))) {
+                    const U64 after_cpu = residents[member->slot].budget.used();
+                    const U64 after_quantum = residents[member->slot].budget.quantum();
+                    if (after_cpu < before_cpu || (after_cpu == before_cpu && after_quantum >= before_quantum))
+                        fail("pair sibling work not charged");
+                    binding.rpc_turn_records |= 1ULL << kind;
+                    Serial::text("AURORA_PAIR_RPC_TURN:");
+                    field("caller", caller_run);
+                    field("transaction", before_rpc.transaction);
+                    field("phase", static_cast<U64>(before_rpc.phase));
+                    field("child", member->slot);
+                    field("run", member->client);
+                    field("before", before_cpu);
+                    field("after", after_cpu);
+                    field("quantum_before", before_quantum);
+                    field("quantum_after", after_quantum);
+                    field("kind", kind);
+                    Serial::text(" preserved=1\r\n");
+                }
+            }
             if (result.state == aurora::execution::Step::retired) {
                 status = static_cast<U64>(result.status);
                 value = result.value;
@@ -5902,7 +6103,14 @@ auto resident_pair(ResidentInput &input) -> aurora::execution::Result {
             }
             break;
         }
+        case Action::dispatch:
+            if (!ExecutionEffects::bound_client(*member) || !ExecutionEffects::bound_service(*member) ||
+                !member->request_pending || member->output_pending || member->input_pending)
+                fail("pair deferred request binding");
+            dispatch_deferred(member->slot, 1);
+            break;
         case Action::output:
+            dispatch_deferred(member->slot, 2);
             pair_output_member = request.child - 1;
             event = ExecutionEffects::output(*member) == aurora::execution::Effect::success ? Event::success
                                                                                             : Event::output_failed;
@@ -5910,7 +6118,7 @@ auto resident_pair(ResidentInput &input) -> aurora::execution::Result {
         case Action::request: {
             const auto progress = ExecutionEffects::request(*member);
             if (progress == aurora::execution::Request::pending) {
-                event = Event::pending;
+                event = endpoint.caller_cancelled ? Event::draining : Event::pending;
             } else if (progress == aurora::execution::Request::service_lost) {
                 event = Event::service_lost;
             } else if (progress == aurora::execution::Request::ready) {
@@ -6900,6 +7108,9 @@ __attribute__((visibility("hidden"))) U64 __au_runtime_execution_authority_retir
             fail("service retirement invalidation boundary");
     }
     invalidate_input(residents[slot].state.run);
+#if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
+    revoke_deferred(residents[slot].state.run);
+#endif
     const bool result = release_resident_physical(slot);
     execution_owner.leave();
     return result ? 1 : 0;

@@ -1606,6 +1606,42 @@ def main():
                 )
                 return part
 
+            def pair_rpc_turns(part):
+                pattern = (
+                    rb"AURORA_PAIR_RPC_TURN: caller=(\d+) transaction=(\d+) phase=(\d+) child=([12]) run=(\d+) "
+                    rb"before=(\d+) after=(\d+) quantum_before=(\d+) quantum_after=(\d+) kind=([012]) preserved=1\n"
+                )
+                turns = [tuple(map(int, match.groups())) for match in re.finditer(pattern, part)]
+                need(
+                    len(turns) == part.count(b"AURORA_PAIR_RPC_TURN:") <= 3
+                    and len({turn[-1] for turn in turns}) == len(turns),
+                    "Pending RPC turn receipts must be well formed and bounded to one per kind",
+                )
+                for (
+                    caller,
+                    transaction,
+                    phase,
+                    child,
+                    sibling,
+                    before,
+                    after,
+                    quantum_before,
+                    quantum_after,
+                    kind,
+                ) in turns:
+                    need(
+                        caller > 0
+                        and transaction > 0
+                        and phase in (3, 5)
+                        and sibling > 0
+                        and caller != sibling
+                        and quantum_before > 0
+                        and quantum_after > 0
+                        and (after > before or (after == before and quantum_after < quantum_before)),
+                        "An authenticated pending RPC must survive actual sibling CPU progress",
+                    )
+                return turns
+
             def run_pair_command(
                 line,
                 statuses=None,
@@ -1669,6 +1705,7 @@ def main():
                     part.count(b"aurora> ") == 1 + int(quarantine),
                     "Pair has one result prompt and only the required fresh quarantine prompt",
                 )
+                pair_rpc_turns(part)
                 parked = list(re.finditer(parked_pattern, part))
                 idle = list(re.finditer(idle_pattern, part))
                 need(
@@ -2164,6 +2201,22 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 run_command("run probe file tree/rpc-pending", "exited status=0", b"1 file not_found 0 ")
                 run_command("run bin/sort / pair-clean ps", "exited status=0", b"3 lines: 5 3 6\n")
                 metrics["run_pair_memory_fault_budget_rpc_cleanup"] = True
+                pair = run_pair_command("run-pair raw-write -- lifecycle c", ("exited status=0", "exited status=0"))
+                for marker in (b"[2] bulk c retained\n", b"[2] bulk c stderr retained\n"):
+                    need(pair.count(marker) == 1, "The bulk sibling must retain its exact stdout and stderr bytes")
+                turns = pair_rpc_turns(pair)
+                need(
+                    any(turn[-1] == 1 for turn in turns),
+                    "Bulk pair must defer an actual sibling file call during the same pending RPC",
+                )
+                # raw-write makes one actual 65536-byte syscall, crossing the
+                # authenticated short-tail continuation, then checks every Z
+                # byte in tree/raw. HostFiles.write buffers 4096-byte syscalls:
+                # c checks its distinct salted tree/bulk-c bytes, EOF and close.
+                # The receipt, not output order, proves work during RPC wait;
+                # its phase distinguishes server parks from staged write tails.
+                run_command("run bin/sort / bulk-clean ps", "exited status=0", b"3 lines: 5 3 6\n")
+                metrics["run_pair_rpc_wait_deferred_file_distinct_bulk_streams_reclaimed"] = True
                 # This existing compiled consumer's first operation is read(),
                 # with no output or file RPC before input. Require the actual
                 # pending-state receipt before sibling listing and injected
