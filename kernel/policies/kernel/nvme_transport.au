@@ -1,0 +1,281 @@
+export module kernel.nvme_transport;
+
+export namespace kernel {
+    enum class TransportStage {
+        idle,
+        reserved,
+        submitted,
+        completion_selected,
+        poisoned
+    };
+    enum class TransportCompletionKind {
+        rejected,
+        complete
+    };
+
+    // Copied coordinates describe one reservation. They carry no DMA, owner,
+    // queue-binding or physical-effect authority. CID zero masks rejection.
+    class TransportPlan {
+        u64 queue_id;
+        u64 command_id;
+        u64 submission_slot;
+        u64 submission_tail;
+        u64 completion_slot;
+        u64 completion_phase;
+    public:
+        TransportPlan(u64 qid, u64 cid, u64 sq_slot, u64 new_tail, u64 cq_slot, u64 phase) : queue_id(qid),
+            command_id(cid), submission_slot(sq_slot), submission_tail(new_tail), completion_slot(cq_slot),
+            completion_phase(phase) {
+        }
+        auto qid() const -> u64 {
+            return queue_id;
+        }
+        auto cid() const -> u64 {
+            return command_id;
+        }
+        auto sq_slot() const -> u64 {
+            return submission_slot;
+        }
+        auto new_tail() const -> u64 {
+            return submission_tail;
+        }
+        auto cq_slot() const -> u64 {
+            return completion_slot;
+        }
+        auto phase() const -> u64 {
+            return completion_phase;
+        }
+    };
+
+    // Native code copies these five DWORD observations around its DMA read
+    // barrier. The source validates width before extracting any wire fields.
+    class TransportObservation {
+        u64 first_last_word;
+        u64 result_word;
+        u64 reserved_word;
+        u64 position_word;
+        u64 second_last_word;
+    public:
+        TransportObservation(u64 first_last, u64 result, u64 reserved, u64 position,
+            u64 second_last) : first_last_word(first_last), result_word(result), reserved_word(reserved),
+            position_word(position), second_last_word(second_last) {
+        }
+        auto first_last() const -> u64 {
+            return first_last_word;
+        }
+        auto result() const -> u64 {
+            return result_word;
+        }
+        auto reserved() const -> u64 {
+            return reserved_word;
+        }
+        auto position() const -> u64 {
+            return position_word;
+        }
+        auto second_last() const -> u64 {
+            return second_last_word;
+        }
+        auto valid_widths() const -> bool {
+            return first_last_word <= 4294967295u64 && result_word <= 4294967295u64 && reserved_word <= 4294967295u64
+                && position_word <= 4294967295u64 && second_last_word <= 4294967295u64;
+        }
+    };
+
+    class TransportCompletion {
+        TransportCompletionKind selected_kind;
+        u64 completion_status;
+        u64 completion_head;
+    public:
+        TransportCompletion(TransportCompletionKind kind, u64 status, u64 new_cq_head) : selected_kind(kind),
+            completion_status(status), completion_head(new_cq_head) {
+        }
+        auto kind() const -> TransportCompletionKind {
+            return selected_kind;
+        }
+        auto status() const -> u64 {
+            return completion_status;
+        }
+        auto new_cq_head() const -> u64 {
+            return completion_head;
+        }
+    };
+
+    // One retained plain root owns both two-entry queue ledgers and one global
+    // operation. Native code authenticates its unique root and immutable DMA
+    // bindings. Every entry is synchronous and effect-free; no loan spans DMA,
+    // MMIO or a health check. Copies of this class are not native authority.
+    class TransportOwner {
+        u64 admin_next_cid;
+        u64 admin_tail;
+        u64 admin_head;
+        u64 admin_phase;
+        u64 admin_status;
+        u64 io_next_cid;
+        u64 io_tail;
+        u64 io_head;
+        u64 io_phase;
+        u64 io_status;
+        TransportStage current_stage;
+        u64 operation_qid;
+        u64 operation_cid;
+
+        auto valid_queue(u64 qid) const -> bool {
+            return qid <= 1u64 && next_cid(qid) >= 1u64 && next_cid(qid) <= 65536u64 && tail(qid) <= 1u64 && head(qid)
+                <= 1u64 && phase(qid) <= 1u64;
+        }
+        auto same(u64 qid, u64 cid, TransportStage expected) const -> bool {
+            return current_stage == expected && valid_queue(qid) && cid > 0u64 && cid <= 65535u64 && operation_qid
+                == qid && operation_cid == cid && next_cid(qid) == cid + 1u64;
+        }
+    public:
+        TransportOwner() : admin_next_cid(1u64), admin_tail(0u64), admin_head(0u64), admin_phase(1u64),
+            admin_status(0u64), io_next_cid(1u64), io_tail(0u64), io_head(0u64), io_phase(1u64), io_status(0u64),
+            current_stage(TransportStage::idle), operation_qid(2u64), operation_cid(0u64) {
+        }
+        auto reserve(u64 qid, u64 original_command_cid) -> TransportPlan {
+            if (current_stage != TransportStage::idle || original_command_cid != 0u64 || !valid_queue(qid)
+                || next_cid(qid) > 65535u64) {
+                current_stage = TransportStage::poisoned;
+                return TransportPlan(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+            }
+            const u64 cid = next_cid(qid);
+            const u64 slot = tail(qid);
+            const u64 new_tail = 1u64 - slot;
+            // Spend before the native SQ write. No failure path refunds this
+            // CID, and 65536 is an exhaustion sentinel, never a wire CID.
+            if (qid == 0u64) {
+                admin_next_cid = cid + 1u64;
+                admin_tail = new_tail;
+            } else {
+                io_next_cid = cid + 1u64;
+                io_tail = new_tail;
+            }
+            operation_qid = qid;
+            operation_cid = cid;
+            current_stage = TransportStage::reserved;
+            return TransportPlan(qid, cid, slot, new_tail, head(qid), phase(qid));
+        }
+        auto published(u64 qid, u64 cid) -> bool {
+            if (!same(qid, cid, TransportStage::reserved)) {
+                return poison();
+            }
+            current_stage = TransportStage::submitted;
+            return true;
+        }
+        auto accept_completion(u64 qid, u64 cid, TransportObservation observed) -> TransportCompletion {
+            if (!same(qid, cid, TransportStage::submitted) || !observed.valid_widths()) {
+                current_stage = TransportStage::poisoned;
+                return TransportCompletion(TransportCompletionKind::rejected, status(qid), 0u64);
+            }
+            const u64 last = observed.first_last();
+            const u64 selected_status = last >> 17;
+            if (qid == 0u64) {
+                admin_status = selected_status;
+            } else {
+                io_status = selected_status;
+            }
+            // An empty poll never calls this method. Any passed stale phase,
+            // torn tuple, foreign queue/CID or nonzero result/status poisons.
+            if (last != observed.second_last() || ((last >> 16) & 1u64) != phase(qid) || observed.result() != 0u64
+                || observed.reserved() != 0u64 || (observed.position() >> 16) != qid || (observed.position() & 65535u64)
+                != tail(qid) || (last & 65535u64) != cid || selected_status != 0u64) {
+                current_stage = TransportStage::poisoned;
+                return TransportCompletion(TransportCompletionKind::rejected, selected_status, 0u64);
+            }
+            current_stage = TransportStage::completion_selected;
+            return TransportCompletion(TransportCompletionKind::complete, selected_status, 1u64 - head(qid));
+        }
+        auto acknowledged(u64 qid, u64 cid) -> bool {
+            if (!same(qid, cid, TransportStage::completion_selected)) {
+                return poison();
+            }
+            // Native acknowledges only after the exact CQ doorbell and its
+            // subsequent health checks. Selection alone cannot release busy.
+            if (qid == 0u64) {
+                admin_head = 1u64 - admin_head;
+                if (admin_head == 0u64) {
+                    admin_phase = 1u64 - admin_phase;
+                }
+            } else {
+                io_head = 1u64 - io_head;
+                if (io_head == 0u64) {
+                    io_phase = 1u64 - io_phase;
+                }
+            }
+            operation_qid = 2u64;
+            operation_cid = 0u64;
+            current_stage = TransportStage::idle;
+            return true;
+        }
+        auto poison() -> bool {
+            current_stage = TransportStage::poisoned;
+            return false;
+        }
+        auto stage() const -> TransportStage {
+            return current_stage;
+        }
+        auto remaining(u64 qid) const -> u64 {
+            if (current_stage != TransportStage::idle || !valid_queue(qid) || next_cid(qid) > 65535u64) {
+                return 0u64;
+            }
+            return 65536u64 - next_cid(qid);
+        }
+        auto available(u64 qid) const -> bool {
+            return remaining(qid) != 0u64;
+        }
+        auto next_cid(u64 qid) const -> u64 {
+            if (qid == 0u64) {
+                return admin_next_cid;
+            }
+            if (qid == 1u64) {
+                return io_next_cid;
+            }
+            return 0u64;
+        }
+        auto tail(u64 qid) const -> u64 {
+            if (qid == 0u64) {
+                return admin_tail;
+            }
+            if (qid == 1u64) {
+                return io_tail;
+            }
+            return 0u64;
+        }
+        auto head(u64 qid) const -> u64 {
+            if (qid == 0u64) {
+                return admin_head;
+            }
+            if (qid == 1u64) {
+                return io_head;
+            }
+            return 0u64;
+        }
+        auto phase(u64 qid) const -> u64 {
+            if (qid == 0u64) {
+                return admin_phase;
+            }
+            if (qid == 1u64) {
+                return io_phase;
+            }
+            return 0u64;
+        }
+        auto status(u64 qid) const -> u64 {
+            if (qid == 0u64) {
+                return admin_status;
+            }
+            if (qid == 1u64) {
+                return io_status;
+            }
+            return 0u64;
+        }
+        auto active_qid() const -> u64 {
+            return operation_qid;
+        }
+        auto active_cid() const -> u64 {
+            return operation_cid;
+        }
+        auto poisoned() const -> bool {
+            return current_stage == TransportStage::poisoned;
+        }
+    };
+}

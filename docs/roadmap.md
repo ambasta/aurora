@@ -190,6 +190,12 @@ images. Backing remains pinned for the boot; errors quarantine rather than reset
 reuse or reclaim it. These observations do not establish physical-device isolation,
 drain, recovery or safe DMA-page reclamation.
 
+The retained Aurora transport owner now owns the two NVMe queue ledgers,
+nonreused command IDs, publication/completion sequencing and global quarantine.
+Native effects still authenticate backing, sample DMA and perform fences/MMIO;
+source borrows do not cross these effects. This does not establish DMA drain,
+page reclamation or a general asynchronous driver lifetime.
+
 A sealed read-only block capability connects the retained source file owner to
 NVMe. Its strict fresh-format XFS gate reads the complete supported log and checks
 root/inode metadata before exposing `/disk`; actual process guests exercise this

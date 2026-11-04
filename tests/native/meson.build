@@ -32,6 +32,15 @@ native_scheduler_object = custom_target('native-scheduler-owner',
               '--local-symbols', '--referenced-reflection-only',
               '--bridge', native_root / 'kernel/scheduler-owner-entry.S',
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+# The boot-retained NVMe owner shares the existing device component driver.
+native_nvme_transport_object = custom_target('native-nvme-transport-owner',
+    input: '../../examples/kernel-nvme-transport.au', output: 'nvme-transport-owner.o',
+    depfile: 'nvme-transport-owner.d',
+    command: [python, '-B', native_fixture, '--compiler', aurorac,
+              '--source', '@INPUT@', '--module-root', native_root / 'kernel/policies',
+              '--local-symbols', '--referenced-reflection-only',
+              '--bridge', native_root / 'kernel/uefi/nvme-transport-owner-entry.S',
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 # The actual loader copy helper is compiled once for hosted parameter tests.
 native_snapshot_copy_object = custom_target('native-snapshot-copy',
     input: '../../examples/kernel-snapshot-copy.au', output: 'snapshot-copy.o',
@@ -102,11 +111,12 @@ endforeach
 # Warning level 2 models; the platform group keeps kernel-uefi's non-PIE code.
 foreach driver : [
     ['uefi-platform', ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-fno-pie'], ['-no-pie']],
-    ['uefi-devices', ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DNDEBUG'], []],
+    ['uefi-devices', ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DNDEBUG'], ['-no-pie']],
     ['iommu-models', [], []],
     ['kernel-api', [], []],
 ]
-  native_drivers += {driver[0]: executable('native-' + driver[0], files(driver[0] + '.cpp'),
+  native_drivers += {driver[0]: executable('native-' + driver[0], files(driver[0] + '.cpp') +
+      (driver[0] == 'uefi-devices' ? [native_nvme_transport_object] : []),
       native: true, install: false, override_options: ['optimization=1', 'warning_level=2'],
       cpp_args: driver[1], link_args: driver[2])}
 endforeach

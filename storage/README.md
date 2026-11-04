@@ -38,6 +38,27 @@ with all DMA backing retained; no reset, retry or allocator release exists.
 Successful closure disables the controller, clears BME, revokes its DTE and
 observes its own fresh invalidation completion, still retaining every page.
 
+The retained Aurora `kernel.nvme_transport` owner holds both queue ledgers,
+command-ID consumption, completion selection and the absorbing transport failure
+state. One global operation advances through reservation, publication, completion
+selection and acknowledgment. Reservation spends its CID before SQ publication;
+completion selection does not permit reuse until the exact CQ doorbell and
+subsequent health/guard checks are acknowledged. No failure refunds a CID.
+Native code retains immutable queue/backing bindings, volatile DMA observations,
+fences and MMIO, not a second queue-policy ledger. Empty polling uses a frozen
+head/phase projection; copied plans are not authority. Source validates the five
+copied completion DWORD observations, including the repeated last word. This is
+sampled protocol stability, not proof of immutable device-written memory.
+
+The source root is boot-pinned outside DMA backing. Its synchronous borrows check
+the exact admitted root, disabled interrupts and closed transient window, and end
+before hardware effects. Process queries use the existing broker-authenticated
+contexts; no arbitrary CR3 is admitted. Source or bridge faults fail-stop with
+backing retained, without claiming that a poison transition necessarily ran.
+Mounted/recovery write, fence, sealing and revocation policies remain separate.
+This is bounded transport ownership, not asynchronous storage, SMP or DMA-page
+reclamation; the device and emulator assumptions are unchanged.
+
 The retained read-only broker uses the same queues with no write-data mapping.
 Its aligned 4 KiB cache serves copied 512-byte sectors without reusing command
 IDs; exhaustion or a device fault permanently quarantines the backend. The

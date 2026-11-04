@@ -1,0 +1,60 @@
+module kernel_nvme_transport;
+import kernel.nvme_transport;
+
+// Synchronous plain-root entries. Native code ends each root borrow before
+// touching DMA bytes, a doorbell or controller/IOMMU health registers.
+auto nvme_transport_owner_create() -> kernel::TransportOwner {
+    const kernel::TransportOwner owner = kernel::TransportOwner();
+    return owner;
+}
+auto nvme_transport_owner_reserve(kernel::TransportOwner& owner, u64 qid, u64 original_command_cid) -> bool {
+    const kernel::TransportPlan plan = owner.reserve(qid, original_command_cid);
+    return plan.cid() != 0u64;
+}
+auto nvme_transport_owner_published(kernel::TransportOwner& owner, u64 qid, u64 cid) -> bool {
+    return owner.published(qid, cid);
+}
+auto nvme_transport_owner_accept_completion(kernel::TransportOwner& owner, u64 qid, u64 cid,
+    kernel::TransportObservation observed) -> kernel::TransportCompletionKind {
+    const kernel::TransportCompletion completion = owner.accept_completion(qid, cid, observed);
+    return completion.kind();
+}
+auto nvme_transport_owner_acknowledged(kernel::TransportOwner& owner, u64 qid, u64 cid) -> bool {
+    return owner.acknowledged(qid, cid);
+}
+auto nvme_transport_owner_poison(kernel::TransportOwner& owner) -> bool {
+    return owner.poison();
+}
+auto nvme_transport_owner_stage(const kernel::TransportOwner& owner) -> kernel::TransportStage {
+    return owner.stage();
+}
+auto nvme_transport_owner_remaining(const kernel::TransportOwner& owner, u64 qid) -> u64 {
+    return owner.remaining(qid);
+}
+auto nvme_transport_owner_available(const kernel::TransportOwner& owner, u64 qid) -> bool {
+    return owner.available(qid);
+}
+auto nvme_transport_owner_next_cid(const kernel::TransportOwner& owner, u64 qid) -> u64 {
+    return owner.next_cid(qid);
+}
+auto nvme_transport_owner_tail(const kernel::TransportOwner& owner, u64 qid) -> u64 {
+    return owner.tail(qid);
+}
+auto nvme_transport_owner_head(const kernel::TransportOwner& owner, u64 qid) -> u64 {
+    return owner.head(qid);
+}
+auto nvme_transport_owner_phase(const kernel::TransportOwner& owner, u64 qid) -> u64 {
+    return owner.phase(qid);
+}
+auto nvme_transport_owner_status(const kernel::TransportOwner& owner, u64 qid) -> u64 {
+    return owner.status(qid);
+}
+auto nvme_transport_owner_active_qid(const kernel::TransportOwner& owner) -> u64 {
+    return owner.active_qid();
+}
+auto nvme_transport_owner_active_cid(const kernel::TransportOwner& owner) -> u64 {
+    return owner.active_cid();
+}
+auto nvme_transport_owner_poisoned(const kernel::TransportOwner& owner) -> bool {
+    return owner.poisoned();
+}
