@@ -227,6 +227,15 @@ def rejection_cases(s):
             helper + f"auto use({SPAN} v,i64 x)->i64{{return v.size()+x;}}",
         ),
     )
+    for owner_const in ("", "const "):
+        for binding in ("", "const "):
+            s.reject(
+                f"mutable-local-owner-{owner_const or 'mutable'}-{binding or 'nonconst'}",
+                program(
+                    f"{owner_const}{OWNER} a=region.try_allocate(1);"
+                    + f"{binding}builtin::span<u8> v=borrow_bytes(a);return 0;"
+                ),
+            )
     s.reject("ordinary-span-return", f"module bad;auto f({SPAN} v)->{SPAN}{{return v;}}")
 
 

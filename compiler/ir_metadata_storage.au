@@ -45,7 +45,8 @@ export namespace compiler_ir_metadata {
         ServiceResource,
         ServiceBootstrapEffects,
         WordSpan,
-        InputStream
+        InputStream,
+        MutableByteSpan
     };
     // Each reason's message is in pipeline.au (compiler_ir_metadata::metadata_text).
     enum class MetadataError {

@@ -805,6 +805,18 @@ test('xfs-offline-native', python,
 
 subdir('native')
 
+invocation_bytes_host = static_library('invocation-bytes-host',
+    'compiler/invocation_bytes_host.cpp', native: true, pic: false,
+    override_options: fixture_options, install: false)
+test('invocation-bytes', python,
+     args: ['-B', '-O', files('compiler/invocation_bytes.py'), aurorac.full_path(),
+            '--formatter', aurora_fmt.full_path(),
+            '--host', invocation_bytes_host, '--copy-object', native_snapshot_copy_object,
+            '--observer', record_hosts['AURORA_INTEGER_SIGNAL_OBSERVER']],
+     depends: [aurorac, aurora_fmt, invocation_bytes_host, native_snapshot_copy_object] + record_host_targets,
+     suite: ['full', 'merge', 'dev', 'bytes', 'compiler'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 180)
+
 test('private-object', python,
      args: ['-B', files('compiler/private_object.py'), private_object_test, aurorac.full_path(), private_object_wrapper,
             aurora_ir_check, '--frontend', air_frontend[1], air_frontend[0], air_frontend[2],

@@ -1,0 +1,17 @@
+module kernel_snapshot_copy;
+
+// A native-admitted, invocation-only RAM destination and a disjoint readonly
+// source. This function owns no mapping or retained root and cannot forward,
+// retain or manufacture either view. The native caller closes the page window
+// only after this invocation returns. A trap is fail-stop, not rollback.
+auto process_snapshot_copy(builtin::span<u8> destination, builtin::span<const u8> source) -> bool {
+    if (destination.size() != source.size()) {
+        return false;
+    }
+    i64 index = 0;
+    while (index < source.size()) {
+        builtin::require(destination.set(index, source.at(index)));
+        index = index + 1;
+    }
+    return true;
+}

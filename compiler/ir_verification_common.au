@@ -525,6 +525,9 @@ export namespace compiler_ir_verification {
                             i64 parameter_root = -1;
                             if (capability.origin() >= 0 && capability.origin() < signature.value_parameter_count()) {
                                 parameter_root = entry_root(s, w.callable(), capability.origin(), 59);
+                                if (parameter_root < 0) {
+                                    parameter_root = entry_root(s, w.callable(), capability.origin(), 94);
+                                }
                             }
                             if (!require(w, parameter_root >= 0,
                                 first_error(VerificationErrorFirst::span_parameter_origin_does_not_exist))) {
@@ -585,7 +588,8 @@ export namespace compiler_ir_verification {
         if (!require(w, condition_393, first_error(VerificationErrorFirst::span_requires_exact_typed_spill))) {
             return false;
         }
-        const bool condition_394 = !entry_contains(s, w.callable(), 59, base);
+        const bool condition_394 = !entry_contains(s, w.callable(), 59, base) && !entry_contains(s, w.callable(), 94,
+            base);
         if (!require(w, condition_394, first_error(VerificationErrorFirst::span_parameter_cannot_be_rebound))) {
             return false;
         }

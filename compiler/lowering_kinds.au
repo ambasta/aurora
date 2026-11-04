@@ -97,7 +97,11 @@ export namespace compiler_lowering {
         ResourceObjectCall,
         Require,
         BorrowWordsSpan,
-        SpanWordLoad
+        SpanWordLoad,
+        BindMutableSpanParameter,
+        MutableSpanLength,
+        MutableSpanLoad,
+        MutableSpanStore
     };
     enum class Unary {
         CheckedNegate,

@@ -129,7 +129,11 @@ export namespace compiler_lowering {
                                 emit_BindBytesParameter(session, parameter_index, offset);
                             } else {
                                 if (is_span(session, type)) {
-                                    emit_BindSpanParameter(session, parameter_index, offset);
+                                    if (kind == compiler_resolver::ResolvedTypeKind::mutable_byte_span) {
+                                        emit_BindMutableSpanParameter(session, parameter_index, offset);
+                                    } else {
+                                        emit_BindSpanParameter(session, parameter_index, offset);
+                                    }
                                 } else {
                                     if (owning_type(session, type)) {
                                         const i64 staged_a2_178 = compiler_resolver::mw(session, type, 1);

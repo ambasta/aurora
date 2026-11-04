@@ -544,7 +544,8 @@ export namespace compiler_ir_verification {
         if (form == 44) {
             return return_object(w, m, transfer_value(s, id, 0));
         }
-        if ((form >= 47 && form <= 52) || (form >= 54 && form <= 59) || form == 84 || form == 92 || form == 93) {
+        if ((form >= 47 && form <= 52) || (form >= 54 && form <= 59) || form == 84 || form == 92 || form == 93 || (form
+            >= 94 && form <= 97)) {
             return transfer_spans(w, m, s, id);
         }
         if (form == 53) {

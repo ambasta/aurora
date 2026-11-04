@@ -1,8 +1,52 @@
 # Owners, readonly views and synchronous loans
 
-Authority is explicit, checked by the semantic frontend and independently validated typed IR. Lifetimes are lexical and calls synchronous. No general references, mutable spans, asynchronous escaped loans or exception unwinding are supported. Every live descendant view, including an empty one, retains root authority. Fail-stop faults require reclamation outside ordinary scope cleanup.
+Authority is explicit, checked by the semantic frontend and independently validated typed IR. Lifetimes are lexical and calls synchronous. No general references, source-issued mutable spans, asynchronous escaped loans or exception unwinding are supported. Every live descendant view, including an empty one, retains root authority. Fail-stop faults require reclamation outside ordinary scope cleanup.
 
 Current spans use the 56-byte tagged array/owner representation documented below. Runtime owner lengths are not limited to the fixed-array 4096-byte cap. Nonconstructor methods accept readonly span arguments, and returned views use only the narrow const receiver-field rules below.
+
+## Invocation-only writable byte parameters
+
+`builtin::span<u8>` is a non-rebindable, invocation-only writable byte parameter
+for explicitly admitted trusted native entries. It is not a source-issued owner
+or general mutable borrowing facility. The first consumer copies registered
+loader-buffer fragments into authenticated snapshot pages. The native caller
+retains mapping authority and closes its temporary mapping after the source call.
+
+An entry has exactly one writable byte parameter, with only scalar or readonly
+byte-view companions. Implicit borrowed roots, receivers and resource/class
+companions are excluded.
+
+The parameter supports `size()`, copied `at(i64)`, and `set(i64, u8) -> bool`.
+A negative or out-of-range set returns false without accessing memory; bounds
+checks precede payload address arithmetic. Reads use the checked byte-view
+contract. Stores are sequenced, observable one-byte writes: no elimination,
+coalescing or reordering of those writes. This is ordinary initialized RAM, not
+MMIO permission, atomic access, a memory fence or a DMA-coherence contract.
+Empty views retain their invocation lifetime and grant no byte access.
+
+Source cannot create, copy, store, rebind, return, forward, convert, reflect or
+reborrow this parameter, including through a local, field or subspan. Ordinary
+source calls cannot manufacture an argument for it. Readonly spans cannot be
+promoted to writable authority. Semantic lowering and independent typed IR
+preserve the distinct parameter origin and access mode; equal physical record
+sizes never permit substituting readonly and writable slots.
+
+The admitted helper is effect-limited, not pure: it may read its readonly input
+and write its declared destination. Its closed leaf body has no native imports,
+callbacks, recursion, owning operations or mapping/root effects. Native admission
+establishes initialized contiguous backing, bounds, physical disjointness of
+source and destination, stable mappings, and no concurrent or reentrant alias
+access. Existing aliases may remain mapped; this is temporal access exclusivity,
+not uniqueness of physical mappings. Current kernel use assumes one BSP and no
+DMA, NMI or exceptional handler accesses to these bytes during the call.
+
+The snapshot helper checks equal lengths before its first store and requires
+each set to succeed. On normal return all parameter authority ends before the
+native window closes and invalidates. A trap is fail-stop and may leave a partial
+copy; there is no unwinding, rollback or automatic replay. Exact private ABI,
+closed-call and nested native-to-source stack admission remain required. General
+mutable owners, suspended-parent reborrows and disjoint mutable splitting remain
+unsupported.
 
 ## Service-issued explicit-finalize owners
 
@@ -171,7 +215,7 @@ lives. The existing closed-call analysis excludes them transitively. Effects
 carry at most four copied u64 values beside the two native descriptor words;
 indices, packed allocation generations and slot values are request data, never
 standalone authority. There is no public request receipt, opcode dispatcher,
-raw address conversion, mutable span or general native callback facility.
+raw address conversion, source-issued mutable span or general native callback facility.
 
 Compiler facts describe the exact root, fields, constructor and native entries.
 The compiler does not prove arbitrary MemoryManager policy algorithms correct,
@@ -639,7 +683,9 @@ Nonconstructor methods also accept synchronous parameters under the
 [method-span contract](OWNERSHIP.md). Ordinary functions cannot return spans. Spans cannot be stored in classes or assigned into outer bindings,
 passed as constructor parameters, used as template arguments,
 reflected, compared, converted or treated as scalar values. No global storage,
-mutable span, raw base address or arbitrary pointer/length constructor exists.
+source-issued mutable span, raw base address or arbitrary pointer/length constructor exists.
+The distinct invocation-only writable parameter contract above does not broaden
+these readonly source-argument rules.
 Private OwnedBytes fields and implicit private fixed-u8 receiver fields use
 the bounded receiver rules below.
 

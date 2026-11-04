@@ -283,6 +283,9 @@ export namespace compiler_lowering_projection {
         if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
             return 11;
         }
+        if (kind == compiler_resolver::ResolvedTypeKind::mutable_byte_span) {
+            return 30;
+        }
         if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
             return 12;
         }

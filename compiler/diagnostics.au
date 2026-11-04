@@ -579,8 +579,12 @@ export namespace compiler_resolver {
             const compiler_parser::TypeKind kind = result.field_kind();
             value.classify(2003, false);
             value.text("unsupported class field type '");
-            if (kind == compiler_parser::TypeKind::byte_span) {
-                value.text("builtin::span<const u8>");
+            if (kind == compiler_parser::TypeKind::byte_span || kind == compiler_parser::TypeKind::mutable_byte_span) {
+                if (kind == compiler_parser::TypeKind::mutable_byte_span) {
+                    value.text("builtin::span<u8>");
+                } else {
+                    value.text("builtin::span<const u8>");
+                }
             } else {
                 if (kind == compiler_parser::TypeKind::value_span) {
                     value.text("builtin::span<const ");
@@ -861,6 +865,10 @@ export namespace compiler_resolver {
             say(session, "mutref<i64>");
             return true;
         }
+        if (kind == ResolvedTypeKind::mutable_byte_span) {
+            say(session, "builtin::span<u8>");
+            return true;
+        }
         if (kind == ResolvedTypeKind::byte_span) {
             say(session, "builtin::span<const u8>");
             return true;
@@ -1078,6 +1086,9 @@ export namespace compiler_resolver {
         }
         if (kind == compiler_parser::TypeKind::byte_span) {
             return say(session, "builtin::span<const u8>");
+        }
+        if (kind == compiler_parser::TypeKind::mutable_byte_span) {
+            return say(session, "builtin::span<u8>");
         }
         if (kind == compiler_parser::TypeKind::parameter || kind == compiler_parser::TypeKind::length_parameter) {
             const ResolvedRow decoration = session.resolved(node);

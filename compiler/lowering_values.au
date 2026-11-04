@@ -397,6 +397,27 @@ export namespace compiler_lowering {
         put(session, OperandRole::Offset, a1);
         return emit(session, InstructionForm::BindSpanParameter, begin);
     }
+    auto emit_BindMutableSpanParameter(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Index, a0);
+        put(session, OperandRole::Offset, a1);
+        return emit(session, InstructionForm::BindMutableSpanParameter, begin);
+    }
+    auto emit_MutableSpanLength(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::MutableSpanLength, begin);
+    }
+    auto emit_MutableSpanLoad(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::MutableSpanLoad, begin);
+    }
+    auto emit_MutableSpanStore(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::MutableSpanStore, begin);
+    }
     auto emit_BeginBytes(compiler_resolver::Session& session, i64 a0) -> i64 {
         const i64 begin = session.operand_count();
         put(session, OperandRole::Offset, a0);
@@ -1051,6 +1072,12 @@ export namespace compiler_lowering {
                         } else {
                             if (is_span(session, type)) {
                                 local_slot(session, RecordKind::SpanSlot, offset);
+                                if (kind == compiler_resolver::ResolvedTypeKind::mutable_byte_span) {
+                                    const i64 span_begin = session.operand_count();
+                                    put(session, OperandRole::Offset, offset);
+                                    put(session, OperandRole::TypeId, type);
+                                    emit_record(session, RecordKind::SpanValueType, span_begin);
+                                }
                                 if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
                                     owned_element(session, type, request.source());
                                     const i64 element = compiler_resolver::mw(session, type, 2);

@@ -32,6 +32,14 @@ native_scheduler_object = custom_target('native-scheduler-owner',
               '--local-symbols', '--referenced-reflection-only',
               '--bridge', native_root / 'kernel/scheduler-owner-entry.S',
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+# The actual loader copy helper is compiled once for hosted parameter tests.
+native_snapshot_copy_object = custom_target('native-snapshot-copy',
+    input: '../../examples/kernel-snapshot-copy.au', output: 'snapshot-copy.o',
+    depfile: 'snapshot-copy.d',
+    command: [python, '-B', native_fixture, '--compiler', aurorac,
+              '--source', '@INPUT@', '--local-symbols', '--referenced-reflection-only',
+              '--bridge', native_root / 'kernel/uefi/snapshot-copy-entry.S',
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 native_uefi_object = custom_target('native-uefi-policy',
     input: '../../examples/kernel.au', output: 'uefi-policy.o',
     depfile: 'uefi-policy.d',

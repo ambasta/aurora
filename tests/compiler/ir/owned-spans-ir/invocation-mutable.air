@@ -1,0 +1,495 @@
+; Metadata kind 30 is the distinct invocation-only mutable byte view.
+; Constructed directly: frontend lowering never runs for these cases.
+
+; CASE: invocation mutable parameter checked byte store
+; RUN: verify
+; EXPECT-OK
+; RUN: abi-facts
+; ABI: function write_byte write_byte
+; CHECK-JSON: functions.write_byte.parameter_bytes 56
+; CHECK-JSON: functions.write_byte.parameters [{"offset":0,"bytes":56,"kind":"mutable_span"}]
+; CHECK-JSON: functions.write_byte.result {"bytes":8,"kind":"bool"}
+; RUN: emit
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: readonly parameter cannot mint writable authority
+; RUN: verify
+; EXPECT-ERROR: span parameter bindings must form the entry prefix
+function write_byte
+  result bool
+  params [span]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable bind requires declared parameter
+; RUN: verify
+; EXPECT-ERROR: span parameter bindings must form the entry prefix
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 1 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable bind rejects spill interior
+; RUN: verify
+; EXPECT-ERROR: span parameter requires exact typed spill
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 55
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: readonly annotation cannot authorize mutable bind
+; RUN: verify
+; EXPECT-ERROR: span parameter type mismatch
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (28)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: same mutable invocation parameter cannot bind twice
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    BindMutableSpanParameter 0 112
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable write cannot use unbound spill
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 112
+    EndSpan 56
+    Return
+end
+
+; CASE: readonly parameter bind cannot launder mutable input
+; RUN: verify
+; EXPECT-ERROR: span parameter bindings must form the entry prefix
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindSpanParameter 0 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable view cannot readonly reborrow
+; RUN: verify
+; EXPECT-ERROR: span argument or result element type mismatch
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    ReborrowSpan 56 112
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable view cannot produce subspan
+; RUN: verify
+; EXPECT-ERROR: span argument or result element type mismatch
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    Constant 0 i64
+    Push
+    Constant 0 i64
+    Subspan 56 112
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable view cannot use ordinary shared length
+; RUN: verify
+; EXPECT-ERROR: span borrow, reborrow, window or byte load changes the span element type
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    SpanLength 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable view cannot use ordinary shared load
+; RUN: verify
+; EXPECT-ERROR: span borrow, reborrow, window or byte load changes the span element type
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    Constant 0 i64
+    SpanLoad 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: ended mutable invocation cannot write
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    EndSpan 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: descriptor bytes cannot be scalar spill
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps scalar, object or array storage
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  slot 16 u8
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable view cannot return
+; RUN: verify
+; EXPECT-ERROR: readonly span boundary requires ordinary parameter or const receiver result
+function write_byte
+  result 30
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable view cannot escape through readonly result
+; RUN: verify
+; EXPECT-ERROR: readonly span boundary requires ordinary parameter or const receiver result
+function write_byte
+  result span
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable invocation cannot forward to source callee
+; RUN: verify
+; EXPECT-ERROR: span argument or result element type mismatch
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    AggregateCall sink [56] 0 []
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+function sink
+  result bool
+  params [30]
+  frame 64
+  span 56
+  spanvalues 56 (30)
+    BindMutableSpanParameter 0 56
+    Constant 1 bool
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable invocation cannot call unparameterized source helper
+; RUN: verify
+; EXPECT-ERROR: span argument or result element type mismatch
+function write_byte
+  result bool
+  params [30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    Call sink
+    Constant 0 i64
+    Push
+    Constant 255 u8
+    MutableSpanStore 56
+    EndSpan 56
+    Return
+end
+function sink
+  result bool
+  frame 0
+    Constant 1 bool
+    Return
+end
+
+; CASE: ordinary shared span may accompany an implicit borrowed class root
+; RUN: verify
+; EXPECT-OK
+layout Plain [i64]
+fields Plain [(i64 0 1 false)]
+storage Plain [0] [0] 8 8 8
+function borrowed_leaf
+  result bool
+  params [(class Plain) span]
+  roots 1
+  rootmut 0
+  frame 64
+  span 56
+    BindSpanParameter 0 56
+    Constant 1 bool
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable invocation may not carry even an unused implicit class root
+; RUN: verify
+; EXPECT-ERROR: span argument or result element type mismatch
+layout Plain [i64]
+fields Plain [(i64 0 1 false)]
+storage Plain [0] [0] 8 8 8
+function borrowed_leaf
+  result bool
+  params [(class Plain) 30]
+  roots 1
+  rootmut 0
+  frame 64
+  span 56
+  spanvalues 56 (30)
+    BindMutableSpanParameter 0 56
+    Constant 1 bool
+    EndSpan 56
+    Return
+end
+
+; CASE: two mutable invocation parameters are outside the admitted boundary
+; RUN: verify
+; EXPECT-ERROR: span argument or result element type mismatch
+function multiple_writers
+  result bool
+  params [30 30]
+  frame 112
+  span 56
+  spanvalues 56 (30)
+  span 112
+  spanvalues 112 (30)
+    BindMutableSpanParameter 0 56
+    BindMutableSpanParameter 1 112
+    Constant 1 bool
+    EndSpan 112
+    EndSpan 56
+    Return
+end
+
+; CASE: mutable invocation cannot carry an object companion
+; RUN: verify
+; EXPECT-ERROR: span argument or result element type mismatch
+layout Plain [i64]
+fields Plain [(i64 0 1 false)]
+storage Plain [0] [0] 8 8 8
+function object_companion
+  result bool
+  params [30 (class Plain)]
+  frame 64
+  span 56
+  spanvalues 56 (30)
+  object 64 Plain false
+  slot 64 i64
+    BindMutableSpanParameter 0 56
+    BindObjectParameter 1 64 Plain
+    Constant 1 bool
+    EndObject 64
+    EndSpan 56
+    Return
+end
+
+; CASE: scalar store cannot overwrite descriptor interior
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+function overwrite_descriptor
+  result bool
+  params [30]
+  frame 64
+  span 56
+  spanvalues 56 (30)
+    BindMutableSpanParameter 0 56
+    Constant 255 u8
+    Store 16 u8
+    Constant 1 bool
+    EndSpan 56
+    Return
+end
