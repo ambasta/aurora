@@ -24,7 +24,11 @@ def pattern() -> bytes:
     return bytes((index * 37 + 11) % 256 for index in range(PATTERN_SIZE))
 
 
-def create_image(destination: Path, mkfs: str = "mkfs.xfs") -> Path:
+def create_image(
+    destination: Path, mkfs: str = "mkfs.xfs", *, image_bytes: int = IMAGE_BYTES, hello: bytes = HELLO
+) -> Path:
+    if image_bytes < IMAGE_BYTES or image_bytes % (1024 * 1024):
+        raise ValueError("fresh fixture size must be whole MiB and at least 512MiB")
     destination = destination.absolute()
     version = subprocess.run([mkfs, "-V"], check=True, capture_output=True, text=True)
     if version.stdout.strip() != "mkfs.xfs version 6.13.0":
@@ -33,12 +37,12 @@ def create_image(destination: Path, mkfs: str = "mkfs.xfs") -> Path:
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise ValueError("new image is not a regular file")
-        os.ftruncate(fd, IMAGE_BYTES)
+        os.ftruncate(fd, image_bytes)
         with tempfile.TemporaryDirectory(prefix="xfs-prototype-", dir=destination.parent) as temporary:
             root = Path(temporary)
             if any(character.isspace() for character in str(root)):
                 raise ValueError("mkfs prototype input directory must not contain whitespace")
-            (root / "hello").write_bytes(HELLO)
+            (root / "hello").write_bytes(hello)
             (root / "pattern").write_bytes(pattern())
             prototype = root / "prototype"
             prototype.write_text(
@@ -50,7 +54,7 @@ def create_image(destination: Path, mkfs: str = "mkfs.xfs") -> Path:
                     mkfs,
                     "-f",
                     "-d",
-                    f"file=1,name=/proc/self/fd/{fd},size=512m",
+                    f"file=1,name=/proc/self/fd/{fd},size={image_bytes}",
                     "-s",
                     "size=512",
                     "-m",

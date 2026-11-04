@@ -1,0 +1,49 @@
+export module aurora.blocks;
+import storage.block_io;
+import storage.sector;
+import std.binary;
+import std.binary_buffer;
+
+// One sealed, immutable bounded set. A slot is not an NSID or independent
+// authority. Every descriptor observation authenticates the live kernel grant.
+export namespace blocks {
+    auto volume_count(builtin::ReadOnlyBlocks& volumes) -> u64 {
+        return volumes.descriptor(0u64);
+    }
+    auto remaining_commands(builtin::ReadOnlyBlocks& volumes) -> u64 {
+        return volumes.descriptor(1u64);
+    }
+    auto sector_count(builtin::ReadOnlyBlocks& volumes, u64 slot) -> u64 {
+        if (slot >= 2u64) {
+            return 0u64;
+        }
+        return volumes.descriptor(2u64 + slot * 2u64);
+    }
+    auto volume_generation(builtin::ReadOnlyBlocks& volumes, u64 slot) -> u64 {
+        if (slot >= 2u64) {
+            return 0u64;
+        }
+        return volumes.descriptor(3u64 + slot * 2u64);
+    }
+    auto read_sector(builtin::ReadOnlyBlocks& volumes, u64 slot, u64 lba) -> storage::SectorReadResult {
+        storage::Sector512 sector = storage::Sector512();
+        storage::SectorIoStatus status = storage::SectorIoStatus::invalid_source;
+        if (slot < 2u64) {
+            const u64 raw = volumes.read_sector(slot, lba);
+            if (raw == 0u64) {
+                status = storage::SectorIoStatus::success;
+                i64 index = 0;
+                while (index < 512) {
+                    const u8 byte = volumes.sector_byte(u64(index));
+                    sector.write_byte(index, byte);
+                    index = index + 1;
+                }
+            }
+            if (raw == 1u64) {
+                status = storage::SectorIoStatus::out_of_range;
+            }
+        }
+        const storage::SectorReadResult result = storage::SectorReadResult(status, sector);
+        return result;
+    }
+}

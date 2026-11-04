@@ -151,10 +151,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     const auto storage = aurora::uefi::fw_cfg::FwCfg::read_storage();
     if (!storage)
         fail("production storage selector");
-    const bool capture = *storage == aurora::uefi::fw_cfg::Storage::nvme ||
-                         *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_clean ||
-                         *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_recover ||
-                         *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_write;
+    const bool capture = aurora::uefi::fw_cfg::FwCfg::storage_capture(*storage);
 #else
     constexpr bool capture = true;
 #endif
@@ -328,12 +325,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
 #ifdef AURORA_PRODUCTION
 #ifdef AURORA_UEFI_NVME
     put(handoff, Handoff::composition_word, capture ? 4 : 1);
-    put(handoff,
-        Handoff::readonly_profile_word,
-        *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_write     ? 3
-        : *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_recover ? 2
-        : *storage == aurora::uefi::fw_cfg::Storage::nvme_linux_6_12_clean   ? 1
-                                                                             : 0);
+    put(handoff, Handoff::readonly_profile_word, aurora::uefi::fw_cfg::FwCfg::storage_profile(*storage));
 #else
     put(handoff, Handoff::composition_word, 1);
 #endif

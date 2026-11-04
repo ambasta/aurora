@@ -48,7 +48,7 @@ export namespace service {
     // 0 outside /disk, 1 mounted root, 2 mounted descendant, 3 refused mounted path.
     // Lexical normalization is for routing only. Any '..' touching this mount
     // is refused, never resolved into the mutable boot/overlay namespace.
-    auto xfs_path(builtin::span<const u8> path) -> XfsPath {
+    auto xfs_path_volume(builtin::span<const u8> path, u64 volume) -> XfsPath {
         i64 at = 0;
         i64 depth = 0;
         i64 first = -1;
@@ -91,7 +91,8 @@ export namespace service {
                 if (depth == 0) {
                     first = begin;
                     first_length = length;
-                    if (length == 4 && path.at(begin) == 100u8 && path.at(begin + 1) == 105u8 && path.at(begin + 2)
+                    if (((volume == 0u64 && length == 4) || (volume == 1u64 && length == 5
+                        && path.at(begin + 4) == 50u8)) && path.at(begin) == 100u8 && path.at(begin + 1) == 105u8 && path.at(begin + 2)
                         == 115u8 && path.at(begin + 3) == 107u8) {
                         touched = true;
                     }
@@ -103,7 +104,8 @@ export namespace service {
             }
         }
         bool disk = false;
-        if (first >= 0 && first_length == 4) {
+        if (first >= 0 && ((volume == 0u64 && first_length == 4) || (volume == 1u64 && first_length == 5
+            && path.at(first + 4) == 50u8))) {
             disk = path.at(first) == 100u8 && path.at(first + 1) == 105u8 && path.at(first + 2) == 115u8
                 && path.at(first + 3) == 107u8;
         }
@@ -129,6 +131,10 @@ export namespace service {
             .length = path.size() - leaf
         };
         return result;
+    }
+
+    auto xfs_path(builtin::span<const u8> path) -> XfsPath {
+        return xfs_path_volume(path, 0u64);
     }
 
     auto xfs_handle(u64 id) -> bool {
@@ -178,6 +184,9 @@ export namespace service {
         u64 parent;
         bool directory_open;
         u64 generation;
+        u64 handle_base;
+        u64 handle_count;
+        u64 device;
         u64 client;
         u64 root_inode;
         u64 slot;
@@ -217,10 +226,11 @@ export namespace service {
             return usable;
         }
         auto find(u64 id, u64 kind) const -> i64 {
-            if (!xfs_handle(id) || !mounted || client == 0u64 || !ok()) {
+            if (id == 0u64 || (id - 1u64) % 64u64 < handle_base
+                || (id - 1u64) % 64u64 >= handle_base + handle_count || !mounted || client == 0u64 || !ok()) {
                 return -1;
             }
-            const u64 row = (id - 1u64) % 64u64 - 40u64;
+            const u64 row = (id - 1u64) % 64u64 - handle_base;
             const u64 state = word(row, 0u64);
             if (state == 0u64 || (kind != 0u64 && state != kind)) {
                 return -1;
@@ -243,7 +253,7 @@ export namespace service {
             set_word(slot, 2u64, inode);
             set_word(slot, 3u64, size);
             set_result(kernel::FileStatus::success);
-            result_id = next * 64u64 + slot + 41u64;
+            result_id = next * 64u64 + slot + handle_base + 1u64;
             result_size = size;
             result_inode = inode;
             pending = 0u64;
@@ -252,14 +262,100 @@ export namespace service {
     public:
         XfsFiles(builtin::ByteRegion region, u64 volume_generation, u64 sectors) : table(region.try_allocate(5120)),
             cursors{}, payload(region.try_allocate(504)), path_bytes(region.try_allocate(4095)), path_length(0),
-            directory(0u64), parent(0u64), directory_open(false), generation(volume_generation), client(0u64),
+            directory(0u64), parent(0u64), directory_open(false), generation(volume_generation), handle_base(40u64),
+            handle_count(16u64), device(3u64), client(0u64),
             root_inode(0u64), slot(0u64), pending(0u64), offset(0u64), desired(0u64), copied(0u64),
             usable(volume_generation != 0u64 && sectors != 0u64), mounted(false),
             result_status(kernel::FileStatus::failed), result_count(0u64), result_id(0u64), result_size(0u64),
             result_inode(0u64) {
         }
+        auto configure_volume(u64 volume) -> bool {
+            if (mounted || client != 0u64 || pending != 0u64 || volume > 1u64 || handle_count != 16u64) {
+                return false;
+            }
+            handle_base = 40u64 + volume * 8u64;
+            handle_count = 8u64;
+            device = 3u64 + volume;
+            return true;
+        }
+        // Observation only: rejection and known EOF remain usable with no I/O.
+        auto required_commands(u64 operation, u64 id, u64 position, builtin::span<const u8> path) const -> u64 {
+            if (!ready() || client == 0u64 || pending != 0u64) {
+                return 0u64;
+            }
+            if (operation == 19u64) {
+                const i64 found = find(id, 2u64);
+                if (found < 0 || position > 9223372036854775807u64 || position >= word(u64(found), 3u64)) {
+                    return 0u64;
+                }
+                return 6u64;
+            }
+            if (operation == 25u64) {
+                const i64 found = find(id, 1u64);
+                if (position != 0u64 || path.size() != 0 || found < 0 || cursors[found] == 17u64) {
+                    return 0u64;
+                }
+                return 1u64;
+            }
+            if (operation != 16u64 && operation != 17u64 && operation != 18u64) {
+                return 0u64;
+            }
+            if (path.size() == 0 || path.size() > 4095 || !kernel::valid_path(path)) {
+                return 0u64;
+            }
+            if (operation == 17u64) {
+                if (find(id, 1u64) < 0 || kernel::escapes(path)) {
+                    return 0u64;
+                }
+            } else {
+                const XfsPath parsed = xfs_path_volume(path, device - 3u64);
+                if (parsed.kind == 0u64 || parsed.kind == 3u64 || parsed.kind == 1u64) {
+                    return 0u64;
+                }
+            }
+            i64 at = 0;
+            bool trailing = true;
+            while (at < path.size()) {
+                while (at < path.size() && path.at(at) == 47u8) {
+                    trailing = true;
+                    at = at + 1;
+                }
+                const i64 begin = at;
+                while (at < path.size() && path.at(at) != 47u8) {
+                    at = at + 1;
+                }
+                if (at - begin > 255 || xfs_private_name(path.subspan(begin, at - begin))) {
+                    return 0u64;
+                }
+                if (at > begin) {
+                    trailing = at - begin == 1 && path.at(begin) == 46u8;
+                }
+            }
+            if (operation != 16u64 && trailing) {
+                return 0u64;
+            }
+            u64 row = 0u64;
+            while (row < handle_count) {
+                if (word(row, 0u64) == 0u64 && word(row, 1u64) + 1u64 < 288230376151711744u64) {
+                    return 2049u64;
+                }
+                row = row + 1u64;
+            }
+            return 0u64;
+        }
+        auto admit_commands(u64 operation, u64 id, u64 position, builtin::span<const u8> path,
+            u64 remaining) -> bool {
+            if (required_commands(operation, id, position, path) > remaining) {
+                set_result(kernel::FileStatus::failed);
+                return false;
+            }
+            return true;
+        }
+        auto resources_ok() const -> bool {
+            return table.ok() && payload.ok() && path_bytes.ok();
+        }
         auto ok() const -> bool {
-            return usable && table.ok() && payload.ok() && path_bytes.ok();
+            return usable && resources_ok();
         }
         auto ready() const -> bool {
             return ok() && mounted;
@@ -269,7 +365,7 @@ export namespace service {
                 return false;
             }
             u64 row = 0u64;
-            while (row < 16u64) {
+            while (row < handle_count) {
                 if (word(row, 0u64) != 0u64) {
                     return false;
                 }
@@ -296,10 +392,10 @@ export namespace service {
             result.size = result_size;
             result.inode = result_inode;
             if (result_id != 0u64) {
-                result.device = 3u64;
-                const u64 row = (result_id - 1u64) % 64u64 - 40u64;
+                result.device = device;
+                const u64 row = (result_id - 1u64) % 64u64 - handle_base;
                 if (word(row, 0u64) == 3u64) {
-                    result.directory_device = 3u64;
+                    result.directory_device = device;
                     result.directory_inode = root_inode;
                 }
             }
@@ -347,7 +443,7 @@ export namespace service {
             }
             if (table.ok()) {
                 u64 row = 0u64;
-                while (row < 16u64) {
+                while (row < handle_count) {
                     set_word(row, 0u64, 0u64);
                     cursors[i64(row)] = 0u64;
                     row = row + 1u64;
@@ -411,7 +507,7 @@ export namespace service {
             if (!ready() || client == 0u64 || pending != 0u64 || inode == 0u64) {
                 return fail(kernel::FileStatus::failed);
             }
-            const XfsPath parsed = xfs_path(path);
+            const XfsPath parsed = xfs_path_volume(path, device - 3u64);
             if (parsed.kind != 2u64) {
                 return fail(kernel::FileStatus::denied);
             }
@@ -432,10 +528,10 @@ export namespace service {
                 return fail(kernel::FileStatus::not_found);
             }
             slot = 0u64;
-            while (slot < 16u64 && (word(slot, 0u64) != 0u64 || word(slot, 1u64) + 1u64 >= 288230376151711744u64)) {
+            while (slot < handle_count && (word(slot, 0u64) != 0u64 || word(slot, 1u64) + 1u64 >= 288230376151711744u64)) {
                 slot = slot + 1u64;
             }
-            if (slot == 16u64) {
+            if (slot == handle_count) {
                 return fail(kernel::FileStatus::exhausted);
             }
             return claim(3u64, 0u64, inode);
@@ -460,7 +556,7 @@ export namespace service {
                 return fail(kernel::FileStatus::denied);
             }
             if (operation == 16u64 || operation == 18u64) {
-                const XfsPath parsed = xfs_path(path);
+                const XfsPath parsed = xfs_path_volume(path, device - 3u64);
                 if (parsed.kind == 3u64) {
                     return fail(kernel::FileStatus::escape);
                 }
@@ -539,7 +635,7 @@ export namespace service {
                     return fail(kernel::FileStatus::escape);
                 }
             } else {
-                const XfsPath parsed = xfs_path(path);
+                const XfsPath parsed = xfs_path_volume(path, device - 3u64);
                 if (parsed.kind == 0u64) {
                     return fail(kernel::FileStatus::not_found);
                 }
@@ -603,10 +699,10 @@ export namespace service {
                 return fail(kernel::FileStatus::escape);
             }
             slot = 0u64;
-            while (slot < 16u64 && (word(slot, 0u64) != 0u64 || word(slot, 1u64) + 1u64 >= 288230376151711744u64)) {
+            while (slot < handle_count && (word(slot, 0u64) != 0u64 || word(slot, 1u64) + 1u64 >= 288230376151711744u64)) {
                 slot = slot + 1u64;
             }
-            if (slot == 16u64) {
+            if (slot == handle_count) {
                 return fail(kernel::FileStatus::exhausted);
             }
             if (directory_open && path_length == 0 && directory == root_inode && parent == root_inode) {
@@ -701,6 +797,20 @@ export namespace service {
 }
 
 export namespace service {
+    // Atomic source-resource and initial command admission for the real pump.
+    auto admit_dual_mounts(XfsFiles& first, XfsFiles& second, fs::XfsReadonlyMount& first_mount,
+        fs::XfsReadonlyMount& second_mount, u64 volumes, u64 remaining) -> bool {
+        if (!first.resources_ok() || !second.resources_ok()
+            || first_mount.status() == fs::XfsMountStatus::invalid_request
+            || second_mount.status() == fs::XfsMountStatus::invalid_request
+            || volumes == 0u64 || volumes > 2u64
+            || remaining < volumes * 18458u64) {
+            first.poison();
+            second.poison();
+            return false;
+        }
+        return true;
+    }
     // Shortform directories contain at most sixteen entries. The normal mount
     // walk revalidates the retained inode/parent tuple before any name is copied.
     auto enumerate_xfs(XfsFiles& files, fs::XfsReadonlyMount& mount) -> bool {

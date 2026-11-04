@@ -911,6 +911,7 @@ export namespace compiler_x86 {
         if (!w.kernel_target() || !w.hosted_memory() || start < 0 || finish < 0) {
             return w.fail();
         }
+        const bool blocks = hosted_blocks(m);
         const bool writer = hosted_writer(m);
         const bool endpoint = hosted_endpoint(m);
         const bool block = hosted_block(m) || writer;
@@ -952,6 +953,9 @@ export namespace compiler_x86 {
         if (block) {
             // Preserve the independent loader grant before argv staging reuses
             // R9 and the window setup reuses R8. Absence is exactly zero/zero.
+            if (blocks) {
+                host_bound(w, o, Register::r9, 2);
+            }
             emit_mov_rr(w, o, Register::r8, Register::rbx);
             emit_mov_rr(w, o, Register::r9, Register::r11);
             emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);

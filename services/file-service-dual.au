@@ -1,0 +1,377 @@
+module file_service_dual_program;
+import aurora.endpoint;
+import aurora.memory;
+import aurora.blocks;
+import service.files;
+import service.xfs;
+import service.xfs_dual;
+import service.console;
+import service.protocol;
+import console.session_note;
+import console.protected_files;
+import console.protected_commands;
+import console.session_files;
+import console.file_namespace;
+import kernel.process_files;
+import std.binary;
+import std.binary_buffer;
+import std.array;
+import std.decimal;
+import storage.block_io;
+import storage.sector;
+import fs.xfs_mount;
+import fs.xfs_log;
+
+auto main(builtin::ServeSession& session, builtin::ReadOnlyBlocks& grants, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const service::BootstrapRecord bootstrap = service::read_bootstrap(session, true);
+    if (!bootstrap.valid) {
+        return builtin::HostExit::failure;
+    }
+    const u64 volume_length = bootstrap.volume_length;
+    const u64 profile_word = bootstrap.profile;
+    if (profile_word != 4u64) {
+        return builtin::HostExit::failure;
+    }
+    const fs::XfsReadonlyProfile profile = fs::XfsReadonlyProfile::fresh_format;
+    service::Store store = service::Store(region, i64(volume_length));
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::SessionNote initial_note = console::SessionNote(empty);
+    const console::FileNamespace initial_namespace = console::FileNamespace(empty);
+    const console::ProtectedFiles initial_files = console::ProtectedFiles(initial_namespace);
+    service::ConsoleStore console_state = service::ConsoleStore(region, initial_note, initial_files);
+    const u64 sectors = blocks::sector_count(grants, 0u64);
+    const u64 generation = blocks::volume_generation(grants, 0u64);
+    builtin::OwnedBytes cache = region.try_allocate(1536);
+    builtin::OwnedBytes scratch = region.try_allocate(512);
+    const fs::XfsLogTopology topology = fs::XfsLogTopology();
+    fs::XfsReadonlyMount mount = fs::XfsReadonlyMount(region, move(cache), sectors, profile, topology);
+    service::XfsFiles disk = service::XfsFiles(region, generation, sectors);
+    const u64 sectors2 = blocks::sector_count(grants, 1u64);
+    const u64 generation2 = blocks::volume_generation(grants, 1u64);
+    builtin::OwnedBytes cache2 = region.try_allocate(1536);
+    const fs::XfsLogTopology topology2 = fs::XfsLogTopology();
+    fs::XfsReadonlyMount mount2 = fs::XfsReadonlyMount(region, move(cache2), sectors2, profile, topology2);
+    service::XfsFiles disk2 = service::XfsFiles(region, generation2, sectors2);
+    disk.configure_volume(0u64);
+    disk2.configure_volume(1u64);
+    // Every allocation for both mounts precedes either scan. Budget admission
+    // is atomic initial headroom, not a reservation for future client work.
+    bool scanned = false;
+    const service::RequestHeader empty_header = service::RequestHeader{
+        .operation = 0u64,
+        .id = 0u64,
+        .offset = 0u64,
+        .count = 0u64
+    };
+    const service::ControlState empty_state = service::ControlState{
+        .volume_length = 0u64,
+        .copied = 0u64,
+        .admitted = false,
+        .mount_control = false,
+        .disk_ready = false
+    };
+    const service::ControlReply empty_reply = service::ControlReply{
+        .accepted = false,
+        .exit = false,
+        .admitted = false,
+        .copied = 0u64,
+        .count = 0u64
+    };
+    service::FileRequest request = service::FileRequest(region, empty_header, empty_state, empty_reply);
+    service::Response response = service::Response(region);
+    service::WriteStaging staging = service::WriteStaging();
+    if (!store.ok() || !request.ok() || !response.ok() || !console_state.ok()) {
+        return builtin::HostExit::failure;
+    }
+    const service::Reply success = service::reply(kernel::FileStatus::success);
+    if (!response.header(success)) {
+        return builtin::HostExit::failure;
+    }
+    u64 reply_count = 64u64;
+    u64 copied = 0u64;
+    bool admitted = false;
+    while (true) {
+        bool cancelled = true;
+        u64 source = 0u64;
+        u64 length = 0u64;
+        {
+            const builtin::span<const u8> bytes = response.view(i64(reply_count));
+            const endpoint::Message message = endpoint::exchange(session, bytes);
+            cancelled = message.status() == builtin::ServeStatus::cancelled;
+            source = message.source();
+            length = message.count();
+        }
+        if (cancelled) {
+            return builtin::HostExit::failure;
+        }
+        if (length < 64u64 || length > 65536u64) {
+            return builtin::HostExit::failure;
+        }
+        const u64 operation = service::request_word(session, 0u64);
+        const u64 id = service::request_word(session, 8u64);
+        const u64 offset = service::request_word(session, 16u64);
+        const u64 count = service::request_word(session, 24u64);
+        if (count != length - 64u64 || service::request_word(session, 32u64) != 0u64 || service::request_word(session,
+            40u64) != 0u64 || service::request_word(session, 48u64) != 0u64 || service::request_word(session, 56u64)
+            != 0u64) {
+            return builtin::HostExit::failure;
+        }
+        bool staged_write = false;
+        if (source != 0u64) {
+            if (!store.ok() || !admitted || source != store.active()) {
+                return builtin::HostExit::failure;
+            }
+            // Write routing is handle-only; no request bytes are consulted.
+            // Empty and larger raw writes retain the ordinary copied path.
+            if (operation == 22u64 && count > 0u64 && count <= 4096u64) {
+                staged_write = service::dual_volume(store, "", operation, id) == 0u64;
+            }
+        }
+        u64 at = 0u64;
+        while (!staged_write && at < count) {
+            if (!request.set(i64(at), endpoint::byte(session, 64u64 + at))) {
+                return builtin::HostExit::failure;
+            }
+            at = at + 1u64;
+        }
+        reply_count = 64u64;
+        const bool mount_control = source == 0u64 && operation == 15u64 && admitted && id == 0u64 && offset == 0u64
+            && count == 0u64 && store.active() == 0u64;
+        u64 selected_volume = 0u64;
+        u64 disk_operation = operation;
+        if (source != 0u64 && !staged_write) {
+            const builtin::span<const u8> all = request.bytes();
+            const builtin::span<const u8> payload = all.subspan(0, i64(count));
+            selected_volume = service::dual_volume(store, payload, operation, id);
+            if (selected_volume != 0u64 && operation == 17u64 && store.is_root_directory(id)) {
+                disk_operation = 18u64;
+            }
+        }
+        const bool disk_request = selected_volume != 0u64;
+        u64 pump_begin = 2u64;
+        u64 pump_end = 2u64;
+        if (mount_control && !scanned) {
+            scanned = true;
+            const u64 volumes = blocks::volume_count(grants);
+            if (!scratch.ok()) {
+                disk.poison();
+                disk2.poison();
+            } else {
+                if (service::admit_dual_mounts(disk, disk2, mount, mount2, volumes,
+                    blocks::remaining_commands(grants))) {
+                    pump_begin = 0u64;
+                    pump_end = volumes;
+                }
+            }
+        }
+        if (disk_request) {
+            const builtin::span<const u8> all = request.bytes();
+            const builtin::span<const u8> payload = all.subspan(0, i64(count));
+            const u64 remaining = blocks::remaining_commands(grants);
+            const u64 observed = blocks::volume_generation(grants, selected_volume - 1u64);
+            bool prepared = false;
+            if (selected_volume == 1u64) {
+                disk.check_generation(observed);
+                if (disk.admit_commands(disk_operation, id, offset, payload, remaining)) {
+                    disk.prepare(disk_operation, id, offset, payload);
+                    prepared = disk.opening() || disk.reading() || disk.enumerating();
+                    service::start_xfs(disk, mount);
+                }
+            } else {
+                disk2.check_generation(observed);
+                if (disk2.admit_commands(disk_operation, id, offset, payload, remaining)) {
+                    disk2.prepare(disk_operation, id, offset, payload);
+                    prepared = disk2.opening() || disk2.reading() || disk2.enumerating();
+                    service::start_xfs(disk2, mount2);
+                }
+            }
+            if (prepared) {
+                pump_begin = selected_volume - 1u64;
+                pump_end = selected_volume;
+            }
+        }
+        // Only this entry owns the sealed set. Shared owner helpers consume
+        // observations; they cannot select devices or issue transport commands.
+        u64 pumping = pump_begin;
+        while (pumping < pump_end) {
+            bool pending = true;
+            while (pending) {
+                u64 lba = 0u64;
+                if (pumping == 0u64) {
+                    pending = service::dual_pending(disk, mount);
+                    lba = mount.requested_lba();
+                } else {
+                    pending = service::dual_pending(disk2, mount2);
+                    lba = mount2.requested_lba();
+                }
+                if (pending) {
+                    const storage::SectorReadResult read = blocks::read_sector(grants, pumping, lba);
+                    const storage::Sector512 sector = read.sector_or_zero();
+                    i64 byte = 0;
+                    while (byte < 512) {
+                        const std::ByteReadResult value = sector.read_byte(byte);
+                        scratch.set(byte, u8(value.value_or(0u64)));
+                        byte = byte + 1;
+                    }
+                    const u64 observed = blocks::volume_generation(grants, pumping);
+                    if (pumping == 0u64) {
+                        if (disk.check_generation(observed)) {
+                            mount.accept(lba, read.status(), borrow_bytes(scratch));
+                            service::advance_xfs(disk, mount);
+                        }
+                    } else {
+                        if (disk2.check_generation(observed)) {
+                            mount2.accept(lba, read.status(), borrow_bytes(scratch));
+                            service::advance_xfs(disk2, mount2);
+                        }
+                    }
+                }
+            }
+            pumping = pumping + 1u64;
+        }
+        if (blocks::volume_count(grants) == 0u64) {
+            disk.poison();
+            disk2.poison();
+        }
+        store.observe_disks(disk.ready(), disk2.ready());
+        if (source == 0u64) {
+            const service::RequestHeader header = service::RequestHeader{
+                .operation = operation,
+                .id = id,
+                .offset = offset,
+                .count = count
+            };
+            const service::ControlState state = service::ControlState{
+                .volume_length = volume_length,
+                .copied = copied,
+                .admitted = admitted,
+                .mount_control = mount_control,
+                .disk_ready = disk.ready()
+            };
+            request.control(header, state);
+            if (!service::control_operation(store, console_state, response, request)) {
+                return builtin::HostExit::failure;
+            }
+            const service::ControlReply control = request.control_reply();
+            admitted = control.admitted;
+            copied = control.copied;
+            reply_count = control.count;
+            bool accepted = control.accepted;
+            if (admitted && store.disk_collision()) {
+                disk.poison();
+            }
+            if (admitted && store.disk2_collision()) {
+                disk2.poison();
+            }
+            if (mount_control) {
+                service::Reply readiness = service::reply(kernel::FileStatus::not_found);
+                if (disk.ready()) {
+                    readiness.status = kernel::FileStatus::success;
+                    readiness.size = 1u64;
+                }
+                if (disk2.ready()) {
+                    readiness.status = kernel::FileStatus::success;
+                    readiness.size = readiness.size + 2u64;
+                }
+                accepted = response.header(readiness) && accepted;
+            }
+            if (accepted && operation == 4u64) {
+                accepted = disk.begin(id);
+                accepted = disk2.begin(id) && accepted;
+            }
+            if (accepted && operation == 5u64) {
+                accepted = disk.finish(id);
+                accepted = disk2.finish(id) && accepted;
+            }
+            if (!accepted) {
+                return builtin::HostExit::failure;
+            }
+            if (control.exit) {
+                return builtin::HostExit::success;
+            }
+        } else {
+            if (!store.ok() || !admitted || source != store.active()) {
+                return builtin::HostExit::failure;
+            }
+            if (staged_write) {
+                kernel::FileStatus result_status = kernel::FileStatus::failed;
+                // Admit the complete message before changing any file
+                // bytes. No reply/exchange occurs between local chunks;
+                // a failed chunk poisons the same pending output.
+                const service::Reply admission = store.prepare_write(id, count);
+                result_status = admission.status;
+                u64 done = 0u64;
+                while (result_status == kernel::FileStatus::success && done < count) {
+                    if (!store.ok()) {
+                        return builtin::HostExit::failure;
+                    }
+                    u64 size = count - done;
+                    if (size > 512u64) {
+                        size = 512u64;
+                    }
+                    u64 at = 0u64;
+                    while (at < size) {
+                        staging.set(i64(at), endpoint::byte(session, 64u64 + done + at));
+                        at = at + 1u64;
+                    }
+                    {
+                        const builtin::span<const u8> payload = staging.bytes(i64(size));
+                        const service::Reply written = store.write_file(id, payload);
+                        result_status = written.status;
+                    }
+                    done = done + size;
+                }
+                const service::Reply result = service::reply(result_status);
+                if (!response.header(result)) {
+                    return builtin::HostExit::failure;
+                }
+            } else {
+                kernel::FileStatus status = kernel::FileStatus::failed;
+                u64 response_size = 0u64;
+                if (disk_request) {
+                    if (selected_volume == 2u64) {
+                        const service::Reply result = disk2.response();
+                        if (!response.header(result)) {
+                            return builtin::HostExit::failure;
+                        }
+                        status = result.status;
+                        response_size = result.count;
+                    } else {
+                        const service::Reply result = disk.response();
+                        if (!response.header(result)) {
+                            return builtin::HostExit::failure;
+                        }
+                        status = result.status;
+                        response_size = result.count;
+                    }
+                } else {
+                    const builtin::span<const u8> all = request.bytes();
+                    const builtin::span<const u8> payload = all.subspan(0, i64(count));
+                    const service::Reply result = service::file_operation(store, payload, operation, id, offset);
+                    if (!response.header(result)) {
+                        return builtin::HostExit::failure;
+                    }
+                    status = result.status;
+                    response_size = result.count;
+                }
+                reply_count = 64u64 + response_size;
+                if ((operation == 19u64 || operation == 25u64) && status == kernel::FileStatus::success) {
+                    if (selected_volume == 2u64) {
+                        if (!service::copy_client_payload(store, disk2, response, response_size, disk_request)) {
+                            return builtin::HostExit::failure;
+                        }
+                    } else {
+                        if (!service::copy_client_payload(store, disk, response, response_size, disk_request)) {
+                            return builtin::HostExit::failure;
+                        }
+                    }
+                }
+            }
+        }
+        if (!store.ok()) {
+            return builtin::HostExit::failure;
+        }
+    }
+    return builtin::HostExit::failure;
+}

@@ -1,0 +1,40 @@
+export module service.xfs_dual;
+import service.xfs;
+import service.files;
+import fs.xfs_mount;
+import storage.block_io;
+import storage.sector;
+import std.binary;
+import std.binary_buffer;
+import fs.xfs_log;
+import kernel.process_files;
+
+export namespace service {
+    auto dual_volume(service::Store& store, builtin::span<const u8> path, u64 operation, u64 id) -> u64 {
+        if (operation == 16u64 || operation == 18u64 || operation == 21u64 || (operation == 17u64
+            && store.is_root_directory(id) && kernel::valid_path(path) && !kernel::escapes(path))) {
+            const service::XfsPath first = xfs_path_volume(path, 0u64);
+            const service::XfsPath second = xfs_path_volume(path, 1u64);
+            if (first.kind != 0u64) {
+                return 1u64;
+            }
+            if (second.kind != 0u64) {
+                return 2u64;
+            }
+        }
+        if ((operation == 17u64 || operation == 19u64 || operation == 20u64 || operation == 22u64 || operation == 23u64
+            || operation == 24u64 || operation == 25u64) && xfs_handle(id)) {
+            if ((id - 1u64) % 64u64 < 48u64) {
+                return 1u64;
+            }
+            return 2u64;
+        }
+        return 0u64;
+    }
+    auto dual_pending(service::XfsFiles& disk, fs::XfsReadonlyMount& mount) -> bool {
+        if (!mount.needs_read()) {
+            advance_xfs(disk, mount);
+        }
+        return disk.ok() && mount.needs_read();
+    }
+}

@@ -430,6 +430,21 @@ __au_runtime_group_entry:
                 f".size {bridge},.-{bridge}\n"
             )
         writer_assembly.write_text(writer_text)
+        set_assembly = work / "blocks-private.s"
+        result = run(
+            [ir, "--output", AIR.with_name("blocks.air"), "accepted private block set primitives", set_assembly]
+        )
+        need(result.returncode == 0, result.stderr.decode())
+        set_text = set_assembly.read_text().replace("aurora_reflect_", "blocks_ir_reflect_")
+        for name in ("read", "byte", "descriptor"):
+            target = f"__au_v_m2_6aurora6blocks_n1_6blocks_d{len(name)}{name}"
+            bridge = f"blocks_{name}_entry"
+            set_text += (
+                f"\n.text\n.globl {bridge}\n.hidden {bridge}\n.type {bridge},@function\n{bridge}:\n"
+                f"    pushq %rbp\n    movq %rsp,%rbp\n    movq %rdi,%r11\n    call {target}\n    leave\n    ret\n"
+                f".size {bridge},.-{bridge}\n"
+            )
+        set_assembly.write_text(set_text)
         binary = work / "block"
         result = run(
             shlex.split(os.environ.get("CXX", "c++"))
@@ -444,6 +459,7 @@ __au_runtime_group_entry:
                 assembly,
                 private,
                 writer_assembly,
+                set_assembly,
                 ROOT / "tests/compiler/service_group_abi.S",
                 "-o",
                 binary,
@@ -461,6 +477,13 @@ __au_runtime_group_entry:
         for mode in [*range(100, 104), *range(110, 127), *range(130, 133)]:
             result = run([binary, mode])
             need(result.returncode == (0 if mode < 104 else -signal.SIGILL), f"writer mode {mode}: {result.returncode}")
+
+        for mode in range(200, 209):
+            result = run([binary, mode])
+            need(
+                result.returncode == (0 if mode in (200, 201) else -signal.SIGILL),
+                f"block set mode {mode}: {result.returncode}",
+            )
 
         # Inspect the real process entry's published ABI and startup call graph.
         # The private memory bootstrap must not acquire hosted file authority.
@@ -502,7 +525,11 @@ __au_runtime_group_entry:
         need(not any("_m2_6aurora4host_" in name for name in calls), "endpoint must not call hosted file hooks")
 
         readonly_start_bytes = None
-        for capability, fixture in (("ReadOnlyBlock", "endpoint-block.au"), ("WritableBlock", "endpoint-writer.au")):
+        for capability, fixture in (
+            ("ReadOnlyBlock", "endpoint-block.au"),
+            ("WritableBlock", "endpoint-writer.au"),
+            ("ReadOnlyBlocks", "endpoint-blocks.au"),
+        ):
             result = run(
                 [
                     compiler,
@@ -536,7 +563,7 @@ __au_runtime_group_entry:
             start_facts = json.loads(entry_stack.read_text())["functions"]["_start"]
             if capability == "ReadOnlyBlock":
                 readonly_start_bytes = start_facts["local_bytes"]
-            else:
+            elif capability == "WritableBlock":
                 need(start_facts["local_bytes"] == readonly_start_bytes + 16, "independent writer staging window")
             calls = start_facts["calls"]
             need(
@@ -723,6 +750,46 @@ __au_runtime_group_entry:
                 f"auto main({params},builtin::span<const u8> a)->builtin::HostExit{{"
                 "return builtin::HostExit::success;}"
             )
+        bs = "builtin::ReadOnlyBlocks& b"
+        for label in (
+            "value",
+            "const",
+            "late",
+            "mint",
+            "construct",
+            "store",
+            "copy",
+            "move",
+            "return",
+            "reflect",
+            "reflect-id",
+            "cast",
+            "recursive",
+        ):
+            invalid["blocks-" + label] = invalid[label].replace("ServeSession", "ReadOnlyBlocks")
+        for kind in (
+            "ReadOnlyBlocks",
+            "ReadOnlyBlock",
+            "WritableBlock",
+            "HostFiles",
+            "InputStream",
+            "ConsoleSession",
+            "DisplaySession",
+            "CallSession",
+        ):
+            for reverse in (False, True):
+                pair = [bs, f"builtin::{kind}& other"]
+                if reverse:
+                    pair.reverse()
+                invalid[f"blocks-mixed-{kind}-{reverse}"] = f"auto f({','.join(pair)})->u64{{return 0u64;}}"
+        invalid["blocks-triple"] = f"auto f({p},{bs},builtin::ReadOnlyBlock& old)->u64{{return 0u64;}}"
+        invalid["blocks-linux-unused"] = f"auto f({bs})->u64{{return 0u64;}}"
+        for method, args, result_type in (
+            ("read_sector", "0u64,0u64", "u64"),
+            ("sector_byte", "0u64", "u8"),
+            ("descriptor", "0u64", "u64"),
+        ):
+            invalid["blocks-private-" + method] = f"auto f({bs})->{result_type}{{return b.{method}({args});}}"
         writer = "builtin::WritableBlock& w"
         writer_main = (
             f"auto main({writer},builtin::ByteRegion r,builtin::span<const u8> a)"
@@ -1233,12 +1300,25 @@ __au_runtime_group_entry:
             if label.startswith(("resident-", "command-", "words-", "mapping-")):
                 code += "auto witness()->u64{return 0u64;}"
             source.write_text("module rejected;" + code)
-            target = ["--target", "aurora"] if label.startswith(("writer-", "readonly-")) else []
+            target = (
+                ["--target", "aurora"]
+                if label.startswith(("writer-", "readonly-", "blocks-")) and label != "blocks-linux-unused"
+                else []
+            )
             result = run([compiler, *target, "--check", source])
             need(result.returncode == 1 and b"error AU" in result.stderr, f"{label}: {result.stderr!r}")
             if (
                 label.startswith(
-                    ("bootstrap-", "resident-", "command-", "words-", "mapping-", "require-", "lease-parameter-")
+                    (
+                        "bootstrap-",
+                        "resident-",
+                        "command-",
+                        "words-",
+                        "mapping-",
+                        "require-",
+                        "lease-parameter-",
+                        "blocks-",
+                    )
                 )
                 or label == "execution-cross-issue"
             ):

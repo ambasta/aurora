@@ -16,10 +16,10 @@ auto receive(builtin::ConsoleSession& session) -> builtin::ConsoleSample {
 ## Source and lifetime
 
 `ConsoleSession`, `DisplaySession`, `IommuEventSession`, `CallSession`, `Com1UartGrant`, `ServeSession` and
-`HostFiles` ([below](#hosted-files)), `InputStream` ([below](#foreground-input)) and `ReadOnlyBlock` ([below](#read-only-block-volume)), plus `WritableBlock`
+`HostFiles` ([below](#hosted-files)), `InputStream` ([below](#foreground-input)) and `ReadOnlyBlock` ([below](#read-only-block-volume)), `ReadOnlyBlocks` ([bounded set](#bounded-read-only-volume-set)), plus `WritableBlock`
 ([boot recovery writer](#boot-recovery-writer)), and `ExecutionEffects` ([command orchestration](#command-orchestration)), are distinct compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
-reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port, Serve, HostFiles, InputStream, ReadOnlyBlock or WritableBlock or ExecutionEffects alone, Console+Display
-in either order, Event+Console in either order, Serve+ReadOnlyBlock, Serve+WritableBlock and HostFiles+InputStream in either helper order. Call, Port and ExecutionEffects cannot mix with any other kind; HostFiles and InputStream admit only their exact pair. Event+Display, duplicate kinds
+reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port, Serve, HostFiles, InputStream, ReadOnlyBlock, ReadOnlyBlocks or WritableBlock or ExecutionEffects alone, Console+Display
+in either order, Event+Console in either order, Serve+ReadOnlyBlock, Serve+ReadOnlyBlocks, Serve+WritableBlock and HostFiles+InputStream in either helper order. Call, Port and ExecutionEffects cannot mix with any other kind; HostFiles and InputStream admit only their exact pair. Event+Display, duplicate kinds
 and all triples are rejected. There is no
 by-value or const variant. It cannot be constructed, copied, moved, assigned, stored in a
 local/field/array, returned, reflected or converted. A reference is a parameter
@@ -42,8 +42,8 @@ or copied class-report operation. Duplicate kinds, non-leading capabilities and
 forwarding one kind into a formal of the other kind are rejected.
 
 Mixed prefixes accept one of `ConsoleSession&`, `HostFiles&`, `ServeSession&`
-or `ReadOnlyBlock&` or `WritableBlock&` followed immediately by `ByteRegion`, or the exact
-Serve+ReadOnlyBlock or Serve+WritableBlock pair (either helper order) followed immediately by `ByteRegion`.
+or `ReadOnlyBlock&`, `ReadOnlyBlocks&` or `WritableBlock&` followed immediately by `ByteRegion`, or the exact
+Serve+ReadOnlyBlock, Serve+ReadOnlyBlocks or Serve+WritableBlock pair (either helper order) followed immediately by `ByteRegion`.
 Later formals use the same copied-value/readonly-span rules. Other service pairs,
 repeated or misplaced regions and owner parameters/results remain rejected.
 Helpers may forward this prefix, either service subset, or the region alone.
@@ -311,6 +311,46 @@ Native raw-boundary tests establish compiler canonicalization, copied-value
 isolation and accessor bounds, not kernel role/incarnation/volume lifecycle.
 Actual retained-process guest authority tests, integrated current-source seed
 convergence and merge/release qualification remain separate required gates.
+
+## Bounded read-only volume set
+
+`builtin::ReadOnlyBlocks&` is a distinct sealed authority for an immutable set of
+at most two volumes. It does not change `ReadOnlyBlock`, its groups or INT83
+operation16. Only the singleton helper group and exact Serve+set helper pair
+are added, with explicit tags131072/262144. The process entry is exactly
+`main(ServeSession&, ReadOnlyBlocks&, ByteRegion, span<const u8>) -> HostExit`.
+It keeps the Serve/block/region/arguments packed offsets 0/16/32/40. Linux rejects
+this entry even without operations. Other mixed groups and duplicate loans fail.
+
+The loader supplies independent set generation in R8 and immutable granted slot
+count in R9. Both zero means absence; mixed zero/nonzero or count above two traps.
+The separate private 528-byte window has copied count at0, last status at8 and
+sector bytes at16. Source never receives this window's address.
+
+Reserved `aurora.blocks` exposes `blocks::volume_count`, `remaining_commands`,
+`sector_count(set, slot)`, `volume_generation(set, slot)` and
+`read_sector(set, slot, lba)`. Invalid public slots return zero observations or an
+invalid-source zero sector before any selector arithmetic. Private scalar
+operations55/56/57 are read(slot,LBA), sector byte(index), and descriptor(selector),
+with exact service kind12 and metadata kind31. These operations are reserved to
+that runtime and carry the process-only kernel service marker.
+
+INT83 operation23 takes RDI=512-byte destination, RSI=LBA, RDX=set generation,
+R10=slot. Status, returned count and zero-on-failure validation match operation16.
+Operation24 takes RDI=0, RSI=descriptor selector, RDX=set generation, R10=0 and
+returns the scalar in RAX with RDX=0. Selectors0/1 are live slot count and shared
+remaining I/O commands; selectors2/3 and4/5 are sector count and nonreused volume
+generation for slots0/1. Absent slots and quarantined backend yield zero.
+
+Every native observation/read authenticates the designated service incarnation,
+owner, root and set generation. That generation binds an immutable slot table
+containing the controller identity, NSID, extent and slot generation; no slot
+can be rebound under a live set generation. Forged/stale nonzero authority is an
+invalid call, not absence. Slots and copied descriptors cannot mint authority.
+The cache includes actual admitted volume identity and generation; all cache hits
+pass the same broker checks. The single controller's transport failure revokes
+usability of both volumes without making filesystem metadata a transport grant.
+The singleton writable/recovery entries remain unchanged.
 
 ## Bounded IOMMU event observation
 

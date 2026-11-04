@@ -828,6 +828,10 @@ export namespace compiler_resolver {
             say(session, "builtin::ServiceBootstrapEffects");
             return true;
         }
+        if (kind == ResolvedTypeKind::read_only_blocks) {
+            say(session, "builtin::ReadOnlyBlocks");
+            return true;
+        }
         if (kind == ResolvedTypeKind::read_only_block) {
             say(session, "builtin::ReadOnlyBlock");
             return true;

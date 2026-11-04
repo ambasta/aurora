@@ -940,6 +940,13 @@ export namespace compiler_lowering {
                 return fail(session, LoweringError::unknown_service_operation, reference);
             }
             const i64 operation = record_signed(session, target, OperandRole::ServiceOperationId);
+            if (operation >= 55 && operation <= 57) {
+                const i64 caller = body_function(session);
+                const i64 unit = compiler_resolver::mw(session, caller, 1);
+                if (!runtime_unit(session, unit, "blocks")) {
+                    return fail(session, LoweringError::block_runtime_operation_outside_runtime, reference);
+                }
+            }
             if (operation >= 39 && operation < 46) {
                 const i64 caller = body_function(session);
                 const i64 unit = compiler_resolver::mw(session, caller, 1);

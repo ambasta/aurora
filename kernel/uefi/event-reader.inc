@@ -274,7 +274,9 @@ constinit bool event_handoff_attempted{};
         initialize_nvme_mounted(arena, handoff, *admission);
     else
 #else
-    if (handoff.get(Handoff::readonly_profile_word) == 3)
+    if (handoff.get(Handoff::readonly_profile_word) == 4)
+        initialize_nvme_dual_readonly(arena, handoff, *admission);
+    else if (handoff.get(Handoff::readonly_profile_word) == 3)
         initialize_nvme_mounted(arena, handoff, *admission);
     else if (handoff.get(Handoff::readonly_profile_word) == 2)
         initialize_nvme_recovery(arena, handoff, *admission);

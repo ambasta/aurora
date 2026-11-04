@@ -31,14 +31,17 @@ enum class Reply : U64 {
     ready,
     disk_unavailable
 };
-[[nodiscard]] inline auto inspect_reply(U64 operation, std::span<const std::byte> bytes) -> Reply {
+[[nodiscard]] inline auto inspect_reply(U64 operation, std::span<const std::byte> bytes, bool dual = false) -> Reply {
     if (bytes.size() != 64 || (operation != 1 && operation != 2 && operation != 3 && operation != 15))
         return Reply::invalid;
     const auto status = std::to_integer<unsigned>(bytes[0]);
     if (status != 0 && !(operation == 15 && status == 2))
         return Reply::invalid;
+    const auto mask = std::to_integer<unsigned>(bytes[24]);
+    if (dual && operation == 15 && (mask > 3 || ((status == 0) != (mask != 0))))
+        return Reply::invalid;
     for (std::size_t at = 1; at < bytes.size(); ++at)
-        if (bytes[at] != std::byte{0})
+        if (!(dual && operation == 15 && at == 24) && bytes[at] != std::byte{0})
             return Reply::invalid;
     return status == 2 ? Reply::disk_unavailable : Reply::ready;
 }

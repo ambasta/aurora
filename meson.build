@@ -60,7 +60,7 @@ endif
 hosted_runtime_sources = files('runtime/linux/aurora/host.au', 'runtime/linux/aurora/memory.au')
 subdir('runtime/aurora/aurora')
 kernel_runtime_sources = files('runtime/aurora/aurora/host.au', 'runtime/aurora/aurora/endpoint.au',
-                               'runtime/aurora/aurora/block.au', 'runtime/aurora/aurora/block_write.au', 'library/storage/block_io.au',
+                               'runtime/aurora/aurora/block.au', 'runtime/aurora/aurora/blocks.au', 'runtime/aurora/aurora/block_write.au', 'library/storage/block_io.au',
                                'library/storage/sector.au', 'library/std/binary.au',
                                'library/std/binary_buffer.au', 'runtime/linux/aurora/memory.au')
 hosted_linker = find_program('ld', native: true)
@@ -183,6 +183,17 @@ if get_option('kernel_images')
       depend_files: kernel_runtime_sources + file_service_sources)
   process_programs += {'aurora:file-service': custom_target('file-service-aurora', input: file_service_object,
       output: 'file-service-aurora', command: compiler_link)}
+  dual_file_service_object = custom_target('file-service-dual-aurora-object', input: 'services/file-service-dual.au',
+      output: 'file-service-dual-aurora.o',
+      command: [aurorac, '--emit-object', '--target', 'aurora', '--module-root',
+                meson.current_source_dir() / 'services', '--module-root',
+                meson.current_source_dir() / 'kernel/policies', '--module-root',
+                meson.current_source_dir() / 'library', '@INPUT@', '-o', '@OUTPUT@'],
+      depend_files: kernel_runtime_sources + file_service_sources + files('services/service/xfs_dual.au'),
+      build_by_default: false)
+  process_programs += {'aurora:file-service-dual': custom_target('file-service-dual-aurora',
+      input: dual_file_service_object, output: 'file-service-dual-aurora', command: compiler_link,
+      build_by_default: false)}
   xfs_recovery_sources = files('library/fs/xfs_recovery.au', 'library/fs/xfs_recovery_ag.au',
       'library/fs/xfs_core_log.au', 'library/fs/xfs_core_redo.au', 'library/fs/xfs_log.au',
       'library/fs/xfs_geometry.au', 'library/fs/xfs_probe.au', 'library/fs/xfs_root.au', 'library/fs/xfs_file.au',

@@ -2378,6 +2378,13 @@ export namespace compiler_ir_instructions {
             5), "__au_") && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + 6, 18),
             "_m2_6aurora5block_");
     }
+    auto blocks_runtime_callable(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        return name.count() >= 25 && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin(),
+            5), "__au_") && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + 6, 19),
+            "_m2_6aurora6blocks_");
+    }
     auto writer_runtime_callable(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
         const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
         const compiler_ir_metadata::ByteRange name = row.name();
@@ -2704,7 +2711,7 @@ export namespace compiler_ir_instructions {
         }
         if (form == 2) { // ReleaseServiceLoan: the executed path decides which loan is live and called.
             const i64 kind = call_value(store, instruction, 1);
-            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 11) {
+            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 12) {
                 return fail(store, InstructionError::service_release);
             }
             return true;
@@ -2713,10 +2720,14 @@ export namespace compiler_ir_instructions {
             return true;
         } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || (operation > 45 && operation != 52 && operation != 53 && operation != 54)) {
+        if (operation < 0 || (operation > 45 && operation != 52 && operation != 53 && operation != 54 && operation != 55
+            && operation != 56 && operation != 57)) {
             return fail(store, InstructionError::service_operation);
         }
         i64 expected_kind = 0;
+        if (operation >= 55 && operation <= 57) {
+            expected_kind = 12;
+        }
         if (operation >= 39 && operation < 46) {
             expected_kind = 8;
         } // Console: Next, Put
@@ -2763,6 +2774,10 @@ export namespace compiler_ir_instructions {
             == 54) && !host_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);
         }
+        if (operation >= 55 && operation <= 57 && (!blocks_runtime_callable(metadata, callable)
+            || !store.kernel_target())) {
+            return fail(store, InstructionError::service_operation);
+        }
         if (operation >= 39 && operation < 46 && !writer_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);
         }
@@ -2789,7 +2804,7 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::service_platform);
         }
         if ((operation > 8 && operation < 46 && operation != 14 && operation != 30 && operation != 32) || operation
-            == 53 || operation == 54) {
+            == 53 || operation == 54 || (operation >= 55 && operation <= 57)) {
             if (result_offset != 0) {
                 return fail(store, InstructionError::service_operation);
             }
@@ -2844,6 +2859,18 @@ export namespace compiler_ir_instructions {
         const u64 result_enums = service_result_enums(metadata);
         i64 callable = 0;
         while (callable < store.body_count()) {
+            if (!store.kernel_target()) {
+                const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
+                i64 parameter = 0;
+                while (parameter < declaration.value_parameter_count()) {
+                    const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.value_parameter_begin()
+                        + parameter);
+                    if (type.kind() == 31) {
+                        return fail(store, InstructionError::endpoint_platform);
+                    }
+                    parameter = parameter + 1;
+                }
+            }
             if (!store.kernel_target() && endpoint_process_entry(metadata, callable)) {
                 return fail(store, InstructionError::endpoint_platform);
             }

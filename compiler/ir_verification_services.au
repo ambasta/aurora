@@ -526,6 +526,14 @@ export namespace compiler_ir_verification {
                     VerificationErrorSecond::service_operation_requires_active_unsuspended_capability_provenance));
             }
             const i64 operation = transfer_value(s, id, 1);
+            if (operation == 55) {
+                if (!transfer_pop_kind(w, 7, second_error(VerificationErrorSecond::service_scalar_argument_mismatch))
+                    || !transfer_pop_kind(w, 7,
+                    second_error(VerificationErrorSecond::service_scalar_argument_mismatch))) {
+                    return false;
+                }
+                return transfer_set_kind(w, 7);
+            }
             if (operation == 44 || operation == 45) {
                 return transfer_set_kind(w, 7);
             }
@@ -538,11 +546,11 @@ export namespace compiler_ir_verification {
                 return transfer_set_kind(w, 7);
             }
             if (operation == 36 || operation == 37 || operation == 38 || operation == 39 || operation == 40 || operation
-                == 41 || operation == 43) {
+                == 41 || operation == 43 || operation == 56 || operation == 57) {
                 if (!transfer_current_kind(w, 7)) {
                     return false;
                 }
-                if (operation == 37 || operation == 40) {
+                if (operation == 37 || operation == 40 || operation == 56) {
                     return transfer_set_kind(w, 10);
                 }
                 return transfer_set_kind(w, 7);

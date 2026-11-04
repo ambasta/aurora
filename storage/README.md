@@ -245,3 +245,52 @@ uncommitted body: it can discard the exact pending stage body, or replay only
 the preceding committed stage before discarding the pending root body. Other
 unrecognized trailing data still fails closed. Full revision qualification and
 build-budget acceptance remain separate from these targeted storage gates.
+
+### Bounded dual-readonly composition
+
+The explicit `nvme-dual-readonly` composition admits one or two supported
+namespaces on the same pinned controller. It exposes independently validated
+fresh-format filesystems at `/disk` and `/disk2`. This is not multi-controller
+isolation, hotplug, a broader XFS history profile, or permission to write either
+namespace. Existing singleton recovery and mounted-writer compositions remain
+separate and require their original namespace topology.
+
+The sealed `ReadOnlyBlocks` grant binds its immutable slots to the service and
+controller incarnation, namespace, extent and volume generation. A copied slot
+index or descriptor does not confer authority. Every operation, including a
+cache hit, authenticates the live grant; the cache also distinguishes volumes.
+Both namespaces share the existing nonreusing command-ID lifetime and absorbing
+transport quarantine. DMA backing remains pinned, not reclaimed.
+
+Before either eager log scan, the service checks all source allocations and
+actual remaining I/O command IDs. The conservative admission is 18,458 per
+present volume: 16,403 for a maximal mount, 2,049 for a general relative open,
+and six for one read returning at most 504 bytes. Thus two volumes need 36,916.
+The mount term covers a superblock, 16,384 aligned log blocks, a clean-record
+reread, a root inode and sixteen child inodes. The fresh-only composition does
+not need the clean-record term; keeping it is conservative. Identify and queue
+setup use the separate admin counter before this admission; any prior I/O is
+already subtracted from the queried remaining I/O counter.
+
+This bound requires sequential eager scans without unrelated I/O between their
+sector reads. A namespace tag alone cannot preserve bytes overwritten in the
+shared DMA cache. Interleaving every sector between namespaces would invalidate
+the eight-sector cache credit. The initial lookup/read allowance is headroom,
+not a guarantee of future reads after other requests spend the finite budget.
+
+Later operations check their worst-case command cost before changing handles
+or cursors: open 2,049, a read of at most 504 bytes six, and a next-entry request
+one. Known zero-I/O operations, including close and denied writes, remain usable.
+Known resource insufficiency returns the existing failed response directly;
+it is not passed into the filesystem as a synthetic sector error. No exchange,
+yield, reentrancy or other I/O consumer may intervene between the budget check
+and that synchronous operation's terminal read. There is no command-ID refund
+or reset.
+
+Malformed filesystem contents disable only that mount, preserving its sibling
+and RAM state without restarting the service. Failed mount prefixes remain
+reserved and cannot fall through into boot or RAM files. Uncertain transport
+outcomes disable both volumes, including cached reads. Existing integrity
+fail-stop paths do not promise continued console execution. Dual mounts use
+disjoint eight-handle ranges and distinct device identities; the singleton keeps
+its sixteen handles.

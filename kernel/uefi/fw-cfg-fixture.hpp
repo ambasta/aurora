@@ -23,7 +23,8 @@ enum class Storage {
     nvme,
     nvme_linux_6_12_clean,
     nvme_linux_6_12_recover,
-    nvme_linux_6_12_write
+    nvme_linux_6_12_write,
+    nvme_dual_readonly
 };
 class FwCfg final {
     static auto select(std::uint16_t key) -> void {
@@ -42,13 +43,26 @@ class FwCfg final {
     }
 
 public:
+    [[nodiscard]] static constexpr auto storage_size(std::size_t size) -> bool {
+        return size == 4 || size == 18 || size == 21 || size == 23;
+    }
+    [[nodiscard]] static constexpr auto storage_capture(Storage storage) -> bool {
+        return storage >= Storage::nvme && storage <= Storage::nvme_dual_readonly;
+    }
+    [[nodiscard]] static constexpr auto storage_profile(Storage storage) -> unsigned {
+        return storage == Storage::nvme_dual_readonly        ? 4
+               : storage == Storage::nvme_linux_6_12_write   ? 3
+               : storage == Storage::nvme_linux_6_12_recover ? 2
+               : storage == Storage::nvme_linux_6_12_clean   ? 1
+                                                             : 0;
+    }
     [[nodiscard]] static auto storage_word(std::span<const std::byte> value) -> std::optional<Storage> {
         // QEMU system/vl.c parse_fw_cfg uses strlen: the CLI string excludes NUL.
-        if (value.size() != 4 && value.size() != 21 && value.size() != 23)
+        if (!storage_size(value.size()))
             return std::nullopt;
         constexpr std::string_view names[] = {
-            "nvme", "nvme-linux-6.12-clean", "nvme-linux-6.12-recover", "nvme-linux-6.12-write"};
-        for (unsigned kind = 0; kind < 4; ++kind) {
+            "nvme", "nvme-linux-6.12-clean", "nvme-linux-6.12-recover", "nvme-linux-6.12-write", "nvme-dual-readonly"};
+        for (unsigned kind = 0; kind < 5; ++kind) {
             const auto name = names[kind];
             if (value.size() != name.size())
                 continue;
@@ -90,8 +104,7 @@ public:
                     padded = (value == 0) && padded;
             }
             if (match) {
-                if (!padded || key || reserved || (size != 4 && size != 21 && size != 23) || selector < 0x20 ||
-                    selector >= 0x4000)
+                if (!padded || key || reserved || !storage_size(size) || selector < 0x20 || selector >= 0x4000)
                     return std::nullopt;
                 key = selector;
                 selected_size = size;

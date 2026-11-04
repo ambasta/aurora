@@ -118,6 +118,9 @@ export namespace compiler_parser {
             return service_groups;
         }
         auto service_mask(i64 service) const -> i64 {
+            if (service == 12) {
+                return 4096;
+            }
             if (service == 0) {
                 return console_mask;
             }
@@ -538,7 +541,7 @@ namespace compiler_parser {
         const array<u8,
             85> names6 = "HostFileResult;HostDirectoryResult;HostOutputResult;HostEntryKind;HostDirectoryEntry;";
         const builtin::span<const u8> words6 = borrow_bytes(names6);
-        const array<u8, 28> names7 = "ReadOnlyBlock;WritableBlock;";
+        const array<u8, 43> names7 = "ReadOnlyBlock;WritableBlock;ReadOnlyBlocks;";
         const builtin::span<const u8> words7 = borrow_bytes(names7);
         const array<u8,
             138> names8 =
@@ -3213,6 +3216,10 @@ namespace compiler_parser {
         if (word_matches(source, token, writer_word, 0, 13)) {
             return AdmissionType(AdmissionKind::service, configuration.service_mask(8), token);
         }
+        const array<u8, 14> blocks_name = "ReadOnlyBlocks";
+        if (word_matches(source, token, borrow_bytes(blocks_name), 0, 14)) {
+            return AdmissionType(AdmissionKind::service, configuration.service_mask(12), token);
+        }
         const array<u8, 13> block_name = "ReadOnlyBlock";
         const builtin::span<const u8> block_word = borrow_bytes(block_name);
         if (word_matches(source, token, block_word, 0, 13)) {
@@ -3336,9 +3343,10 @@ namespace compiler_parser {
         return HeaderResult(TypeResult(ParseStatus::success, -1, token), context);
     }
     auto admission_service_pair(i64 groups, u64 kinds) -> bool {
-        return (kinds == 3u64 && (u64(groups) & 8u64) != 0u64) || (kinds == 5u64 && (u64(groups) & 32u64) != 0u64)
-            || (kinds == 160u64 && (u64(groups) & 128u64) != 0u64) || (kinds == 288u64 && (u64(groups) & 1024u64)
-            != 0u64) || (kinds == 2112u64 && (u64(groups) & 16384u64) != 0u64);
+        return (kinds == 4128u64 && (u64(groups) & 262144u64) != 0u64) || (kinds == 3u64 && (u64(groups) & 8u64)
+            != 0u64) || (kinds == 5u64 && (u64(groups) & 32u64) != 0u64) || (kinds == 160u64 && (u64(groups) & 128u64)
+            != 0u64) || (kinds == 288u64 && (u64(groups) & 1024u64) != 0u64) || (kinds == 2112u64 && (u64(groups)
+            & 16384u64) != 0u64);
     }
     auto admission_callable(AstArena& arena, builtin::span<const u8> source, ParseToken start, SyntaxNode callable,
         AdmissionScope scope, AdmissionConfig configuration) -> AdmissionProgress {
@@ -3370,6 +3378,7 @@ namespace compiler_parser {
         }
         i64 index = 0;
         i64 first_service = 0;
+        u64 service_kinds = 0u64;
         bool first_borrowed = false;
         bool owning_prefix = false;
         while (arena.stack_size() > base) {
@@ -3383,6 +3392,9 @@ namespace compiler_parser {
             }
             const TypeSyntax syntax = arena.type_at(parameter_node.type());
             const bool borrowed = parameter_node.borrow_site() >= 0;
+            if (type.kind() == AdmissionKind::service) {
+                service_kinds = service_kinds | u64(type.service());
+            }
             if (borrowed) {
                 const u64 group = u64(first_service) | u64(type.service());
                 const bool continuation = type.kind() == AdmissionKind::service && index == 1 && first_borrowed
@@ -3417,6 +3429,10 @@ namespace compiler_parser {
             }
             owning_prefix = borrowed && type.kind() == AdmissionKind::class_value && (index == 0 || owning_prefix);
             index = index + 1;
+        }
+        if ((service_kinds & 4096u64) != 0u64 && !((service_kinds == 4096u64 && (u64(configuration.groups())
+            & 131072u64) != 0u64) || (service_kinds == 4128u64 && (u64(configuration.groups()) & 262144u64) != 0u64))) {
+            return admission_reject(AdmissionStatus::borrowed_parameter, callable.token(), token);
         }
         if (function || method) {
             const AdmissionType type = admission_type(arena, source, token, callable.type(), configuration);
@@ -3501,7 +3517,7 @@ namespace compiler_parser {
     // Explicit InputStream and HostFiles+InputStream tags join the existing
     // closed set; unrelated mixed/high bits stay closed. HostFiles uses bit 0.
     auto admission_service_groups(i64 groups) -> bool {
-        return groups >= 0 && (u64(groups) & 4295065599u64) == u64(groups);
+        return groups >= 0 && (u64(groups) & 4295458815u64) == u64(groups);
     }
     auto admission_module(AstArena& arena, builtin::span<const u8> source, i64 root,
         AdmissionConfig configuration) -> AdmissionResult {
@@ -3514,10 +3530,11 @@ namespace compiler_parser {
         }
         u64 masks = 0u64;
         i64 service = 0;
-        while (service < 12) {
+        while (service < 13) {
             const i64 mask = configuration.service_mask(service);
             if ((mask != 1 && mask != 2 && mask != 4 && mask != 8 && mask != 16 && mask != 32 && mask != 64 && mask
-                != 128 && mask != 256 && mask != 512 && mask != 1024 && mask != 2048) || (masks & u64(mask)) != 0u64) {
+                != 128 && mask != 256 && mask != 512 && mask != 1024 && mask != 2048 && mask != 4096) || (masks
+                & u64(mask)) != 0u64) {
                 return admission_result(AdmissionStatus::invalid);
             }
             masks = masks | u64(mask);

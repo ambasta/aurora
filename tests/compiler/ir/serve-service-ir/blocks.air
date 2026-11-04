@@ -1,0 +1,89 @@
+; Independent IR for the separate bounded-set capability, not the singleton grant.
+; CASE: accepted private block set primitives
+; RUN: emit aurora
+function __au_v_m2_6aurora6blocks_n1_6blocks_d4read
+  result u64
+  params [31 u64 u64]
+  frame 48
+  service 16
+  slot 24 u64
+  slot 32 u64
+    BindServiceParameter 0 16 12
+    BindParameter 1 24 u64
+    BindParameter 2 32 u64
+    Load 24 u64
+    Push
+    Load 32 u64
+    Push
+    ServiceOperation 16 55 0 12
+    Return
+end
+function __au_v_m2_6aurora6blocks_n1_6blocks_d4byte
+  result u8
+  params [31 u64]
+  frame 32
+  service 16
+  slot 24 u64
+    BindServiceParameter 0 16 12
+    BindParameter 1 24 u64
+    Load 24 u64
+    ServiceOperation 16 56 0 12
+    Return
+end
+function __au_v_m2_6aurora6blocks_n1_6blocks_d10descriptor
+  result u64
+  params [31 u64]
+  frame 32
+  service 16
+  slot 24 u64
+    BindServiceParameter 0 16 12
+    BindParameter 1 24 u64
+    Load 24 u64
+    ServiceOperation 16 57 0 12
+    Return
+end
+
+; CASE: block set rejects singleton provenance
+; BASE: accepted private block set primitives
+; RUN: verify aurora
+; EXPECT-ERROR: service operation kind does not match active capability
+@@ -15 +15 @@
+-    ServiceOperation 16 55 0 12
++    ServiceOperation 16 55 0 7
+
+; CASE: block set rejects forged private module
+; BASE: accepted private block set primitives
+; RUN: verify aurora
+; EXPECT-ERROR: unknown sealed service operation
+@@ -1 +1 @@
+-function __au_v_m2_6aurora6blocks_n1_6blocks_d4read
++function __au_v_m2_6aurora6blocco_n1_6blocks_d4read
+
+; CASE: block set rejects absent loan
+; BASE: accepted private block set primitives
+; RUN: verify aurora
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
+@@ -15 +15 @@
+-    ServiceOperation 16 55 0 12
++    ServiceOperation 8 55 0 12
+
+; CASE: block set rejects signed selector
+; BASE: accepted private block set primitives
+; RUN: verify aurora
+; EXPECT-ERROR: service scalar argument mismatch
+@@ -11 +11 @@
+-    Load 24 u64
++    Constant 0 i64
+
+; CASE: unused block set still rejects Linux
+; RUN: verify
+; EXPECT-ERROR: retained process endpoint requires the Aurora target
+function unused_blocks
+  result u64
+  params [31]
+  frame 32
+  service 16
+    BindServiceParameter 0 16 12
+    Constant 0 u64
+    Return
+end

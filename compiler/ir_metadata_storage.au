@@ -46,7 +46,8 @@ export namespace compiler_ir_metadata {
         ServiceBootstrapEffects,
         WordSpan,
         InputStream,
-        MutableByteSpan
+        MutableByteSpan,
+        ReadOnlyBlocks
     };
     // Each reason's message is in pipeline.au (compiler_ir_metadata::metadata_text).
     enum class MetadataError {
@@ -340,6 +341,9 @@ export namespace compiler_ir_metadata {
         }
         auto service_writer() const -> u64 {
             return 256u64;
+        }
+        auto service_blocks() const -> u64 {
+            return 4096u64;
         }
         auto service_block() const -> u64 {
             return 128u64;

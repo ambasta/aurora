@@ -19,6 +19,36 @@ public:
         return generation_;
     }
 };
+// Immutable namespace authority minted only by the authenticated set broker.
+class ProcessBlocksBroker;
+class NvmeVolumeContext final {
+    friend class ProcessBlocksBroker;
+    std::uint64_t root_, generation_, controller_, nsid_, sectors_;
+    NvmeVolumeContext(std::uint64_t root,
+                      std::uint64_t generation,
+                      std::uint64_t controller,
+                      std::uint64_t nsid,
+                      std::uint64_t sectors)
+        : root_(root), generation_(generation), controller_(controller), nsid_(nsid), sectors_(sectors) {
+    }
+
+public:
+    auto root() const -> std::uint64_t {
+        return root_;
+    }
+    auto generation() const -> std::uint64_t {
+        return generation_;
+    }
+    auto controller() const -> std::uint64_t {
+        return controller_;
+    }
+    auto nsid() const -> std::uint64_t {
+        return nsid_;
+    }
+    auto sectors() const -> std::uint64_t {
+        return sectors_;
+    }
+};
 class ProcessRecoveryBroker;
 class NvmeRecoveryContext final {
     friend class ProcessRecoveryBroker;
@@ -67,6 +97,16 @@ auto initialize_nvme_readonly(std::uint64_t arena, const Bytes &handoff, const N
 [[nodiscard]] auto nvme_sector_count(const NvmeReadContext &context) -> std::uint64_t;
 [[nodiscard]] auto nvme_read_sector(const NvmeReadContext &context, std::uint64_t lba, std::span<std::byte, 512> output)
     -> NvmeReadStatus;
+
+auto initialize_nvme_dual_readonly(std::uint64_t arena, const Bytes &handoff, const NvmeControllerAdmission &admission)
+    -> void;
+[[nodiscard]] auto nvme_volume_count() -> unsigned;
+[[nodiscard]] auto nvme_volume_identity(unsigned slot, unsigned field) -> std::uint64_t;
+[[nodiscard]] auto nvme_volume_count(const NvmeVolumeContext &context) -> std::uint64_t;
+[[nodiscard]] auto nvme_volume_budget(const NvmeVolumeContext &context) -> unsigned;
+[[nodiscard]] auto nvme_volume_read(const NvmeVolumeContext &context,
+                                    std::uint64_t lba,
+                                    std::span<std::byte, 512> output) -> NvmeReadStatus;
 
 // These entrypoints are only used by the separately authenticated boot recovery
 // role. Existing readonly compositions never call initialization or mint it.

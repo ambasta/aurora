@@ -70,6 +70,11 @@ _start:
     movq aurora_service_probe_mode(%rip), %r12
     testq %r12, %r12
     jz .Largument_modes
+    cmpq $40, %r12
+    jb .Llegacy_service_probe
+    cmpq $45, %r12
+    jbe .Lvolumes_probe
+.Llegacy_service_probe:
     cmpq $12, %r12
     je .Lservice_probe
     cmpq $13, %r12
@@ -77,6 +82,183 @@ _start:
     cmpq $14, %r12
     je .Lservice_probe
     ud2
+# Dual readonly grant probes share this existing compiled raw ABI consumer.
+# Only its immutable selector data changes in a private ESP, never code or the
+# kernel. R9 preserves the actually supplied set generation, not an argv token.
+.Lvolumes_probe:
+    testq %r9, %r9
+    jz .Lvolumes_failed
+    subq $512, %rsp
+    xorl %edi, %edi
+    xorl %esi, %esi
+    movq %r9, %rdx
+    xorl %r10d, %r10d
+    kernel_call 24
+    cmpq $2, %rax
+    jne .Lvolumes_failed
+    testq %rdx, %rdx
+    jnz .Lvolumes_failed
+.Lvolumes_budget:
+    xorl %edi, %edi
+    movl $1, %esi
+    movq %r9, %rdx
+    xorl %r10d, %r10d
+    kernel_call 24
+    testq %rax, %rax
+    jz .Lvolumes_failed
+    movq %rax, %rbx
+    cmpq $41, %r12
+    je .Lvolumes_dispatch
+    cmpq $43, %r12
+    je .Lvolumes_dispatch
+    # These modes never submit IO. A fresh incarnation observes the same
+    # retained 65535-command budget after its predecessor was rejected.
+    cmpq $65535, %rbx
+    jne .Lvolumes_failed
+    cmpq $42, %r12
+    jne .Lvolumes_dispatch
+    # Establish the historical token from the actual first entry, then let
+    # the kernel really retire/reclaim that owner before the next invocation.
+    cmpq $1, %r9
+    jne .Lvolumes_stale
+    xorl %edi, %edi
+    kernel_call 1
+    ud2
+.Lvolumes_stale:
+    movl $1, %edx
+    movq %rsp, %rdi
+    xorl %esi, %esi
+    xorl %r10d, %r10d
+    kernel_call 23
+    ud2
+.Lvolumes_dispatch:
+    cmpq $44, %r12
+    je .Lvolumes_reserved
+    cmpq $45, %r12
+    je .Lvolumes_pointer
+    cmpq $43, %r12
+    je .Lvolumes_cache
+    movq %rsp, %rdi
+    movl $64, %ecx
+    movabsq $0xa5a5a5a5a5a5a5a5, %rax
+    rep stosq
+    movq %rsp, %rdi
+    xorl %esi, %esi
+    movq %r9, %rdx
+    xorl %r10d, %r10d
+    cmpq $40, %r12
+    jne .Lvolumes_slot
+    xorq $0x10000000, %rdx
+    kernel_call 23
+    ud2
+.Lvolumes_slot:
+    movl $2, %r10d
+    kernel_call 23
+    cmpq $3, %rax
+    jne .Lvolumes_failed
+    testq %rdx, %rdx
+    jnz .Lvolumes_failed
+    movq %rsp, %rdi
+    movl $64, %ecx
+    xorl %eax, %eax
+    repe scasq
+    jne .Lvolumes_failed
+    # Unknown descriptor selectors carry no authority, and neither rejection
+    # consumes a command identifier or quarantines the shared controller.
+    xorl %edi, %edi
+    movl $6, %esi
+    movq %r9, %rdx
+    xorl %r10d, %r10d
+    kernel_call 24
+    testq %rax, %rax
+    jnz .Lvolumes_failed
+    testq %rdx, %rdx
+    jnz .Lvolumes_failed
+    xorl %edi, %edi
+    movl $1, %esi
+    movq %r9, %rdx
+    kernel_call 24
+    cmpq %rbx, %rax
+    jne .Lvolumes_failed
+    # A real subsequent read must still work after the local rejection.
+    movq %rsp, %rdi
+    xorl %esi, %esi
+    movq %r9, %rdx
+    xorl %r10d, %r10d
+    kernel_call 23
+    testq %rax, %rax
+    jnz .Lvolumes_failed
+    cmpq $512, %rdx
+    jne .Lvolumes_failed
+    cmpl $0x42534658, (%rsp)
+    jne .Lvolumes_failed
+    jmp .Lvolumes_checked
+.Lvolumes_cache:
+    movq %rsp, %rdi
+    xorl %esi, %esi
+    movq %r9, %rdx
+    xorl %r10d, %r10d
+    kernel_call 23
+    testq %rax, %rax
+    jnz .Lvolumes_failed
+    cmpq $512, %rdx
+    jne .Lvolumes_failed
+    cmpl $0x42534658, (%rsp)
+    jne .Lvolumes_failed
+    movq 8(%rsp), %rbp
+    movq %rsp, %rdi
+    xorl %esi, %esi
+    movq %r9, %rdx
+    movl $1, %r10d
+    kernel_call 23
+    testq %rax, %rax
+    jnz .Lvolumes_failed
+    cmpq $512, %rdx
+    jne .Lvolumes_failed
+    cmpl $0x42534658, (%rsp)
+    jne .Lvolumes_failed
+    cmpq %rbp, 8(%rsp)
+    je .Lvolumes_failed
+    movq %rsp, %rdi
+    xorl %esi, %esi
+    movq %r9, %rdx
+    xorl %r10d, %r10d
+    kernel_call 23
+    testq %rax, %rax
+    jnz .Lvolumes_failed
+    cmpq $512, %rdx
+    jne .Lvolumes_failed
+    cmpq %rbp, 8(%rsp)
+    jne .Lvolumes_failed
+.Lvolumes_checked:
+    # Distinct authenticated terminal operation proves all checks completed;
+    # assertion failures exit99 instead, never masquerade as invalid-call24.
+    xorl %edi, %edi
+    xorl %esi, %esi
+    movq %r9, %rdx
+    xorq $0x10000000, %rdx
+    xorl %r10d, %r10d
+    kernel_call 24
+    ud2
+.Lvolumes_reserved:
+    xorl %edi, %edi
+    xorl %esi, %esi
+    movq %r9, %rdx
+    movl $1, %r10d
+    kernel_call 24
+    ud2
+.Lvolumes_pointer:
+    leaq _start(%rip), %rdi
+    xorl %esi, %esi
+    movq %r9, %rdx
+    xorl %r10d, %r10d
+    kernel_call 23
+    ud2
+.Lvolumes_failed:
+    movl $99, %edi
+    kernel_call 1
+    ud2
+
 .Lwriter_probe:
     # The first boot recovery role has retired. Its observed generation cannot
     # authorize an ordinary program, even with a valid sector/window.

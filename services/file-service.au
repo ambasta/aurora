@@ -23,27 +23,12 @@ import fs.xfs_log;
 
 auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builtin::ByteRegion region,
     builtin::span<const u8> arguments) -> builtin::HostExit {
-    const endpoint::Message initial = endpoint::exchange(session, "");
-    if (initial.status() != builtin::ServeStatus::request || initial.source() != 0u64 || initial.count() != 64u64) {
+    const service::BootstrapRecord bootstrap = service::read_bootstrap(session, false);
+    if (!bootstrap.valid) {
         return builtin::HostExit::failure;
     }
-    u64 volume_length = 0u64;
-    u64 profile_word = 0u64;
-    {
-        std::BinaryBuffer64 bootstrap = std::BinaryBuffer64();
-        i64 at = 0;
-        while (at < 64) {
-            bootstrap.write_u8(at, endpoint::byte(session, u64(at)));
-            at = at + 1;
-        }
-        if (!service::bootstrap_valid(bootstrap.bytes(0, 64))) {
-            return builtin::HostExit::failure;
-        }
-        const std::ByteReadResult volume = std::read_le64(bootstrap.bytes(0, 64), 8);
-        const std::ByteReadResult selected = std::read_le64(bootstrap.bytes(0, 64), 16);
-        volume_length = volume.value_or(0u64);
-        profile_word = selected.value_or(0u64);
-    }
+    const u64 volume_length = bootstrap.volume_length;
+    const u64 profile_word = bootstrap.profile;
     // Only the kernel-authenticated initial control chooses this immutable
     // profile. Disk contents and subsequent client requests cannot change it.
     fs::XfsReadonlyProfile profile = fs::XfsReadonlyProfile::fresh_format;
@@ -265,7 +250,7 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
                     if (size > 512u64) {
                         size = 512u64;
                     }
-                    at = 0u64;
+                    u64 at = 0u64;
                     while (at < size) {
                         staging.set(i64(at), endpoint::byte(session, 64u64 + done + at));
                         at = at + 1u64;
@@ -303,16 +288,8 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
                 }
                 reply_count = 64u64 + response_size;
                 if ((operation == 19u64 || operation == 25u64) && status == kernel::FileStatus::success) {
-                    u64 byte = 0u64;
-                    while (byte < response_size) {
-                        u8 value = 0u8;
-                        if (disk_request) {
-                            value = disk.read_byte(byte);
-                        } else {
-                            value = store.read_byte(byte);
-                        }
-                        response.set_byte(i64(64u64 + byte), value);
-                        byte = byte + 1u64;
+                    if (!service::copy_client_payload(store, disk, response, response_size, disk_request)) {
+                        return builtin::HostExit::failure;
                     }
                 }
             }

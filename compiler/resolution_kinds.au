@@ -34,7 +34,8 @@ export namespace compiler_resolver {
         service_resource,
         bootstrap_effects,
         input_stream,
-        mutable_byte_span
+        mutable_byte_span,
+        read_only_blocks
     };
     enum class DeclarationKind {
         invalid,
