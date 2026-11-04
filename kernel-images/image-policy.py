@@ -683,6 +683,8 @@ RULES = [
         "profiles": ["uefi/production"],
         "callbacks": [
             "deliver_output(=production_output(",
+            "deliver_output(=pair_output_adapter(",
+            "pair_output_adapter(=production_pair_output(",
             "deliver_input(=production_input(",
             "present_foreground(=production_present(",
         ],

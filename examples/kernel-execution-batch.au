@@ -1,0 +1,17 @@
+module kernel_execution_batch;
+import kernel.execution_batch;
+
+auto process_batch_create() -> kernel::BatchOwner {
+    const kernel::BatchOwner owner = kernel::BatchOwner();
+    return owner;
+}
+auto process_batch_next(kernel::BatchOwner& owner) -> kernel::BatchRequest {
+    return owner.next();
+}
+auto process_batch_accept(kernel::BatchOwner& owner, u64 ordinal, kernel::BatchEvent event, u64 status,
+    u64 value) -> bool {
+    return owner.accept(ordinal, event, status, value);
+}
+auto process_batch_result(const kernel::BatchOwner& owner) -> kernel::BatchResult {
+    return owner.result();
+}

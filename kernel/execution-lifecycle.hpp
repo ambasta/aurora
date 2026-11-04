@@ -98,7 +98,7 @@ template <class Platform> class Root final {
         U64 epoch = 0;
         bool active = false;
     } binding_;
-    alignas(16) std::array<std::byte, 272> storage_{};
+    alignas(16) std::array<std::byte, 400> storage_{};
     bool entered_ = false, busy_ = false, consumed_ = false;
     EffectKind operation_ = EffectKind::prepare;
     U64 slot_ = 0;
@@ -130,7 +130,7 @@ template <class Platform> class Root final {
                 terminal == static_cast<U64>(Event::expired));
     }
     auto open(EffectKind kind, U64 slot) -> void {
-        require(binding_.active && !entered_ && !busy_ && !consumed_ && slot < 2 && Platform::quiet());
+        require(binding_.active && !entered_ && !busy_ && !consumed_ && slot < 3 && Platform::quiet());
         require(descriptor().binding == &binding_ && descriptor().epoch == binding_.epoch);
         entered_ = true;
         operation_ = kind;
@@ -206,8 +206,11 @@ public:
         const auto identity = descriptor();
         enter(identity.binding, identity.epoch, storage_.data(), EffectKind::begin_presentation, slot);
         const auto pending = read(slot, Field::pending);
+        const auto sibling_phase = slot == 0 ? Phase::empty : static_cast<Phase>(read(3 - slot, Field::phase));
+        const bool sibling_stopped =
+            sibling_phase == Phase::empty || sibling_phase == Phase::prepared || sibling_phase == Phase::parked;
         const bool eligible =
-            slot == 1 && read(slot, Field::phase) == static_cast<U64>(Phase::parked) &&
+            slot != 0 && sibling_stopped && read(slot, Field::phase) == static_cast<U64>(Phase::parked) &&
             (pending == static_cast<U64>(Event::output) || pending == static_cast<U64>(Event::input)) &&
             read(slot, Field::presentation_charge) < 32 && !read(slot, Field::presentation_ordinal);
         if (eligible)
@@ -224,7 +227,7 @@ public:
         open(EffectKind::finish_presentation, slot);
         const auto identity = descriptor();
         enter(identity.binding, identity.epoch, storage_.data(), EffectKind::finish_presentation, slot);
-        const bool eligible = slot == 1 && read(slot, Field::phase) == static_cast<U64>(Phase::presenting) && ordinal &&
+        const bool eligible = slot != 0 && read(slot, Field::phase) == static_cast<U64>(Phase::presenting) && ordinal &&
                               ordinal == read(slot, Field::presentation_ordinal);
         if (eligible)
             Platform::authenticate_presentation(slot, Phase::presenting);
@@ -253,13 +256,13 @@ public:
         return result;
     }
     auto enter(const void *binding, U64 epoch, const void *field, EffectKind kind, U64 slot) -> void {
-        require(entered_ && !busy_ && !consumed_ && slot < 2);
+        require(entered_ && !busy_ && !consumed_ && slot < 3);
         const bool same_slot =
             slot == slot_ &&
             (kind == operation_ ||
              (kind == EffectKind::retire && (operation_ == EffectKind::activate || operation_ == EffectKind::force)) ||
              (kind == EffectKind::invalidate_service && operation_ == EffectKind::activate && slot == 0));
-        const bool dependent = operation_ == EffectKind::activate && slot_ == 0 && slot == 1 &&
+        const bool dependent = operation_ == EffectKind::activate && slot_ == 0 && slot != 0 &&
                                (kind == EffectKind::force || kind == EffectKind::retire);
         require(same_slot || dependent);
         require(binding == &binding_ && binding_.active && epoch && epoch == binding_.epoch &&
@@ -270,20 +273,20 @@ public:
         if (dependent || kind == EffectKind::invalidate_service)
             require(revoked_service());
         if (dependent) {
-            require(read(1, Field::generation) && read(1, Field::incarnation) == read(0, Field::incarnation));
-            const auto phase = static_cast<Phase>(read(1, Field::phase));
+            require(read(slot, Field::generation) && read(slot, Field::incarnation) == read(0, Field::incarnation));
+            const auto phase = static_cast<Phase>(read(slot, Field::phase));
             require(kind == EffectKind::force
                         ? phase == Phase::prepared || phase == Phase::parked
-                        : phase == Phase::retiring && read(1, Field::event) == static_cast<U64>(Event::forced) &&
-                              read(1, Field::terminal) == static_cast<U64>(Event::unavailable));
+                        : phase == Phase::retiring && read(slot, Field::event) == static_cast<U64>(Event::forced) &&
+                              read(slot, Field::terminal) == static_cast<U64>(Event::unavailable));
         }
         busy_ = true;
     }
     auto canonical(U64 slot, Field field) const -> U64 {
-        require(entered_ && busy_ && !consumed_ && slot < 2 && static_cast<U64>(field) < 16);
+        require(entered_ && busy_ && !consumed_ && slot < 3 && static_cast<U64>(field) < 16);
         require(slot == slot_ || operation_ == EffectKind::finish || operation_ == EffectKind::begin_presentation ||
                 operation_ == EffectKind::finish_presentation ||
-                (operation_ == EffectKind::activate && slot_ == 0 && slot == 1 && revoked_service()));
+                (operation_ == EffectKind::activate && slot_ == 0 && slot != 0 && revoked_service()));
         return read(slot, field);
     }
     auto leave() -> void {

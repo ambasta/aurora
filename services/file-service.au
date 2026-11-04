@@ -112,13 +112,13 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
         }
         bool staged_write = false;
         if (source != 0u64) {
-            if (!store.ok() || !admitted || source != store.active()) {
+            if (!store.ok() || !admitted || !store.contains(source)) {
                 return builtin::HostExit::failure;
             }
             // Write routing is handle-only; no request bytes are consulted.
             // Empty and larger raw writes retain the ordinary copied path.
             if (operation == 22u64 && count > 0u64 && count <= 4096u64) {
-                staged_write = service::xfs_operation(store, "", operation, id) == 0u64;
+                staged_write = service::xfs_operation_for(store, source, "", operation, id) == 0u64;
             }
         }
         u64 at = 0u64;
@@ -130,19 +130,23 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
         }
         reply_count = 64u64;
         const bool mount_control = source == 0u64 && operation == 15u64 && admitted && id == 0u64 && offset == 0u64
-            && count == 0u64 && store.active() == 0u64;
+            && count == 0u64 && store.clients_idle();
         bool disk_request = false;
         u64 disk_operation = 0u64;
         if (source != 0u64 && !staged_write) {
             const builtin::span<const u8> all = request.bytes();
             const builtin::span<const u8> payload = all.subspan(0, i64(count));
-            disk_operation = service::xfs_operation(store, payload, operation, id);
+            disk_operation = service::xfs_operation_for(store, source, payload, operation, id);
             disk_request = disk_operation != 0u64;
+        }
+        const bool disk_refused = disk_request && service::handle_operation(disk_operation) && !disk.owns(source, id);
+        if (disk_refused) {
+            disk.fail(kernel::FileStatus::invalid_handle);
         }
         // The same mount state and pump serve lazy opens and explicit startup
         // admission. Only authenticated source0 can request the latter; neither
         // path publishes readiness before all log/root/inode reads complete.
-        if (mount_control || (disk_request && (disk_operation != 25u64 || disk.ready()))) {
+        if (mount_control || (disk_request && !disk_refused && (disk_operation != 25u64 || disk.ready()))) {
             const builtin::span<const u8> all = request.bytes();
             const builtin::span<const u8> payload = all.subspan(0, i64(count));
             disk.check_generation(block::volume_generation(blocks));
@@ -152,7 +156,7 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
             if (!mount_control && (disk_operation == 21u64 || (parsed.kind == 3u64 && (disk_operation == 16u64
                 || disk_operation == 18u64)) || (!disk.ready() && disk_operation != 16u64 && disk_operation
                 != 18u64))) {
-                disk.prepare(disk_operation, id, offset, payload);
+                disk.prepare_for(source, disk_operation, id, offset, payload);
                 prepared = true;
             }
             while (disk.ok() && ((mount_control && !disk.ready()) || !prepared || disk.opening() || disk.reading()
@@ -173,7 +177,7 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
                     }
                 } else {
                     if (!prepared) {
-                        disk.prepare(disk_operation, id, offset, payload);
+                        disk.prepare_for(source, disk_operation, id, offset, payload);
                         prepared = true;
                         service::start_xfs(disk, mount);
                     } else {
@@ -182,13 +186,13 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
                 }
             }
             if (!prepared) {
-                disk.prepare(disk_operation, id, offset, payload);
+                disk.prepare_for(source, disk_operation, id, offset, payload);
             }
         }
-        if (disk_request && disk_operation == 25u64 && !disk.ready()) {
-            disk.prepare(25u64, id, offset, "");
+        if (disk_request && !disk_refused && disk_operation == 25u64 && !disk.ready()) {
+            disk.prepare_for(source, 25u64, id, offset, "");
         }
-        if (source != 0u64 && operation == 25u64) {
+        if (source != 0u64 && !disk_refused && operation == 25u64) {
             disk.check_generation(block::volume_generation(blocks));
         }
         store.observe_disk(disk.ready());
@@ -207,31 +211,59 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
                 .disk_ready = disk.ready()
             };
             request.control(header, state);
-            if (!service::control_operation(store, console_state, response, request)) {
-                return builtin::HostExit::failure;
-            }
-            const service::ControlReply control = request.control_reply();
-            admitted = control.admitted;
-            copied = control.copied;
-            reply_count = control.count;
-            bool accepted = control.accepted;
-            if (admitted && store.disk_collision()) {
-                disk.poison();
-            }
-            if (accepted && operation == 4u64) {
-                accepted = disk.begin(id);
-            }
-            if (accepted && operation == 5u64) {
-                accepted = disk.finish(id);
-            }
-            if (!accepted) {
-                return builtin::HostExit::failure;
-            }
-            if (control.exit) {
-                return builtin::HostExit::success;
+            // Source0 admits the complete pair before either client may execute.
+            if (operation == 26u64) {
+                const bool accepted = count == 0u64 && offset != 0u64 && store.can_admit(id, offset)
+                    && disk.can_admit(id, offset);
+                kernel::FileStatus status = kernel::FileStatus::failed;
+                if (accepted) {
+                    if (!store.admit_clients(id, offset) || !disk.admit_clients(id, offset)) {
+                        return builtin::HostExit::failure;
+                    }
+                    status = kernel::FileStatus::success;
+                }
+                const service::Reply result = service::reply(status);
+                if (!response.header(result)) {
+                    return builtin::HostExit::failure;
+                }
+            } else {
+                if (operation == 4u64) {
+                    const u64 second = 0u64;
+                    if (count != 0u64 || offset != 0u64 || !store.can_admit(id, second) || !disk.can_admit(id,
+                        second)) {
+                        return builtin::HostExit::failure;
+                    }
+                }
+                if (operation == 5u64 && (count != 0u64 || offset != 0u64 || !store.can_finish(id)
+                    || !disk.can_finish(id))) {
+                    return builtin::HostExit::failure;
+                }
+                if (!service::control_operation(store, console_state, response, request)) {
+                    return builtin::HostExit::failure;
+                }
+                const service::ControlReply control = request.control_reply();
+                admitted = control.admitted;
+                copied = control.copied;
+                reply_count = control.count;
+                bool accepted = control.accepted;
+                if (admitted && store.disk_collision()) {
+                    disk.poison();
+                }
+                if (accepted && operation == 4u64) {
+                    accepted = disk.admit_clients(id, offset);
+                }
+                if (accepted && operation == 5u64) {
+                    accepted = disk.finish(id);
+                }
+                if (!accepted) {
+                    return builtin::HostExit::failure;
+                }
+                if (control.exit) {
+                    return builtin::HostExit::success;
+                }
             }
         } else {
-            if (!store.ok() || !admitted || source != store.active()) {
+            if (!store.ok() || !admitted || !store.contains(source)) {
                 return builtin::HostExit::failure;
             }
             if (staged_write) {
@@ -239,7 +271,7 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
                 // Admit the complete message before changing any file
                 // bytes. No reply/exchange occurs between local chunks;
                 // a failed chunk poisons the same pending output.
-                const service::Reply admission = store.prepare_write(id, count);
+                const service::Reply admission = store.prepare_write_for(source, id, count);
                 result_status = admission.status;
                 u64 done = 0u64;
                 while (result_status == kernel::FileStatus::success && done < count) {
@@ -257,7 +289,7 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
                     }
                     {
                         const builtin::span<const u8> payload = staging.bytes(i64(size));
-                        const service::Reply written = store.write_file(id, payload);
+                        const service::Reply written = store.write_file_for(source, id, payload);
                         result_status = written.status;
                     }
                     done = done + size;
@@ -279,7 +311,8 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
                 } else {
                     const builtin::span<const u8> all = request.bytes();
                     const builtin::span<const u8> payload = all.subspan(0, i64(count));
-                    const service::Reply result = service::file_operation(store, payload, operation, id, offset);
+                    const service::Reply result = service::file_operation_for(store, source, payload, operation, id,
+                        offset);
                     if (!response.header(result)) {
                         return builtin::HostExit::failure;
                     }
@@ -288,7 +321,7 @@ auto main(builtin::ServeSession& session, builtin::ReadOnlyBlock& blocks, builti
                 }
                 reply_count = 64u64 + response_size;
                 if ((operation == 19u64 || operation == 25u64) && status == kernel::FileStatus::success) {
-                    if (!service::copy_client_payload(store, disk, response, response_size, disk_request)) {
+                    if (!service::copy_client_payload(store, disk, response, source, response_size, disk_request)) {
                         return builtin::HostExit::failure;
                     }
                 }

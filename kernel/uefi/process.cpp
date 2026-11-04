@@ -16,6 +16,7 @@
 #endif
 #include "../console.hpp"
 #include "../execution-session.hpp"
+#include "../execution-batch.hpp"
 #include "../service-bootstrap.hpp"
 
 #ifdef AURORA_PRODUCTION
@@ -331,13 +332,19 @@ constinit bool runtime_initialized = false;
 constinit bool runtime_detached = false;
 constinit aurora::uefi::ProcessPresentation presentation_sink = nullptr;
 constinit const Bytes *presentation_handoff = nullptr;
-auto present_foreground() -> void;
+auto present_foreground(std::size_t selected = 1) -> void;
 #endif
 #ifdef AURORA_PRODUCTION
+enum class RunMode {
+    single,
+    pair
+};
 class ResidentArguments final {
 public:
     std::span<const std::byte> volume{}, path{}, arguments{}, request{};
     std::span<std::byte> response{};
+    RunMode mode = RunMode::single;
+    std::span<const std::byte> second_path{}, second_arguments{};
     aurora::uefi::ConsoleOperation console = aurora::uefi::ConsoleOperation::clear;
     U64 expected = 0, revision = 0, map_count = 0;
 };
@@ -345,6 +352,7 @@ class ResidentInput final {
 public:
     const ResidentArguments arguments;
     aurora::uefi::ConsoleResult console_result{};
+    aurora::uefi::RunPairResult pair_result{};
     U64 shutdown_generation = 0, shutdown_transaction = 0;
     bool shutdown_pending = false, shutdown_terminal = false, shutdown_failed = false;
     explicit ResidentInput(ResidentArguments value) : arguments(value) {
@@ -610,12 +618,25 @@ public:
     std::array<U64, 8> initial{};
 };
 constinit std::array<Resident, KernelSpace::process_slots> residents;
+auto clients_live() -> bool {
+    return residents[1].space.has_value() || residents[2].space.has_value();
+}
+auto running_client_slot() -> std::size_t {
+    for (std::size_t slot = 1; slot < residents.size(); ++slot) {
+        const auto &resident = residents[slot];
+        if (resident.space && running.space == &*resident.space && running.run == resident.state.run &&
+            running.captured == &resident.continuation && running.budget == &resident.budget)
+            return slot;
+    }
+    fail("running client identity");
+}
 
 // These are actual synchronous command-operation receipts, not slot lifecycle
 // state. Only the active command transport may install a force context.
 class ExecutionBinding final {
 public:
     U64 client = 0, service_generation = 0;
+    std::size_t slot = 1;
     bool output_pending = false, request_pending = false, input_pending = false;
     bool output_failed = false, request_failed = false;
     bool explicit_cancel_requested = false, expiry_preceded_cancel = false;
@@ -1339,7 +1360,7 @@ auto file_request(const process::KernelCall &call, volatile U64 *frame) -> bool 
         endpoint.bytes[64 + at] = (*source)[at];
     endpoint.call = call;
     endpoint.written = length;
-    endpoint.caller = 1;
+    endpoint.caller = running_client_slot();
     endpoint.caller_cancelled = false;
     execution_capture.event = aurora::lifecycle::Event::request;
     save_frame(frame);
@@ -2209,7 +2230,7 @@ auto complete_resident_physical(std::size_t slot) -> void {
         return;
     }
     if (pending == Event::output) {
-        if (slot != 1 || !completed_output || !*completed_output || endpoint.caller ||
+        if (!slot || slot >= residents.size() || !completed_output || !*completed_output || endpoint.caller ||
             resident.continuation[frame_rax] != 2 || resident.continuation[frame_rdx] != endpoint.count ||
             (resident.continuation[frame_rdi] == 2) != output_error_stream)
             fail("output completion evidence");
@@ -2219,8 +2240,8 @@ auto complete_resident_physical(std::size_t slot) -> void {
     const auto endpoint_observation = endpoint_owner.observe();
     if ((pending != Event::exchange || !resident.state.service || !endpoint_observation.delivery() ||
          !endpoint_observation.waiting() || endpoint.generation != resident.state.service) &&
-        (pending != Event::request || slot != 1 || !endpoint_observation.completion() || endpoint.caller ||
-         endpoint_observation.source != resident.state.run))
+        (pending != Event::request || !slot || slot >= residents.size() || !endpoint_observation.completion() ||
+         endpoint.caller || endpoint_observation.source != resident.state.run))
         fail("stopped completion evidence");
     if (pending == Event::exchange) {
         if (resident.continuation[frame_rax] != 15 || resident.continuation[frame_rdi] != endpoint.window ||
@@ -2340,7 +2361,7 @@ auto activate_resident_physical(std::size_t slot) -> void {
 
 auto execution_incarnation(std::size_t slot) -> U64 {
     const auto &resident = residents[slot];
-    return slot == 1 ? (resident.state.external ? endpoint.generation : 0) : resident.state.service;
+    return slot != 0 ? (resident.state.external ? endpoint.generation : 0) : resident.state.service;
 }
 auto authenticate_execution(std::size_t slot, aurora::lifecycle::Phase phase) -> void {
     using namespace aurora::lifecycle;
@@ -2364,13 +2385,25 @@ auto authenticate_execution(std::size_t slot, aurora::lifecycle::Phase phase) ->
 }
 auto LifecyclePlatform::authenticate_presentation(U64 slot, aurora::lifecycle::Phase phase) -> void {
     using namespace aurora::lifecycle;
-    if (slot != 1 || execution_owner.canonical(0, Field::phase) != static_cast<U64>(Phase::parked) ||
+    if (!slot || slot >= residents.size() ||
+        execution_owner.canonical(0, Field::phase) != static_cast<U64>(Phase::parked) ||
         execution_owner.canonical(0, Field::pending) != static_cast<U64>(Event::exchange))
         ::fail("presentation service source identity");
     authenticate_execution(0, Phase::parked);
     authenticate_stopped_frame(0, true);
     authenticate_execution(slot, phase);
     authenticate_stopped_frame(slot, true);
+    const auto sibling = slot == 1 ? 2U : 1U;
+    const auto sibling_phase = static_cast<Phase>(execution_owner.canonical(sibling, Field::phase));
+    if (residents[sibling].space) {
+        if (sibling_phase != Phase::prepared && sibling_phase != Phase::parked)
+            ::fail("presentation sibling identity");
+        authenticate_execution(sibling, sibling_phase);
+        if (sibling_phase == Phase::parked)
+            authenticate_stopped_frame(sibling, false);
+    } else if (sibling_phase != Phase::empty) {
+        ::fail("presentation empty sibling identity");
+    }
 }
 auto authenticate_terminal_capture(std::size_t slot) -> void {
     using namespace aurora::lifecycle;
@@ -2415,14 +2448,14 @@ auto observe_forced_execution(std::size_t slot) -> aurora::lifecycle::Observatio
             fail("service loss physical boundary");
         return execution_observation(slot, Event::forced, facts | 16);
     }
-    if (slot != 1 || service_phase != aurora::service::Phase::ready || !residents[0].space ||
+    if (!slot || slot >= residents.size() || service_phase != aurora::service::Phase::ready || !residents[0].space ||
         residents[0].state.service != endpoint.generation)
         fail("forced client physical boundary");
     if (forced_execution) {
         const auto &binding = *forced_execution;
-        if (!binding.client || binding.client != residents[slot].state.run || !binding.service_generation ||
-            binding.service_generation != endpoint.generation || binding.output_pending || binding.request_pending ||
-            binding.input_pending || binding.request_failed ||
+        if (binding.slot != slot || !binding.client || binding.client != residents[slot].state.run ||
+            !binding.service_generation || binding.service_generation != endpoint.generation ||
+            binding.output_pending || binding.request_pending || binding.input_pending || binding.request_failed ||
             (binding.expiry_preceded_cancel && !binding.explicit_cancel_requested))
             fail("forced command binding");
         if (phase == Phase::prepared && (!binding.explicit_cancel_requested || binding.expiry_preceded_cancel ||
@@ -2481,7 +2514,7 @@ auto execution_authority_observe(
             resident.state.budget != &resident.budget ||
             resident.initial[4] != table.activation_root(slot, resident.space->epoch()))
             fail("execution prepare identity");
-        if (slot == 1 && resident.state.external) {
+        if (slot != 0 && resident.state.external) {
             const auto generation = endpoint.generation;
             const auto &server = residents[0];
             if (!generation || service_root.phase() != aurora::service::Phase::ready ||
@@ -2534,7 +2567,8 @@ auto run_resident(std::size_t slot) -> bool {
         fail("execution lifecycle reentry");
     const auto completion = endpoint_owner.completion();
     if ((residents[slot].state.service && completion == aurora::endpoint::Completion::service) ||
-        (slot == 1 && completion == aurora::endpoint::Completion::client))
+        (slot != 0 && completion == aurora::endpoint::Completion::client &&
+         endpoint_owner.observe().source == residents[slot].state.run))
         if (!execution_owner.complete(slot))
             fail("execution completion refused");
     const auto result = execution_owner.execute(slot);
@@ -2692,13 +2726,13 @@ enum class ClientProgress {
 };
 // Only an authenticated, still-undispatched request can be withdrawn. This
 // changes no server continuation, transaction ordinal or budget.
-auto advance_client_request() -> ClientProgress {
+auto advance_client_request(std::size_t slot = 1) -> ClientProgress {
     using Step = aurora::endpoint::Step;
     using Consume = aurora::endpoint::Consume;
-    if (!residents[1].space || !residents[0].space || endpoint.count > Endpoint::capacity ||
-        endpoint.caller != std::optional<std::size_t>{1})
+    if (!slot || slot >= residents.size() || !residents[slot].space || !residents[0].space ||
+        endpoint.count > Endpoint::capacity || endpoint.caller != std::optional<std::size_t>{slot})
         return ClientProgress::failed;
-    const U64 client = residents[1].state.run;
+    const U64 client = residents[slot].state.run;
     const auto step = endpoint_owner.client_step(client);
     if (step == Step::launch) {
         if (!residents[0].space || endpoint.count > Endpoint::capacity)
@@ -2728,9 +2762,9 @@ auto advance_client_request() -> ClientProgress {
         const U64 remaining = endpoint.call.length - endpoint.written;
         if (remaining > 64 || root() != kernel_root)
             fail("file write continuation");
-        auto &client_space = *residents[1].space;
+        auto &client_space = *residents[slot].space;
         const auto address = endpoint.call.base + endpoint.written;
-        const U64 admitted_root = table.activation_root(1, client_space.epoch());
+        const U64 admitted_root = table.activation_root(slot, client_space.epoch());
         asm volatile("mov %0, %%cr3" : : "r"(admitted_root) : "memory");
         if (client_space.access(address, remaining, false) != ProcessSpace::Access::granted)
             fail("parked write source");
@@ -2836,10 +2870,9 @@ auto service_lost(ServiceLoss loss, U64 generation) -> void {
 // copied generation is not sufficient to manufacture this acknowledgement.
 auto acknowledge_service_cleanup(U64 generation) -> void {
     if (const auto endpoint_observation = endpoint_owner.observe();
-        residents[0].space || residents[1].space || snapshot || running.space || endpoint.generation ||
-        endpoint.caller || endpoint_observation.waiting() || endpoint_observation.replied() ||
-        endpoint_observation.delivery() || endpoint_observation.completion() || !audit_residents() ||
-        !service_root.cleaned(generation))
+        residents[0].space || clients_live() || snapshot || running.space || endpoint.generation || endpoint.caller ||
+        endpoint_observation.waiting() || endpoint_observation.replied() || endpoint_observation.delivery() ||
+        endpoint_observation.completion() || !audit_residents() || !service_root.cleaned(generation))
         fail("file service cleanup acknowledgement");
 }
 
@@ -2894,14 +2927,14 @@ auto abandon_service_observed(ServiceLoss loss) -> void {
             fail("file service loss incarnation");
         if (phase == aurora::service::Phase::retiring) {
             if (const auto endpoint_observation = endpoint_owner.observe();
-                residents[0].space || residents[1].space || snapshot || loading_image || endpoint.caller ||
+                residents[0].space || clients_live() || snapshot || loading_image || endpoint.caller ||
                 endpoint_observation.replied() || endpoint_observation.delivery() ||
                 endpoint_observation.completion() || service_root.reason() == aurora::service::Reason::shutdown)
                 fail("file service pending terminal cleanup");
         } else if (!service_root.lose(generation, static_cast<aurora::service::Reason>(loss.kind), loss.detail)) {
             fail("file service loss observation");
         }
-    } else if (endpoint.generation || residents[0].space || residents[1].space || snapshot) {
+    } else if (endpoint.generation || residents[0].space || clients_live() || snapshot) {
         fail("absent file service physical owner");
     }
     // No process may see a late reply or a writable staging alias after loss.
@@ -2912,7 +2945,7 @@ auto abandon_service_observed(ServiceLoss loss) -> void {
     if (endpoint.generation && !endpoint_owner.invalidate(endpoint.generation))
         fail("endpoint invalidation");
     discard_snapshot();
-    for (std::size_t slot : {std::size_t{1}, std::size_t{0}}) {
+    for (std::size_t slot : {std::size_t{1}, std::size_t{2}, std::size_t{0}}) {
         if (!residents[slot].space)
             continue;
         force_resident(slot);
@@ -2989,7 +3022,7 @@ public:
                service_root.generation() == binding.generation && endpoint.generation == binding.generation &&
                residents[0].space && residents[0].state.service == binding.generation &&
                residents[0].state.run == binding.run && residents[0].space->owner() == binding.owner &&
-               residents[0].space->root() == binding.root && !residents[1].space && !snapshot;
+               residents[0].space->root() == binding.root && !clients_live() && !snapshot;
     }
     static auto failed(Binding &binding) -> void {
         if (!binding.failed) {
@@ -3004,12 +3037,12 @@ public:
         generation_ = generation;
     }
     static auto unbind() -> void {
-        require(generation_ && !loading_image && !residents[1].space && !snapshot && !endpoint.caller);
+        require(generation_ && !loading_image && !clients_live() && !snapshot && !endpoint.caller);
         volume_ = {};
         generation_ = 0;
     }
     static auto begin(Binding &binding) -> aurora::bootstrap::Preparation {
-        require(generation_ && !residents[0].space && !residents[1].space && !snapshot &&
+        require(generation_ && !residents[0].space && !clients_live() && !snapshot &&
                 service_root.phase() == aurora::service::Phase::starting && service_root.generation() == generation_);
         binding.volume = volume_;
         binding.generation = generation_;
@@ -3230,12 +3263,13 @@ public:
                             outcome.terminal_run == binding.run && outcome.terminal_service == binding.generation &&
                             service_root.reason() != aurora::service::Reason::shutdown &&
                             static_cast<U64>(service_root.reason()) == static_cast<U64>(binding.loss.kind) &&
-                            service_root.detail() == binding.loss.detail && !residents[0].space &&
-                            !residents[1].space && !snapshot && !loading_image && !endpoint.caller &&
-                            !endpoint_observation.waiting() && !endpoint_observation.replied() &&
-                            !endpoint_observation.delivery() && !endpoint_observation.completion() &&
-                            LifecyclePlatform::quiet() && execution_owner.phase(0) == aurora::lifecycle::Phase::empty &&
-                            execution_owner.phase(1) == aurora::lifecycle::Phase::empty);
+                            service_root.detail() == binding.loss.detail && !residents[0].space && !clients_live() &&
+                            !snapshot && !loading_image && !endpoint.caller && !endpoint_observation.waiting() &&
+                            !endpoint_observation.replied() && !endpoint_observation.delivery() &&
+                            !endpoint_observation.completion() && LifecyclePlatform::quiet() &&
+                            execution_owner.phase(0) == aurora::lifecycle::Phase::empty &&
+                            execution_owner.phase(1) == aurora::lifecycle::Phase::empty &&
+                            execution_owner.phase(2) == aurora::lifecycle::Phase::empty);
                 }
             } else {
                 require(phase == aurora::service::Phase::starting);
@@ -3299,7 +3333,7 @@ public:
     }
     static auto settled(const Binding &binding) -> bool {
         const auto endpoint_observation = endpoint_owner.observe();
-        if (loading_image || residents[1].space || snapshot || endpoint.caller || endpoint_observation.replied() ||
+        if (loading_image || clients_live() || snapshot || endpoint.caller || endpoint_observation.replied() ||
             endpoint_observation.delivery() || endpoint_observation.completion() || binding.pending_operation ||
             binding.initial_receipt || binding.seal_receipt || binding.storage_receipt || !audit_residents())
             return false;
@@ -3371,43 +3405,44 @@ auto ensure_file_service(std::span<const std::byte> volume, U64 expected = 0, bo
     return start_file_service(volume, generation);
 }
 
-[[gnu::noinline]] auto deliver_output() -> bool {
+[[gnu::noinline]] auto deliver_output(std::size_t slot = 1) -> bool {
     if (execution_owner.entered() || completed_output || forced_execution)
         fail("output lifecycle scope");
     if (!output_sink || !Timer::irq_off() || root() != kernel_root || Timer::read(0x390) ||
         !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false) || endpoint.count > Endpoint::capacity)
         fail("process output ownership");
-    if (!residents[1].space || execution_owner.phase(1) != aurora::lifecycle::Phase::parked)
+    if (!slot || slot >= residents.size() || !residents[slot].space ||
+        execution_owner.phase(slot) != aurora::lifecycle::Phase::parked)
         fail("output stopped context");
-    const auto generation = execution_owner.generation(1);
-    const U64 pending = execution_owner.pending(1);
-    const U64 saved_context = reinterpret_cast<U64>(residents[1].continuation.data());
-    const U64 capture_context = reinterpret_cast<U64>(residents[1].state.captured);
-    const U64 resume_context = reinterpret_cast<U64>(residents[1].state.continuation);
+    const auto generation = execution_owner.generation(slot);
+    const U64 pending = execution_owner.pending(slot);
+    const U64 saved_context = reinterpret_cast<U64>(residents[slot].continuation.data());
+    const U64 capture_context = reinterpret_cast<U64>(residents[slot].state.captured);
+    const U64 resume_context = reinterpret_cast<U64>(residents[slot].state.continuation);
     if (pending != static_cast<U64>(aurora::lifecycle::Event::output) || capture_context != saved_context ||
         resume_context != saved_context)
         fail("output pending context");
-    const auto stopped_frame = residents[1].continuation;
-    const auto epoch = residents[1].space->epoch();
-    const auto physical_root = residents[1].space->root();
+    const auto stopped_frame = residents[slot].continuation;
+    const auto epoch = residents[slot].space->epoch();
+    const auto physical_root = residents[slot].space->root();
     const bool delivered = output_sink(output_context, output_error_stream, {endpoint.bytes.data(), endpoint.count});
-    if (execution_owner.entered() || !residents[1].space || execution_owner.generation(1) != generation ||
-        execution_owner.pending(1) != pending ||
-        reinterpret_cast<U64>(residents[1].continuation.data()) != saved_context ||
-        reinterpret_cast<U64>(residents[1].state.captured) != capture_context ||
-        reinterpret_cast<U64>(residents[1].state.continuation) != resume_context ||
-        residents[1].space->epoch() != epoch || residents[1].space->root() != physical_root)
+    if (execution_owner.entered() || !residents[slot].space || execution_owner.generation(slot) != generation ||
+        execution_owner.pending(slot) != pending ||
+        reinterpret_cast<U64>(residents[slot].continuation.data()) != saved_context ||
+        reinterpret_cast<U64>(residents[slot].state.captured) != capture_context ||
+        reinterpret_cast<U64>(residents[slot].state.continuation) != resume_context ||
+        residents[slot].space->epoch() != epoch || residents[slot].space->root() != physical_root)
         fail("output callback lifecycle changed");
     // A different but individually well-formed frame is not the frame whose
     // output operation was delivered. Compare exact physical words, not a hash.
-    if (residents[1].continuation != stopped_frame)
+    if (residents[slot].continuation != stopped_frame)
         fail("output callback frame changed");
     if (delivered) {
 #if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
-        present_foreground();
+        present_foreground(slot);
 #endif
         completed_output = &delivered;
-        if (!execution_owner.complete(1))
+        if (!execution_owner.complete(slot))
             fail("output completion refused");
         completed_output = nullptr;
     }
@@ -3462,8 +3497,9 @@ public:
     std::array<U64, 8> initial;
     U64 generation, pending, epoch, root, used, quantum;
     aurora::lifecycle::Phase phase;
+    bool live = false;
 };
-auto presentation_quiet() -> bool {
+auto presentation_quiet(std::size_t selected) -> bool {
     const auto endpoint_state = endpoint_owner.observe();
     return LifecyclePlatform::quiet() && !execution_owner.entered() && !execution_owner.busy() &&
            (Timer::read(0x320) & 0x700ff) == (0x10000 | Timer::vector) && !runtime_detached && !draining &&
@@ -3472,16 +3508,17 @@ auto presentation_quiet() -> bool {
            endpoint_state.phase == aurora::endpoint::Phase::waiting && !endpoint_state.client && !forced_execution &&
            !completed_output && !endpoint_trap_scope && !loading_image &&
            service_root.phase() == aurora::service::Phase::ready && endpoint.generation == service_root.generation() &&
-           residents[0].space && residents[1].space && residents[0].state.service == endpoint.generation;
+           selected && selected < residents.size() && residents[0].space && residents[selected].space &&
+           residents[0].state.service == endpoint.generation;
 }
-[[gnu::noinline]] auto present_foreground() -> void {
+[[gnu::noinline]] auto present_foreground(std::size_t selected) -> void {
     using namespace aurora::lifecycle;
     if (!presentation_sink)
         return;
     U64 stack_pointer;
     asm volatile("mov %%rsp, %0" : "=r"(stack_pointer));
     const auto target = reinterpret_cast<U64>(presentation_sink);
-    if (!presentation_handoff || !presentation_quiet() || stack_pointer % 8 ||
+    if (!presentation_handoff || !presentation_quiet(selected) || stack_pointer % 8 ||
         stack_pointer < owned_arena + Handoff::stack_bottom + 4096 ||
         stack_pointer >= owned_arena + Handoff::stack_top || target < owned_arena + Handoff::payload_offset ||
         target >= owned_arena + Handoff::payload_offset + presentation_handoff->get(64))
@@ -3495,21 +3532,40 @@ auto presentation_quiet() -> bool {
     // rechecks eligibility and both canonical resident identities below.
     // One admission prepays every possible cell/store, even on an immediate
     // UART yield. Exhaustion is optional graphics deferral, never process failure.
-    const auto ordinal = execution_owner.begin_presentation(1);
+    const auto ordinal = execution_owner.begin_presentation(selected);
     if (!ordinal)
         return;
     if (ordinal > 32 || execution_owner.entered() || execution_owner.busy() ||
-        execution_owner.phase(1) != Phase::presenting)
+        execution_owner.phase(selected) != Phase::presenting)
         fail("presentation admission closure");
     // Only an admitted pass pays for complete mapping/resident scans and
     // receipts. Clean or exhausted calls cannot repeat this work indefinitely.
     // Both slots are now frozen; failure here is fail-stop, never a refund.
     if (!space.verify(table, ranges, kernel_table_pages) || !audit_residents())
         fail("presentation admitted mapping");
-    std::array<PresentationResident, 2> saved;
+    std::array<PresentationResident, KernelSpace::process_slots> saved{};
     for (std::size_t slot = 0; slot < residents.size(); ++slot) {
         const auto &resident = residents[slot];
-        authenticate_stopped_frame(slot, true);
+        if (!resident.space) {
+            if (execution_owner.phase(slot) != Phase::empty || !resident.budget.inactive())
+                fail("presentation empty identity");
+            saved[slot] = {resident.state,
+                           resident.continuation,
+                           resident.initial,
+                           execution_owner.generation(slot),
+                           execution_owner.pending(slot),
+                           0,
+                           0,
+                           0,
+                           0,
+                           Phase::empty,
+                           false};
+            continue;
+        }
+        if (execution_owner.phase(slot) == Phase::parked || slot == selected)
+            authenticate_stopped_frame(slot, slot == 0 || slot == selected);
+        else if (execution_owner.phase(slot) != Phase::prepared)
+            fail("presentation sibling phase");
         saved[slot] = {resident.state,
                        resident.continuation,
                        resident.initial,
@@ -3519,7 +3575,8 @@ auto presentation_quiet() -> bool {
                        resident.space->root(),
                        resident.budget.used(),
                        resident.budget.quantum(),
-                       execution_owner.phase(slot)};
+                       execution_owner.phase(slot),
+                       true};
     }
     const auto saved_input = input_read;
     const U64 service = endpoint.generation;
@@ -3538,22 +3595,30 @@ auto presentation_quiet() -> bool {
     install_architecture(owned_arena);
     asm volatile("mov %0, %%cr2" : : "r"(previous_cr2) : "memory");
     const auto endpoint_after = endpoint_owner.observe();
-    if (!presentation_quiet() || !space.verify(table, ranges, kernel_table_pages) || !audit_residents() ||
+    if (!presentation_quiet(selected) || !space.verify(table, ranges, kernel_table_pages) || !audit_residents() ||
         endpoint.generation != service || endpoint.window != window_before || endpoint.count != count_before ||
         endpoint_before.incarnation != endpoint_after.incarnation || endpoint_before.phase != endpoint_after.phase ||
         endpoint_before.next != endpoint_after.next || endpoint_before.transaction != endpoint_after.transaction ||
         endpoint_before.source != endpoint_after.source || endpoint_before.client != endpoint_after.client ||
-        execution_owner.phase(1) != Phase::presenting)
+        execution_owner.phase(selected) != Phase::presenting)
         fail("presentation restored boundary");
     for (std::size_t slot = 0; slot < residents.size(); ++slot) {
         const auto &resident = residents[slot];
         const auto &before = saved[slot];
+        if (!before.live) {
+            if (resident.space || execution_owner.phase(slot) != Phase::empty || !resident.budget.inactive() ||
+                resident.state != before.state || resident.initial != before.initial ||
+                resident.continuation != before.frame || execution_owner.generation(slot) != before.generation ||
+                execution_owner.pending(slot) != before.pending)
+                fail("presentation empty changed");
+            continue;
+        }
         if (!resident.space || resident.state != before.state || resident.initial != before.initial ||
             !input_frame_equal(resident.continuation, before.frame) ||
             execution_owner.generation(slot) != before.generation || execution_owner.pending(slot) != before.pending ||
             resident.space->epoch() != before.epoch || resident.space->root() != before.root ||
             resident.budget.used() != before.used || resident.budget.quantum() != before.quantum ||
-            (slot == 0 && execution_owner.phase(slot) != before.phase))
+            (slot != selected && execution_owner.phase(slot) != before.phase))
             fail("presentation resident changed");
     }
     if (input_read.owner != saved_input.owner || input_read.sequence != saved_input.sequence ||
@@ -3567,8 +3632,8 @@ auto presentation_quiet() -> bool {
         input_read.protocol.count != saved_input.protocol.count ||
         input_read.protocol.after_cr != saved_input.protocol.after_cr)
         fail("presentation input changed");
-    if (!execution_owner.finish_presentation(1, ordinal) || execution_owner.phase(1) != Phase::parked ||
-        (saved[1].pending == static_cast<U64>(Event::input) && !input_identity()))
+    if (!execution_owner.finish_presentation(selected, ordinal) || execution_owner.phase(selected) != Phase::parked ||
+        (saved[selected].pending == static_cast<U64>(Event::input) && !input_identity()))
         fail("presentation source restoration");
 }
 #endif
@@ -3785,7 +3850,8 @@ protected:
 public:
     using Binding = ExecutionBinding;
     static auto bound_client(const Binding &binding) -> bool {
-        return binding.client && residents[1].space && residents[1].state.run == binding.client;
+        return binding.slot && binding.slot < residents.size() && binding.client && residents[binding.slot].space &&
+               residents[binding.slot].state.run == binding.client;
     }
     static auto bound_service(const Binding &binding) -> bool {
         return binding.service_generation && residents[0].space && endpoint.generation == binding.service_generation &&
@@ -3796,7 +3862,7 @@ public:
         require(bound_client(binding) && !binding.output_pending && !binding.request_pending &&
                 !binding.input_pending && !binding.output_failed && !binding.request_failed &&
                 !binding.explicit_cancel_requested && !endpoint.caller_cancelled);
-        if (run_resident(1)) {
+        if (run_resident(binding.slot)) {
             // Freeze terminal facts before any later cleanup can replace outcome.
             const auto ended = outcome.exited ? Status::exited : outcome.watchdog ? Status::watchdog : Status::fault;
             return {Step::retired, ended, outcome.exited ? outcome.status : outcome.vector};
@@ -3823,7 +3889,7 @@ public:
         using namespace aurora::execution;
         require(bound_client(binding) && binding.output_pending && !binding.request_pending && !binding.input_pending &&
                 !binding.explicit_cancel_requested);
-        binding.output_failed = !deliver_output();
+        binding.output_failed = !deliver_output(binding.slot);
         binding.output_pending = false;
         return binding.output_failed ? Effect::failed : Effect::success;
     }
@@ -3838,10 +3904,10 @@ public:
                     endpoint.caller.reset();
                     progress = ClientProgress::complete;
                 } else if (cancellation == aurora::endpoint::Cancel::draining) {
-                    progress = advance_client_request();
+                    progress = advance_client_request(binding.slot);
                 }
             } else {
-                progress = advance_client_request();
+                progress = advance_client_request(binding.slot);
             }
         }
         if (progress == ClientProgress::pending)
@@ -3859,7 +3925,7 @@ public:
         invalidate_input(binding.client);
         binding.input_pending = false;
         // Inert refusals and already retired clients retain their frozen result.
-        if (!binding.client || !residents[1].space) {
+        if (!binding.client || !residents[binding.slot].space) {
             require(!binding.output_pending && !binding.request_pending && !binding.input_pending);
             return Cancel::settled;
         }
@@ -3877,7 +3943,7 @@ public:
         // Withdrawing undelivered output does not manufacture delivery failure.
         binding.output_pending = false;
         if (binding.request_pending)
-            require(endpoint.caller == std::optional<std::size_t>{1});
+            require(endpoint.caller == std::optional<std::size_t>{binding.slot});
         else
             require(!endpoint.caller);
         const auto cancellation = endpoint_owner.cancel(binding.client, true);
@@ -3894,7 +3960,7 @@ public:
         using namespace aurora::execution;
         require(!binding.output_pending && !binding.request_pending && !binding.input_pending);
         if (!binding.client) {
-            require(disposition == Finish::complete && !residents[1].space && !snapshot && !endpoint.caller);
+            require(disposition == Finish::complete && !residents[binding.slot].space && !snapshot && !endpoint.caller);
             return Effect::success;
         }
         // Source disposition is a request, never evidence for retirement.
@@ -3909,24 +3975,24 @@ public:
             require(binding.output_failed && bound_client(binding));
             require(!forced_execution);
             forced_execution = &binding;
-            force_resident(1);
+            force_resident(binding.slot);
             forced_execution = nullptr;
         } else if (disposition == Finish::cancelled) {
             require(!binding.output_failed && endpoint.caller_cancelled && bound_client(binding) &&
                     (!binding.explicit_cancel_requested || binding.expiry_preceded_cancel));
             require(!forced_execution);
             forced_execution = &binding;
-            force_resident(1);
+            force_resident(binding.slot);
             forced_execution = nullptr;
         } else if (disposition == Finish::cancel_requested) {
             require(!binding.output_failed && binding.explicit_cancel_requested && !binding.expiry_preceded_cancel &&
                     endpoint.caller_cancelled && bound_client(binding));
             require(!forced_execution);
             forced_execution = &binding;
-            force_resident(1);
+            force_resident(binding.slot);
             forced_execution = nullptr;
         } else {
-            require(disposition == Finish::complete && !binding.output_failed && !residents[1].space);
+            require(disposition == Finish::complete && !binding.output_failed && !residents[binding.slot].space);
         }
         endpoint.caller.reset();
         require(endpoint_owner.finish_client(binding.client));
@@ -3941,7 +4007,7 @@ public:
     static auto settled(const Binding &binding) -> bool {
         const auto endpoint_observation = endpoint_owner.observe();
         return !binding.client && !binding.output_pending && !binding.request_pending && !binding.input_pending &&
-               !residents[1].space && !snapshot && !endpoint.caller && !endpoint_observation.delivery() &&
+               !residents[binding.slot].space && !snapshot && !endpoint.caller && !endpoint_observation.delivery() &&
                !endpoint_observation.completion();
     }
 };
@@ -3969,7 +4035,7 @@ public:
 
 auto begin_service_shutdown() -> void {
     if (const auto endpoint_observation = endpoint_owner.observe();
-        !residents[0].space || residents[1].space || snapshot || endpoint.caller || endpoint_observation.replied() ||
+        !residents[0].space || clients_live() || snapshot || endpoint.caller || endpoint_observation.replied() ||
         endpoint_observation.delivery() || endpoint_observation.completion() ||
         !service_root.begin_shutdown(endpoint.generation))
         fail("file service shutdown intent");
@@ -3985,7 +4051,7 @@ auto service_shutdown_selected() -> bool {
 }
 auto finish_service_shutdown() -> void {
     const U64 generation = endpoint.generation;
-    if (!generation || residents[0].space || residents[1].space || !outcome.exited || outcome.status ||
+    if (!generation || residents[0].space || clients_live() || !outcome.exited || outcome.status ||
         outcome.terminal_service != generation || running.service != generation ||
         outcome.terminal_run != running.run || !service_shutdown_selected())
         fail("file service normal terminal observation");
@@ -4002,7 +4068,7 @@ auto finish_service_shutdown() -> void {
 // only client ordinals stay stable. The admitted list has at most64 entries,
 // so companion owners64+ordinal cannot alias any client owner in this boot.
 auto start_companion(std::span<const std::byte> volume, U64 client) -> bool {
-    if (client == 0 || client > 64 || residents[0].space || residents[1].space)
+    if (client == 0 || client > 64 || residents[0].space || clients_live())
         return false;
     if (service_root.admit(0, true) != aurora::service::Action::start)
         return false;
@@ -4197,7 +4263,7 @@ auto run_file_client() -> bool {
 }
 auto close_service_operation() -> void {
     if (const auto endpoint_observation = endpoint_owner.observe();
-        residents[1].space || snapshot || endpoint.caller || endpoint_observation.delivery() ||
+        clients_live() || snapshot || endpoint.caller || endpoint_observation.delivery() ||
         endpoint_observation.completion() || !audit_residents() || !service_root.close_operation())
         fail("file service operation cleanup");
 }
@@ -4643,7 +4709,7 @@ auto run_external(std::span<const std::byte> view,
                   bool mounted = false,
                   bool cancel_delivered = false) -> U64 {
     static_cast<void>(cancel_delivered);
-    if (residents[0].space || residents[1].space || !service_root.open_operation())
+    if (residents[0].space || clients_live() || !service_root.open_operation())
         fail("file service restart state");
     const auto service = process::run(runs, first);
     if (!service || !service->found)
@@ -4787,8 +4853,8 @@ auto run_external(std::span<const std::byte> view,
 auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> runs) -> bool {
     const auto entry = process::run(runs, 0);
     const auto baseline = table.free();
-    if (!entry || !entry->found || residents[0].space || residents[1].space || endpoint.generation ||
-        recovery_generation || recovery_completed || !aurora::uefi::nvme_recovery_sector_count())
+    if (!entry || !entry->found || residents[0].space || clients_live() || endpoint.generation || recovery_generation ||
+        recovery_completed || !aurora::uefi::nvme_recovery_sector_count())
         fail("recovery composition");
     if (!load_one(view, runs, *entry, 1, 0, true, true))
         return false;
@@ -5057,9 +5123,9 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
             if (before.incarnation != after.incarnation || before.phase != after.phase || before.next != after.next ||
                 before.transaction != after.transaction || before.source != after.source ||
                 before.client != after.client || endpoint.generation || endpoint.caller || residents[0].space ||
-                residents[1].space || snapshot || loading_image ||
-                service_root.phase() != aurora::service::Phase::absent || service_root.generation() != service + 1 ||
-                execution_owner.generation(0) != server || execution_owner.generation(1) != client ||
+                clients_live() || snapshot || loading_image || service_root.phase() != aurora::service::Phase::absent ||
+                service_root.generation() != service + 1 || execution_owner.generation(0) != server ||
+                execution_owner.generation(1) != client ||
                 execution_owner.phase(0) != aurora::lifecycle::Phase::empty ||
                 execution_owner.phase(1) != aurora::lifecycle::Phase::empty ||
                 next_run != 0xffffffffULL - frames::first_owner || table.free() != free || !audit_residents() ||
@@ -5085,7 +5151,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
         if (!service_root.open_operation() || !runtime_storage.select(true, 3) || ensure_file_service(view))
             fail("mounted prepared refusal startup");
         if (const auto endpoint_observation = endpoint_owner.observe();
-            residents[0].space || residents[1].space || snapshot || endpoint.generation || endpoint.caller ||
+            residents[0].space || clients_live() || snapshot || endpoint.generation || endpoint.caller ||
             endpoint_observation.waiting() || endpoint_observation.replied() || endpoint_observation.delivery() ||
             endpoint_observation.completion() || loading_image ||
             service_root.phase() != aurora::service::Phase::absent ||
@@ -5120,7 +5186,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
     if (selected == 10) {
         const auto baseline = table.free();
         count = run_external(view, *runs, true, 0, 2, true);
-        if (count != 2 || residents[0].space || residents[1].space || endpoint.generation || table.free() != baseline ||
+        if (count != 2 || residents[0].space || clients_live() || endpoint.generation || table.free() != baseline ||
             !audit_residents())
             fail("block grant loss cleanup");
         count = run_external(view, *runs, true, count);
@@ -5162,7 +5228,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
     if (selected == 40) {
         const auto baseline = table.free();
         count = run_external(view, *runs, true, 0, 2, true, XfsReadonlyProfile::linux_6_12_x86_64_clean, true);
-        if (count != 2 || residents[0].space || residents[1].space || endpoint.generation || mounted_generation ||
+        if (count != 2 || residents[0].space || clients_live() || endpoint.generation || mounted_generation ||
             table.free() != baseline || !audit_residents())
             fail("mounted owner loss cleanup");
         count =
@@ -5176,7 +5242,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
             const auto end = count + 2;
             count = run_external(
                 view, *runs, false, count, end, true, XfsReadonlyProfile::fresh_format, false, count == 16);
-            if (count != end || residents[0].space || residents[1].space || endpoint.generation ||
+            if (count != end || residents[0].space || clients_live() || endpoint.generation ||
                 table.free() != baseline || !audit_residents())
                 fail("file service loss cleanup");
         }
@@ -5188,7 +5254,7 @@ auto run_recovery(std::span<const std::byte> view, std::span<const std::byte> ru
             fail("Aurora run entry");
         if (!entry->found)
             break;
-        const auto width = paired ? KernelSpace::process_slots : 1;
+        const auto width = paired ? 2U : 1U; // Existing two-task fixture, not the production pair.
         for (std::size_t slot = 0; slot < width; ++slot) {
             const auto next = slot == 0 ? entry : process::run(*runs, count);
             if (!next)
@@ -5419,7 +5485,7 @@ auto prepare_recovery(std::span<const std::byte> volume) -> void {
     entry.ticks = 16;
     entry.flags = 8;
     entry.quota = 16384;
-    if (residents[0].space || residents[1].space || endpoint.generation || recovery_generation || recovery_completed)
+    if (residents[0].space || clients_live() || endpoint.generation || recovery_generation || recovery_completed)
         fail("recovery preparation ownership");
     if (!image || next_run >= 0xffffffffULL - frames::first_owner || !aurora::uefi::nvme_recovery_sector_count() ||
         !load_image(volume, *image, bytes_of(arguments), entry, ++next_run, 0, true, true) ||
@@ -5436,7 +5502,9 @@ auto prepare_recovery(std::span<const std::byte> volume) -> void {
 auto load_committed(std::span<const std::byte> volume,
                     U64 client,
                     std::span<const std::byte> path,
-                    std::span<const std::byte> arguments) -> RunStatus {
+                    std::span<const std::byte> arguments,
+                    std::size_t slot = 1,
+                    U64 growth_quota = 0) -> RunStatus {
     using aurora::load::Action;
     using aurora::load::Result;
     reset_loader(128);
@@ -5501,7 +5569,9 @@ auto load_committed(std::span<const std::byte> volume,
                 fail("loader snapshot identity");
             process::RunEntry entry{};
             entry.ticks = 128;
-            ok = load_image(volume, {}, arguments, entry, client, 1, true, true, 0, false, 0, false, snapshot->epoch());
+            entry.quota = growth_quota;
+            ok = load_image(
+                volume, {}, arguments, entry, client, slot, true, true, 0, false, 0, false, snapshot->epoch());
             if (!ok) {
                 status = load_refusal == RunStatus::missing ? static_cast<U64>(Result::missing)
                          : load_refusal == RunStatus::quota ? static_cast<U64>(Result::quota)
@@ -5538,7 +5608,7 @@ public:
     static auto bind(std::span<const std::byte> volume,
                      std::span<const std::byte> path,
                      std::span<const std::byte> arguments) -> void {
-        require(volume_.empty() && !residents[1].space);
+        require(volume_.empty() && !clients_live());
         volume_ = volume;
         path_ = path;
         arguments_ = arguments;
@@ -5549,7 +5619,7 @@ public:
     }
     static auto prepare(Binding &binding) -> aurora::execution::Preparation {
         using namespace aurora::execution;
-        require(!volume_.empty() && !binding.client && !residents[1].space);
+        require(!volume_.empty() && !binding.client && !clients_live());
         if (!ensure_file_service(volume_)) {
             if (service_root.phase() != aurora::service::Phase::absent)
                 abandon_service();
@@ -5582,8 +5652,7 @@ using ExecutionSession = aurora::execution::Session<ExecutionTransport, Executio
 namespace {
 auto enter_runtime(U64 arena, const Bytes &handoff) -> bool {
     if (execution_owner.entered() || !Timer::irq_off() || root() != handoff.get(88) || running.space ||
-        residents[1].space || snapshot || Timer::read(0x390) || !Timer::quiet(0x100, false) ||
-        !Timer::quiet(0x200, false))
+        clients_live() || snapshot || Timer::read(0x390) || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
         return false;
 #ifdef AURORA_UEFI_NVME
     const bool selected_block = handoff.get(Handoff::composition_word) == 4;
@@ -5621,7 +5690,7 @@ auto enter_runtime(U64 arena, const Bytes &handoff) -> bool {
 }
 auto leave_runtime(const Bytes &handoff) -> void {
     if (const auto endpoint_observation = endpoint_owner.observe();
-        execution_owner.entered() || running.space || residents[1].space || snapshot || endpoint.caller ||
+        execution_owner.entered() || running.space || clients_live() || snapshot || endpoint.caller ||
         endpoint_observation.delivery() || endpoint_observation.completion() || Timer::read(0x390) ||
         !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false) || !audit_residents() ||
         !space.verify(table, ranges, handoff.get(96)))
@@ -5645,9 +5714,9 @@ auto ResidentPlatform::quiet() -> bool {
 }
 auto resident_boundary(const ResidentInput &input) -> void {
     if (const auto endpoint_observation = endpoint_owner.observe();
-        !ResidentPlatform::quiet() || residents[1].space || snapshot || endpoint.caller ||
-        endpoint_observation.replied() || endpoint_observation.delivery() || endpoint_observation.completion() ||
-        !audit_residents() || !space.verify(table, ranges, input.arguments.map_count))
+        !ResidentPlatform::quiet() || clients_live() || snapshot || endpoint.caller || endpoint_observation.replied() ||
+        endpoint_observation.delivery() || endpoint_observation.completion() || !audit_residents() ||
+        !space.verify(table, ranges, input.arguments.map_count))
         fail("resident owner effect boundary");
 }
 auto resident_prepare(ResidentInput &input) -> bool {
@@ -5655,8 +5724,257 @@ auto resident_prepare(ResidentInput &input) -> bool {
         abandon_service();
     return service_root.disk_ready(endpoint.generation);
 }
+// One immutable service-owner run operation contains this bounded two-child
+// batch. The source root selects every action; these bindings are physical
+// receipts, not a second scheduling or terminal-result ledger.
+class PairBinding final {
+public:
+    ResidentInput &input;
+    std::array<ExecutionBinding, 2> members{};
+    explicit PairBinding(ResidentInput &value) : input(value) {
+        members[0].slot = 1;
+        members[1].slot = 2;
+    }
+};
+constinit PairBinding *active_pair = nullptr;
+constinit aurora::uefi::ProcessPairOutput pair_output = nullptr;
+constinit void *pair_output_context = nullptr;
+constinit std::size_t pair_output_member = 0;
+auto pair_output_adapter(void *, bool error, std::span<const std::byte> bytes) -> bool {
+    if (!active_pair || !pair_output || pair_output_member >= 2)
+        fail("pair output identity");
+    return pair_output(pair_output_context, pair_output_member, error, bytes);
+}
+class BatchPlatform final {
+public:
+    static auto capture_parent() -> aurora::resident::Parent {
+        return resident_owner.capture_parent();
+    }
+    static auto valid(const void *binding, aurora::resident::Parent parent) -> bool {
+        if (!active_pair || binding != active_pair || !resident_owner.parent_valid(parent))
+            return false;
+        const auto *operation = static_cast<const ResidentRoot::Operation *>(parent.context);
+        // parent_valid authenticates this exact live operation before the cast.
+        if (operation->kind() != aurora::resident::OperationKind::run)
+            return false;
+        return &const_cast<ResidentRoot::Operation *>(operation)->input() == &active_pair->input &&
+               active_pair->input.arguments.mode == RunMode::pair;
+    }
+    static auto enter() -> void {
+        if (!ResidentPlatform::quiet() || execution_owner.entered() || execution_owner.busy())
+            fail();
+    }
+    static auto leave() -> void {
+        enter();
+    }
+    static auto settled(const void *binding) -> bool {
+        const auto observed = endpoint_owner.observe();
+        return active_pair && binding == active_pair && !clients_live() && !snapshot && !loading_image &&
+               !endpoint.caller && !observed.delivery() && !observed.completion() && !active_pair->members[0].client &&
+               !active_pair->members[1].client && audit_residents();
+    }
+    static auto release_parent(aurora::resident::Parent parent) -> void {
+        resident_owner.release_parent(parent);
+    }
+    [[noreturn]] static auto fail() -> void {
+        ::fail("batch operation authority");
+    }
+};
+auto resident_pair(ResidentInput &input) -> aurora::execution::Result {
+    using namespace aurora::batch;
+    if (active_pair || clients_live() || !pair_output || input.arguments.mode != RunMode::pair)
+        fail("pair admission boundary");
+    PairBinding binding{input};
+    active_pair = &binding;
+    Root<BatchPlatform> batch{&binding};
+    for (;;) {
+        const auto request = batch.next();
+        if (request.action == Action::done)
+            break;
+        batch.begin_effect(request);
+        Event event = Event::success;
+        U64 status = 0, value = 0;
+        ExecutionBinding *member = request.child ? &binding.members[request.child - 1] : nullptr;
+        switch (request.action) {
+        case Action::admit:
+            if (!ensure_file_service(input.arguments.volume)) {
+                event = Event::service_lost;
+                break;
+            }
+            if (next_run >= 0xffffffffULL - frames::first_owner - 1) {
+                event = Event::refused;
+                status = static_cast<U64>(RunStatus::unavailable);
+                break;
+            }
+            for (auto &child : binding.members) {
+                child.client = ++next_run;
+                child.service_generation = endpoint.generation;
+            }
+            message_header(26, binding.members[0].client, binding.members[1].client, 0);
+            if (!exchange_request(0)) {
+                event = Event::service_lost;
+            } else {
+                const U64 reply = Bytes{endpoint.bytes}.get(0);
+                bool valid = endpoint.count == 64 && (reply == 0 || reply == 9);
+                for (U64 at = 8; valid && at < 64; ++at)
+                    valid = endpoint.bytes[at] == std::byte{0};
+                if (!valid) {
+                    endpoint.invalid_reply_operation = 26;
+                    event = Event::service_lost;
+                } else {
+                    if (!endpoint_owner.consume_control(endpoint_owner.observe().transaction))
+                        fail("pair admission reply consumption");
+                    if (reply == 9) {
+                        // Both memberships were refused atomically. Incarnations
+                        // stay spent, but no client resource obligation exists.
+                        for (auto &child : binding.members)
+                            child.client = 0;
+                        event = Event::refused;
+                        status = static_cast<U64>(RunStatus::unavailable);
+                    }
+                }
+            }
+            break;
+        case Action::load: {
+            if (!member || !ExecutionEffects::bound_service(*member) || residents[member->slot].space)
+                fail("pair load binding");
+            const auto loaded =
+                load_committed(input.arguments.volume,
+                               member->client,
+                               request.child == 1 ? input.arguments.path : input.arguments.second_path,
+                               request.child == 1 ? input.arguments.arguments : input.arguments.second_arguments,
+                               member->slot,
+                               request.quota);
+            loading_image = false;
+            if (loaded == RunStatus::unavailable) {
+                event = Event::service_lost;
+            } else if (loaded != RunStatus::exited) {
+                event = Event::refused;
+                status = static_cast<U64>(loaded);
+            }
+            break;
+        }
+        case Action::activate: {
+            const auto result = ExecutionEffects::advance(*member);
+            if (result.state == aurora::execution::Step::retired) {
+                status = static_cast<U64>(result.status);
+                value = result.value;
+            }
+            switch (result.state) {
+            case aurora::execution::Step::retired:
+                event = Event::terminal;
+                break;
+            case aurora::execution::Step::parked:
+                event = Event::parked;
+                break;
+            case aurora::execution::Step::output:
+                event = Event::output;
+                break;
+            case aurora::execution::Step::request:
+                event = Event::request;
+                break;
+            default:
+                fail("pair unsupported input");
+            }
+            break;
+        }
+        case Action::output:
+            pair_output_member = request.child - 1;
+            event = ExecutionEffects::output(*member) == aurora::execution::Effect::success ? Event::success
+                                                                                            : Event::output_failed;
+            break;
+        case Action::request: {
+            const auto progress = ExecutionEffects::request(*member);
+            if (progress == aurora::execution::Request::pending) {
+                event = Event::pending;
+            } else if (progress == aurora::execution::Request::service_lost) {
+                event = Event::service_lost;
+            } else if (progress == aurora::execution::Request::ready) {
+                // Finish copying the owned reply BEFORE another child can use
+                // shared endpoint bytes. This does not enter the requester.
+                if (!execution_owner.complete(member->slot))
+                    fail("pair reply completion");
+            } else {
+                event = Event::cancelled;
+                status = static_cast<U64>(RunStatus::watchdog);
+            }
+            break;
+        }
+        case Action::retire:
+            if (!ExecutionEffects::bound_client(*member) || !ExecutionEffects::bound_service(*member) ||
+                member->request_pending || member->input_pending || forced_execution)
+                fail("pair retirement binding");
+            if (!member->output_failed && !endpoint.caller_cancelled) {
+                member->explicit_cancel_requested = true;
+                endpoint.caller_cancelled = true;
+            }
+            member->output_pending = false;
+            forced_execution = member;
+            force_resident(member->slot);
+            forced_execution = nullptr;
+            event = Event::terminal;
+            status = member->output_failed ? static_cast<U64>(RunStatus::output_failed)
+                     : outcome.watchdog    ? static_cast<U64>(RunStatus::watchdog)
+                                           : static_cast<U64>(RunStatus::cancelled);
+            value = outcome.vector;
+            break;
+        case Action::close: {
+            if (!member->client || residents[member->slot].space || !ExecutionEffects::bound_service(*member))
+                fail("pair member close boundary");
+            if (endpoint.caller) {
+                // A request trap can stage bytes before stop accounting expires
+                // its caller. Only this retired member's undispatched stage may
+                // be withdrawn; a sibling or dispatched request is never erased.
+                if (!can_withdraw_staged(member->slot,
+                                         *endpoint.caller,
+                                         member->client,
+                                         member->service_generation,
+                                         endpoint_owner.observe()) ||
+                    !endpoint_owner.finish_client(member->client))
+                    fail("pair staged caller retirement");
+                endpoint.caller.reset();
+            } else if (!endpoint_owner.finish_client(member->client)) {
+                fail("pair member close endpoint");
+            }
+            const U64 client = member->client;
+            member->client = 0;
+            endpoint.caller_cancelled = false; // Requester is completely settled.
+            if (!control_request(5, client))
+                event = Event::service_lost;
+            break;
+        }
+        case Action::abandon:
+            abandon_service();
+            for (auto &child : binding.members)
+                child.client = 0;
+            endpoint.caller_cancelled = false;
+            break;
+        default:
+            fail("pair action");
+        }
+        if (event == Event::service_lost) {
+            status = static_cast<U64>(RunStatus::unavailable);
+            value = 0;
+        } else if (event == Event::output_failed) {
+            status = static_cast<U64>(RunStatus::output_failed);
+            value = 0;
+        }
+        batch.accept(event, status, value);
+    }
+    const auto result = batch.finish();
+    input.pair_result = {static_cast<RunStatus>(result.admission),
+                         {{{static_cast<RunStatus>(result.status1), result.value1, false},
+                           {static_cast<RunStatus>(result.status2), result.value2, false}}}};
+    active_pair = nullptr;
+    return {static_cast<aurora::execution::Status>(result.admission), 0};
+}
+
 auto resident_run(ResidentInput &input) -> aurora::execution::Result {
     const auto &arguments = input.arguments;
+    if (arguments.mode == RunMode::pair)
+        return resident_pair(input);
+    if (!arguments.second_path.empty() || !arguments.second_arguments.empty())
+        fail("singleton run projection");
     ExecutionTransport::bind(arguments.volume, arguments.path, arguments.arguments);
     const auto grant = ExecutionSession::open();
     aurora::execution::Result observed;
@@ -5746,7 +6064,7 @@ auto resident_shutdown_failed(ResidentInput &input) -> aurora::bootstrap::Progre
 auto resident_begin_shutdown(ResidentInput &input) -> aurora::bootstrap::Progress {
     using aurora::bootstrap::Progress;
     if (const auto endpoint_observation = endpoint_owner.observe();
-        residents[1].space || snapshot || endpoint.caller || endpoint_observation.replied() ||
+        clients_live() || snapshot || endpoint.caller || endpoint_observation.replied() ||
         endpoint_observation.delivery() || endpoint_observation.completion() || input.shutdown_pending ||
         input.shutdown_terminal)
         fail("resident shutdown admission");
@@ -5785,7 +6103,7 @@ auto resident_advance_shutdown(ResidentInput &input) -> aurora::bootstrap::Progr
     if (progress == ExchangeProgress::pending)
         return Progress::pending;
     loading_image = false;
-    const bool clean = service_shutdown_selected() && !residents[0].space && !residents[1].space && outcome.exited &&
+    const bool clean = service_shutdown_selected() && !residents[0].space && !clients_live() && outcome.exited &&
                        !outcome.status && !outcome.watchdog && !outcome.invalid_call && !outcome.unavailable &&
                        !outcome.parked && outcome.terminal_service == input.shutdown_generation;
     if (!clean)
@@ -5796,13 +6114,14 @@ auto resident_advance_shutdown(ResidentInput &input) -> aurora::bootstrap::Progr
     return Progress::complete;
 }
 auto resident_terminal_cleanup(const ResidentInput &input) -> void {
-    if (!input.shutdown_terminal || input.shutdown_pending || residents[0].space || residents[1].space ||
+    if (!input.shutdown_terminal || input.shutdown_pending || residents[0].space || clients_live() ||
         endpoint.generation || endpoint_owner.observe().waiting() ||
         service_root.phase() != aurora::service::Phase::absent || loading_image || mounted_owner || mounted_root ||
         mounted_generation || mounted_sectors || mounted_service || block_service || block_generation ||
         block_sectors || volumes_service || volumes_generation || volumes_count || volumes_owner || volumes_root ||
         execution_owner.phase(0) != aurora::lifecycle::Phase::empty ||
-        execution_owner.phase(1) != aurora::lifecycle::Phase::empty)
+        execution_owner.phase(1) != aurora::lifecycle::Phase::empty ||
+        execution_owner.phase(2) != aurora::lifecycle::Phase::empty)
         fail("resident final cleanup receipt");
     for (const auto &grant : volume_grants)
         if (grant.generation || grant.controller || grant.nsid || grant.sectors)
@@ -5863,6 +6182,55 @@ auto aurora::uefi::run_program(U64 arena,
     output_context = nullptr;
     presentation_sink = nullptr;
     presentation_handoff = nullptr;
+    leave_runtime(handoff);
+    return result;
+}
+
+auto aurora::uefi::run_program_pair(U64 arena,
+                                    const Bytes &handoff,
+                                    std::span<const std::byte> first_path,
+                                    std::span<const std::byte> first_arguments,
+                                    std::span<const std::byte> second_path,
+                                    std::span<const std::byte> second_arguments,
+                                    ProcessPairOutput output,
+                                    void *context,
+                                    ProcessPresentation presentation) -> RunPairResult {
+    if (!output || first_path.empty() || second_path.empty() || first_path.size() > process::file_path_limit ||
+        second_path.size() > process::file_path_limit || first_arguments.empty() || second_arguments.empty() ||
+        first_arguments.size() > 65536 || second_arguments.size() > 65536 || !enter_runtime(arena, handoff))
+        return {};
+    if (active_pair || pair_output || output_sink || input_source)
+        fail("pair command reentry");
+    pair_output = output;
+    pair_output_context = context;
+    output_sink = pair_output_adapter;
+    output_context = nullptr;
+    presentation_sink = presentation;
+    presentation_handoff = &handoff;
+    input_read = {}; // No input source: either requested input ABI refuses admission.
+    auto supplied = resident_arguments(handoff);
+    supplied.mode = RunMode::pair;
+    supplied.path = first_path;
+    supplied.arguments = first_arguments;
+    supplied.second_path = second_path;
+    supplied.second_arguments = second_arguments;
+    ResidentInput input{supplied};
+    ResidentRoot::Operation operation{aurora::resident::OperationKind::run, input};
+    resident_owner.open(operation);
+    aurora::execution::Result observed;
+    source_resident_run(resident_owner.storage(), &observed);
+    resident_owner.close(operation);
+    if (static_cast<U64>(input.pair_result.admission) != static_cast<U64>(observed.status) || observed.value)
+        fail("pair copied result binding");
+    const auto result = input.pair_result;
+    pair_output = nullptr;
+    pair_output_context = nullptr;
+    pair_output_member = 0;
+    output_sink = nullptr;
+    output_context = nullptr;
+    presentation_sink = nullptr;
+    presentation_handoff = nullptr;
+    input_read = {};
     leave_runtime(handoff);
     return result;
 }
@@ -5960,7 +6328,7 @@ auto aurora::uefi::switch_storage_readonly(U64 arena, const Bytes &handoff) -> C
         const auto continuation = residents[0].continuation;
         const auto stopped = [&]() -> bool {
             const auto current = endpoint_owner.observe();
-            return ResidentPlatform::quiet() && !execution_owner.entered() && !residents[1].space && !snapshot &&
+            return ResidentPlatform::quiet() && !execution_owner.entered() && !clients_live() && !snapshot &&
                    !::endpoint.caller && !::endpoint.caller_cancelled && !loading_image && !forced_execution &&
                    !completed_output && !input_read.pending && !input_wait.active && !output_sink && !input_source &&
                    residents[0].space && generation && generation == ::endpoint.generation &&
@@ -6427,7 +6795,7 @@ __attribute__((visibility("hidden"))) U64 __au_runtime_execution_authority_retir
         const auto endpoint_observation = endpoint_owner.observe();
         if (service_root.phase() != aurora::service::Phase::retiring ||
             service_root.generation() != residents[0].state.service ||
-            endpoint.generation != residents[0].state.service || residents[1].space || snapshot || loading_image ||
+            endpoint.generation != residents[0].state.service || clients_live() || snapshot || loading_image ||
             endpoint.caller || endpoint_observation.waiting() || endpoint_observation.replied() ||
             endpoint_observation.delivery() || endpoint_observation.completion())
             fail("service retirement invalidation boundary");
@@ -6454,8 +6822,9 @@ __attribute__((visibility("hidden"))) U64 __au_runtime_execution_authority_finis
     execution_owner.enter(binding, epoch, field, EffectKind::finish, 0);
     if (const auto endpoint_observation = endpoint_owner.observe();
         execution_owner.canonical(0, Field::phase) != static_cast<U64>(Phase::empty) ||
-        execution_owner.canonical(1, Field::phase) != static_cast<U64>(Phase::empty) || residents[0].space ||
-        residents[1].space || snapshot || endpoint.caller || endpoint_observation.delivery() ||
+        execution_owner.canonical(1, Field::phase) != static_cast<U64>(Phase::empty) ||
+        execution_owner.canonical(2, Field::phase) != static_cast<U64>(Phase::empty) || residents[0].space ||
+        clients_live() || snapshot || endpoint.caller || endpoint_observation.delivery() ||
         endpoint_observation.completion() || !audit_residents())
         fail("execution owner cleanup");
     execution_owner.consume();

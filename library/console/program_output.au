@@ -13,7 +13,8 @@ export namespace console {
         file_saved,
         file_reply,
         stopped,
-        unknown
+        unknown,
+        file_part
     };
 
     // Ordinary copied presentation data, with no command or publication authority.
@@ -46,10 +47,11 @@ export namespace console {
                 != ProgramResponseKind::note_missing && kind != ProgramResponseKind::file_missing && kind
                 != ProgramResponseKind::note_saved && kind != ProgramResponseKind::file_saved && kind
                 != ProgramResponseKind::file_reply && kind != ProgramResponseKind::stopped && kind
-                != ProgramResponseKind::unknown) {
+                != ProgramResponseKind::unknown && kind != ProgramResponseKind::file_part) {
                 return false;
             }
-            const bool carries_bytes = kind == ProgramResponseKind::output || kind == ProgramResponseKind::file_reply;
+            const bool carries_bytes = kind == ProgramResponseKind::output || kind == ProgramResponseKind::file_reply
+                || kind == ProgramResponseKind::file_part;
             if (!carries_bytes && count != 0) {
                 return false;
             }
@@ -82,7 +84,8 @@ export namespace console {
             return false;
         }
         const ProgramResponseKind kind = response.status();
-        if (kind == ProgramResponseKind::output || kind == ProgramResponseKind::file_reply) {
+        if (kind == ProgramResponseKind::output || kind == ProgramResponseKind::file_reply || kind
+            == ProgramResponseKind::file_part) {
             if (kind == ProgramResponseKind::output) {
                 if (!program_response_text(session, "output> ")) {
                     return false;
@@ -135,6 +138,9 @@ export namespace console {
                     return false;
                 }
             }
+        }
+        if (kind == ProgramResponseKind::file_part) {
+            return true;
         }
         return program_response_text(session, "aurora> ");
     }

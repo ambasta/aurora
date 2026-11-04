@@ -1126,12 +1126,13 @@ constant followed by return. A receiver, if present, must be const. Facts carry
 the actual callable/source name, receiver identity and value; AIR has no separate
 layout assertion that can manufacture this evidence. Other bodies receive no fact.
 
-MemoryManager's private `layout_*` literal methods define its two slots, record
+MemoryManager's private `layout_*` literal methods define its three slots, record
 and region counts/strides, shared-entry count, bounded staging count/stride, tail
 and scratch extents. Native bridge admission checks those emitted values and
-recomputes the reservation partition: 98304 record words, 140 region words, 256
-shared words and 38 staging words, within a 512-word tail; total reservation
-extent 98816 words. The scratch grant is a separate 512-word page. Exact root
+recomputes the reservation partition: 147456 record words, 210 region words, 256
+shared words, 38 staging words and 13 third-resident metadata words, within a
+1024-word tail; total reservation extent 148480 words. The owning root remains
+512 bytes; its third catalog stays in the same authenticated reservation bank. The scratch grant is a separate 512-word page. Exact root
 field offsets remain ordinary emitted record-layout facts. Native BankLayout
 checks inventory-dependent allocation/mapping extents, rounding and physical
 nonoverlap. These checks do not prove the arithmetic or behavior of arbitrary

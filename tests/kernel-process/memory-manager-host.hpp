@@ -1,5 +1,6 @@
 #pragma once
 #include "../../kernel/uefi/memory-manager.hpp"
+#include "../../kernel/uefi/kernel-space.hpp"
 #include <cstring>
 #include <vector>
 #include <memory>
@@ -16,6 +17,11 @@ class Device final {
 public:
     static constexpr U64 invalid = ~U64{0}, address_mask = 0x000ffffffffff000ULL;
     static constexpr U64 physical_base = 0x100000, shared_entry = 0x8003;
+    static constexpr U64 reservation_records =
+        KernelSpace::process_slots * KernelSpace::process_pages * KernelSpace::words_per_page;
+    static constexpr U64 reservation_words =
+        reservation_records + KernelSpace::reservation_tail_pages * KernelSpace::words_per_page;
+    static constexpr U64 observation_words = KernelSpace::observation_pages * KernelSpace::words_per_page;
     alignas(16) std::array<std::byte, MemoryManager::root_bytes> root{};
     words::Binding binding;
     std::vector<U64> allocations, mappings, reservations, scratch, incoming;
@@ -32,7 +38,8 @@ public:
             words::fail();
     }
     explicit Device(U64 count)
-        : allocations(count), mappings(count), reservations(98816), scratch(512), incoming(count), pages(count) {
+        : allocations(count), mappings(count), reservations(reservation_words), scratch(observation_words),
+          incoming(count), pages(count) {
         require(!current && count > 2 && count <= 131072);
         current = this;
         const std::array<words::Binding::BankGrant, 4> banks{
@@ -179,7 +186,7 @@ public:
         return true;
     }
     auto fill(U64 epoch, U64 destination, U64 offset, U64 count) -> bool {
-        require(anchor && scalar(376) == epoch && scalar(384) == 1 && offset <= source.size() &&
+        require(anchor && scalar(392) == epoch && scalar(400) == 1 && offset <= source.size() &&
                 count <= source.size() - offset);
         // This is the physical device's fixed two-level snapshot window, not
         // a metadata ownership walk. The source has already bounded the range.

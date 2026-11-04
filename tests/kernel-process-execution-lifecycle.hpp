@@ -16,8 +16,8 @@ struct Platform {
 };
 using Root = lifecycle::Root<Platform>;
 Root *current = nullptr;
-std::array<lifecycle::Observation, 2> identities{}, captures{};
-std::array<U64, 2> incarnations{};
+std::array<lifecycle::Observation, 3> identities{}, captures{};
+std::array<U64, 3> incarnations{};
 bool invalidated = false, loader_snapshot = false;
 lifecycle::Observation selected{};
 std::string fault;
@@ -69,7 +69,7 @@ auto enter(const void *binding, U64 epoch, const void *address, Kind kind, U64 s
 auto output_storage(const void *address, const lifecycle::Observation *output) -> void {
     const auto root = reinterpret_cast<std::uintptr_t>(address);
     const auto result = reinterpret_cast<std::uintptr_t>(output);
-    if ((root & 15) || !(result + sizeof(*output) <= root || result >= root + 272))
+    if ((root & 15) || !(result + sizeof(*output) <= root || result >= root + 400))
         usage("lifecycle copied result aliases the retained root");
 }
 auto identity(U64 slot) -> void {
@@ -81,11 +81,13 @@ auto identity(U64 slot) -> void {
         usage("lifecycle canonical identity lost observation bits");
 }
 auto Platform::authenticate_presentation(U64 slot, lifecycle::Phase phase) -> void {
-    if (slot != 1 || current->canonical(slot, Field::phase) != static_cast<U64>(phase))
+    if ((slot != 1 && slot != 2) || current->canonical(slot, Field::phase) != static_cast<U64>(phase))
         usage("presentation canonical phase");
     identity(slot);
     if (current->canonical(0, Field::phase))
         identity(0);
+    if (current->canonical(3 - slot, Field::phase))
+        identity(3 - slot);
 }
 auto observe(U64 slot) -> lifecycle::Observation {
     auto result = identities[slot];
@@ -153,7 +155,7 @@ extern "C" void __au_runtime_execution_authority_force(
     if (phase != 1 && phase != 3)
         usage("forced lifecycle observation lacks a prepared or parked source slot");
     *output = observe(slot);
-    if (invalidated && slot == 1) {
+    if (invalidated && slot != 0) {
         output->event = 14;
         output->detail = 16;
         output->exhausted = 0;
@@ -211,6 +213,8 @@ extern "C" U64 __au_runtime_execution_authority_retire(const void *binding, U64 
         usage("source retirement overwrote primary physical evidence");
     effects << " retire=" << slot << ':' << current->canonical(slot, Field::event) << ':'
             << current->canonical(slot, Field::terminal);
+    if (slot == 0 && invalidated && (current->canonical(1, Field::phase) || current->canonical(2, Field::phase)))
+        usage("service cleanup preceded dependent clients");
     const bool result = fault != "cleanup-failure" && !(fault == "service-cleanup-failure" && slot == 0);
     if (slot == 0)
         invalidated = false;
@@ -219,8 +223,9 @@ extern "C" U64 __au_runtime_execution_authority_retire(const void *binding, U64 
 }
 extern "C" U64 __au_runtime_execution_authority_finish(const void *binding, U64 epoch, const void *address) {
     enter(binding, epoch, address, Kind::finish, 0);
-    if (current->canonical(0, Field::phase) || current->canonical(1, Field::phase))
-        usage("lifecycle consumption preceded complete two-slot retirement");
+    if (current->canonical(0, Field::phase) || current->canonical(1, Field::phase) ||
+        current->canonical(2, Field::phase))
+        usage("lifecycle consumption preceded complete three-slot retirement");
     current->consume();
     current->leave();
     return fault == "finish-noncanonical" ? U64{0x1000000000000001} : U64{1};
@@ -369,7 +374,7 @@ auto lifecycle_mode(const char *path) -> int {
                 output << " denied=" << operation;
             } else if (operation == "incarnation" && fields.size() == 3) {
                 const auto slot = number(fields[1]);
-                if (slot >= 2)
+                if (slot >= 3)
                     usage("invalid lifecycle incarnation slot");
                 lifecycle_fixture::incarnations[slot] = number(fields[2]);
             } else if (operation == "staged-request-expiry" && fields.size() == 1) {

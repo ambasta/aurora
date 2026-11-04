@@ -41,7 +41,8 @@ public:
         exited,
         failed,
         run,
-        storage_readonly
+        storage_readonly,
+        run_pair
     };
 
 private:
@@ -68,8 +69,8 @@ public:
         const Argument argument{state_, static_cast<std::uint64_t>(event), value, carry};
         Result result{};
         __au_runtime_program_session(&argument, &result);
-        if (result.effect == 0 || result.effect > static_cast<std::uint64_t>(Effect::storage_readonly) ||
-            result.carry > 1 || result.outcome > 2)
+        if (result.effect == 0 || result.effect > static_cast<std::uint64_t>(Effect::run_pair) || result.carry > 1 ||
+            result.outcome > 2)
             return Effect::invalid;
         state_ = result.state;
         carry_ = result.carry;
@@ -101,7 +102,8 @@ public:
         requested_exit = 2,
         output_failure = 3,
         run = 4,
-        storage_readonly = 5
+        storage_readonly = 5,
+        run_pair = 6
     };
     class Record final {
     public:
@@ -130,9 +132,10 @@ public:
         return record_.after_cr;
     }
     [[nodiscard]] auto valid() const -> bool {
-        if (record_.count < 0 || record_.count > 64 || record_.action > 5 || record_.after_cr > 1)
+        if (record_.count < 0 || record_.count > 64 || record_.action > 6 || record_.after_cr > 1)
             return false;
-        if (((action() == Action::command || action() == Action::run) && record_.count == 0) ||
+        if (((action() == Action::command || action() == Action::run || action() == Action::run_pair) &&
+             record_.count == 0) ||
             ((record_.action == 2 || record_.action == 3) && record_.count != 0))
             return false;
         if (action() == Action::storage_readonly) {
@@ -207,6 +210,68 @@ public:
     }
 };
 
+// Exactly two command groups separated by one standalone -- token. Each
+// side uses the same bounded transport grammar as run; no shell interpretation.
+class RunPairArguments final {
+    RunArguments first_, second_;
+
+public:
+    [[nodiscard]] auto parse(const Submission &input) -> bool {
+        first_ = RunArguments{};
+        second_ = RunArguments{};
+        constexpr char prefix[] = "run-pair ";
+        if (!input.valid() || input.action() != Submission::Action::run_pair || input.length() < 9)
+            return false;
+        for (std::size_t i = 0; i < 9; ++i)
+            if (input.bytes()[i] != prefix[i])
+                return false;
+        std::size_t separator = 0;
+        for (std::size_t i = 9; i < input.length();) {
+            if (input.bytes()[i] == ' ') {
+                ++i;
+                continue;
+            }
+            const auto begin = i;
+            while (i < input.length() && input.bytes()[i] != ' ')
+                ++i;
+            if (i - begin == 2 && input.bytes()[begin] == '-' && input.bytes()[begin + 1] == '-') {
+                if (separator)
+                    return false;
+                separator = begin;
+            }
+        }
+        if (!separator)
+            return false;
+        const auto parse_side = [&](std::size_t begin, std::size_t end, RunArguments &arguments) {
+            Submission side;
+            auto &record = *static_cast<Submission::Record *>(side.data());
+            record.action = static_cast<std::uint64_t>(Submission::Action::run);
+            record.bytes[0] = 'r';
+            record.bytes[1] = 'u';
+            record.bytes[2] = 'n';
+            record.bytes[3] = ' ';
+            record.count = 4;
+            for (auto i = begin; i < end; ++i)
+                record.bytes[record.count++] = input.bytes()[i];
+            const bool accepted = arguments.parse(side);
+            side.scrub();
+            return accepted;
+        };
+        if (!parse_side(9, separator, first_) || !parse_side(separator + 2, input.length(), second_)) {
+            first_ = RunArguments{};
+            second_ = RunArguments{};
+            return false;
+        }
+        return true;
+    }
+    [[nodiscard]] auto first() const -> const RunArguments & {
+        return first_;
+    }
+    [[nodiscard]] auto second() const -> const RunArguments & {
+        return second_;
+    }
+};
+
 // A supervisor response is ordinary copied data. Check its raw kind before
 // Aurora loads a typed enum. Source policy validates the count, payload kind
 // and zero suffix before any output; payload bytes retain their exact values.
@@ -221,7 +286,8 @@ public:
         file_saved = 5,
         file_reply = 6,
         stopped = 7,
-        unknown = 8
+        unknown = 8,
+        file_part = 9
     };
     class Record final {
     public:
@@ -240,7 +306,7 @@ public:
         return &record_;
     }
     [[nodiscard]] auto canonical_kind() const -> bool {
-        return record_.kind <= static_cast<std::uint64_t>(Kind::unknown);
+        return record_.kind <= static_cast<std::uint64_t>(Kind::file_part);
     }
     [[nodiscard]] auto payload(std::span<const std::byte> bytes) -> bool {
         if (bytes.size() > record_.bytes.size())
