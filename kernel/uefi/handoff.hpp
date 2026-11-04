@@ -20,7 +20,7 @@ class BootStorageSelection final {
 
 public:
     [[nodiscard]] auto select(bool block, std::uint64_t mode) -> bool {
-        if (mode > (block ? 3U : 0U))
+        if (mode > (block ? 4U : 0U))
             return false;
         if (selected_)
             return block_ == block && mode_ == mode;
@@ -33,7 +33,10 @@ public:
         return selected_ && block_;
     }
     [[nodiscard]] auto readonly_profile() const -> std::uint64_t {
-        return mode_ != 0 ? 1 : 0;
+        return mode_ != 0 && mode_ != 4 ? 1 : 0;
+    }
+    [[nodiscard]] auto dual() const -> bool {
+        return selected_ && block_ && mode_ == 4;
     }
     [[nodiscard]] auto mounted() const -> bool {
         return selected_ && mode_ == 3;
@@ -170,7 +173,7 @@ public:
         const bool storage =
 #ifdef AURORA_UEFI_NVME
             composition == 4 && h.get(bar_record_word) == actual + production_bar_record_offset &&
-            h.get(readonly_profile_word) <= 3;
+            h.get(readonly_profile_word) <= 4;
 #else
             false;
 #endif

@@ -528,6 +528,18 @@ frame_range(std::span<const std::byte> map, U64 stride, U64 index, U64 arena, U6
 [[nodiscard]] inline auto trap(const ProcessTrap &frame) -> std::optional<TrapClass> {
     return verdict<TrapClass, 15>(bridge::trap(&frame));
 }
+// A successful readonly open cannot exchange the two disjoint dual-volume
+// handle partitions or claim a disk device in a singleton composition.
+[[nodiscard]] inline auto
+file_open_reply_valid(U64 id, U64 size, U64 device, U64 inode, U64 directory_device, U64 directory_inode, bool dual)
+    -> bool {
+    if (id < 65 || size > 0x7fffffffffffffffULL || !inode || directory_device || directory_inode)
+        return false;
+    const auto slot = id & 63;
+    const bool disk = dual ? ((device == 3 && slot >= 41 && slot <= 48) || (device == 4 && slot >= 49 && slot <= 56))
+                           : (device == 3 && slot >= 41 && slot <= 56);
+    return disk || (device >= 1 && device <= 2 && slot >= 1 && slot <= 32);
+}
 // Admit the complete copied directory reply before any caller memory is written.
 // Names are single byte components, not paths; no string terminator is carried.
 [[nodiscard]] inline auto directory_reply_valid(std::span<const std::byte> reply) -> bool {

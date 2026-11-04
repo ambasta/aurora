@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include "../kernel/uefi/nvme-transport.hpp"
+#include "../kernel/uefi/nvme.hpp"
 #include "../kernel/retained-nvme-transport.hpp"
 #include <sys/wait.h>
 #include <unistd.h>
@@ -25,6 +26,13 @@ static_assert(!Inject<NvmeQueueBundle> && !Address<NvmeQueueBundle> && !Publish<
 static_assert(!Complete<NvmeQueueBundle> && !Activate<NvmeQueueBundle>);
 static_assert(!std::is_convertible_v<NvmeQueueHandle, aurora::memory::PageLease>);
 static_assert(!std::is_default_constructible_v<NvmeQueueBundle>);
+static_assert(!std::is_default_constructible_v<NvmeVolumeContext>);
+static_assert(!std::is_constructible_v<NvmeVolumeContext,
+                                       std::uint64_t,
+                                       std::uint64_t,
+                                       std::uint64_t,
+                                       std::uint64_t,
+                                       std::uint64_t>);
 unsigned checks{};
 auto check(bool value) -> void {
     ++checks;
@@ -34,6 +42,37 @@ auto check(bool value) -> void {
     }
 }
 auto namespace_cases() -> void {
+    NvmeReadCache cache;
+    check(!cache.hit(0xe0010000, 1, 9, 0));
+    cache.publish(0xe0010000, 1, 9, 8, 8);
+    check(cache.hit(0xe0010000, 1, 9, 8) && cache.hit(0xe0010000, 1, 9, 15));
+    check(!cache.hit(0xe0010000, 3, 9, 8) && !cache.hit(0xe0020000, 1, 9, 8));
+    check(!cache.hit(0xe0010000, 1, 10, 8) && !cache.hit(0xe0010000, 1, 9, 7));
+    check(!cache.hit(0xe0010000, 1, 9, 16) && !cache.hit(0xe0010000, 1, 9, UINT64_MAX));
+    cache.invalidate();
+    check(!cache.hit(0xe0010000, 1, 9, 8));
+    cache.publish(0xe0010000, 3, 10, 8, 1);
+    check(cache.hit(0xe0010000, 3, 10, 8) && !cache.hit(0xe0010000, 1, 9, 8));
+    std::array<std::byte, 4096> list{};
+    check(!NvmeNamespaceList::parse(list, true));
+    put(list, 0, 1, 4);
+    check(NvmeNamespaceList::parse(list, false)->count() == 1);
+    put(list, 4, 3, 4);
+    const auto pair = NvmeNamespaceList::parse(list, true);
+    check(pair && pair->count() == 2 && pair->id(0) == 1 && pair->id(1) == 3 && pair->id(2) == 0);
+    check(!NvmeNamespaceList::parse(list, false));
+    for (unsigned second : {0U, 1U, UINT32_MAX}) {
+        auto bad = list;
+        put(bad, 4, second, 4);
+        if (!second)
+            put(bad, 8, 3, 4); // Hole before a later namespace.
+        check(!NvmeNamespaceList::parse(bad, true));
+    }
+    put(list, 8, 4, 4);
+    check(!NvmeNamespaceList::parse(list, true));
+    list = {};
+    put(list, 0, 3, 4);
+    check(NvmeNamespaceList::parse(list, true)->id(0) == 3 && !NvmeNamespaceList::parse(list, false));
     std::array<std::byte, 4096> identify{};
     put(identify, 0, 16384);
     put(identify, 8, 16384);
@@ -41,7 +80,15 @@ auto namespace_cases() -> void {
     put(identify, 24, 0x34, 1);
     put(identify, 130, 9, 1);
     const auto ns = NvmeNamespace::parse(identify);
-    check(ns && ns->blocks() == 16384);
+    check(ns && ns->blocks() == 16384 && ns->nsid() == 1);
+    const auto second = NvmeNamespace::parse(identify, 3);
+    check(second && second->nsid() == 3 && second->blocks() == ns->blocks());
+    check(!NvmeNamespace::parse(identify, 0) && !NvmeNamespace::parse(identify, UINT32_MAX));
+    const auto second_read = NvmeCommand::io(*second, 7, false);
+    check(second_read && Bytes{*second_read}.get(4, 4) == 3);
+    check(Bytes{NvmeCommand::identify(false, 3)}.get(4, 4) == 3);
+    check(Bytes{NvmeCommand::identify(false)}.get(4, 4) == 1);
+    check(Bytes{NvmeCommand::identify(true, 3)}.get(4, 4) == 0);
     check(ns->contains(0, 1) && ns->contains(16383, 1) && !ns->contains(16384, 1) && !ns->contains(UINT64_MAX, 1));
     check(!ns->contains(0, 0) && !ns->contains(0, 9) && !ns->contains(0, UINT32_MAX));
     for (unsigned count = 1; count <= 8; ++count) {

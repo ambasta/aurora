@@ -41,8 +41,27 @@ def command(
     debug_exit=False,
     memory=None,
     graphics=False,
+    second_disk=None,
 ):
     """Closed six-function storage profile, or its explicit seven-function standard-VGA composition."""
+    need(second_disk is None or readonly, "Two namespaces require readonly backings")
+    namespaces = (
+        [
+            "-device",
+            "nvme,id=aurora-nvme,addr=02.0,serial=AURORA-DISPOSABLE,max_ioqpairs=1,msix_qsize=1,mqes=1",
+            "-device",
+            "nvme-ns,bus=aurora-nvme,drive=storage,nsid=1,shared=off",
+            "-drive",
+            f"if=none,id=storage2,format=raw,cache=writeback,aio=threads,readonly=on,file={second_disk}",
+            "-device",
+            "nvme-ns,bus=aurora-nvme,drive=storage2,nsid=3,shared=off",
+        ]
+        if second_disk is not None
+        else [
+            "-device",
+            "nvme,addr=02.0,drive=storage,serial=AURORA-DISPOSABLE,max_ioqpairs=1,msix_qsize=1,mqes=1",
+        ]
+    )
     return transport.command(
         runtime / "bin/qemu-system-x86_64",
         runtime / "share/qemu",
@@ -58,8 +77,7 @@ def command(
             "-drive",
             "if=none,id=storage,format=raw,cache=writeback,aio=threads,"
             f"readonly={'on' if readonly else 'off'},file={disk}",
-            "-device",
-            "nvme,addr=02.0,drive=storage,serial=AURORA-DISPOSABLE,max_ioqpairs=1,msix_qsize=1,mqes=1",
+            *namespaces,
             *(["-device", "VGA,addr=03.0,vgamem_mb=16,romfile=,rombar=0"] if graphics else []),
         ],
         serial=serial,

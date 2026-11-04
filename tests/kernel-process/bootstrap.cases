@@ -62,3 +62,12 @@ storage_reserved_tail reply:15:64:8:1
 reply_short reply:3:63:0:0
 reply_oversized reply:15:65:0:0
 reply_unknown_operation reply:4:64:0:0
+
+dual_first_ready dualreply:15:64:24:1
+dual_second_ready dualreply:15:64:24:2
+dual_both_ready dualreply:15:64:24:3
+dual_mask_reserved dualreply:15:64:24:4
+dual_success_empty dualreply:15:64:24:0
+dual_none_unavailable dualreply:15:64:0:2
+dual_mask_high_word dualreply:15:64:25:1
+dual_mask_wrong_operation dualreply:3:64:24:1

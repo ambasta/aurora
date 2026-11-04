@@ -911,6 +911,10 @@ auto events_mode(const char *path) -> int {
             else
                 std::cout << call_names[call->action] << " value=" << hex(call->value) << " length=" << call->length
                           << " base=" << hex(call->base) << " record=" << hex(call->record) << "\n";
+        } else if (verb == "open_reply" && values.size() == 7) {
+            const bool valid = process::file_open_reply_valid(
+                values[1], values[2], values[3], values[4], values[5], values[6], values[0] != 0);
+            std::cout << text << " -> " << (valid ? "accepted" : "rejected") << "\n";
         } else if (verb == "directory_reply" && values.size() >= 9) {
             if (values[0] > 1024)
                 usage("directory reply fixture too large");
@@ -1795,7 +1799,8 @@ auto bootstrap_mode(const char *cases) -> int {
             std::cout << name << " denied\n";
             continue;
         }
-        if (fixture::script.size() == 1 && fixture::script[0].size() == 5 && fixture::script[0][0] == "reply") {
+        if (fixture::script.size() == 1 && fixture::script[0].size() == 5 &&
+            (fixture::script[0][0] == "reply" || fixture::script[0][0] == "dualreply")) {
             const auto &fields = fixture::script[0];
             const auto operation = number(fields[1]), length = number(fields[2]);
             const auto offset = number(fields[3]), value = number(fields[4]);
@@ -1803,7 +1808,8 @@ auto bootstrap_mode(const char *cases) -> int {
             if (length > bytes.size() || offset >= bytes.size() || value > 255)
                 usage("invalid bootstrap reply test input");
             bytes[offset] = std::byte(value);
-            const auto result = aurora::bootstrap::inspect_reply(operation, {bytes.data(), length});
+            const auto result =
+                aurora::bootstrap::inspect_reply(operation, {bytes.data(), length}, fields[0] == "dualreply");
             constexpr const char *names[] = {"invalid", "ready", "disk_unavailable"};
             std::cout << name << ' ' << names[static_cast<std::size_t>(result)] << '\n';
             continue;

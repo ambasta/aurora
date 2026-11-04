@@ -4,16 +4,18 @@
 #include <optional>
 
 namespace aurora::uefi {
-// Copied Identify Namespace data, not a mount or filesystem grant. The first
-// transport supports one ordinary namespace, 512-byte LBAs, no metadata/PI.
+// Copied Identify Namespace data and trusted NSID, not a filesystem grant.
+// Only ordinary 512-byte LBAs without metadata/PI are supported.
 class NvmeNamespace final {
     std::uint64_t blocks_{};
-    explicit NvmeNamespace(std::uint64_t blocks) : blocks_(blocks) {
+    std::uint32_t nsid_{1};
+    explicit NvmeNamespace(std::uint64_t blocks, std::uint32_t nsid) : blocks_(blocks), nsid_(nsid) {
     }
 
 public:
-    [[nodiscard]] static auto parse(std::span<const std::byte> bytes) -> std::optional<NvmeNamespace> {
-        if (bytes.size() != 4096)
+    [[nodiscard]] static auto parse(std::span<const std::byte> bytes, std::uint32_t nsid = 1)
+        -> std::optional<NvmeNamespace> {
+        if (bytes.size() != 4096 || !nsid || nsid == 0xffffffffU)
             return std::nullopt;
         const Bytes b{bytes};
         const auto blocks = b.get(0);
@@ -24,13 +26,76 @@ public:
         if (!blocks || b.get(8) != blocks || b.get(16) > blocks || (b.get(24, 1) & ~0x34ULL) || format ||
             b.get(29, 1) || b.get(30, 1) || b.get(31, 1) || b.get(128, 2) || b.get(130, 1) != 9)
             return std::nullopt;
-        return NvmeNamespace{blocks};
+        return NvmeNamespace{blocks, nsid};
+    }
+    [[nodiscard]] auto nsid() const -> std::uint32_t {
+        return nsid_;
     }
     [[nodiscard]] auto blocks() const -> std::uint64_t {
         return blocks_;
     }
     [[nodiscard]] auto contains(std::uint64_t lba, unsigned count) const -> bool {
         return count >= 1 && count <= 8 && lba < blocks_ && count <= blocks_ - lba;
+    }
+};
+
+// Active-list admission is complete before any namespace can receive authority.
+class NvmeNamespaceList final {
+    std::array<std::uint32_t, 2> ids_{};
+    unsigned count_{};
+
+public:
+    [[nodiscard]] static auto parse(std::span<const std::byte> bytes, bool dual) -> std::optional<NvmeNamespaceList> {
+        if (bytes.size() != 4096)
+            return std::nullopt;
+        NvmeNamespaceList result;
+        bool ended = false;
+        for (unsigned at = 0; at < 4096; at += 4) {
+            const auto id = static_cast<std::uint32_t>(Bytes{bytes}.get(at, 4));
+            if (!id) {
+                ended = true;
+                continue;
+            }
+            if (ended || result.count_ >= (dual ? 2U : 1U) || id == 0xffffffffU ||
+                (result.count_ && id <= result.ids_[result.count_ - 1]) || (!dual && id != 1))
+                return std::nullopt;
+            result.ids_[result.count_++] = id;
+        }
+        return result.count_ ? std::optional<NvmeNamespaceList>{result} : std::nullopt;
+    }
+    auto count() const -> unsigned {
+        return count_;
+    }
+    auto id(unsigned slot) const -> std::uint32_t {
+        return slot < count_ ? ids_[slot] : 0;
+    }
+};
+
+// The sole read buffer is tagged only after completion. Every caller must
+// authenticate authority before consulting this tag, including cache hits.
+class NvmeReadCache final {
+    bool valid_{};
+    std::uint64_t controller_{}, nsid_{}, generation_{}, lba_{};
+    unsigned sectors_{};
+
+public:
+    auto invalidate() -> void {
+        valid_ = false;
+    }
+    auto
+    publish(std::uint64_t controller, std::uint64_t nsid, std::uint64_t generation, std::uint64_t lba, unsigned sectors)
+        -> void {
+        controller_ = controller;
+        nsid_ = nsid;
+        generation_ = generation;
+        lba_ = lba;
+        sectors_ = sectors;
+        valid_ = controller && nsid && sectors >= 1 && sectors <= 8;
+    }
+    [[nodiscard]] auto
+    hit(std::uint64_t controller, std::uint64_t nsid, std::uint64_t generation, std::uint64_t lba) const -> bool {
+        return valid_ && controller == controller_ && nsid == nsid_ && generation == generation_ && lba >= lba_ &&
+               lba - lba_ < sectors_;
     }
 };
 
@@ -244,10 +309,10 @@ public:
 
 class NvmeCommand final {
 public:
-    [[nodiscard]] static auto identify(bool controller) -> std::array<std::byte, 64> {
+    [[nodiscard]] static auto identify(bool controller, std::uint32_t nsid = 1) -> std::array<std::byte, 64> {
         std::array<std::byte, 64> command{};
         put(command, 0, 6, 1);
-        put(command, 4, controller ? 0 : 1, 4);
+        put(command, 4, controller ? 0 : nsid, 4);
         put(command, 24, 0x6000);
         put(command, 40, controller ? 1 : 0, 4);
         return command;
@@ -271,7 +336,7 @@ public:
             return std::nullopt;
         std::array<std::byte, 64> command{};
         put(command, 0, write ? 1 : 2, 1);
-        put(command, 4, 1, 4);
+        put(command, 4, ns.nsid(), 4);
         put(command, 24, write ? 0x7000 : 0x6000);
         put(command, 40, lba);
         put(command, 48, count - 1, 4);

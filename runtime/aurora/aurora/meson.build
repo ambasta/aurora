@@ -6,5 +6,6 @@ configure_file(input: '../../linux/aurora/memory.au', output: 'memory.au', copy:
 
 configure_file(input: 'endpoint.au', output: 'endpoint.au', copy: true)
 configure_file(input: 'block.au', output: 'block.au', copy: true)
+configure_file(input: 'blocks.au', output: 'blocks.au', copy: true)
 
 configure_file(input: 'block_write.au', output: 'block_write.au', copy: true)

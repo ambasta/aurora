@@ -822,6 +822,16 @@ export namespace compiler_x86 {
         emit_mov_rr(w, o, Register::rax, Register::rsi);
         emit_load(w, o, grant, Register::rdi, false);
         emit_alu_rr(w, o, AluOp::bit_xor, Register::r11, Register::r11);
+        if (operation == 57) {
+            host_bound(w, o, Register::rsi, 5);
+            emit_load(w, o, generation, Register::rdx, false);
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::rdi, Register::rdi);
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::r10, Register::r10);
+            host_kernel_call(w, o, 24);
+            emit_alu_rr(w, o, AluOp::test, Register::rdx, Register::rdx);
+            emit_branch(w, o, 5, 4, 0);
+            return w.ok();
+        }
         if (operation == 38 || operation == 41) {
             host_bound(w, o, Register::rsi, 1);
             // A mask selects one of two copied observations, never authority.
@@ -834,15 +844,20 @@ export namespace compiler_x86 {
             emit_alu_rr(w, o, AluOp::bit_and, Register::rcx, Register::rax);
             return emit_alu_rr(w, o, AluOp::bit_or, Register::rdx, Register::rax);
         }
-        if (operation == 37 || operation == 40) {
+        if (operation == 37 || operation == 40 || operation == 56) {
             host_bound(w, o, Register::rsi, 511);
             emit_indexed_load(w, o, Register::rdi, Register::r11, indexed_address(1, 8), false);
             emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
             emit_branch(w, o, 5, 4, 0);
             return emit_indexed_load(w, o, Register::rdi, Register::rsi, indexed_address(1, 16), true);
         }
-        if (operation != 36 && operation != 39) {
+        if (operation != 36 && operation != 39 && operation != 55) {
             return w.fail();
+        }
+        if (operation == 55) {
+            emit_pop(w, o, Register::rsi);
+            emit_pop(w, o, Register::r10);
+            host_bound(w, o, Register::r10, 1);
         }
         if (operation == 39) {
             emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
@@ -860,11 +875,15 @@ export namespace compiler_x86 {
         emit_rep_stosb(w, o);
         emit_mov_rr(w, o, Register::r8, Register::rdi);
         emit_load(w, o, generation, Register::rdx, false);
-        emit_alu_rr(w, o, AluOp::bit_xor, Register::r10, Register::r10);
-        if (operation == 39) {
-            host_kernel_call(w, o, 17);
+        if (operation == 55) {
+            host_kernel_call(w, o, 23);
         } else {
-            host_kernel_call(w, o, 16);
+            emit_alu_rr(w, o, AluOp::bit_xor, Register::r10, Register::r10);
+            if (operation == 39) {
+                host_kernel_call(w, o, 17);
+            } else {
+                host_kernel_call(w, o, 16);
+            }
         }
         host_bound(w, o, Register::rax, 3);
         emit_mov_rr(w, o, Register::rax, Register::r9);
@@ -1156,7 +1175,7 @@ export namespace compiler_x86 {
         if (operation >= 39 && operation < 46) {
             return emit_writer_operation(workspace, object, store, instruction);
         }
-        if (operation >= 36 && operation < 39) {
+        if ((operation >= 36 && operation < 39) || (operation >= 55 && operation <= 57)) {
             return emit_block_operation(workspace, object, store, instruction);
         }
         if (operation >= 32 && operation < 36) {

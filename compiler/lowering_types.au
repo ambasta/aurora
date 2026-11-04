@@ -1210,6 +1210,7 @@ export namespace compiler_lowering {
             process = process || kind == compiler_resolver::ResolvedTypeKind::input_stream || kind
                 == compiler_resolver::ResolvedTypeKind::host_files || kind
                 == compiler_resolver::ResolvedTypeKind::serve_session || kind
+                == compiler_resolver::ResolvedTypeKind::read_only_blocks || kind
                 == compiler_resolver::ResolvedTypeKind::read_only_block || kind
                 == compiler_resolver::ResolvedTypeKind::writable_block;
             at = at + 1;
@@ -1248,6 +1249,7 @@ export namespace compiler_lowering {
                     }
                     region = count - 2;
                     if (count == 4 && ((parameter_kind(session, symbol, 1)
+                        != compiler_resolver::ResolvedTypeKind::read_only_blocks && parameter_kind(session, symbol, 1)
                         != compiler_resolver::ResolvedTypeKind::read_only_block && parameter_kind(session, symbol, 1)
                         != compiler_resolver::ResolvedTypeKind::writable_block) || !parameter_borrowed(session, symbol,
                         1) || parameter_const(session, symbol, 1))) {
@@ -1273,6 +1275,7 @@ export namespace compiler_lowering {
         if ((first == compiler_resolver::ResolvedTypeKind::console_session || first
             == compiler_resolver::ResolvedTypeKind::host_files || first
             == compiler_resolver::ResolvedTypeKind::serve_session || first
+            == compiler_resolver::ResolvedTypeKind::read_only_blocks || first
             == compiler_resolver::ResolvedTypeKind::read_only_block || first
             == compiler_resolver::ResolvedTypeKind::writable_block) && second
             == compiler_resolver::ResolvedTypeKind::byte_region) {
@@ -1286,8 +1289,10 @@ export namespace compiler_lowering {
             return 2;
         }
         if (count >= 3 && ((first == compiler_resolver::ResolvedTypeKind::serve_session && (second
+            == compiler_resolver::ResolvedTypeKind::read_only_blocks || second
             == compiler_resolver::ResolvedTypeKind::read_only_block || second
             == compiler_resolver::ResolvedTypeKind::writable_block)) || ((first
+            == compiler_resolver::ResolvedTypeKind::read_only_blocks || first
             == compiler_resolver::ResolvedTypeKind::read_only_block || first
             == compiler_resolver::ResolvedTypeKind::writable_block) && second
             == compiler_resolver::ResolvedTypeKind::serve_session)) && parameter_kind(session, symbol, 2)

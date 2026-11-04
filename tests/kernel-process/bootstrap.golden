@@ -59,3 +59,11 @@ storage_reserved_tail invalid
 reply_short invalid
 reply_oversized invalid
 reply_unknown_operation invalid
+dual_first_ready ready
+dual_second_ready ready
+dual_both_ready ready
+dual_mask_reserved invalid
+dual_success_empty invalid
+dual_none_unavailable disk_unavailable
+dual_mask_high_word invalid
+dual_mask_wrong_operation invalid

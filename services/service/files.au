@@ -9,15 +9,15 @@ import std.binary;
 export namespace service {
     // Copied bootstrap shape only. The Serve endpoint authenticates source0
     // separately; a valid record is not a volume or mount grant.
-    auto bootstrap_valid(builtin::span<const u8> bytes) -> bool {
+    auto bootstrap_shape(builtin::span<const u8> bytes, bool dual) -> bool {
         if (bytes.size() != 64) {
             return false;
         }
         const std::ByteReadResult operation = std::read_le64(bytes, 0);
         const std::ByteReadResult volume = std::read_le64(bytes, 8);
         const std::ByteReadResult profile = std::read_le64(bytes, 16);
-        if (operation.value_or(0u64) != 1u64 || volume.value_or(268435457u64) > 268435456u64 || profile.value_or(2u64)
-            > 1u64) {
+        if (operation.value_or(0u64) != 1u64 || volume.value_or(268435457u64) > 268435456u64
+            || (!dual && profile.value_or(2u64) > 1u64) || (dual && profile.value_or(0u64) != 4u64)) {
             return false;
         }
         i64 at = 24;
@@ -28,6 +28,13 @@ export namespace service {
             at = at + 1;
         }
         return true;
+    }
+
+    auto bootstrap_valid(builtin::span<const u8> bytes) -> bool {
+        return bootstrap_shape(bytes, false);
+    }
+    auto dual_bootstrap_valid(builtin::span<const u8> bytes) -> bool {
+        return bootstrap_shape(bytes, true);
     }
 
     class Reply {
@@ -128,6 +135,8 @@ export namespace service {
         builtin::OwnedBytes directory_name;
         bool disk_ready;
         bool disk_routing;
+        bool disk2_ready;
+        bool dual_routing;
         // One reusable payload arena, addressed by checked page indices. Each
         // record has up to 16384 page indices (64 MiB); the index owner is 8 MiB.
         // Free pages link through their first word. This is a service-local
@@ -332,7 +341,8 @@ export namespace service {
         Store(builtin::ByteRegion region, i64 volume_bytes) : volume(region.try_allocate(volume_bytes)),
             table(region.try_allocate(1344)), records(region.try_allocate(20480)),
             directory_cursors(region.try_allocate(256)), directory_name(region.try_allocate(256)), disk_ready(false),
-            disk_routing(false), indices(make_indices(region)), data(make_payload(region)), pages(0u64),
+            disk_routing(false), disk2_ready(false), dual_routing(false), indices(make_indices(region)),
+            data(make_payload(region)), pages(0u64),
             free_head(0u64), client(0u64), valid(true), admitted(false), read_kind(0u64), read_target(0u64),
             read_offset(0u64), read_count(0u64), export_record(0u64), export_revision(0u64), export_inode(0u64),
             export_base(0u64), export_prefix(0u64), export_length(0u64), export_kind(0u64) {
@@ -384,6 +394,13 @@ export namespace service {
             const builtin::span<const u8> r = borrow_bytes(records);
             const kernel::Resolution base = kernel::resolution(kernel::PathKind::directory, 0u64, 0u64, 0u64, 0, 5);
             const kernel::Resolution found = kernel::resolve(v, r, "/disk", base);
+            return found.kind != kernel::PathKind::absent && found.kind != kernel::PathKind::missing;
+        }
+        auto disk2_collision() const -> bool {
+            const builtin::span<const u8> v = borrow_bytes(volume);
+            const builtin::span<const u8> r = borrow_bytes(records);
+            const kernel::Resolution base = kernel::resolution(kernel::PathKind::directory, 0u64, 0u64, 0u64, 0, 6);
+            const kernel::Resolution found = kernel::resolve(v, r, "/disk2", base);
             return found.kind != kernel::PathKind::absent && found.kind != kernel::PathKind::missing;
         }
         auto volume_byte(i64 offset, u8 byte) -> bool {
@@ -563,6 +580,12 @@ export namespace service {
             disk_routing = true;
             return true;
         }
+        auto observe_disks(bool first_ready, bool second_ready) -> bool {
+            observe_disk(first_ready);
+            disk2_ready = second_ready;
+            dual_routing = true;
+            return true;
+        }
         auto next_entry(u64 id) -> Reply {
             read_count = 0u64;
             i64 byte = 0;
@@ -588,11 +611,27 @@ export namespace service {
             }
             const u64 first = table_word(u64(slot) * 32u64 + 16u64);
             const u64 depth = table_word(u64(slot) * 32u64 + 24u64);
+            if (cursor == 18446744073709551614u64) {
+                set_directory_cursor(slot, 18446744073709551615u64);
+                if (disk2_ready && !disk2_collision()) {
+                    directory_name.set(0, 100u8);
+                    directory_name.set(1, 105u8);
+                    directory_name.set(2, 115u8);
+                    directory_name.set(3, 107u8);
+                    directory_name.set(4, 50u8);
+                    result.count = 5u64;
+                    result.size = 2u64;
+                }
+                read_kind = 4u64;
+                read_count = result.count;
+                return result;
+            }
             u64 next = cursor;
-            {
+            bool selected_visible = false;
+            while (!selected_visible) {
                 const builtin::span<const u8> v = borrow_bytes(volume);
                 const builtin::span<const u8> r = borrow_bytes(records);
-                const kernel::DirectorySelection selected = kernel::directory_selection(v, r, first, depth, cursor,
+                const kernel::DirectorySelection selected = kernel::directory_selection(v, r, first, depth, next,
                     disk_routing);
                 next = selected.next;
                 result.count = selected.count;
@@ -608,6 +647,10 @@ export namespace service {
                     directory_name.set(byte, value);
                     byte = byte + 1;
                 }
+                selected_visible = !dual_routing || depth != 0u64 || result.count != 5u64
+                    || directory_name.at(0) != 100u8 || directory_name.at(1) != 105u8
+                    || directory_name.at(2) != 115u8 || directory_name.at(3) != 107u8
+                    || directory_name.at(4) != 50u8;
             }
             set_directory_cursor(slot, next);
             if (result.count == 0u64) {
@@ -619,6 +662,19 @@ export namespace service {
                     directory_name.set(3, 107u8);
                     result.count = 4u64;
                     result.size = 2u64;
+                    if (dual_routing) {
+                        set_directory_cursor(slot, 18446744073709551614u64);
+                    }
+                } else {
+                    if (depth == 0u64 && first == 0u64 && dual_routing && disk2_ready && !disk2_collision()) {
+                        directory_name.set(0, 100u8);
+                        directory_name.set(1, 105u8);
+                        directory_name.set(2, 115u8);
+                        directory_name.set(3, 107u8);
+                        directory_name.set(4, 50u8);
+                        result.count = 5u64;
+                        result.size = 2u64;
+                    }
                 }
             }
             read_kind = 4u64;

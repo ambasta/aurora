@@ -204,6 +204,12 @@ readiness, unsupported-log refusal and continued RAM-file/console operation.
 Preserve those combined gates and the unchanged RAM-only composition as the
 transport and mount profile evolve.
 
+A separate bounded dual-readonly composition connects two namespace identities
+on one controller to independent production mount owners. Its sealed set grants,
+cache identity and source handle partitions distinguish volumes while preserving
+shared transport quarantine and finite command budgets. This is a dependency
+for multiple storage domains, not multi-controller isolation or hotplug.
+
 Next: qualify broader clean-log histories before extending XFS admission, then
 follow the [native filesystem and XFS roadmap](../storage/design/roadmap.md) for
 transactions, durability, recovery/GC and XFS read-write. Gate transport, filesystem

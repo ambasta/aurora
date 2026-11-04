@@ -2661,7 +2661,8 @@ void rawInstructionAdmission() {
            release(6, 7),
            release(7, 8),
            release(8, 9),
-           release(9, 11)}}}, // Closed kinds need no matching entry or live loan here.
+           release(9, 11),
+           release(10, 12)}}}, // Closed kinds need no matching entry or live loan here.
         {{{acquire(1), release(1), acquire(1)}}},
         {{{acquire(7), acquire(7), acquire(7)}}},
         {{{acquire(1), acquire(1, 32, 1)}}, Reason::service_loan_identity},
@@ -2679,9 +2680,9 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(id)}}, Reason::service_loan_identity});
         services.push_back({{{release(id)}}, Reason::service_release});
     }
-    // Kinds 0..11 are closed; legacy service operations stop at 45.
+    // Kinds 0..12 are closed; legacy service operations stop at 45.
     // Issuance uses its own form, and retired issuer operations remain invalid.
-    for (const auto kind : {std::int64_t{-1}, std::int64_t{12}, INT64_MAX}) {
+    for (const auto kind : {std::int64_t{-1}, std::int64_t{13}, INT64_MAX}) {
         services.push_back({{{acquire(1, 16, kind)}}, Reason::service_loan_root});
         services.push_back({{{release(1, kind)}}, Reason::service_release});
         services.push_back({{{operation(1, kind)}}, Reason::service_operation_kind});
@@ -3068,7 +3069,7 @@ void rawAdmission() {
         const auto parsed = arena.parse(source, Stop::module_definition);
         require(parsed[0] == wire(Status::success), "raw group fixture failed grammar");
         const auto result = arena.admit(source, parsed[1], {64, 512, groups, 1, 2, 4});
-        const bool allowed = groups >= 0 && (groups & 4295041023LL) == groups;
+        const bool allowed = groups >= 0 && (groups & 4295458815LL) == groups;
         require(result[0] == wire(allowed ? AdmissionStatus::success : AdmissionStatus::invalid),
                 "parser group policy lost closed full-width admission");
         arena.finish();
@@ -3078,6 +3079,14 @@ void rawAdmission() {
     for (const auto &[parameters, groups, allowed] : std::vector<std::tuple<std::string, std::int64_t, bool>>{
              {"builtin::ServeSession& s", 4294967296, true},
              {"builtin::ReadOnlyBlock& b", 64, true},
+             {"builtin::ReadOnlyBlocks& b", 131072, true},
+             {"builtin::ReadOnlyBlocks& b", 64, false},
+             {"builtin::ReadOnlyBlocks& b", 262144, false},
+             {"builtin::ServeSession& s,builtin::ReadOnlyBlocks& b", 262144, true},
+             {"builtin::ReadOnlyBlocks& b,builtin::ServeSession& s", 262144, true},
+             {"builtin::ServeSession& s,builtin::ReadOnlyBlocks& b", 131072, false},
+             {"builtin::ReadOnlyBlocks& a,builtin::ReadOnlyBlocks& b", 131072, false},
+             {"builtin::ReadOnlyBlock& a,builtin::ReadOnlyBlocks& b", 262144, false},
              {"builtin::WritableBlock& w", 512, true},
              {"builtin::ServeSession& s,builtin::WritableBlock& w", 512, false},
              {"builtin::ServeSession& s,builtin::WritableBlock& w", 1024, true},

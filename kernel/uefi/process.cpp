@@ -295,6 +295,7 @@ public:
     U64 slice = 0, service = 0, block_generation = 0, block_sectors = 0, companion = 0;
     U64 recovery_generation = 0, recovery_sectors = 0;
     U64 mounted_generation = 0, mounted_sectors = 0;
+    U64 volumes_generation = 0, volumes_count = 0;
     bool external = false;
     auto operator==(const Running &) const -> bool = default;
 };
@@ -745,6 +746,17 @@ constinit bool loading_image = false;
 constinit U64 next_block_generation = 0;
 #endif
 constinit U64 block_service = 0, block_generation = 0, block_sectors = 0;
+// Immutable for one service incarnation; clearing revokes the whole set.
+class VolumeGrant final {
+public:
+    U64 generation{}, controller{}, nsid{}, sectors{};
+};
+constinit std::array<VolumeGrant, 2> volume_grants{};
+constinit U64 volumes_service{}, volumes_owner{}, volumes_root{}, volumes_generation{}, volumes_count{};
+auto revoke_volumes() -> void {
+    volumes_service = volumes_owner = volumes_root = volumes_generation = volumes_count = 0;
+    volume_grants = {};
+}
 // This separate boot role is never set by ordinary load_image/run or Serve.
 // The recovery composition will mint it only after its private image is admitted.
 constinit U64 recovery_owner = 0, recovery_root = 0, recovery_generation = 0, recovery_sectors = 0;
@@ -880,6 +892,58 @@ public:
         const auto result = nvme_read_sector(context, lba, output);
         if (!space.closed() || root() != running.space->root())
             fail("block window restoration");
+        return result;
+    }
+};
+class ProcessBlocksBroker final {
+    static auto context(unsigned slot) -> NvmeVolumeContext {
+        const auto &grant = volume_grants[slot];
+        return NvmeVolumeContext(volumes_root, grant.generation, grant.controller, grant.nsid, grant.sectors);
+    }
+    static auto authenticate() -> bool {
+        if (!running.space || !running.service || running.service != volumes_service || !running.volumes_generation ||
+            running.volumes_generation != volumes_generation || running.volumes_count != volumes_count ||
+            !volumes_count || volumes_count > 2 || running.space->owner() != volumes_owner ||
+            running.space->root() != volumes_root || root() != volumes_root || !space.closed())
+            fail("volume set authority");
+        U64 flags;
+        asm volatile("pushfq; popq %0" : "=r"(flags));
+        if (flags & (1ULL << 9))
+            fail("volume set interrupt state");
+        bool available = true;
+        for (unsigned i = 0; i < volumes_count; ++i) {
+            const auto &grant = volume_grants[i];
+            if (!grant.generation || !grant.controller || !grant.nsid || !grant.sectors)
+                fail("volume slot authority");
+            const auto count = nvme_volume_count(context(i));
+            if (count && count != grant.sectors)
+                fail("volume extent changed");
+            available = available && count != 0;
+        }
+        return available;
+    }
+
+public:
+    static auto descriptor(U64 selector) -> U64 {
+        if (!authenticate() || selector > 5)
+            return 0;
+        if (!selector)
+            return volumes_count;
+        if (selector == 1)
+            return nvme_volume_budget(context(0));
+        const auto slot = static_cast<unsigned>((selector - 2) / 2);
+        if (slot >= volumes_count)
+            return 0;
+        return selector % 2 ? volume_grants[slot].generation : volume_grants[slot].sectors;
+    }
+    static auto read(U64 slot, U64 lba, std::span<std::byte, 512> output) -> NvmeReadStatus {
+        for (auto &byte : output)
+            byte = std::byte{};
+        if (!authenticate() || slot >= volumes_count)
+            return NvmeReadStatus::unavailable;
+        const auto result = nvme_volume_read(context(static_cast<unsigned>(slot)), lba, output);
+        if (!space.closed() || root() != volumes_root)
+            fail("volume window restoration");
         return result;
     }
 };
@@ -1151,6 +1215,41 @@ auto block_read(volatile U64 *frame) -> bool {
     return true;
 }
 
+auto volumes_call(volatile U64 *frame) -> bool {
+    if (frame[frame_rdx] != running.volumes_generation || (running.volumes_generation && !running.service))
+        return false;
+    if (frame[frame_rax] == 24) {
+        if (frame[frame_rdi] || frame[frame_r10])
+            return false;
+        U64 value = 0;
+#ifdef AURORA_UEFI_NVME
+        if (running.volumes_generation)
+            value = aurora::uefi::ProcessBlocksBroker::descriptor(frame[frame_rsi]);
+#endif
+        frame[frame_rax] = value;
+        frame[frame_rdx] = 0;
+        return true;
+    }
+    const auto destination = user_bytes(frame[frame_rdi], block_copy.size(), true);
+    if (!destination)
+        return false;
+    for (auto &byte : block_copy)
+        byte = std::byte{};
+    U64 status = 3;
+#ifdef AURORA_UEFI_NVME
+    if (running.volumes_generation)
+        status =
+            static_cast<U64>(aurora::uefi::ProcessBlocksBroker::read(frame[frame_r10], frame[frame_rsi], block_copy));
+#endif
+    for (U64 at = 0; at < block_copy.size(); ++at) {
+        (*destination)[at] = status ? std::byte{} : block_copy[at];
+        block_copy[at] = std::byte{};
+    }
+    frame[frame_rax] = status;
+    frame[frame_rdx] = status == 0 ? 512 : 0;
+    return true;
+}
+
 auto endpoint_exchange(volatile U64 *frame) -> bool {
     const U64 window = frame[frame_rdi], count = frame[frame_rsi], generation = frame[frame_rdx],
               transaction = frame[frame_r10];
@@ -1249,6 +1348,15 @@ auto file_request(const process::KernelCall &call, volatile U64 *frame) -> bool 
 
 // One kernel call: 0 resumes the process with RAX set, 1 ends it.
 auto kernel_call(volatile U64 *frame) -> U64 {
+    if (frame[frame_rax] == 23 || frame[frame_rax] == 24) {
+        const auto operation = frame[frame_rax];
+        if (volumes_call(frame))
+            return 0;
+        execution_capture.event = aurora::lifecycle::Event::invalid_call;
+        execution_capture.detail = operation;
+        execution_capture.rip = frame[frame_rip];
+        return 1;
+    }
     if (frame[frame_rax] == 21) {
         if (running.external && !running.service && input_read.owner == running.run && input_read.owner &&
             frame[frame_rsi] == input_read.owner && !frame[frame_rdx] && !frame[frame_r10] && !input_read.pending &&
@@ -1750,6 +1858,7 @@ auto load_image(std::span<const std::byte> view,
     // Initial entry and retained continuation are both kernel-owned. A slot
     // identity is never user-provided; owners advance with the run ordinal.
     U64 read_generation = 0, read_sectors = 0, write_generation = 0, write_sectors = 0;
+    U64 set_generation = 0, set_count = 0;
 #ifdef AURORA_UEFI_NVME
     if (grant_block && service && aurora::uefi::nvme_sector_count()) {
         if (next_block_generation == ~U64{0})
@@ -1759,6 +1868,23 @@ auto load_image(std::span<const std::byte> view,
         block_service = service;
         block_generation = read_generation;
         block_sectors = read_sectors;
+    }
+    if (grant_block && service && runtime_storage.dual() && aurora::uefi::nvme_volume_count()) {
+        if (volumes_generation || read_generation || next_block_generation > ~U64{0} - 3)
+            fail("volume set admission");
+        set_count = aurora::uefi::nvme_volume_count();
+        set_generation = ++next_block_generation;
+        volumes_service = service;
+        volumes_owner = process_space.owner();
+        volumes_root = process_space.root();
+        volumes_generation = set_generation;
+        volumes_count = set_count;
+        for (unsigned i = 0; i < set_count; ++i) {
+            volume_grants[i] = {++next_block_generation,
+                                aurora::uefi::nvme_volume_identity(i, 0),
+                                aurora::uefi::nvme_volume_identity(i, 1),
+                                aurora::uefi::nvme_volume_identity(i, 2)};
+        }
     }
     if (grant_mounted) {
         if (!service || grant_block || mounted_generation || next_block_generation == ~U64{0} ||
@@ -1789,8 +1915,12 @@ auto load_image(std::span<const std::byte> view,
                         arguments.size(),
                         process_space.root(),
                         service,
-                        write_generation ? write_generation : read_generation,
-                        write_generation ? write_sectors : read_sectors};
+                        set_generation     ? set_generation
+                        : write_generation ? write_generation
+                                           : read_generation,
+                        set_generation     ? set_count
+                        : write_generation ? write_sectors
+                                           : read_sectors};
     if (manifest.input_requested) {
         input_read.owner = run;
         // Conservative ownership handoff: even clean EOF/no read requires the
@@ -1817,6 +1947,8 @@ auto load_image(std::span<const std::byte> view,
     resident.state.continuation = preemptible ? &resident.continuation : nullptr;
     resident.state.captured = &resident.continuation;
     resident.state.service = service;
+    resident.state.volumes_generation = set_generation;
+    resident.state.volumes_count = set_count;
     resident.state.block_generation = read_generation;
     resident.state.block_sectors = read_sectors;
     resident.state.mounted_generation = write_generation;
@@ -1965,6 +2097,8 @@ auto release_resident_physical(std::size_t slot) -> bool {
         *static_cast<volatile U64 *>(&word) = 0;
     for (auto &word : resident.initial)
         *static_cast<volatile U64 *>(&word) = 0;
+    if (resident.state.service && resident.state.service == volumes_service)
+        revoke_volumes();
     if (resident.state.service && resident.state.service == block_service)
         block_service = block_generation = block_sectors = 0;
     // The role remains visible throughout real address-space release and
@@ -2527,7 +2661,7 @@ auto file_reply_valid() -> bool {
     }
     const U64 id = reply.get(16), size = reply.get(24), device = reply.get(32), inode = reply.get(40),
               directory_device = reply.get(48), directory_inode = reply.get(56), slot = id & 63;
-    if (count || id < 65 || size > 0x7fffffffffffffffULL || device > 3)
+    if (count || id < 65 || size > 0x7fffffffffffffffULL || device > (runtime_storage.dual() ? 4U : 3U))
         return false;
     if (action == process::CallAction::create_output) {
         const bool disk_output = mounted_generation && mounted_service == endpoint.generation &&
@@ -2536,8 +2670,8 @@ auto file_reply_valid() -> bool {
         return disk_output || (device <= 2 && slot >= 33 && slot <= 36 && !size && ((device == 0) == (inode == 0)) &&
                                directory_device == 1 && directory_inode >= 65536);
     }
-    return ((device == 3 && slot >= 41 && slot <= 56) || (device >= 1 && device <= 2 && slot >= 1 && slot <= 32)) &&
-           inode && !directory_device && !directory_inode;
+    return process::file_open_reply_valid(
+        id, size, device, inode, directory_device, directory_inode, runtime_storage.dual());
 }
 // Preserve the first checked malformed response through best-effort close.
 // This records a kernel-selected operation, never a reply-supplied identity.
@@ -2691,6 +2825,7 @@ auto service_lost(ServiceLoss loss, U64 generation) -> void {
     Serial::text(" volatile_data=lost\r\n");
     endpoint.generation = 0;
     endpoint.invalid_reply_operation = 0;
+    revoke_volumes();
     block_service = block_generation = block_sectors = 0;
     endpoint.caller.reset();
     for (auto &byte : endpoint.bytes)
@@ -2887,8 +3022,9 @@ public:
 #ifdef AURORA_UEFI_NVME
         binding.mounted_entry = binding.mounted_attempt && aurora::uefi::nvme_mounted_sector_count();
 #endif
-        const auto path = binding.mounted_entry ? std::string_view{"bin/file-service-mounted", 24}
-                                                : std::string_view{"bin/file-service", 16};
+        const auto path = runtime_storage.dual()  ? std::string_view{"bin/file-service-dual", 21}
+                          : binding.mounted_entry ? std::string_view{"bin/file-service-mounted", 24}
+                                                  : std::string_view{"bin/file-service", 16};
         constexpr std::string_view arguments{"file-service\0", 13};
         reset_loader(128);
         loading_image = true;
@@ -2975,7 +3111,8 @@ public:
     }
     static auto begin_volume(Binding &binding) -> aurora::bootstrap::Effect {
         require(!binding.seal_receipt && !binding.storage_receipt);
-        return stage(binding, 1, binding.volume.size(), runtime_storage.readonly_profile());
+        return stage(
+            binding, 1, binding.volume.size(), runtime_storage.dual() ? 4 : runtime_storage.readonly_profile());
     }
     static auto copy_volume(Binding &binding, U64 offset) -> aurora::bootstrap::Effect {
         require(!binding.seal_receipt && !binding.storage_receipt && offset < binding.volume.size());
@@ -3044,8 +3181,14 @@ public:
         const bool authenticated = endpoint_reply.transaction == binding.pending_transaction &&
                                    endpoint_reply.source == 0 && endpoint_reply.waiting() && endpoint_reply.replied() &&
                                    !endpoint_reply.delivery() && endpoint.count == 64;
-        const auto reply = authenticated ? aurora::bootstrap::inspect_reply(operation, {endpoint.bytes.data(), 64})
-                                         : aurora::bootstrap::Reply::invalid;
+        const auto granted_count = residents[0].state.volumes_count;
+        const bool valid_volume_mask =
+            !runtime_storage.dual() || operation != 15 ||
+            (granted_count <= 2 && !(std::to_integer<unsigned>(endpoint.bytes[24]) & ~((1U << granted_count) - 1U)));
+        const auto reply =
+            authenticated && valid_volume_mask
+                ? aurora::bootstrap::inspect_reply(operation, {endpoint.bytes.data(), 64}, runtime_storage.dual())
+                : aurora::bootstrap::Reply::invalid;
         if (reply == aurora::bootstrap::Reply::invalid) {
             if (!endpoint.invalid_reply_operation)
                 endpoint.invalid_reply_operation = operation;
@@ -3063,6 +3206,11 @@ public:
             require(binding.seal_receipt && !binding.storage_receipt);
             binding.storage_receipt = true;
             binding.disk_ready = reply == aurora::bootstrap::Reply::ready;
+            if (runtime_storage.dual()) {
+                Serial::text("AURORA_DUAL_STORAGE_READY:");
+                field("mask", std::to_integer<unsigned>(endpoint.bytes[24]));
+                Serial::text("\r\n");
+            }
         }
         return Progress::complete;
     }
@@ -5652,9 +5800,13 @@ auto resident_terminal_cleanup(const ResidentInput &input) -> void {
         endpoint.generation || endpoint_owner.observe().waiting() ||
         service_root.phase() != aurora::service::Phase::absent || loading_image || mounted_owner || mounted_root ||
         mounted_generation || mounted_sectors || mounted_service || block_service || block_generation ||
-        block_sectors || execution_owner.phase(0) != aurora::lifecycle::Phase::empty ||
+        block_sectors || volumes_service || volumes_generation || volumes_count || volumes_owner || volumes_root ||
+        execution_owner.phase(0) != aurora::lifecycle::Phase::empty ||
         execution_owner.phase(1) != aurora::lifecycle::Phase::empty)
         fail("resident final cleanup receipt");
+    for (const auto &grant : volume_grants)
+        if (grant.generation || grant.controller || grant.nsid || grant.sectors)
+            fail("resident volume grant cleanup receipt");
     for (const auto &resident : residents) {
         for (const auto word : resident.continuation)
             if (word)

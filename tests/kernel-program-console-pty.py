@@ -1261,6 +1261,10 @@ def production_case_volume(source, programs, directory, service_case=None):
             entries.extend((name, b"old\n") for name in (b"ws-write.au", b"ws-failed.au", b"ws-lost.au"))
         elif service_case == "console-commit":
             replacement = (programs / "console-commit-hostile-aurora").read_bytes()
+        elif service_case.startswith("dual-"):
+            mode = int(service_case.removeprefix("dual-"))
+            need(mode in range(40, 46), "Unknown dual grant probe")
+            replacement = snapshot_service_program(programs / "process-isolation-6", mode)
         elif service_case == "bootstrap-serve":
             # Its default fixed file-service argv reaches the existing invalid
             # initial Serve call; no executable or selector bytes are patched.
@@ -1270,8 +1274,9 @@ def production_case_volume(source, programs, directory, service_case=None):
                 programs / "process-isolation-6",
                 {"snapshot-read": 12, "snapshot-close": 13, "shutdown-fault": 14}[service_case],
             )
-        need(sum(name == b"bin/file-service" for name, _ in entries) == 1, "Unique designated service file")
-        entries = [(name, replacement if name == b"bin/file-service" else data) for name, data in entries]
+        service_name = b"bin/file-service-dual" if service_case.startswith("dual-") else b"bin/file-service"
+        need(sum(name == service_name for name, _ in entries) == 1, "Unique designated service file")
+        entries = [(name, replacement if name == service_name else data) for name, data in entries]
         path.write_bytes(kernel_volume.volume(entries))
         return target
     for name, binary in (
@@ -1940,6 +1945,187 @@ def main():
                 finish_session()
                 print("PASS: private service payload loss, fresh generations, no replay and healthy console exit")
                 return
+            source = rb"""module entered;
+import aurora.host;
+auto dump(builtin::HostFiles& files, builtin::span<const u8> path) -> bool {
+    const builtin::HostFileResult file = files.open_file(path);
+    if (file.status != builtin::HostStatus::success) {
+        return false;
+    }
+    u64 offset = 0u64;
+    while (true) {
+        const builtin::HostChunk chunk = files.read(file.id, offset);
+        if (chunk.status != builtin::HostStatus::success) {
+            return false;
+        }
+        if (chunk.count == 0u64) {
+            return files.close(file.id) == builtin::HostStatus::success;
+        }
+        const array<u8, 504> bytes = chunk.bytes;
+        const builtin::span<const u8> all = borrow_bytes(bytes);
+        const builtin::span<const u8> part = all.subspan(0, i64(chunk.count));
+        if (files.print(builtin::HostStream::stdout, part) != builtin::HostStatus::success) {
+            return false;
+        }
+        offset = offset + chunk.count;
+    }
+    return false;
+}
+auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {
+    files.print(builtin::HostStream::stdout, "ENTERED-FIRST\nSOURCE-BEGIN\n");
+    if (!dump(files, "main.au")) {
+        return builtin::HostExit::failure;
+    }
+    files.print(builtin::HostStream::stdout, "SOURCE-END\nTEXT-BEGIN\n");
+    if (!dump(files, "text.txt")) {
+        return builtin::HostExit::failure;
+    }
+    files.print(builtin::HostStream::stdout, "TEXT-END\n");
+    return builtin::HostExit::success;
+}
+"""
+
+            def read_authored(expected_source, expected_text, marker):
+                part = run_command("run app", "exited status=0")
+                expected = (
+                    marker
+                    + b"\nSOURCE-BEGIN\n"
+                    + expected_source
+                    + b"SOURCE-END\nTEXT-BEGIN\n"
+                    + expected_text
+                    + b"TEXT-END\n"
+                )
+                need(part.count(expected) == 1, "Exact guest-authored source and data readback")
+                return part
+
+            if args.mode == "program-console" and args.program_cases and not args.service_case:
+                # The separate pristine production boot covers the common console,
+                # input and authoring workflow. This private-volume boot keeps
+                # every revision and hostile case without repeating that history.
+                # Establish its inputs through the real guest writer and compiler.
+                replacement = source.replace(b"ENTERED-FIRST", b"ENTERED-SECOND")
+                current_text = b"z" * 256 + b"\n"
+                write_source(b"main.au", [replacement, b"\x04"])
+                write_source(b"text.txt", [current_text, b"\x04"])
+                run_command("run bin/aurorac --emit-executable --target aurora main.au -o app", "exited status=0")
+                read_authored(replacement, current_text, b"ENTERED-SECOND")
+                metrics["guest_authored_revision_setup"] = True
+                # Revise one existing source line rather than retyping the
+                # whole program. Numbered output is ordinary read-only viewing;
+                # the same guest compiler then executes the changed behavior.
+                numbered = b"".join(
+                    str(number).encode() + b": " + line
+                    for number, line in enumerate(replacement.splitlines(keepends=True), 1)
+                )
+                revision_result(b"main.au", 0, numbered)
+                marker_line = next(
+                    number
+                    for number, line in enumerate(replacement.splitlines(keepends=True), 1)
+                    if b"ENTERED-SECOND" in line
+                )
+                changed_line = replacement.splitlines(keepends=True)[marker_line - 1].replace(
+                    b"ENTERED-SECOND", b"ENTERED-THIRD"
+                )
+                revise_source(b"main.au", marker_line, 1, [changed_line[:-1], b"\r", b"\n", b"\x04"])
+                revised = replacement.replace(b"ENTERED-SECOND", b"ENTERED-THIRD")
+                run_command("run bin/aurorac --emit-executable --target aurora main.au -o app", "exited status=0")
+                current_text = b"z" * 256 + b"\n"
+                read_authored(revised, current_text, b"ENTERED-THIRD")
+                revise_source(b"main.au", 1, 0, [b"// inserted comment\n", b"\x04"])
+                read_authored(b"// inserted comment\n" + revised, current_text, b"ENTERED-THIRD")
+                revise_source(b"main.au", 1, 1, [b"\x04"])
+                read_authored(revised, current_text, b"ENTERED-THIRD")
+                for arguments in (b"main.au 0 1", b"main.au 999 0", b"main.au 1 999"):
+                    revision_result(arguments, 1, b"revise-source: invalid range\n")
+                    read_authored(revised, current_text, b"ENTERED-THIRD")
+                for chunks, message in (
+                    ([b"// cancelled\n", b"unfinished", b"\x03"], b"revise-source: input cancelled\n"),
+                    ([b"// waiting\n"], b"revise-source: input unavailable\n"),
+                    ([b"// staged\n", b"\x00"], b"revise-source: line rejected\n"),
+                    ([b"x" * 257], b"revise-source: line rejected\n"),
+                ):
+                    revise_source(b"main.au", 1, 1, chunks, 1, message)
+                    read_authored(revised, current_text, b"ENTERED-THIRD")
+                write_source(b"text.txt", [b"one\ntwo\nthree\n", b"\x04"])
+                revise_source(b"text.txt", 2, 1, [b"TWO", b"\x04"])
+                read_authored(revised, b"one\nTWO\nthree\n", b"ENTERED-THIRD")
+                revise_source(b"text.txt", 4, 0, [b"last\n", b"\x04"])
+                read_authored(revised, b"one\nTWO\nthree\nlast\n", b"ENTERED-THIRD")
+                revise_source(b"text.txt", 2, 2, [b"\x04"])
+                read_authored(revised, b"one\nlast\n", b"ENTERED-THIRD")
+                revise_source(b"text.txt", 1, 0, [b"zero\n", b"\x04"])
+                read_authored(revised, b"zero\none\nlast\n", b"ENTERED-THIRD")
+                revise_source(b"text.txt", 1, 3, [b"\x04"])
+                read_authored(revised, b"", b"ENTERED-THIRD")
+                empty_view = revision_result(b"text.txt", 0, b"")
+                need(b"1: " not in empty_view, "Empty source must have no phantom line")
+                revise_source(b"text.txt", 1, 0, [b"again\n", b"\x04"])
+                read_authored(revised, b"again\n", b"ENTERED-THIRD")
+                metrics["source_revision_view_replace_compile_insert_delete"] = True
+                metrics["source_revision_range_cancel_unavailable_preserve"] = True
+                raw = revision_result(b"rev-crlf.txt", 0, b"1: first\n2: second\n")
+                need(b"1: first\r\n2: second\n" in raw, "View must preserve original CRLF")
+                revise_source(b"rev-crlf.txt", 2, 1, [b"changed\n", b"\x04"])
+                raw = revision_result(b"rev-crlf.txt", 0, b"1: first\n2: changed\n")
+                need(b"1: first\r\n2: changed\n" in raw, "Untouched prefix lost original CRLF")
+                revision_result(b"rev-tail.txt", 0, b"1: first\n2: tail\n[no final LF]\n")
+                revision_result(b"rev-tail.txt 3 0", 1, b"revise-source: invalid range\n")
+                revision_result(b"rev-tail.txt", 0, b"1: first\n2: tail\n[no final LF]\n")
+                revise_source(b"rev-tail.txt", 2, 1, [b"\x04"])
+                revision_result(b"rev-tail.txt", 0, b"1: first\n")
+                revision_result(b"rev-bad.txt", 1, b"revise-source: invalid source\n")
+                revision_result(b"rev-bad.txt 1 1", 1, b"revise-source: invalid source\n")
+                run_command(
+                    "run probe file rev-bad.txt read @1 0",
+                    "exited status=0",
+                    b"2 read success 13 first\rbroken\n\n",
+                )
+                blanks = b"".join(f"{number}: \n".encode() for number in range(1, 16385))
+                revision_result(b"rev-blank.txt", 0, blanks)
+                # Exact file-boundary input is data in this private volume,
+                # avoiding 16KiB of paced typing or a larger wait allowance.
+                full_view = b"".join(f"{number}: ".encode() + b"x" * 255 + b"\n" for number in range(1, 65))
+                revision_result(b"rev-full.txt", 0, full_view)
+                revise_source(b"rev-full.txt", 1, 0, [b"\n", b"\x04"], 1, b"revise-source: file too large\n")
+                revision_result(b"rev-full.txt", 0, full_view)
+                revise_source(b"rev-full.txt", 1, 1, [b"\x04"])
+                revise_source(b"rev-full.txt", 1, 0, [b"x" * 255 + b"\n", b"\x04"])
+                revision_result(b"rev-full.txt", 0, full_view)
+                metrics["source_revision_exact_file_bound_preserves_then_fits"] = True
+                metrics["source_revision_original_crlf_tail_rejection_many_lines"] = True
+                need(
+                    bytes(transcript).count(b"AURORA_FILE_SERVICE_READY:") == 1,
+                    "Run commands did not retain one service incarnation",
+                )
+                for line, status in (
+                    ("run wx", "invalid executable or arguments"),
+                    ("run interp", "invalid executable or arguments"),
+                    ("run oversize", "invalid executable or arguments"),
+                    ("run quota", "resource quota exceeded"),
+                    ("run privileged", "fault vector=13"),
+                    ("run lifecycle fault", "fault vector=6"),
+                    ("run hostile spin", "watchdog"),
+                ):
+                    run_command(line, status)
+                    command_upper(b"healthy after child\n", "HEALTHY AFTER CHILD")
+                    run_command("run bin/sort / final.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")
+                # Reuse after close and a foreign guessed id are ordinary
+                # client data, not a kernel test hook.
+                run_command(
+                    "run probe file input.txt close @1 read @1 0", "exited status=0", b"3 read invalid_handle 0 "
+                )
+                run_command("run probe read 65 0", "exited status=0", b"1 read invalid_handle 0 ")
+                # One raw 64 KiB call crosses two authenticated service messages.
+                # The existing client reopens and checks every committed byte.
+                run_command("run raw-write", "exited status=0")
+                run_command("run lifecycle rpc", "watchdog")
+                run_command("run probe file tree/rpc-pending", "exited status=0", b"1 file not_found 0 ")
+                run_command("run bin/sort / final.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")
+                command_upper(b"healthy after hostile programs\n", "HEALTHY AFTER HOSTILE PROGRAMS")
+                metrics["hostile_program_data"] = True
+                finish_session()
+                print("PASS: guest-authored source revision, hostile programs and quiescent exit")
+                return
             if args.mode == "program-append-response":
                 file_write("a", "prefix")
                 begin = len(transcript)
@@ -2363,59 +2549,6 @@ def main():
                 # data file through ordinary HostFiles so exact contents, not just
                 # successful compilation, establish what was published.
                 run_command("run bin/cat / absent.tmp main.au", "exited status=1", b"cannot open main.au\n")
-                source = rb"""module entered;
-import aurora.host;
-auto dump(builtin::HostFiles& files, builtin::span<const u8> path) -> bool {
-    const builtin::HostFileResult file = files.open_file(path);
-    if (file.status != builtin::HostStatus::success) {
-        return false;
-    }
-    u64 offset = 0u64;
-    while (true) {
-        const builtin::HostChunk chunk = files.read(file.id, offset);
-        if (chunk.status != builtin::HostStatus::success) {
-            return false;
-        }
-        if (chunk.count == 0u64) {
-            return files.close(file.id) == builtin::HostStatus::success;
-        }
-        const array<u8, 504> bytes = chunk.bytes;
-        const builtin::span<const u8> all = borrow_bytes(bytes);
-        const builtin::span<const u8> part = all.subspan(0, i64(chunk.count));
-        if (files.print(builtin::HostStream::stdout, part) != builtin::HostStatus::success) {
-            return false;
-        }
-        offset = offset + chunk.count;
-    }
-    return false;
-}
-auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {
-    files.print(builtin::HostStream::stdout, "ENTERED-FIRST\nSOURCE-BEGIN\n");
-    if (!dump(files, "main.au")) {
-        return builtin::HostExit::failure;
-    }
-    files.print(builtin::HostStream::stdout, "SOURCE-END\nTEXT-BEGIN\n");
-    if (!dump(files, "text.txt")) {
-        return builtin::HostExit::failure;
-    }
-    files.print(builtin::HostStream::stdout, "TEXT-END\n");
-    return builtin::HostExit::success;
-}
-"""
-
-                def read_authored(expected_source, expected_text, marker):
-                    part = run_command("run app", "exited status=0")
-                    expected = (
-                        marker
-                        + b"\nSOURCE-BEGIN\n"
-                        + expected_source
-                        + b"SOURCE-END\nTEXT-BEGIN\n"
-                        + expected_text
-                        + b"TEXT-END\n"
-                    )
-                    need(part.count(expected) == 1, "Exact guest-authored source and data readback")
-                    return part
-
                 text = b"first\n\n\tsecond!\nlast\n"
                 write_source(b"text.txt", [b"fir", b"st\r", b"\n\n\tsecond?\b!\r", b"\nlastX\x7f", b"\x04"])
                 part = write_source(b"main.au", [source[:19], source[19:-1], b"\x04"])
@@ -2462,90 +2595,6 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 read_authored(replacement, b"z" * 256 + b"\n", b"ENTERED-SECOND")
                 metrics["same_boot_author_save_read_compile_run_replace"] = True
                 metrics["source_writer_cancel_control_line_limit_preserve"] = True
-                if args.program_cases:
-                    # Revise one existing source line rather than retyping the
-                    # whole program. Numbered output is ordinary read-only viewing;
-                    # the same guest compiler then executes the changed behavior.
-                    numbered = b"".join(
-                        str(number).encode() + b": " + line
-                        for number, line in enumerate(replacement.splitlines(keepends=True), 1)
-                    )
-                    revision_result(b"main.au", 0, numbered)
-                    marker_line = next(
-                        number
-                        for number, line in enumerate(replacement.splitlines(keepends=True), 1)
-                        if b"ENTERED-SECOND" in line
-                    )
-                    changed_line = replacement.splitlines(keepends=True)[marker_line - 1].replace(
-                        b"ENTERED-SECOND", b"ENTERED-THIRD"
-                    )
-                    revise_source(b"main.au", marker_line, 1, [changed_line[:-1], b"\r", b"\n", b"\x04"])
-                    revised = replacement.replace(b"ENTERED-SECOND", b"ENTERED-THIRD")
-                    run_command("run bin/aurorac --emit-executable --target aurora main.au -o app", "exited status=0")
-                    current_text = b"z" * 256 + b"\n"
-                    read_authored(revised, current_text, b"ENTERED-THIRD")
-                    revise_source(b"main.au", 1, 0, [b"// inserted comment\n", b"\x04"])
-                    read_authored(b"// inserted comment\n" + revised, current_text, b"ENTERED-THIRD")
-                    revise_source(b"main.au", 1, 1, [b"\x04"])
-                    read_authored(revised, current_text, b"ENTERED-THIRD")
-                    for arguments in (b"main.au 0 1", b"main.au 999 0", b"main.au 1 999"):
-                        revision_result(arguments, 1, b"revise-source: invalid range\n")
-                        read_authored(revised, current_text, b"ENTERED-THIRD")
-                    for chunks, message in (
-                        ([b"// cancelled\n", b"unfinished", b"\x03"], b"revise-source: input cancelled\n"),
-                        ([b"// waiting\n"], b"revise-source: input unavailable\n"),
-                        ([b"// staged\n", b"\x00"], b"revise-source: line rejected\n"),
-                        ([b"x" * 257], b"revise-source: line rejected\n"),
-                    ):
-                        revise_source(b"main.au", 1, 1, chunks, 1, message)
-                        read_authored(revised, current_text, b"ENTERED-THIRD")
-                    write_source(b"text.txt", [b"one\ntwo\nthree\n", b"\x04"])
-                    revise_source(b"text.txt", 2, 1, [b"TWO", b"\x04"])
-                    read_authored(revised, b"one\nTWO\nthree\n", b"ENTERED-THIRD")
-                    revise_source(b"text.txt", 4, 0, [b"last\n", b"\x04"])
-                    read_authored(revised, b"one\nTWO\nthree\nlast\n", b"ENTERED-THIRD")
-                    revise_source(b"text.txt", 2, 2, [b"\x04"])
-                    read_authored(revised, b"one\nlast\n", b"ENTERED-THIRD")
-                    revise_source(b"text.txt", 1, 0, [b"zero\n", b"\x04"])
-                    read_authored(revised, b"zero\none\nlast\n", b"ENTERED-THIRD")
-                    revise_source(b"text.txt", 1, 3, [b"\x04"])
-                    read_authored(revised, b"", b"ENTERED-THIRD")
-                    empty_view = revision_result(b"text.txt", 0, b"")
-                    need(b"1: " not in empty_view, "Empty source must have no phantom line")
-                    revise_source(b"text.txt", 1, 0, [b"again\n", b"\x04"])
-                    read_authored(revised, b"again\n", b"ENTERED-THIRD")
-                    metrics["source_revision_view_replace_compile_insert_delete"] = True
-                    metrics["source_revision_range_cancel_unavailable_preserve"] = True
-                    raw = revision_result(b"rev-crlf.txt", 0, b"1: first\n2: second\n")
-                    need(b"1: first\r\n2: second\n" in raw, "View must preserve original CRLF")
-                    revise_source(b"rev-crlf.txt", 2, 1, [b"changed\n", b"\x04"])
-                    raw = revision_result(b"rev-crlf.txt", 0, b"1: first\n2: changed\n")
-                    need(b"1: first\r\n2: changed\n" in raw, "Untouched prefix lost original CRLF")
-                    revision_result(b"rev-tail.txt", 0, b"1: first\n2: tail\n[no final LF]\n")
-                    revision_result(b"rev-tail.txt 3 0", 1, b"revise-source: invalid range\n")
-                    revision_result(b"rev-tail.txt", 0, b"1: first\n2: tail\n[no final LF]\n")
-                    revise_source(b"rev-tail.txt", 2, 1, [b"\x04"])
-                    revision_result(b"rev-tail.txt", 0, b"1: first\n")
-                    revision_result(b"rev-bad.txt", 1, b"revise-source: invalid source\n")
-                    revision_result(b"rev-bad.txt 1 1", 1, b"revise-source: invalid source\n")
-                    run_command(
-                        "run probe file rev-bad.txt read @1 0",
-                        "exited status=0",
-                        b"2 read success 13 first\rbroken\n\n",
-                    )
-                    blanks = b"".join(f"{number}: \n".encode() for number in range(1, 16385))
-                    revision_result(b"rev-blank.txt", 0, blanks)
-                    # Exact file-boundary input is data in this private volume,
-                    # avoiding 16KiB of paced typing or a larger wait allowance.
-                    full_view = b"".join(f"{number}: ".encode() + b"x" * 255 + b"\n" for number in range(1, 65))
-                    revision_result(b"rev-full.txt", 0, full_view)
-                    revise_source(b"rev-full.txt", 1, 0, [b"\n", b"\x04"], 1, b"revise-source: file too large\n")
-                    revision_result(b"rev-full.txt", 0, full_view)
-                    revise_source(b"rev-full.txt", 1, 1, [b"\x04"])
-                    revise_source(b"rev-full.txt", 1, 0, [b"x" * 255 + b"\n", b"\x04"])
-                    revision_result(b"rev-full.txt", 0, full_view)
-                    metrics["source_revision_exact_file_bound_preserves_then_fits"] = True
-                    metrics["source_revision_original_crlf_tail_rejection_many_lines"] = True
                 run_command("run bin/aurorac --emit-object --target aurora sort.au -o sort.o", "exited status=0")
                 run_command("run bin/aurorac --link-object sort.o -o sorted", "exited status=0")
                 run_command("run sorted / sorted.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")
@@ -2565,33 +2614,6 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 )
                 command_upper(b"healthy after processes\n", "HEALTHY AFTER PROCESSES")
                 metrics["same_boot_compile_link_run"] = True
-                if args.program_cases:
-                    for line, status in (
-                        ("run wx", "invalid executable or arguments"),
-                        ("run interp", "invalid executable or arguments"),
-                        ("run oversize", "invalid executable or arguments"),
-                        ("run quota", "resource quota exceeded"),
-                        ("run privileged", "fault vector=13"),
-                        ("run lifecycle fault", "fault vector=6"),
-                        ("run hostile spin", "watchdog"),
-                    ):
-                        run_command(line, status)
-                        command_upper(b"healthy after child\n", "HEALTHY AFTER CHILD")
-                        run_command("run bin/sort / final.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")
-                    # Reuse after close and a foreign guessed id are ordinary
-                    # client data, not a kernel test hook.
-                    run_command(
-                        "run probe file input.txt close @1 read @1 0", "exited status=0", b"3 read invalid_handle 0 "
-                    )
-                    run_command("run probe read 65 0", "exited status=0", b"1 read invalid_handle 0 ")
-                    # One raw 64 KiB call crosses two authenticated service messages.
-                    # The existing client reopens and checks every committed byte.
-                    run_command("run raw-write", "exited status=0")
-                    run_command("run lifecycle rpc", "watchdog")
-                    run_command("run probe file tree/rpc-pending", "exited status=0", b"1 file not_found 0 ")
-                    run_command("run bin/sort / final.txt input.txt", "exited status=0", b"3 lines: 5 3 6\n")
-                    command_upper(b"healthy after hostile programs\n", "HEALTHY AFTER HOSTILE PROGRAMS")
-                    metrics["hostile_program_data"] = True
             finish_session()
     finally:
         cleanup_errors, _, unsettled = transport.finish(process, fds=(master, slave if slave != -1 else None))

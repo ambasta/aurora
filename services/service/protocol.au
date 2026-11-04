@@ -25,6 +25,33 @@ export namespace service {
         }
         return value;
     }
+    class BootstrapRecord {
+    public:
+        bool valid;
+        u64 volume_length;
+        u64 profile;
+        BootstrapRecord(bool accepted, u64 bytes, u64 selection) : valid(accepted), volume_length(bytes),
+            profile(selection) {
+        }
+    };
+    auto read_bootstrap(builtin::ServeSession& session, bool dual) -> BootstrapRecord {
+        const endpoint::Message initial = endpoint::exchange(session, "");
+        if (initial.status() != builtin::ServeStatus::request || initial.source() != 0u64 || initial.count() != 64u64) {
+            return BootstrapRecord(false, 0u64, 0u64);
+        }
+        std::BinaryBuffer64 bootstrap = std::BinaryBuffer64();
+        i64 at = 0;
+        while (at < 64) {
+            bootstrap.write_u8(at, endpoint::byte(session, u64(at)));
+            at = at + 1;
+        }
+        if (!service::bootstrap_shape(bootstrap.bytes(0, 64), dual)) {
+            return BootstrapRecord(false, 0u64, 0u64);
+        }
+        const std::ByteReadResult volume = std::read_le64(bootstrap.bytes(0, 64), 8);
+        const std::ByteReadResult selected = std::read_le64(bootstrap.bytes(0, 64), 16);
+        return BootstrapRecord(true, volume.value_or(0u64), selected.value_or(0u64));
+    }
     // Ordinary runtime writes arrive in at most 4096-byte messages. Stage each
     // bounded portion in a value, not a dynamically checked owner byte by byte.
     // Views never outlive a single Store call or cross an endpoint exchange.
@@ -294,5 +321,26 @@ export namespace service {
             .count = reply_count
         };
         return request.result(result);
+    }
+}
+
+export namespace service {
+    // Payload projection is shared without borrowing a span across owners.
+    auto copy_client_payload(service::Store& store, service::XfsFiles& disk, Response& response,
+        u64 count, bool disk_request) -> bool {
+        u64 byte = 0u64;
+        while (byte < count) {
+            u8 value = 0u8;
+            if (disk_request) {
+                value = disk.read_byte(byte);
+            } else {
+                value = store.read_byte(byte);
+            }
+            if (!response.set_byte(i64(64u64 + byte), value)) {
+                return false;
+            }
+            byte = byte + 1u64;
+        }
+        return true;
     }
 }

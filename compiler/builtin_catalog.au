@@ -26,7 +26,8 @@ export namespace compiler_catalog {
         WritableBlock,
         ExecutionEffects,
         ServiceBootstrapEffects,
-        InputStream
+        InputStream,
+        ReadOnlyBlocks
     };
     enum class ServiceOperation {
         Next,
@@ -83,7 +84,10 @@ export namespace compiler_catalog {
         BootstrapBegin,
         InputRead,
         HostEntries,
-        HostSeek
+        HostSeek,
+        BlocksRead,
+        BlocksByte,
+        BlocksDescriptor
     };
     // Catalog extents for the host's loose resolution quota.
     class Summary {
@@ -215,9 +219,12 @@ export namespace compiler_catalog {
     // Family 0 is always seeded. Optional families, including 12 (InputStream),
     // are seeded only when admitted syntax names one of their types.
     auto type_count() -> i64 {
-        return 66;
+        return 67;
     }
     auto type_kind(i64 type) -> compiler_resolver::ResolvedTypeKind {
+        if (type == 66) {
+            return compiler_resolver::ResolvedTypeKind::read_only_blocks;
+        }
         if (type == 64) {
             return compiler_resolver::ResolvedTypeKind::enum_value;
         }
@@ -320,6 +327,9 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::invalid;
     }
     auto type_family(i64 type) -> i64 {
+        if (type == 66) {
+            return 13;
+        }
         if (type == 64 || type == 65) {
             return 4;
         }
@@ -607,6 +617,9 @@ export namespace compiler_catalog {
         }
         if (type == 35) {
             return use_word(session, "builtin::WritableBlock", part, begin, end);
+        }
+        if (type == 66) {
+            return use_word(session, "builtin::ReadOnlyBlocks", part, begin, end);
         }
         if (type == 34) {
             return use_word(session, "builtin::ReadOnlyBlock", part, begin, end);
@@ -1041,7 +1054,7 @@ export namespace compiler_catalog {
     }
     auto operation_admitted(i64 operation) -> bool {
         return (operation >= 0 && operation < 47) || operation == 51 || operation == 52 || operation == 53 || operation
-            == 54;
+            == 54 || (operation >= 55 && operation <= 57);
     }
     auto catalog_byte(builtin::span<const u8> name, i64 index) -> i64 {
         if (index == -1) {
@@ -1605,9 +1618,12 @@ export namespace compiler_catalog {
 
     // Sealed service operations, indexed by ServiceOperation.
     auto operation_count() -> i64 {
-        return 55;
+        return 58;
     }
     auto operation_kind(i64 operation) -> i64 {
+        if (operation >= 55 && operation <= 57) {
+            return 12;
+        }
         if (operation == 52) {
             return 11;
         }
@@ -1645,6 +1661,9 @@ export namespace compiler_catalog {
     }
     // Catalog type of a capability kind.
     auto kind_type(i64 kind) -> i64 {
+        if (kind == 12) {
+            return 66;
+        }
         if (kind == 11) {
             return 61;
         }
@@ -1673,6 +1692,12 @@ export namespace compiler_catalog {
     }
     // Catalog type of the operation's result.
     auto operation_result(i64 operation) -> i64 {
+        if (operation >= 55 && operation <= 57) {
+            if (operation == 56) {
+                return 2;
+            }
+            return 1;
+        }
         if (operation == 52) {
             return 63;
         }
@@ -1744,6 +1769,12 @@ export namespace compiler_catalog {
         return 0;
     }
     auto parameter_count(i64 operation) -> i64 {
+        if (operation >= 55 && operation <= 57) {
+            if (operation == 55) {
+                return 2;
+            }
+            return 1;
+        }
         if (operation == 53) {
             return 3;
         }
@@ -1803,6 +1834,9 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::u64_value;
     }
     auto append_spelling(compiler_resolver::Session& session, i64 operation) -> i64 {
+        if (operation >= 55 && operation <= 57) {
+            return use_word(session, "read_sector;sector_byte;descriptor", operation - 55, -1, 0);
+        }
         if (operation == 53 || operation == 54) {
             return use_word(session, "system_entries;system_seek", operation - 53, -1, 0);
         }
@@ -1950,6 +1984,22 @@ export namespace compiler_catalog {
         }
         return groups;
     }
+    auto blocks_service_group() -> i64 {
+        return 131072;
+    }
+    auto serve_blocks_service_group() -> i64 {
+        return 262144;
+    }
+    auto blocks_groups(i64 groups, bool blocks, bool serve) -> i64 {
+        i64 result = groups;
+        if (blocks) {
+            result = result + blocks_service_group();
+            if (serve) {
+                result = result + serve_blocks_service_group();
+            }
+        }
+        return result;
+    }
     auto service_groups(bool call, bool port, bool serve, bool host, bool block, bool writer) -> i64 {
         i64 groups = base_service_groups();
         if (writer) {
@@ -1998,8 +2048,9 @@ export namespace compiler_catalog {
         }
         texts = texts + operation_count();
         Summary result = Summary(type_count(), texts, texts * maximum_word(), members, operation_count(), parameters);
-        result.set_policy(scalar_count(), input_groups(bootstrap_groups(execution_groups(service_groups(true, true,
-            true, true, true, true), true), true), true, true));
+        result.set_policy(scalar_count(),
+            input_groups(bootstrap_groups(execution_groups(blocks_groups(service_groups(true, true, true, true, true,
+            true), true, true), true), true), true, true));
         return result;
     }
 }

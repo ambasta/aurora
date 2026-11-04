@@ -16,7 +16,9 @@
    ExitBootServices.
 With --nvme-prefix, instead boot the explicit read-only NVMe/XFS production
 composition of that same image, checking its storage transcript, screen and
-unchanged private disk. --xfs-recovery selects the explicit recovery composition
+unchanged private disk. --xfs-dual uses two namespaces on that same controller,
+with independent malformed-volume cases and unchanged readonly backings.
+--xfs-recovery selects the explicit recovery composition
 on a private writable copy; this does not establish physical power-loss safety
 or physical-hardware support.
 --xfs-mounted uses the same production binaries with only a tiny source file
@@ -107,6 +109,60 @@ def golden(storage=False, clean=True, history=False, restart=False, exchange=Fal
                 re.sub(r"(?<!\S)(hello|pattern)(?!\S)", lambda match: names[match[0]], line) for line in data[key]
             ]
     return [item.encode("latin-1") for item in data["input"]], "\r\n".join(data["console"]).encode("latin-1")
+
+
+DUAL_HELLO = (b"Namespace 1 has distinct readonly bytes.", b"Namespace 2 has distinct readonly bytes.")
+
+
+def dual_golden(malformed):
+    """Reviewed client responses and fixture bytes, independent of the storage implementation."""
+    commands = []
+    expected = b"AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines\r\naurora> "
+
+    def row(command, response):
+        nonlocal expected
+        need(len(command) <= 64, "Dual command exceeds production line limit")
+        commands.append(command.encode() + b"\r")
+        expected += command.encode() + b"\r\n" + response + b"aurora> "
+
+    row("write memo retained", b"wrote memo: 8 bytes\r\n")
+    for index in (0, 1, 0, 1):
+        path = "/disk" if index == 0 else "/disk2"
+        valid = malformed != index + 1
+        row(
+            f"run bin/list-files {path}",
+            b"f hello\nf pattern\n\r\nrun: exited status=0\r\n"
+            if valid
+            else b"list-files: cannot open directory\n\r\nrun: exited status=1\r\n",
+        )
+        row(
+            f"run bin/cat {path} copy{index} hello",
+            b"hello 40\n\r\nrun: exited status=0\r\n"
+            if valid
+            else b"cannot open directory\n\r\nrun: exited status=1\r\n",
+        )
+        if valid:
+            # The existing compiled reader prints at most 32 bytes per read.
+            # Two offsets expose every byte of the independently created input.
+            row(
+                f"run probe file copy{index} read @1 0 read @1 32 read @1 40",
+                b"1 file success 40 #1 \n2 read success 40 "
+                + DUAL_HELLO[index][:32]
+                + b"\n3 read success 8 "
+                + DUAL_HELLO[index][32:]
+                + b"\n4 read success 0 \n\r\nrun: exited status=0\r\n",
+            )
+        row(
+            f"run bin/cat {path} {path}/denied hello",
+            b"cannot create output\n\r\nrun: exited status=1\r\n"
+            if valid
+            else b"cannot open directory\n\r\nrun: exited status=1\r\n",
+        )
+    row("run bin/list-files /disk3", b"list-files: cannot open directory\n\r\nrun: exited status=1\r\n")
+    row("run bin/cat / ram-copy input.txt", b"input.txt 17\n\r\nrun: exited status=0\r\n")
+    row("run bin/sort / sorted ram-copy", b"3 lines: 5 3 6\n\r\nrun: exited status=0\r\n")
+    row("cat memo", b"output> retained\r\n")
+    return commands, expected
 
 
 # This source also defines the independently compiled --mounted-object oracle.
@@ -545,7 +601,7 @@ def recovery_lifecycle(serial, state, restarted=False, exchange=False):
     )
 
 
-def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
+def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False, malformed=0):
     mounted = args.xfs_mounted and not mounted_cold
     recover = args.xfs_recovery is not None
     restart = args.recovery_owner_restart
@@ -557,7 +613,15 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
         args.xfs_exchange,
         args.xfs_nested,
     )
-    if args.storage_readonly:
+    if args.dual_probe:
+        commands = [b"run bin/sort\r"]
+        expected = (
+            b"AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines\r\n"
+            b"aurora> run bin/sort\r\n\r\nrun: file service unavailable\r\naurora> "
+        )
+    elif args.xfs_dual:
+        commands, expected = dual_golden(malformed)
+    elif args.storage_readonly:
         commands, expected = continuity_golden(
             args.storage_readonly, len(args.mounted_bytes), args.continuity_probe.stat().st_size
         )
@@ -572,7 +636,7 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
     subprocess.run([str(args.renderer), "--viewport", str(stream), str(model)], check=True, timeout=60)
     expected_view = model.read_bytes()
     need(len(expected_view) == VIEW_WIDTH * VIEW_HEIGHT * 4, "host viewport extent")
-    disk = before = None
+    disk = before = second_disk = second_before = None
     if args.nvme_prefix:
         from kernel_iommu_event_smoke import raw_esp
         from kernel_nvme_smoke import command, copy_xfs_history, file_hash
@@ -590,8 +654,24 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
         disk = (
             copy_xfs_history(args.xfs_image, directory / "storage.raw")
             if args.xfs_image
-            else create_image(directory / "storage.raw")
+            else create_image(directory / "storage.raw", **({"hello": DUAL_HELLO[0]} if args.xfs_dual else {}))
         )
+        if args.xfs_dual and not args.dual_singleton:
+            second_disk = create_image(directory / "storage2.raw", image_bytes=768 * 1024 * 1024, hello=DUAL_HELLO[1])
+            # The independent mkfs producer places both distinct payloads at the
+            # same LBA. Check a bounded prefix, not an XFS decoder in Python.
+            offsets = []
+            for backing, payload in zip((disk, second_disk), DUAL_HELLO):
+                with backing.open("rb") as image:
+                    prefix = image.read(1024 * 1024)
+                need(prefix.count(payload) == 1, "Unique dual-volume fixture payload")
+                offsets.append(prefix.index(payload))
+            need(offsets[0] == offsets[1] and offsets[0] % 512 == 0, "Dual fixture payloads must share an LBA")
+            if malformed:
+                # A corrupt magic rejects only this mount, without granting writes.
+                with (disk if malformed == 1 else second_disk).open("r+b") as image:
+                    need(image.write(b"BAD!") == 4, "Malformed volume fixture")
+            second_before = file_hash(second_disk)
         if not clean_storage and not args.xfs_image:
             # Synthetic missing-clean-marker negative for this exact producer,
             # not a genuine dirty transaction or a log-replay test.
@@ -620,8 +700,9 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
             copy_xfs_history(disk, directory / "before.raw")
         esp, variables = directory / "esp.raw", directory / "vars.fd"
         esp_source = args.build_dir / "esp"
-        if mounted:
-            # Add source input, never replace a shipped executable or kernel.
+        if mounted or (args.xfs_dual and not args.dual_probe):
+            # Add source input or the existing immutable reader fixture, never
+            # replace a shipped executable or kernel.
             import kernel_volume
 
             esp_source = directory / "source-esp"
@@ -635,16 +716,21 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
                 entries.append(
                     (data[names + name : names + name + length], data[payload + offset : payload + offset + size])
                 )
-            if args.storage_readonly:
+            if args.storage_readonly or args.xfs_dual:
                 need(not any(name == b"probe" for name, _ in entries), "Probe name already present")
-                entries.append((b"probe", args.continuity_probe.read_bytes()))
+                reader = (
+                    args.continuity_probe
+                    if args.storage_readonly
+                    else args.build_dir.parents[2] / "host-files-probe-aurora"
+                )
+                entries.append((b"probe", reader.read_bytes()))
             else:
                 need(not any(name == b"a" for name, _ in entries), "Tiny source name already present")
                 entries.append((b"a", MOUNTED_SOURCE.encode()))
             path.write_bytes(kernel_volume.volume(entries))
-            if not args.storage_readonly:
+            if not args.storage_readonly and not args.xfs_dual:
                 (directory / "source.au").write_text(MOUNTED_SOURCE)
-        if restart:
+        if restart or args.dual_probe:
             # Reuse the existing private designated-owner fixture; the production
             # kernel and recovery executable remain unchanged.
             spec = importlib.util.spec_from_file_location(
@@ -655,7 +741,10 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
             owner_directory = directory / "owner-fixture"
             owner_directory.mkdir()
             esp_source = pty_oracle.production_case_volume(
-                esp_source, args.build_dir.parents[2], owner_directory, "console-commit"
+                esp_source,
+                args.build_dir.parents[2],
+                owner_directory,
+                f"dual-{args.dual_probe}" if args.dual_probe else "console-commit",
             )
         raw_esp(esp_source, esp)
         shutil.copyfile(clean / "OVMF_VARS.fd", variables)
@@ -665,6 +754,8 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
     tty.setraw(slave)
     if disk:
         selection = "nvme-linux-6.12-recover" if recover else "nvme-linux-6.12-clean" if args.xfs_image else "nvme"
+        if args.xfs_dual:
+            selection = "nvme-dual-readonly"
         if mounted:
             selection = "nvme-linux-6.12-write"
         argv = command(
@@ -679,6 +770,7 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
             debug_exit=True,
             memory=PROCESS_MEMORY["production"],
             graphics=True,
+            second_disk=second_disk,
         )
     else:
         argv = transport.command(
@@ -704,7 +796,7 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
         if disk:
             marker = (
                 b"AURORA_PROCESS_DISK: "
-                + (b"ready" if clean_storage else b"unavailable")
+                + (b"ready" if clean_storage and not args.dual_probe else b"unavailable")
                 + (b" mounted\r\n" if mounted else b" readonly\r\n")
             )
             need(
@@ -723,6 +815,31 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
                 and b"AURORA_NVME_QUARANTINED:" not in channel.serial_bytes,
                 "Production read-only namespace",
             )
+            if args.xfs_dual:
+                if not args.dual_probe:
+                    mask = 3 if malformed == 0 else 2 if malformed == 1 else 1
+                    marker2 = f"AURORA_DUAL_STORAGE_READY: mask={mask}\r\n".encode()
+                    need(
+                        channel.serial_bytes.count(marker2) == 1
+                        and channel.serial_bytes.find(marker2) < channel.serial_bytes.find(PROMPT),
+                        "Independent mount readiness must precede first prompt",
+                    )
+                count = 1 if args.dual_singleton else 2
+                need(
+                    channel.serial_bytes.count(f"AURORA_NVME_VOLUMES: count={count} readonly=1\r\n".encode()) == 1,
+                    "Exact independently identified readonly namespace count",
+                )
+                if second_disk:
+                    ready2 = (
+                        f"AURORA_NVME_READY: nsid=3 blocks={second_disk.stat().st_size // 512} "
+                        "lba-bytes=512 queue-entries=2\r\n"
+                    )
+                    need(channel.serial_bytes.count(ready2.encode()) == 1, "Second readonly namespace identity")
+                else:
+                    need(
+                        channel.serial_bytes.count(b"AURORA_NVME_READY:") == 1,
+                        "Singleton cannot invent another namespace",
+                    )
             if recover:
                 recovery_lifecycle(channel.serial_bytes, args.xfs_recovery, exchange=args.xfs_exchange)
         for item in commands:
@@ -775,14 +892,53 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
         channel.drain_serial()
         if disk:
             forbidden = (b"AURORA_NVME_QUARANTINED:",)
-            if not restart:
+            if not restart and not args.dual_probe:
                 forbidden += (b"AURORA_PROCESS_DISK: lost", b"AURORA_FILE_SERVICE_LOST:")
             forbidden += (
-                (b"AURORA_PROCESS_DISK: unavailable", b" disk=unavailable")
-                if clean_storage
-                else (b"AURORA_PROCESS_DISK: ready", b" disk=ready")
+                ()
+                if args.xfs_dual
+                else (
+                    (b"AURORA_PROCESS_DISK: unavailable", b" disk=unavailable")
+                    if clean_storage
+                    else (b"AURORA_PROCESS_DISK: ready", b" disk=ready")
+                )
             )
             need(not any(marker in channel.serial_bytes for marker in forbidden), "Production storage state changed")
+        if args.dual_probe:
+            # Both owners are actually admitted and retired. Returning to the
+            # console and creating generation 2 crosses the native all-frame
+            # cleanup audit, not a synthetic reclamation acknowledgement.
+            losses = re.findall(
+                rb"AURORA_FILE_SERVICE_LOST: generation=(\d+) transaction=0 "
+                rb"cause=(call operation=\d+|exit status=\d+) volatile_data=lost\r\n",
+                channel.serial_bytes,
+            )
+            operation = 24 if args.dual_probe in (41, 43, 44) else 23
+            first = b"exit status=0" if args.dual_probe == 42 else f"call operation={operation}".encode()
+            need(
+                losses == [(b"1", first), (b"2", f"call operation={operation}".encode())],
+                "Actual grant probe terminals and fresh-generation retry",
+            )
+            need(
+                channel.serial_bytes.count(b"AURORA_FILE_SERVICE_LOST:") == 2
+                and re.findall(rb"AURORA_PROCESS_LOADED: run=(\d+) regions=", channel.serial_bytes) == [b"1", b"2"],
+                "Only the two designated owners may execute",
+            )
+            need(
+                not any(
+                    marker in channel.serial_bytes
+                    for marker in (
+                        b"AURORA_FILE_SERVICE_READY:",
+                        b"AURORA_DUAL_STORAGE_READY:",
+                        b"AURORA_PROCESS_FAIL",
+                        b"AURORA_PROCESS_KERNEL_FAULT",
+                        b"AURORA_PROCESS_REJECTED:",
+                        b"AURORA_UEFI_RUNTIME_FAIL:",
+                        b"AURORA_NVME_QUARANTINED:",
+                    )
+                ),
+                "Grant refusal must remain unpublished, local and recoverable",
+            )
         if recover:
             # Ordinary execution and repeated runtime attachment never mint another writer.
             recovery_lifecycle(channel.serial_bytes, args.xfs_recovery, restart, args.xfs_exchange)
@@ -854,7 +1010,7 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
         need(transport.wait_exit(proc, 10) == 33, "QEMU did not exit cleanly")
         channel.drain_serial()
         need(b"\r\nAURORA_CONSOLE_EXIT\r\n" in channel.serial_bytes[begin:], "Console exit response")
-        if args.storage_readonly:
+        if args.storage_readonly or args.dual_probe:
             need(
                 channel.serial_bytes.count(b"AURORA_RESIDENT_OWNER_FINISHED: clean=1 reclaimed=1\r\n") == 1,
                 "Final retained owner was not consumed exactly once",
@@ -895,6 +1051,8 @@ def screen_guest(args, directory, *, clean_storage=True, mounted_cold=False):
                 recovery_delta(directory, args.xfs_recovery, before, args.xfs_exchange)
             else:
                 need(file_hash(disk) == before, "Readonly production XFS image changed")
+                if second_disk:
+                    need(file_hash(second_disk) == second_before, "Second readonly XFS image changed")
             # Failure cleanup may terminate QEMU and produce its SIGTERM notice.
             # Preserve the original failed oracle; successful runs still require
             # completely empty diagnostics.
@@ -929,6 +1087,22 @@ def main():
         action="store_true",
         help="private real-mount owner loss/restart fixture after clean recovery, not a HostFiles restart test",
     )
+    parser.add_argument(
+        "--xfs-dual",
+        action="store_true",
+        help="two readonly namespaces, independent malformed mounts and cache alternation",
+    )
+    parser.add_argument(
+        "--dual-singleton",
+        action="store_true",
+        help="new readonly volume grant with only one namespace; /disk2 stays reserved",
+    )
+    parser.add_argument(
+        "--dual-probe",
+        type=int,
+        choices=range(40, 46),
+        help="existing immutable service probe on two readonly namespaces",
+    )
     parser.add_argument("--xfs-nested", action="store_true", help="read-only shortform directories and shipped clients")
     parser.add_argument("--xfs-mounted", action="store_true", help="one tiny compiler commit, then readonly cold boot")
     parser.add_argument(
@@ -941,6 +1115,19 @@ def main():
     parser.add_argument("--mounted-object", type=Path, help="independent Aurora-target object of MOUNTED_SOURCE")
     parser.add_argument("--xfs-db", type=Path, help="pinned read-only xfs_db metadata oracle for mounted mode")
     args = parser.parse_args()
+    need(not args.dual_probe or args.xfs_dual, "Dual grant probe requires --xfs-dual")
+    need(
+        not args.dual_singleton or (args.xfs_dual and not args.dual_probe),
+        "Singleton requires dual readonly mode without a two-volume probe",
+    )
+    need(
+        not args.xfs_dual
+        or (
+            args.nvme_prefix
+            and not (args.xfs_image or args.xfs_nested or args.xfs_mounted or args.xfs_recovery or args.xfs_history)
+        ),
+        "Dual readonly requires NVMe and cannot combine with other storage modes",
+    )
     need(
         not args.xfs_nested or not (args.xfs_mounted or args.xfs_history or args.xfs_recovery),
         "Choose nested, mounted, history or recovery",
@@ -968,6 +1155,27 @@ def main():
     if args.nvme_prefix:
         evidence = ROOT / "build/program-console-evidence"
         evidence.mkdir(parents=True, exist_ok=True)
+        if args.xfs_dual:
+            for malformed in (2,) if args.dual_singleton else (0,) if args.dual_probe else (0, 1, 2):
+                label = (
+                    "singleton"
+                    if args.dual_singleton
+                    else f"probe-{args.dual_probe}"
+                    if args.dual_probe
+                    else str(malformed)
+                )
+                directory = Path(tempfile.mkdtemp(prefix=f"production-dual-{label}-", dir=evidence))
+                print("Production dual-volume guest: " + str(directory), flush=True)
+                screen_guest(args, directory, malformed=malformed)
+            if args.dual_singleton:
+                print(
+                    "PASS: singleton readonly volume grant, reserved /disk2, exact client bytes and unchanged backing"
+                )
+            elif args.dual_probe:
+                print(f"PASS: dual grant probe {args.dual_probe}, owner loss/retry, reclamation and unchanged backings")
+            else:
+                print("PASS: dual readonly namespaces, isolated malformed mounts, exact client bytes and framebuffer")
+            return
         if args.xfs_mounted:
             if args.storage_readonly:
                 need(args.continuity_probe.is_file(), "Continuity probe unavailable")

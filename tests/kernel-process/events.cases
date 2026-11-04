@@ -124,3 +124,27 @@ directory_reply 65 0 2 0 1 0 0 0 0 97
 directory_reply 66 0 1 0 1 0 0 0 0 97 98
 directory_reply 63 0 0 0 0 0 0 0 0
 directory_reply 320 0 256 0 1 0 0 0 0
+
+# Readonly reply device and handle partitions.
+open_reply 0 105 0 3 1 0 0
+open_reply 0 120 0 3 1 0 0
+open_reply 0 113 0 4 1 0 0
+open_reply 1 105 0 3 1 0 0
+open_reply 1 112 0 3 1 0 0
+open_reply 1 113 0 3 1 0 0
+open_reply 1 112 0 4 1 0 0
+open_reply 1 113 0 4 1 0 0
+open_reply 1 120 0 4 1 0 0
+open_reply 1 121 0 4 1 0 0
+open_reply 1 104 0 3 1 0 0
+open_reply 1 105 0 5 1 0 0
+open_reply 1 105 0 4 1 0 0
+open_reply 1 113 0 3 1 0 0
+open_reply 1 65 0 1 1 0 0
+open_reply 1 96 0 2 1 0 0
+open_reply 1 97 0 2 1 0 0
+open_reply 1 113 0 4 0 0 0
+open_reply 1 113 0 4 1 4 0
+open_reply 1 113 0 4 1 0 1
+open_reply 1 49 0 4 1 0 0
+open_reply 1 113 9223372036854775808 4 1 0 0

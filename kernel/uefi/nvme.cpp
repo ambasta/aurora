@@ -34,8 +34,12 @@ Backing backing;
 std::array<std::byte, Handoff::header> saved_handoff{};
 U64 arena_base{}, root_base{}, table_count{}, nvme_base{}, config_base{};
 volatile U64 *window_slot{};
-bool begun{}, exposed{}, mapped{}, readonly_open{}, cache_valid{};
+bool begun{}, exposed{}, mapped{}, readonly_open{};
+NvmeReadCache cache;
 U64 process_root{}, cache_lba{};
+bool dual_open{};
+unsigned volume_count{};
+constinit std::array<std::optional<NvmeNamespace>, 2> volumes;
 unsigned cache_sectors{};
 std::string_view failure_reason{};
 constinit std::optional<NvmeNamespace> admitted_namespace;
@@ -251,7 +255,7 @@ auto publish() -> void {
     // Revoke transport policy first. A source fault or broken borrow instead
     // fail-stops; it never claims this transition or adjacent effects ran.
     static_cast<void>(transport.poison());
-    cache_valid = false;
+    cache.invalidate();
     static_cast<void>(recovery.fail());
     static_cast<void>(mounted.fail());
     failure_reason = reason;
@@ -374,7 +378,8 @@ auto read_check(const NvmeNamespace &ns, bool written) -> void {
     Serial::text("\r\n");
 }
 #endif
-auto open(U64 arena, const Bytes &handoff, const NvmeControllerAdmission &admission, bool readonly) -> void {
+auto open(U64 arena, const Bytes &handoff, const NvmeControllerAdmission &admission, bool readonly, bool dual = false)
+    -> void {
     require(!begun, "one-shot");
     begun = true;
     arena_base = arena;
@@ -407,17 +412,25 @@ auto open(U64 arena, const Bytes &handoff, const NvmeControllerAdmission &admiss
                 controller.get(513, 1) == 0x44 && controller.get(516, 4) >= 1 && (controller.get(525, 1) & 1),
             "identify-controller");
     command(0, NvmeCommand::active_namespaces());
-    require(Bytes{backing.io[Backing::read_data]}.get(0, 4) == 1, "namespace-list");
-    for (unsigned i = 4; i < 4096; ++i)
-        require(backing.io[Backing::read_data][i] == std::byte{}, "namespace-list");
-    command(0, NvmeCommand::identify(false));
-    admitted_namespace = NvmeNamespace::parse(backing.io[Backing::read_data]);
-    require(admitted_namespace && admitted_namespace->blocks() <= (1ULL << 32), "namespace-format");
+    const auto active = NvmeNamespaceList::parse(backing.io[Backing::read_data], dual);
+    require(active.has_value(), "namespace-list");
+    const auto count = active->count();
+    for (unsigned i = 0; i < count; ++i) {
+        command(0, NvmeCommand::identify(false, active->id(i)));
+        volumes[i] = NvmeNamespace::parse(backing.io[Backing::read_data], active->id(i));
+        require(volumes[i] && volumes[i]->blocks() <= (1ULL << 32), "namespace-format");
+    }
+    admitted_namespace = volumes[0];
+    volume_count = count;
     command(0, NvmeCommand::create_queue(false));
     command(0, NvmeCommand::create_queue(true));
-    Serial::text("AURORA_NVME_READY: nsid=1 blocks=");
-    Serial::number(admitted_namespace->blocks());
-    Serial::text(" lba-bytes=512 queue-entries=2\r\n");
+    for (unsigned i = 0; i < count; ++i) {
+        Serial::text("AURORA_NVME_READY: nsid=");
+        Serial::number(volumes[i]->nsid());
+        Serial::text(" blocks=");
+        Serial::number(volumes[i]->blocks());
+        Serial::text(" lba-bytes=512 queue-entries=2\r\n");
+    }
 }
 } // namespace
 
@@ -427,8 +440,8 @@ auto initialize_nvme_readonly(U64 arena, const Bytes &handoff, const NvmeControl
 }
 namespace {
 auto readonly_count_entered() -> U64 {
-    return readonly_open && recovery.permits_readonly() && mounted.permits_readonly() && !transport.poisoned() &&
-                   admitted_namespace
+    return readonly_open && !dual_open && recovery.permits_readonly() && mounted.permits_readonly() &&
+                   !transport.poisoned() && admitted_namespace
                ? admitted_namespace->blocks()
                : 0;
 }
@@ -444,34 +457,42 @@ auto clear(std::span<std::byte, 512> output) -> void {
     for (auto &byte : output)
         byte = std::byte{};
 }
-auto read_sector(U64 lba, std::span<std::byte, 512> output, bool mounted_read = false) -> NvmeReadStatus {
+auto read_sector(U64 lba,
+                 std::span<std::byte, 512> output,
+                 bool mounted_read = false,
+                 const NvmeNamespace *selected = nullptr,
+                 U64 generation = 0) -> NvmeReadStatus {
     clear(output);
     if (transport.poisoned())
         return NvmeReadStatus::failed;
     // The caller's broker-authenticated scope already binds this exact root.
     // Every source borrow ends before DMA, MMIO or the returned output copy.
     require(process_root && closed(), "readonly-context");
-    if (!admitted_namespace->contains(lba, 1))
+    const auto &ns = selected ? *selected : *admitted_namespace;
+    if (!ns.contains(lba, 1))
         return NvmeReadStatus::out_of_range;
-    const bool miss = !cache_valid || lba < cache_lba || lba - cache_lba >= cache_sectors;
+    const bool miss = !cache.hit(config_base, ns.nsid(), generation, lba);
     if (mounted_read && !mounted.permit_read(static_cast<unsigned>(transport.remaining(1)), miss))
         return NvmeReadStatus::unavailable;
     if (miss) {
+        cache.invalidate();
+        // Budget exhaustion is ordinary unavailability, never a failed reserve.
+        if (selected && !transport.remaining(1))
+            return NvmeReadStatus::unavailable;
         if (recovery.phase() == NvmeRecoveryPhase::Phase::writer &&
             !recovery.permit_read(static_cast<unsigned>(transport.remaining(1))))
             return NvmeReadStatus::unavailable;
-        cache_valid = false;
         cache_lba = lba - lba % 8;
-        const auto remaining = admitted_namespace->blocks() - cache_lba;
+        const auto remaining = ns.blocks() - cache_lba;
         cache_sectors = static_cast<unsigned>(remaining < 8 ? remaining : 8);
-        const auto read = NvmeCommand::io(*admitted_namespace, cache_lba, false, cache_sectors);
+        const auto read = NvmeCommand::io(ns, cache_lba, false, cache_sectors);
         require(read.has_value(), "readonly-range");
         for (auto &byte : backing.io[Backing::read_data])
             byte = std::byte{0xa5};
         if (!execute(1, *read))
             return NvmeReadStatus::failed;
         guard(backing.io[Backing::read_data], cache_sectors * 512);
-        cache_valid = true;
+        cache.publish(config_base, ns.nsid(), generation, cache_lba, cache_sectors);
     }
     const auto offset = static_cast<unsigned>((lba - cache_lba) * 512);
     for (unsigned i = 0; i < 512; ++i)
@@ -482,7 +503,7 @@ auto read_sector(U64 lba, std::span<std::byte, 512> output, bool mounted_read = 
 auto write_sector_entered(U64 lba, std::span<const std::byte, 512> input) -> NvmeReadStatus {
     const auto write = NvmeCommand::io(*admitted_namespace, lba, true);
     require(write.has_value(), "admitted-write-range");
-    cache_valid = false;
+    cache.invalidate();
     for (unsigned i = 0; i < 4096; ++i)
         backing.io[Backing::write_data][i] = i < 512 ? input[i] : std::byte{0xa5};
     if (!execute(1, *write))
@@ -511,7 +532,58 @@ auto nvme_read_sector(const NvmeReadContext &context, U64 lba, std::span<std::by
     const ProcessScope scope(context.root(), context.generation());
     if (!readonly_count_entered())
         return NvmeReadStatus::unavailable;
-    return read_sector(lba, output);
+    return read_sector(lba, output, false, nullptr, context.generation());
+}
+auto initialize_nvme_dual_readonly(U64 arena, const Bytes &handoff, const NvmeControllerAdmission &admission) -> void {
+    open(arena, handoff, admission, true, true);
+    dual_open = readonly_open = true;
+    Serial::text("AURORA_NVME_VOLUMES: count=");
+    Serial::number(volume_count);
+    Serial::text(" readonly=1\r\n");
+}
+auto nvme_volume_count() -> unsigned {
+    if (!transport.created())
+        return 0;
+    require(!process_root, "volumes-query-root");
+    return dual_open && readonly_open && !transport.poisoned() ? volume_count : 0;
+}
+auto nvme_volume_identity(unsigned slot, unsigned field) -> U64 {
+    if (slot >= nvme_volume_count())
+        return 0;
+    return field == 0 ? config_base : field == 1 ? volumes[slot]->nsid() : field == 2 ? volumes[slot]->blocks() : 0;
+}
+namespace {
+auto authenticated_volume(const NvmeVolumeContext &context) -> const NvmeNamespace * {
+    if (!dual_open || !readonly_open || transport.poisoned() || context.controller() != config_base)
+        return nullptr;
+    for (unsigned i = 0; i < volume_count; ++i)
+        if (volumes[i]->nsid() == context.nsid() && volumes[i]->blocks() == context.sectors())
+            return &*volumes[i];
+    return nullptr;
+}
+} // namespace
+auto nvme_volume_count(const NvmeVolumeContext &context) -> U64 {
+    if (!transport.created())
+        return 0;
+    const ProcessScope scope(context.root(), context.generation());
+    const auto *ns = authenticated_volume(context);
+    return ns ? ns->blocks() : 0;
+}
+auto nvme_volume_budget(const NvmeVolumeContext &context) -> unsigned {
+    if (!transport.created())
+        return 0;
+    const ProcessScope scope(context.root(), context.generation());
+    return authenticated_volume(context) ? static_cast<unsigned>(transport.remaining(1)) : 0;
+}
+auto nvme_volume_read(const NvmeVolumeContext &context, U64 lba, std::span<std::byte, 512> output) -> NvmeReadStatus {
+    clear(output);
+    if (!transport.created())
+        return NvmeReadStatus::unavailable;
+    const ProcessScope scope(context.root(), context.generation());
+    const auto *ns = authenticated_volume(context);
+    if (!ns)
+        return transport.poisoned() ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
+    return read_sector(lba, output, false, ns, context.generation());
 }
 auto initialize_nvme_recovery(U64 arena, const Bytes &handoff, const NvmeControllerAdmission &admission) -> void {
     require(recovery.begin(), "recovery-one-shot");
@@ -582,7 +654,7 @@ namespace {
 // just the write-data leaf and wait for a fresh invalidation completion. Queue
 // and read mappings and every DMA/IOMMU page remain pinned for this boot.
 auto revoke_write_data() -> bool {
-    cache_valid = false;
+    cache.invalidate();
     const auto leaf = address(backing.io[Backing::write_data].data()) | 1 | read_permission;
     require(Bytes{backing.translations}.get(0x7000 / 4096 * 8) == leaf, "writer-write-leaf");
     put(backing.translations, 0x7000 / 4096 * 8, 0);
@@ -618,14 +690,14 @@ auto nvme_recovery_retired() -> bool {
     if (transport.poisoned() || !recovery.retired())
         return false;
     require(!process_root && closed() && Bytes{backing.translations}.get(56) == 0, "recovery-retired");
-    cache_valid = false;
+    cache.invalidate();
     readonly_open = true;
     return true;
 }
 auto nvme_recovery_abandon() -> void {
     readonly_open = false;
     static_cast<void>(recovery.fail());
-    cache_valid = false;
+    cache.invalidate();
 }
 auto initialize_nvme_mounted(U64 arena, const Bytes &handoff, const NvmeControllerAdmission &admission) -> void {
     require(recovery.phase() == NvmeRecoveryPhase::Phase::cold && mounted.begin(), "mounted-one-shot");
@@ -729,7 +801,7 @@ auto nvme_mounted_retired() -> bool {
     if (!mounted.retired())
         return false;
     require(!process_root && closed() && Bytes{backing.translations}.get(56) == 0, "mounted-retired");
-    cache_valid = false;
+    cache.invalidate();
     readonly_open = true;
     return true;
 }
@@ -739,7 +811,7 @@ auto nvme_mounted_readonly() -> bool {
 auto nvme_mounted_abandon() -> void {
     readonly_open = false;
     static_cast<void>(mounted.fail());
-    cache_valid = false;
+    cache.invalidate();
 }
 #if !defined(AURORA_PROCESS_FIXTURE) && !defined(AURORA_PRODUCTION)
 [[noreturn]] auto run_nvme(U64 arena, const Bytes &handoff, const NvmeAdmission &admission) -> void {

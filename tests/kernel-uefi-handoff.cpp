@@ -221,7 +221,7 @@ int main() {
     need(!expected_flags(Handoff::production_bar_record_offset, Bytes{good}) && !Handoff::bar(Bytes{good}));
     BootStorageSelection boot;
     need(!boot.claim_recovery());
-    need(!boot.select(false, 2) && !boot.select(true, 4));
+    need(!boot.select(false, 2) && !boot.select(true, 5));
     need(boot.select(true, 2) && boot.block() && boot.readonly_profile() == 1 && boot.claim_recovery());
     // Reattachment and owner loss do not replenish the boot-global claim.
     need(boot.select(true, 2) && !boot.claim_recovery());
@@ -239,6 +239,10 @@ int main() {
          mounted.claim_mounted());
     need(mounted.select(true, 3) && !mounted.claim_mounted() && !mounted.claim_recovery());
     need(!mounted.select(true, 2) && !mounted.select(false, 0) && !mounted.claim_mounted());
+    BootStorageSelection dual;
+    need(dual.select(true, 4) && dual.dual() && dual.block() && dual.readonly_profile() == 0 && !dual.mounted() &&
+         !dual.claim_mounted() && !dual.claim_recovery());
+    need(dual.select(true, 4) && !dual.select(true, 0) && !dual.select(true, 3));
     BootStorageSelection ram;
     need(ram.select(false, 0) && !ram.block() && ram.readonly_profile() == 0 && !ram.select(true, 0) &&
          !ram.claim_recovery());
@@ -251,7 +255,10 @@ int main() {
     auto mounted_storage = storage;
     put(mounted_storage, Handoff::readonly_profile_word, 3);
     need(valid(mounted_storage));
-    for (const Field field : {Field{152, 8, 4}, Field{152, 8, UINT64_MAX}, Field{176, 8, 1}, Field{160, 8, 0}}) {
+    auto dual_storage = storage;
+    put(dual_storage, Handoff::readonly_profile_word, 4);
+    need(valid(dual_storage));
+    for (const Field field : {Field{152, 8, 5}, Field{152, 8, UINT64_MAX}, Field{176, 8, 1}, Field{160, 8, 0}}) {
         auto bad = clean_storage;
         put(bad, field.offset, field.value, field.width);
         need(!valid(bad));
@@ -282,6 +289,33 @@ int main() {
     for (std::size_t at = 0; at < choice.size(); ++at) {
         auto bad = choice;
         bad[at] ^= std::byte{1};
+        need(!fw_cfg::FwCfg::storage_word(bad));
+    }
+    for (std::size_t size = 0; size <= 24; ++size)
+        need(fw_cfg::FwCfg::storage_size(size) == (size == 4 || size == 18 || size == 21 || size == 23));
+    need(!fw_cfg::FwCfg::storage_capture(fw_cfg::Storage::ram));
+    need(fw_cfg::FwCfg::storage_profile(fw_cfg::Storage::ram) == 0);
+    for (unsigned selected = 1; selected <= 5; ++selected) {
+        const auto storage_choice = static_cast<fw_cfg::Storage>(selected);
+        need(fw_cfg::FwCfg::storage_capture(storage_choice));
+        need(fw_cfg::FwCfg::storage_profile(storage_choice) == selected - 1);
+    }
+    constexpr char dual_choice[] = "nvme-dual-readonly";
+    const auto dual_bytes = std::as_bytes(std::span{dual_choice});
+    const auto dual_selected = fw_cfg::FwCfg::storage_word(dual_bytes.first(18));
+    need(dual_selected == fw_cfg::Storage::nvme_dual_readonly);
+    need(fw_cfg::FwCfg::storage_capture(*dual_selected) && fw_cfg::FwCfg::storage_profile(*dual_selected) == 4);
+    need(!fw_cfg::FwCfg::storage_word(dual_bytes));
+    for (std::size_t size = 0; size < 18; ++size)
+        need(fw_cfg::FwCfg::storage_word(dual_bytes.first(size)) ==
+             (size == 4 ? std::optional{fw_cfg::Storage::nvme} : std::nullopt));
+    for (std::size_t at = 0; at < 18; ++at) {
+        std::array<std::byte, 18> bad{};
+        for (std::size_t i = 0; i < bad.size(); ++i)
+            bad[i] = dual_bytes[i];
+        bad[at] ^= std::byte{1};
+        need(!fw_cfg::FwCfg::storage_word(bad));
+        bad[at] = std::byte{};
         need(!fw_cfg::FwCfg::storage_word(bad));
     }
     constexpr char clean_choice[] = "nvme-linux-6.12-clean";

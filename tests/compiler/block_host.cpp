@@ -180,9 +180,96 @@ int writer_test() {
     return writer.before == 0x123456789abcdef0ULL && writer.after == 0xfedcba9876543210ULL && !writer.reserved ? 0 : 10;
 }
 
+struct BlocksEntry {
+    std::uint64_t grant, generation, slot, lba;
+};
+extern "C" std::uint64_t blocks_read_entry(const BlocksEntry *);
+extern "C" std::uint64_t blocks_byte_entry(const BlocksEntry *);
+extern "C" std::uint64_t blocks_descriptor_entry(const BlocksEntry *);
+void blocks_kernel(greg_t *r) {
+    if (r[REG_RDX] != 191)
+        _exit(70);
+    if (r[REG_RAX] == 24) {
+        if (r[REG_RDI] || r[REG_R10] || r[REG_RSI] < 0 || r[REG_RSI] > 5)
+            _exit(71);
+        constexpr std::array<std::uint64_t, 6> descriptors{2, 60000, 128, 301, 256, 302};
+        r[REG_RAX] = static_cast<greg_t>(descriptors[static_cast<unsigned>(r[REG_RSI])]);
+        r[REG_RDX] = mode == 208 ? 1 : 0;
+    } else {
+        if (r[REG_RAX] != 23 || r[REG_RDI] != reinterpret_cast<greg_t>(window.bytes.data()) || r[REG_RSI] != 7 ||
+            r[REG_R10] < 0 || r[REG_R10] > 1 || window.status != 3)
+            _exit(72);
+        for (auto byte : window.bytes)
+            if (byte)
+                _exit(73);
+        const auto slot = static_cast<unsigned>(r[REG_R10]);
+        r[REG_RAX] = mode == 201 || mode == 205 ? 1 : 0;
+        r[REG_RDX] = r[REG_RAX] ? 0 : 512;
+        if (!r[REG_RAX]) {
+            window.bytes[0] = static_cast<unsigned char>(90 + slot);
+            window.bytes[511] = static_cast<unsigned char>(51 + slot);
+        }
+        if (mode == 202)
+            r[REG_RAX] = 4;
+        if (mode == 203)
+            r[REG_RAX] = 0x100000000ULL;
+        if (mode == 204)
+            r[REG_RDX] = 511;
+        if (mode == 205)
+            window.bytes[511] = 1;
+        if (mode == 206)
+            r[REG_RDX] = 0x100000000ULL;
+    }
+    ++calls;
+    r[REG_RIP] += 2;
+}
+int blocks_test() {
+    window = Window{2, 3, {}};
+    BlocksEntry entry{reinterpret_cast<std::uint64_t>(&window), 191, 0, 7};
+    if (mode == 207) {
+        entry.slot = 2;
+        blocks_read_entry(&entry);
+        return 1;
+    }
+    if (mode == 208) {
+        blocks_descriptor_entry(&entry);
+        return 1;
+    }
+    constexpr std::array<std::uint64_t, 6> descriptors{2, 60000, 128, 301, 256, 302};
+    for (unsigned i = 0; i < descriptors.size(); ++i) {
+        entry.slot = i;
+        if (blocks_descriptor_entry(&entry) != descriptors[i])
+            return 2;
+    }
+    for (unsigned i = 0; i < 2; ++i) {
+        entry.slot = i;
+        if (blocks_read_entry(&entry) != (mode == 201 ? 1u : 0u))
+            return 3;
+        if (mode == 201) {
+            for (auto byte : window.bytes)
+                if (byte)
+                    return 4;
+        } else {
+            entry.slot = 0;
+            if (blocks_byte_entry(&entry) != 90 + i)
+                return 5;
+            entry.slot = 511;
+            if (blocks_byte_entry(&entry) != 51 + i)
+                return 6;
+        }
+    }
+    return calls == 8 ? 0 : 7;
+}
+
 void kernel(int, siginfo_t *, void *raw) {
     auto &r = static_cast<ucontext_t *>(raw)->uc_mcontext.gregs;
     const auto *instruction = reinterpret_cast<const unsigned char *>(r[REG_RIP]);
+    if (mode >= 200) {
+        if (instruction[0] != 0xcd || instruction[1] != 0x83)
+            _exit(74);
+        blocks_kernel(r);
+        return;
+    }
     if (mode >= 100) {
         if (instruction[0] != 0xcd || instruction[1] != 0x83)
             _exit(84);
@@ -247,6 +334,8 @@ int main(int argc, char **argv) {
     sigemptyset(&action.sa_mask);
     if (sigaction(SIGSEGV, &action, nullptr) != 0)
         return 92;
+    if (mode >= 200)
+        return blocks_test();
     if (mode >= 100)
         return writer_test();
     Entry entry{reinterpret_cast<std::uint64_t>(&window), mode == 3 ? 0u : 91u, mode};

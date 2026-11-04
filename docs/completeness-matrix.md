@@ -258,3 +258,9 @@ relations against the compiler's stack/ABI facts.
 
 Next dependencies: [roadmap](roadmap.md). Required checks:
 [development and qualification](developer-test-contract.md).
+
+The bounded dual-readonly storage composition separates up to two namespace
+identities, source mounts and file-handle domains on one admitted NVMe controller.
+It retains shared controller failure and finite command-ID budgets, with no
+multi-controller isolation, hotplug, reset or DMA-page reclamation claim. See the
+[storage contract](../storage/README.md#bounded-dual-readonly-composition).
