@@ -216,6 +216,8 @@ def validate_native_abi(facts, source):
                 "kernel::MemoryVerdict",
                 "kernel::BudgetVerdict",
                 "kernel::BudgetCharge",
+                "kernel::TransportStage",
+                "kernel::TransportCompletionKind",
                 "kernel::SchedulerPhase",
                 "kernel::SchedulerSelect",
                 "kernel::SchedulerFinish",
@@ -380,6 +382,44 @@ def validate_native_abi(facts, source):
             ("complete", [], "bool", False),
         ):
             borrowed_entry(nominal, "scheduler_owner_" + name, tail, result, mutable)
+
+    if "# RETAINED_NVME_TRANSPORT_ABI:" in source:
+        nominal = retained_root("kernel::TransportOwner", reservation=128)
+        enum("kernel::TransportStage", "idle reserved submitted completion_selected poisoned")
+        enum("kernel::TransportCompletionKind", "rejected complete")
+        record(
+            "kernel::TransportObservation",
+            40,
+            [
+                (name, "u64", 0)
+                for name in ("first_last_word", "result_word", "reserved_word", "position_word", "second_last_word")
+            ],
+        )
+        entry("nvme_transport_owner_create", [], "kernel::TransportOwner")
+        for name, tail, result, mutable in (
+            ("reserve", ["u64", "u64"], "bool", True),
+            ("published", ["u64", "u64"], "bool", True),
+            (
+                "accept_completion",
+                ["u64", "u64", "kernel::TransportObservation"],
+                "kernel::TransportCompletionKind",
+                True,
+            ),
+            ("acknowledged", ["u64", "u64"], "bool", True),
+            ("poison", [], "bool", True),
+            ("stage", [], "kernel::TransportStage", False),
+            ("remaining", ["u64"], "u64", False),
+            ("available", ["u64"], "bool", False),
+            ("next_cid", ["u64"], "u64", False),
+            ("tail", ["u64"], "u64", False),
+            ("head", ["u64"], "u64", False),
+            ("phase", ["u64"], "u64", False),
+            ("status", ["u64"], "u64", False),
+            ("active_qid", [], "u64", False),
+            ("active_cid", [], "u64", False),
+            ("poisoned", [], "bool", False),
+        ):
+            borrowed_entry(nominal, "nvme_transport_owner_" + name, tail, result, mutable)
 
     if "# RETAINED_SERVICE_ABI:" in source:
         nominal = retained_root("kernel::ServiceIncarnation")

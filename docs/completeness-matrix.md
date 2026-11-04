@@ -137,6 +137,15 @@ cleanup only afterward. Final-source compiler, native, stack and guest
 qualification remain required. This fixed two-slot contract does not broaden
 scheduling, asynchronous ownership, SMP, general memory-safety or hardware claims.
 
+The retained source `TransportOwner` now holds both bounded NVMe queue ledgers
+and the global absorbing failure state. It spends a unique CID before submission
+and withholds command reuse until completion publication and health checks are
+acknowledged. Native code retains authenticated device/backing bindings, volatile
+DMA sampling, fences and MMIO; mounted/recovery fence policy remains separate.
+The source root is boot-pinned outside device mappings, with no loan across a
+hardware effect. This is neither general asynchronous I/O nor evidence of DMA
+quiescence, safe reclamation, SMP or physical-device support.
+
 Private ExecutionAuthority native declarations are generated from the lifecycle
 compiler artifact's physical call signatures and compile-check native definitions.
 This removes a duplicate seven-effect signature table, not a runtime ownership

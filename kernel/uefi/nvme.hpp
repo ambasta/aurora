@@ -64,6 +64,7 @@ using NvmeControllerAdmission = NvmeAdmission;
 auto initialize_nvme_readonly(std::uint64_t arena, const Bytes &handoff, const NvmeControllerAdmission &admission)
     -> void;
 [[nodiscard]] auto nvme_sector_count() -> std::uint64_t;
+[[nodiscard]] auto nvme_sector_count(const NvmeReadContext &context) -> std::uint64_t;
 [[nodiscard]] auto nvme_read_sector(const NvmeReadContext &context, std::uint64_t lba, std::span<std::byte, 512> output)
     -> NvmeReadStatus;
 
@@ -72,6 +73,7 @@ auto initialize_nvme_readonly(std::uint64_t arena, const Bytes &handoff, const N
 auto initialize_nvme_recovery(std::uint64_t arena, const Bytes &handoff, const NvmeControllerAdmission &admission)
     -> void;
 [[nodiscard]] auto nvme_recovery_sector_count() -> std::uint64_t;
+[[nodiscard]] auto nvme_recovery_sector_count(const NvmeRecoveryContext &context) -> std::uint64_t;
 [[nodiscard]] auto nvme_recovery_admitted_writes() -> unsigned;
 [[nodiscard]] auto nvme_recovery_admitted_flushes() -> unsigned;
 [[nodiscard]] auto nvme_recovery_budget(const NvmeRecoveryContext &context) -> unsigned;
@@ -93,6 +95,7 @@ auto nvme_recovery_abandon() -> void;
 auto initialize_nvme_mounted(std::uint64_t arena, const Bytes &handoff, const NvmeControllerAdmission &admission)
     -> void;
 [[nodiscard]] auto nvme_mounted_sector_count() -> std::uint64_t;
+[[nodiscard]] auto nvme_mounted_sector_count(const NvmeMountedContext &context) -> std::uint64_t;
 [[nodiscard]] auto nvme_mounted_arm() -> bool;
 [[nodiscard]] auto nvme_mounted_admitted_writes() -> unsigned;
 [[nodiscard]] auto nvme_mounted_admitted_flushes() -> unsigned;
@@ -108,6 +111,7 @@ auto initialize_nvme_mounted(std::uint64_t arena, const Bytes &handoff, const Nv
 // source filesystem confirmed the transaction. The dispatcher authenticates
 // healthy source completion and orderly shutdown independently before sealing.
 [[nodiscard]] auto nvme_mounted_committed() -> bool;
+[[nodiscard]] auto nvme_mounted_committed(const NvmeMountedContext &context) -> bool;
 // Seal revokes only the write-data IOVA under the kernel root. All DMA backing
 // remains boot-pinned. Retired follows actual process/grant reclamation and is
 // the only transition that exposes the transport to a fresh readonly service.

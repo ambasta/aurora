@@ -867,7 +867,8 @@ public:
         asm volatile("pushfq; popq %0" : "=r"(flags));
         if (flags & (1ULL << 9))
             fail("block interrupt state");
-        const auto sectors = nvme_sector_count();
+        const NvmeReadContext context(running.space->root(), running.block_generation);
+        const auto sectors = nvme_sector_count(context);
         // Quarantine is absorbing. The original grant remains authenticated,
         // but conveys no usable backend and is never refreshed after failure.
         if (!sectors)
@@ -876,7 +877,6 @@ public:
             fail("block extent changed");
         if (lba >= sectors)
             return NvmeReadStatus::out_of_range;
-        const NvmeReadContext context(running.space->root(), running.block_generation);
         const auto result = nvme_read_sector(context, lba, output);
         if (!space.closed() || root() != running.space->root())
             fail("block window restoration");
@@ -894,10 +894,11 @@ class ProcessMountedBroker final {
         asm volatile("pushfq; popq %0" : "=r"(flags));
         if (flags & (1ULL << 9))
             fail("mounted interrupt state");
-        const auto sectors = nvme_mounted_sector_count();
+        const NvmeMountedContext admitted(mounted_root, mounted_generation);
+        const auto sectors = nvme_mounted_sector_count(admitted);
         if (sectors && sectors != mounted_sectors)
             fail("mounted extent changed");
-        return NvmeMountedContext(mounted_root, mounted_generation);
+        return admitted;
     }
     static auto restored() -> void {
         if (!space.closed() || root() != mounted_root)
@@ -942,13 +943,14 @@ class ProcessMountedBroker final {
 
 public:
     [[nodiscard]] static auto read(U64 lba, std::span<std::byte, 512> output) -> NvmeReadStatus {
-        const auto result = nvme_mounted_read(context(), lba, output);
+        const auto admitted = context();
+        const auto result = nvme_mounted_read(admitted, lba, output);
         restored();
 #ifdef AURORA_PROCESS_FIXTURE
         // A real completed post-Flush read, with only its returned copy changed.
         // The physical disk, transport completion and cache remain untouched.
         if (mounted_confirmation_probe && !mounted_confirmation_corrupted && result == NvmeReadStatus::success &&
-            nvme_mounted_committed() && nvme_mounted_admitted_flushes() == 5) {
+            nvme_mounted_committed(admitted) && nvme_mounted_admitted_flushes() == 5) {
             output[0] ^= std::byte{1};
             mounted_confirmation_corrupted = true;
             Serial::text("AURORA_MOUNTED_CONFIRM_CORRUPTED:");
@@ -998,10 +1000,11 @@ class ProcessRecoveryBroker final {
         asm volatile("pushfq; popq %0" : "=r"(flags));
         if (flags & (1ULL << 9))
             fail("recovery interrupt state");
-        const auto sectors = nvme_recovery_sector_count();
+        const NvmeRecoveryContext admitted(recovery_root, recovery_generation);
+        const auto sectors = nvme_recovery_sector_count(admitted);
         if (sectors && sectors != recovery_sectors)
             fail("recovery extent changed");
-        return NvmeRecoveryContext(recovery_root, recovery_generation);
+        return admitted;
     }
     static auto restored() -> void {
         if (!space.closed() || root() != recovery_root)

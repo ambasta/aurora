@@ -1379,6 +1379,7 @@ def uefi_profile(profile_mode, flags):
         (process, "memory-manager", "memory-manager", "memory-manager", ["kernel/policies", "library"]),
         (process, "snapshot-copy", "snapshot-copy", "snapshot-copy", []),
         (process, "budget-root", "budget-root", "budget-root", ["kernel/policies"]),
+        (nvme, "nvme-transport-owner", "nvme-transport", "nvme-transport-owner", ["kernel/policies"]),
         (process, "execution-lifecycle", "execution-lifecycle", "execution-lifecycle", ["kernel/policies"]),
         (process, "service-root", "service-root", "service-root", ["kernel/policies"]),
         (process, "endpoint-root", "endpoint-root", "endpoint-root", ["kernel/policies"]),

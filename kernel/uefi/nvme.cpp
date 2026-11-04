@@ -1,5 +1,6 @@
 #include "nvme.hpp"
 #include "nvme-transport.hpp"
+#include "../retained-nvme-transport.hpp"
 #include "event-backing.hpp"
 #include "tables.hpp"
 #include "fw-cfg-fixture.hpp"
@@ -33,11 +34,10 @@ Backing backing;
 std::array<std::byte, Handoff::header> saved_handoff{};
 U64 arena_base{}, root_base{}, table_count{}, nvme_base{}, config_base{};
 volatile U64 *window_slot{};
-bool begun{}, exposed{}, mapped{}, readonly_open{}, backend_failed{}, cache_valid{};
+bool begun{}, exposed{}, mapped{}, readonly_open{}, cache_valid{};
 U64 process_root{}, cache_lba{};
 unsigned cache_sectors{};
 std::string_view failure_reason{};
-constinit std::optional<NvmePolledQueue> retained_admin, retained_io;
 constinit std::optional<NvmeNamespace> admitted_namespace;
 unsigned completed{};
 NvmeRecoveryPhase recovery;
@@ -76,9 +76,44 @@ auto require(bool condition, std::string_view reason) -> void {
 [[nodiscard]] auto closed() -> bool {
     U64 cr3, flags;
     asm volatile("mov %%cr3, %0; pushfq; pop %1" : "=r"(cr3), "=r"(flags));
-    return !mapped && window_slot && *window_slot == 0 && cr3 == (process_root ? process_root : root_base) &&
-           (flags & 0x202) == 2;
+    return nvme::quiet_context(cr3,
+                               process_root ? process_root : root_base,
+                               flags,
+                               window_slot != nullptr,
+                               window_slot ? *window_slot : 0,
+                               mapped);
 }
+class TransportPlatform final {
+public:
+    static auto context() -> U64 {
+        U64 cr3;
+        asm volatile("mov %%cr3, %0" : "=r"(cr3));
+        return cr3;
+    }
+    static auto quiet() -> bool {
+        return closed();
+    }
+    [[noreturn]] static auto fail() -> void {
+        uefi::fail("transport-source-integrity");
+    }
+};
+// This root is separate from every device-accessible page and never destroyed,
+// reset or reconstructed. Source faults terminate with all DMA backing pinned.
+nvme::Root<TransportPlatform> transport;
+class ProcessScope final {
+public:
+    ProcessScope(U64 verified_root, U64 generation) {
+        require(!process_root && verified_root && verified_root % 4096 == 0 && generation, "transport-context");
+        process_root = verified_root;
+        require(closed(), "transport-context-window");
+    }
+    ProcessScope(const ProcessScope &) = delete;
+    auto operator=(const ProcessScope &) -> ProcessScope & = delete;
+    ~ProcessScope() {
+        require(closed(), "transport-context-return");
+        process_root = 0;
+    }
+};
 // One short-lived supervisor UC mapping. No raw device pointer escapes.
 class Window final {
     [[nodiscard]] static auto begin(U64 physical, unsigned width, bool write) -> U64 {
@@ -212,53 +247,90 @@ auto publish() -> void {
     ready(true);
     require(healthy(), "iommu-fault");
 }
-[[nodiscard]] auto quarantine(NvmePolledQueue &queue, std::string_view reason) -> bool {
-    backend_failed = true;
+[[nodiscard]] auto quarantine(std::string_view reason) -> bool {
+    // Revoke transport policy first. A source fault or broken borrow instead
+    // fail-stops; it never claims this transition or adjacent effects ran.
+    static_cast<void>(transport.poison());
     cache_valid = false;
     static_cast<void>(recovery.fail());
     static_cast<void>(mounted.fail());
     failure_reason = reason;
-    queue.quarantine();
     return false;
 }
-[[nodiscard]] auto execute(NvmePolledQueue &queue, unsigned qid, std::array<std::byte, 64> command) -> bool {
-    if (backend_failed)
+[[nodiscard]] auto binding(unsigned qid) -> nvme::Binding {
+    require(qid <= 1, "queue-identity");
+    return {&transport, backing.io[qid * 2].data(), backing.io[qid * 2 + 1].data(), qid};
+}
+[[nodiscard]] auto execute(unsigned qid, std::array<std::byte, 64> command) -> bool {
+    if (transport.poisoned())
         return false;
     if (!healthy())
-        return quarantine(queue, "iommu-fault");
-    if (status() != 1 || !queue.submit(command))
-        return quarantine(queue, "queue-submit");
-    Window::write(nvme_base + 0x1000 + qid * 8, 4, queue.tail());
+        return quarantine("iommu-fault");
+    if (status() != 1)
+        return quarantine("queue-submit");
+    const auto physical = binding(qid);
+    const auto plan = transport.reserve(qid, Bytes{command}.get(2, 2));
+    if (!plan.cid)
+        return quarantine("queue-submit");
+    nvme::Effects effects(physical, plan);
+    require(effects.authenticates(binding(qid)) && closed(), "submission-binding");
+    // Reservation already consumed the nonreusable CID before any SQ effect.
+    put(command, 2, plan.cid, 2);
+    for (unsigned i = 0; i < 64; ++i)
+        backing.io[qid * 2][plan.sq_slot * 64 + i] = command[i];
+    asm volatile("mfence" ::: "memory");
+    Window::write(nvme_base + 0x1000 + qid * 8, 4, plan.new_tail);
+    require(closed() && effects.published(binding(qid), plan.sq_slot, plan.cid, plan.new_tail), "publication-receipt");
+    if (!transport.published(qid, plan.cid))
+        return quarantine("publication-state");
     for (U64 i = 0; i < attempts; ++i) {
-        const auto result = queue.observe();
-        if (result == NvmePolledQueue::Result::quarantined) {
-            Serial::text("AURORA_NVME_COMPLETION_ERROR: status=");
-            Serial::number(queue.status());
-            Serial::text("\r\n");
-            return quarantine(queue, "completion");
-        }
-        if (result == NvmePolledQueue::Result::complete) {
-            Window::write(nvme_base + 0x1004 + qid * 8, 4, queue.head());
+        require(effects.authenticates(binding(qid)), "completion-binding");
+        const auto *entry =
+            reinterpret_cast<volatile const std::uint32_t *>(backing.io[qid * 2 + 1].data() + plan.cq_slot * 16);
+        const auto first_last = entry[3];
+        // Empty polls use only the frozen phase, with no source loan or call.
+        if (((first_last >> 16) & 1) == plan.phase) {
+            asm volatile("lfence" ::: "memory");
+            const auto result = entry[0];
+            const auto reserved = entry[1];
+            const auto position = entry[2];
+            const auto second_last = entry[3];
+            const auto selected =
+                transport.accept_completion(qid, plan.cid, {first_last, result, reserved, position, second_last});
+            if (selected.kind == nvme::CompletionKind::rejected) {
+                Serial::text("AURORA_NVME_COMPLETION_ERROR: status=");
+                Serial::number(selected.status);
+                Serial::text("\r\n");
+                return quarantine("completion");
+            }
+            require(effects.selected(binding(qid), plan.cid, selected.new_cq_head), "completion-selection");
+            Window::write(nvme_base + 0x1004 + qid * 8, 4, selected.new_cq_head);
             ++completed;
             if (!healthy())
-                return quarantine(queue, "iommu-fault");
+                return quarantine("iommu-fault");
             if (status() != 1)
-                return quarantine(queue, "controller-fault");
+                return quarantine("controller-fault");
             queue_guards();
+            require(closed() && effects.acknowledged(binding(qid), plan.cid, selected.new_cq_head),
+                    "completion-receipt");
+            // Head/phase advance and idle admission occur only after all native
+            // physical effects, restored mappings and post-completion checks.
+            if (!transport.acknowledged(qid, plan.cid))
+                return quarantine("acknowledgment-state");
             return true;
         }
         if ((i & 1023) == 0) {
             if (!healthy())
-                return quarantine(queue, "iommu-fault");
+                return quarantine("iommu-fault");
             if (status() != 1)
-                return quarantine(queue, "controller-fault");
+                return quarantine("controller-fault");
         }
         asm volatile("pause" ::: "memory");
     }
-    return quarantine(queue, "completion-timeout");
+    return quarantine("completion-timeout");
 }
-auto command(NvmePolledQueue &queue, unsigned qid, std::array<std::byte, 64> bytes) -> void {
-    if (!execute(queue, qid, bytes))
+auto command(unsigned qid, std::array<std::byte, 64> bytes) -> void {
+    if (!execute(qid, bytes))
         fail(failure_reason);
 }
 #if !defined(AURORA_PROCESS_FIXTURE) && !defined(AURORA_PRODUCTION)
@@ -288,12 +360,12 @@ auto close() -> void {
 [[nodiscard]] auto pattern(unsigned i, bool written) -> std::byte {
     return std::byte((i * 29 + (written ? 0xb7 : 0x3d)) & 255);
 }
-auto read_check(NvmePolledQueue &queue, const NvmeNamespace &ns, bool written) -> void {
+auto read_check(const NvmeNamespace &ns, bool written) -> void {
     for (auto &byte : backing.io[Backing::read_data])
         byte = std::byte{0xa5};
     const auto read = NvmeCommand::io(ns, 7, false);
     require(read.has_value(), "read-range");
-    command(queue, 1, *read);
+    command(1, *read);
     for (unsigned i = 0; i < 512; ++i)
         require(backing.io[Backing::read_data][i] == pattern(i, written), "read-data");
     guard(backing.io[Backing::read_data], 512);
@@ -327,24 +399,22 @@ auto open(U64 arena, const Bytes &handoff, const NvmeControllerAdmission &admiss
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
     require((low & 255) == 6 && (low >> 24) == 0, "entry-pat");
     initialize(readonly);
+    transport.create();
     publish();
-    auto &admin =
-        retained_admin.emplace(backing.io[Backing::admin_submission], backing.io[Backing::admin_completion], 0);
-    retained_io.emplace(backing.io[Backing::io_submission], backing.io[Backing::io_completion], 1);
-    command(admin, 0, NvmeCommand::identify(true));
+    command(0, NvmeCommand::identify(true));
     const Bytes controller{backing.io[Backing::read_data]};
     require(controller.get(0, 2) == 0x1b36 && controller.get(80, 4) == 0x10400 && controller.get(512, 1) == 0x66 &&
                 controller.get(513, 1) == 0x44 && controller.get(516, 4) >= 1 && (controller.get(525, 1) & 1),
             "identify-controller");
-    command(admin, 0, NvmeCommand::active_namespaces());
+    command(0, NvmeCommand::active_namespaces());
     require(Bytes{backing.io[Backing::read_data]}.get(0, 4) == 1, "namespace-list");
     for (unsigned i = 4; i < 4096; ++i)
         require(backing.io[Backing::read_data][i] == std::byte{}, "namespace-list");
-    command(admin, 0, NvmeCommand::identify(false));
+    command(0, NvmeCommand::identify(false));
     admitted_namespace = NvmeNamespace::parse(backing.io[Backing::read_data]);
     require(admitted_namespace && admitted_namespace->blocks() <= (1ULL << 32), "namespace-format");
-    command(admin, 0, NvmeCommand::create_queue(false));
-    command(admin, 0, NvmeCommand::create_queue(true));
+    command(0, NvmeCommand::create_queue(false));
+    command(0, NvmeCommand::create_queue(true));
     Serial::text("AURORA_NVME_READY: nsid=1 blocks=");
     Serial::number(admitted_namespace->blocks());
     Serial::text(" lba-bytes=512 queue-entries=2\r\n");
@@ -355,43 +425,41 @@ auto initialize_nvme_readonly(U64 arena, const Bytes &handoff, const NvmeControl
     open(arena, handoff, admission, true);
     readonly_open = true;
 }
-auto nvme_sector_count() -> U64 {
-    return readonly_open && recovery.permits_readonly() && mounted.permits_readonly() && !backend_failed &&
+namespace {
+auto readonly_count_entered() -> U64 {
+    return readonly_open && recovery.permits_readonly() && mounted.permits_readonly() && !transport.poisoned() &&
                    admitted_namespace
                ? admitted_namespace->blocks()
                : 0;
 }
-namespace {
-auto read_sector(U64 verified_root,
-                 U64 generation,
-                 U64 lba,
-                 std::span<std::byte, 512> output,
-                 bool mounted_read = false) -> NvmeReadStatus {
+auto recovery_count_entered() -> U64 {
+    return !transport.poisoned() && recovery.phase() == NvmeRecoveryPhase::Phase::writer && admitted_namespace
+               ? admitted_namespace->blocks()
+               : 0;
+}
+auto mounted_count_entered() -> U64 {
+    return !transport.poisoned() && mounted.available() && admitted_namespace ? admitted_namespace->blocks() : 0;
+}
+auto clear(std::span<std::byte, 512> output) -> void {
     for (auto &byte : output)
         byte = std::byte{};
-    if (backend_failed)
+}
+auto read_sector(U64 lba, std::span<std::byte, 512> output, bool mounted_read = false) -> NvmeReadStatus {
+    clear(output);
+    if (transport.poisoned())
         return NvmeReadStatus::failed;
-    require(!process_root && verified_root && verified_root % 4096 == 0 && generation, "readonly-context");
-    process_root = verified_root;
-    require(closed(), "readonly-window");
-    // ProcessBlockBroker already validated the current service/root/incarnation.
-    // It owns full lifecycle tree walks; every MMIO operation here restores the
-    // shared transient slot exactly before returning to its user-copy path.
-    if (!admitted_namespace->contains(lba, 1)) {
-        process_root = 0;
+    // The caller's broker-authenticated scope already binds this exact root.
+    // Every source borrow ends before DMA, MMIO or the returned output copy.
+    require(process_root && closed(), "readonly-context");
+    if (!admitted_namespace->contains(lba, 1))
         return NvmeReadStatus::out_of_range;
-    }
     const bool miss = !cache_valid || lba < cache_lba || lba - cache_lba >= cache_sectors;
-    if (mounted_read && !mounted.permit_read(retained_io->remaining_commands(), miss)) {
-        process_root = 0;
+    if (mounted_read && !mounted.permit_read(static_cast<unsigned>(transport.remaining(1)), miss))
         return NvmeReadStatus::unavailable;
-    }
     if (miss) {
         if (recovery.phase() == NvmeRecoveryPhase::Phase::writer &&
-            !recovery.permit_read(retained_io->remaining_commands())) {
-            process_root = 0;
+            !recovery.permit_read(static_cast<unsigned>(transport.remaining(1))))
             return NvmeReadStatus::unavailable;
-        }
         cache_valid = false;
         cache_lba = lba - lba % 8;
         const auto remaining = admitted_namespace->blocks() - cache_lba;
@@ -400,19 +468,14 @@ auto read_sector(U64 verified_root,
         require(read.has_value(), "readonly-range");
         for (auto &byte : backing.io[Backing::read_data])
             byte = std::byte{0xa5};
-        if (!execute(*retained_io, 1, *read)) {
-            require(closed(), "readonly-failed-window");
-            process_root = 0;
+        if (!execute(1, *read))
             return NvmeReadStatus::failed;
-        }
         guard(backing.io[Backing::read_data], cache_sectors * 512);
         cache_valid = true;
     }
     const auto offset = static_cast<unsigned>((lba - cache_lba) * 512);
     for (unsigned i = 0; i < 512; ++i)
         output[i] = backing.io[Backing::read_data][offset + i];
-    require(closed(), "readonly-return-window");
-    process_root = 0;
     return NvmeReadStatus::success;
 }
 
@@ -422,55 +485,49 @@ auto write_sector_entered(U64 lba, std::span<const std::byte, 512> input) -> Nvm
     cache_valid = false;
     for (unsigned i = 0; i < 4096; ++i)
         backing.io[Backing::write_data][i] = i < 512 ? input[i] : std::byte{0xa5};
-    if (!execute(*retained_io, 1, *write))
+    if (!execute(1, *write))
         return NvmeReadStatus::failed;
     guard(backing.io[Backing::write_data], 512);
     return NvmeReadStatus::success;
 }
-auto mounted_enter(const NvmeMountedContext &context) -> bool {
-    if (backend_failed || !mounted.available() || !retained_io || !admitted_namespace)
-        return false;
-    require(!process_root && context.root() && context.root() % 4096 == 0 && context.generation(), "mounted-context");
-    process_root = context.root();
-    require(closed(), "mounted-window");
-    return true;
-}
-auto mounted_leave(NvmeReadStatus result) -> NvmeReadStatus {
-    require(closed(), "mounted-return-window");
-    process_root = 0;
-    return result;
-}
-auto recovery_enter(const NvmeRecoveryContext &context) -> bool {
-    if (backend_failed || recovery.phase() != NvmeRecoveryPhase::Phase::writer || !retained_io || !admitted_namespace)
-        return false;
-    require(!process_root && context.root() && context.root() % 4096 == 0 && context.generation(), "recovery-context");
-    process_root = context.root();
-    require(closed(), "recovery-window");
-    return true;
-}
-auto recovery_leave(NvmeReadStatus result) -> NvmeReadStatus {
-    require(closed(), "recovery-return-window");
-    process_root = 0;
-    return result;
-}
 } // namespace
 
+auto nvme_sector_count() -> U64 {
+    if (!transport.created())
+        return 0;
+    require(!process_root, "readonly-query-root");
+    return readonly_count_entered();
+}
+auto nvme_sector_count(const NvmeReadContext &context) -> U64 {
+    if (!transport.created())
+        return 0;
+    const ProcessScope scope(context.root(), context.generation());
+    return readonly_count_entered();
+}
 auto nvme_read_sector(const NvmeReadContext &context, U64 lba, std::span<std::byte, 512> output) -> NvmeReadStatus {
-    if (!nvme_sector_count() || !retained_io) {
-        for (auto &byte : output)
-            byte = std::byte{};
+    clear(output);
+    if (!transport.created())
         return NvmeReadStatus::unavailable;
-    }
-    return read_sector(context.root(), context.generation(), lba, output);
+    const ProcessScope scope(context.root(), context.generation());
+    if (!readonly_count_entered())
+        return NvmeReadStatus::unavailable;
+    return read_sector(lba, output);
 }
 auto initialize_nvme_recovery(U64 arena, const Bytes &handoff, const NvmeControllerAdmission &admission) -> void {
     require(recovery.begin(), "recovery-one-shot");
     open(arena, handoff, admission, false);
 }
 auto nvme_recovery_sector_count() -> U64 {
-    return !backend_failed && recovery.phase() == NvmeRecoveryPhase::Phase::writer && admitted_namespace
-               ? admitted_namespace->blocks()
-               : 0;
+    if (!transport.created())
+        return 0;
+    require(!process_root, "recovery-query-root");
+    return recovery_count_entered();
+}
+auto nvme_recovery_sector_count(const NvmeRecoveryContext &context) -> U64 {
+    if (!transport.created())
+        return 0;
+    const ProcessScope scope(context.root(), context.generation());
+    return recovery_count_entered();
 }
 auto nvme_recovery_admitted_writes() -> unsigned {
     return recovery.admitted_writes();
@@ -479,41 +536,46 @@ auto nvme_recovery_admitted_flushes() -> unsigned {
     return recovery.admitted_flushes();
 }
 auto nvme_recovery_budget(const NvmeRecoveryContext &context) -> unsigned {
-    if (!recovery_enter(context))
+    if (!transport.created())
         return 0;
-    const auto result = retained_io->remaining_commands();
-    static_cast<void>(recovery_leave(NvmeReadStatus::success));
-    return result;
+    const ProcessScope scope(context.root(), context.generation());
+    return recovery_count_entered() ? static_cast<unsigned>(transport.remaining(1)) : 0;
 }
 auto nvme_recovery_read(const NvmeRecoveryContext &context, U64 lba, std::span<std::byte, 512> output)
     -> NvmeReadStatus {
-    if (!nvme_recovery_sector_count()) {
-        for (auto &byte : output)
-            byte = std::byte{};
-        return backend_failed ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
-    }
-    return read_sector(context.root(), context.generation(), lba, output);
+    clear(output);
+    if (!transport.created())
+        return NvmeReadStatus::unavailable;
+    const ProcessScope scope(context.root(), context.generation());
+    if (!recovery_count_entered())
+        return transport.poisoned() ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
+    return read_sector(lba, output);
 }
 auto nvme_recovery_write(const NvmeRecoveryContext &context, U64 lba, std::span<const std::byte, 512> input)
     -> NvmeReadStatus {
-    if (!recovery_enter(context))
-        return backend_failed ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
-    const auto write = NvmeCommand::io(*admitted_namespace, lba, true);
-    if (!write)
-        return recovery_leave(NvmeReadStatus::out_of_range);
-    if (!recovery.permit_write(retained_io->remaining_commands()))
-        return recovery_leave(NvmeReadStatus::unavailable);
-    return recovery_leave(write_sector_entered(lba, input));
+    if (!transport.created())
+        return NvmeReadStatus::unavailable;
+    const ProcessScope scope(context.root(), context.generation());
+    if (!recovery_count_entered())
+        return transport.poisoned() ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
+    if (!admitted_namespace->contains(lba, 1))
+        return NvmeReadStatus::out_of_range;
+    if (!recovery.permit_write(static_cast<unsigned>(transport.remaining(1))))
+        return NvmeReadStatus::unavailable;
+    return write_sector_entered(lba, input);
 }
 auto nvme_recovery_flush(const NvmeRecoveryContext &context) -> NvmeReadStatus {
-    if (!recovery_enter(context))
-        return backend_failed ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
-    if (!recovery.permit_flush(retained_io->remaining_commands()))
-        return recovery_leave(NvmeReadStatus::unavailable);
-    if (!execute(*retained_io, 1, NvmeCommand::flush()))
-        return recovery_leave(NvmeReadStatus::failed);
+    if (!transport.created())
+        return NvmeReadStatus::unavailable;
+    const ProcessScope scope(context.root(), context.generation());
+    if (!recovery_count_entered())
+        return transport.poisoned() ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
+    if (!recovery.permit_flush(static_cast<unsigned>(transport.remaining(1))))
+        return NvmeReadStatus::unavailable;
+    if (!execute(1, NvmeCommand::flush()))
+        return NvmeReadStatus::failed;
     require(recovery.flushed(), "recovery-flush-state");
-    return recovery_leave(NvmeReadStatus::success);
+    return NvmeReadStatus::success;
 }
 namespace {
 // Mechanism only: the caller has entered its one-shot sealing phase. Remove
@@ -529,12 +591,12 @@ auto revoke_write_data() -> bool {
     // cannot repeat this transition or reuse an earlier completion observation.
     NvmeInvalidation batch{backing.commands, address(backing.commands.data())};
     if (!batch.prepare(iommu(0x2000), iommu(0x2008), iommu(0x2020)))
-        return quarantine(*retained_io, "writer-revoke-prepare");
+        return quarantine("writer-revoke-prepare");
     Window::write(iommu_base + 0x2008, 8, NvmeInvalidation::command_bytes);
     for (U64 i = 0; i < attempts; ++i) {
         const auto result = batch.observe(iommu(0x2000), iommu(0x2008), iommu(0x2020), iommu(0x2010), iommu(0x2018));
         if (result == NvmeInvalidation::Result::failed)
-            return quarantine(*retained_io, "writer-revoke-completion");
+            return quarantine("writer-revoke-completion");
         if (result == NvmeInvalidation::Result::complete) {
             require(closed() && Bytes{backing.translations}.get(56) == 0, "writer-revoke-window");
             return true;
@@ -542,18 +604,18 @@ auto revoke_write_data() -> bool {
         asm volatile("pause" ::: "memory");
     }
     batch.expire();
-    return quarantine(*retained_io, "writer-revoke-timeout");
+    return quarantine("writer-revoke-timeout");
 }
 } // namespace
 auto nvme_recovery_seal() -> bool {
-    if (backend_failed || !retained_io || !recovery.seal(retained_io->remaining_commands()))
+    if (transport.poisoned() || !transport.created() || !recovery.seal(static_cast<unsigned>(transport.remaining(1))))
         return false;
     require(!process_root && closed(), "recovery-seal-root");
     return revoke_write_data();
 }
 
 auto nvme_recovery_retired() -> bool {
-    if (backend_failed || !recovery.retired())
+    if (transport.poisoned() || !recovery.retired())
         return false;
     require(!process_root && closed() && Bytes{backing.translations}.get(56) == 0, "recovery-retired");
     cache_valid = false;
@@ -570,10 +632,19 @@ auto initialize_nvme_mounted(U64 arena, const Bytes &handoff, const NvmeControll
     open(arena, handoff, admission, false);
 }
 auto nvme_mounted_sector_count() -> U64 {
-    return !backend_failed && mounted.available() && admitted_namespace ? admitted_namespace->blocks() : 0;
+    if (!transport.created())
+        return 0;
+    require(!process_root, "mounted-query-root");
+    return mounted_count_entered();
+}
+auto nvme_mounted_sector_count(const NvmeMountedContext &context) -> U64 {
+    if (!transport.created())
+        return 0;
+    const ProcessScope scope(context.root(), context.generation());
+    return mounted_count_entered();
 }
 auto nvme_mounted_arm() -> bool {
-    if (backend_failed || !retained_io)
+    if (transport.poisoned() || !transport.created())
         return false;
     require(!process_root && closed(), "mounted-arm-root");
     return mounted.arm();
@@ -585,60 +656,75 @@ auto nvme_mounted_admitted_flushes() -> unsigned {
     return mounted.admitted_flushes();
 }
 auto nvme_mounted_budget(const NvmeMountedContext &context) -> unsigned {
-    if (!mounted_enter(context))
+    if (!transport.created())
         return 0;
-    const auto result = retained_io->remaining_commands();
-    static_cast<void>(mounted_leave(NvmeReadStatus::success));
-    return result;
+    const ProcessScope scope(context.root(), context.generation());
+    return mounted_count_entered() ? static_cast<unsigned>(transport.remaining(1)) : 0;
 }
 auto nvme_mounted_read(const NvmeMountedContext &context, U64 lba, std::span<std::byte, 512> output) -> NvmeReadStatus {
-    if (!nvme_mounted_sector_count()) {
-        for (auto &byte : output)
-            byte = std::byte{};
-        return backend_failed ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
-    }
-    return read_sector(context.root(), context.generation(), lba, output, true);
+    clear(output);
+    if (!transport.created())
+        return NvmeReadStatus::unavailable;
+    const ProcessScope scope(context.root(), context.generation());
+    if (!mounted_count_entered())
+        return transport.poisoned() ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
+    return read_sector(lba, output, true);
 }
 auto nvme_mounted_write(const NvmeMountedContext &context, U64 lba, std::span<const std::byte, 512> input)
     -> NvmeReadStatus {
-    if (!mounted_enter(context))
-        return backend_failed ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
+    if (!transport.created())
+        return NvmeReadStatus::unavailable;
+    const ProcessScope scope(context.root(), context.generation());
+    if (!mounted_count_entered())
+        return transport.poisoned() ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
     if (!admitted_namespace->contains(lba, 1))
-        return mounted_leave(NvmeReadStatus::out_of_range);
-    if (!mounted.permit_write(retained_io->remaining_commands()))
-        return mounted_leave(NvmeReadStatus::unavailable);
-    return mounted_leave(write_sector_entered(lba, input));
+        return NvmeReadStatus::out_of_range;
+    if (!mounted.permit_write(static_cast<unsigned>(transport.remaining(1))))
+        return NvmeReadStatus::unavailable;
+    return write_sector_entered(lba, input);
 }
 auto nvme_mounted_flush(const NvmeMountedContext &context) -> NvmeReadStatus {
-    if (!mounted_enter(context))
-        return backend_failed ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
-    if (!mounted.permit_flush(retained_io->remaining_commands()))
-        return mounted_leave(NvmeReadStatus::unavailable);
-    if (!execute(*retained_io, 1, NvmeCommand::flush()))
-        return mounted_leave(NvmeReadStatus::failed);
+    if (!transport.created())
+        return NvmeReadStatus::unavailable;
+    const ProcessScope scope(context.root(), context.generation());
+    if (!mounted_count_entered())
+        return transport.poisoned() ? NvmeReadStatus::failed : NvmeReadStatus::unavailable;
+    if (!mounted.permit_flush(static_cast<unsigned>(transport.remaining(1))))
+        return NvmeReadStatus::unavailable;
+    if (!execute(1, NvmeCommand::flush()))
+        return NvmeReadStatus::failed;
     require(mounted.flushed(), "mounted-flush-state");
-    return mounted_leave(NvmeReadStatus::success);
+    return NvmeReadStatus::success;
 }
 auto nvme_mounted_committed() -> bool {
-    return !backend_failed && mounted.phase() == NvmeMountedPhase::Phase::committed;
+    if (!transport.created())
+        return false;
+    require(!process_root, "mounted-committed-root");
+    return !transport.poisoned() && mounted.phase() == NvmeMountedPhase::Phase::committed;
+}
+auto nvme_mounted_committed(const NvmeMountedContext &context) -> bool {
+    if (!transport.created())
+        return false;
+    const ProcessScope scope(context.root(), context.generation());
+    return !transport.poisoned() && mounted.phase() == NvmeMountedPhase::Phase::committed;
 }
 auto nvme_mounted_seal() -> bool {
     readonly_open = false;
-    if (backend_failed || !retained_io)
+    if (transport.poisoned() || !transport.created())
         return mounted.fail();
     // remaining_commands() is zero for an outstanding or quarantined command.
     // Recheck the mounted remount reserve now: post-commit reads may have
     // spent it. Recovery keeps its separate, larger readonly reserve.
-    if (!mounted.seal(retained_io->remaining_commands()))
+    if (!mounted.seal(static_cast<unsigned>(transport.remaining(1))))
         return false;
     require(!process_root && closed(), "mounted-seal-root");
     if (!healthy() || status() != 1)
-        return quarantine(*retained_io, "mounted-seal-health");
+        return quarantine("mounted-seal-health");
     return revoke_write_data();
 }
 auto nvme_mounted_retired() -> bool {
     readonly_open = false;
-    if (backend_failed || !retained_io)
+    if (transport.poisoned() || !transport.created())
         return mounted.fail();
     if (!mounted.retired())
         return false;
@@ -663,11 +749,10 @@ auto nvme_mounted_abandon() -> void {
     open(arena, handoff, admission, false);
     const auto &ns = admitted_namespace;
     require(ns->blocks() == 16384, "namespace-format");
-    auto &io = *retained_io;
     if (selected == 3) {
         auto invalid = NvmeCommand::flush();
         put(invalid, 0, 0x7f, 1);
-        command(io, 1, invalid);
+        command(1, invalid);
         fail("error-accepted");
     }
     if (selected == 4) {
@@ -675,18 +760,18 @@ auto nvme_mounted_abandon() -> void {
                 "range-accepted");
         Serial::text("AURORA_NVME_RANGE_REJECTED: submitted=0\r\n");
     } else {
-        read_check(io, *ns, selected == 2);
+        read_check(*ns, selected == 2);
         if (selected == 1) {
             for (unsigned i = 0; i < 4096; ++i)
                 backing.io[Backing::write_data][i] = i < 512 ? pattern(i, true) : std::byte{0xa5};
             const auto write = NvmeCommand::io(*ns, 7, true);
             require(write.has_value(), "write-range");
-            command(io, 1, *write);
+            command(1, *write);
             guard(backing.io[Backing::write_data], 512);
-            command(io, 1, NvmeCommand::flush());
+            command(1, NvmeCommand::flush());
             ++flushed;
             Serial::text("AURORA_NVME_FLUSH: completed=1\r\n");
-            read_check(io, *ns, true);
+            read_check(*ns, true);
         }
     }
     close();
