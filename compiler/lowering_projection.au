@@ -347,7 +347,7 @@ export namespace compiler_lowering_projection {
                 return false;
             }
             const compiler_ir_metadata::RawTypeRow word = workspace.type_result();
-            if (word.kind() != 28 || !emit_raw_type(workspace, metadata, type, fill)) {
+            if ((word.kind() != 28 && word.kind() != 30) || !emit_raw_type(workspace, metadata, type, fill)) {
                 return workspace.fail();
             }
         }

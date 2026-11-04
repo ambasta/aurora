@@ -255,6 +255,15 @@ public:
         invalidate(window_base);
         return reinterpret_cast<std::uint64_t *>(window_base);
     }
+    // A post-call consistency observation, not a new ownership grant or proof
+    // of stability throughout the call. The caller authenticates root/IRQ state
+    // before this volatile read and retains the frame's allocation authority.
+    [[nodiscard]] auto opened(U64 physical) const -> bool {
+        if (!built_ || detached_ || !window_ || (physical & ~address_mask) != 0)
+            return false;
+        const U64 observed = window_[0];
+        return (observed & ~hardware_bits) == (physical | data_flags);
+    }
     [[nodiscard]] auto closed() const -> bool {
         return built_ && !detached_ && window_ && window_[0] == 0;
     }

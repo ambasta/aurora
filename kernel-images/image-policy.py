@@ -151,7 +151,7 @@ RULES = [
     {
         "profiles": ["*"],
         "imports": [],
-        "import_free": ["budget-root", "service-root", "endpoint-root"],
+        "import_free": ["budget-root", "service-root", "endpoint-root", "snapshot-copy"],
         "forbidden": ["__au_runtime_service_saturation_create", "*process_service_saturation_create*"],
     },
     {

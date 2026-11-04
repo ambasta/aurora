@@ -34,6 +34,16 @@ export namespace compiler_lowering {
     // the destination (named binding or temporary) and the exact span type.
     auto add_span(compiler_resolver::Session& session, LocalRequest destination, i64 parent, i64 origin, i64 field,
         bool temporary) -> i64 {
+        bool mutable_parent = false;
+        if (parent >= 0) {
+            const LocalRow parent_local = session.local(parent);
+            mutable_parent = tk(session, parent_local.concrete_type_id())
+                == compiler_resolver::ResolvedTypeKind::mutable_byte_span;
+        }
+        if (tk(session, destination.type()) == compiler_resolver::ResolvedTypeKind::mutable_byte_span
+            || mutable_parent) {
+            return error(session, LoweringError::invalid_span_initializer, destination.source());
+        }
         LocalRequest request = destination;
         SpanOriginKind kind = SpanOriginKind::local;
         i64 root = origin;
@@ -1056,7 +1066,8 @@ export namespace compiler_lowering {
                         }
                     }
                 } else {
-                    if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+                    if (kind == compiler_resolver::ResolvedTypeKind::byte_span || kind
+                        == compiler_resolver::ResolvedTypeKind::mutable_byte_span) {
                         if (binding || implicit) {
                             return fail(session, LoweringError::span_operation_requires_named_live_span, reference);
                         }
@@ -1065,17 +1076,23 @@ export namespace compiler_lowering {
                                 return fail(session, LoweringError::span_size_argument_count, reference);
                             }
                         } else {
-                            if (session.source_equal(reference, "at")) {
-                                count = 1;
-                                if (actual != 1) {
-                                    return fail(session, LoweringError::span_at_argument_count, reference);
-                                }
+                            if (session.source_equal(reference, "set") && kind
+                                == compiler_resolver::ResolvedTypeKind::mutable_byte_span) {
+                                count = 2;
+                                require_arity(session, node, 3);
                             } else {
-                                if (session.source_equal(reference, "subspan")) {
-                                    return fail(session, LoweringError::subspan_requires_span_binding_or_argument,
-                                        reference);
+                                if (session.source_equal(reference, "at")) {
+                                    count = 1;
+                                    if (actual != 1) {
+                                        return fail(session, LoweringError::span_at_argument_count, reference);
+                                    }
                                 } else {
-                                    return fail(session, LoweringError::unknown_readonly_span_operation, reference);
+                                    if (session.source_equal(reference, "subspan")) {
+                                        return fail(session, LoweringError::subspan_requires_span_binding_or_argument,
+                                            reference);
+                                    } else {
+                                        return fail(session, LoweringError::unknown_readonly_span_operation, reference);
+                                    }
                                 }
                             }
                         }
@@ -2117,7 +2134,11 @@ export namespace compiler_lowering {
             } else {
                 if (is_span(session, type)) {
                     if (session.source_equal(source, "size")) {
-                        emit_SpanLength(session, offset);
+                        if (kind == compiler_resolver::ResolvedTypeKind::mutable_byte_span) {
+                            emit_MutableSpanLength(session, offset);
+                        } else {
+                            emit_SpanLength(session, offset);
+                        }
                         result = scalar_id(session, compiler_resolver::ResolvedTypeKind::i64_value);
                     } else {
                         if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
@@ -2130,8 +2151,18 @@ export namespace compiler_lowering {
                                 emit_SpanValuesLoad(session, offset, element_offset);
                             }
                         } else {
-                            emit_SpanLoad(session, offset);
-                            result = scalar_id(session, compiler_resolver::ResolvedTypeKind::u8_value);
+                            if (kind == compiler_resolver::ResolvedTypeKind::mutable_byte_span) {
+                                if (session.source_equal(source, "set")) {
+                                    emit_MutableSpanStore(session, offset);
+                                    result = scalar_id(session, compiler_resolver::ResolvedTypeKind::bool_value);
+                                } else {
+                                    emit_MutableSpanLoad(session, offset);
+                                    result = scalar_id(session, compiler_resolver::ResolvedTypeKind::u8_value);
+                                }
+                            } else {
+                                emit_SpanLoad(session, offset);
+                                result = scalar_id(session, compiler_resolver::ResolvedTypeKind::u8_value);
+                            }
                         }
                     }
                 } else {

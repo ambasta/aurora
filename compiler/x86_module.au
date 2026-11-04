@@ -232,7 +232,7 @@ export namespace compiler_x86 {
     // Whether an instruction ends the span or makes it a new capability.
     auto module_rewrites_span(const compiler_ir_instructions::InstructionStore& s, i64 instruction, i64 span) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(instruction);
-        if (row.form() == 56 || row.form() == 59) {
+        if (row.form() == 56 || row.form() == 59 || row.form() == 94) {
             return operand_value(s, instruction, 0) == span || operand_value(s, instruction, 1) == span;
         }
         i64 at = 0;

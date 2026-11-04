@@ -188,6 +188,8 @@ def validate_native_abi(facts, source):
             return dict(bytes=8, kind=source)
         if source == "span":
             return dict(bytes=56, kind="span")
+        if source == "mutable_span":
+            return dict(bytes=56, kind="mutable_span")
         if source in ("__au_resident_slot", "__au_owned_words", "__au_mapping_authority", "__au_execution_authority"):
             return dict(bytes=16, kind="owner", type_name=source)
         if source in ("builtin::CallSession", "builtin::ConsoleSession"):
@@ -955,6 +957,9 @@ def validate_native_abi(facts, source):
         enum("__au_exec_status", "exited fault watchdog missing malformed quota unavailable output_failed cancelled")
         record("kernel::ExecutionResult", 16, [("outcome", "__au_exec_status", 0), ("result_value", "u64", 0)])
         entry("process_cancel_command", ["builtin::ExecutionEffects", "u64"], "kernel::ExecutionResult")
+
+    if "# SNAPSHOT_COPY_ABI:" in source:
+        entry("process_snapshot_copy", ["mutable_span", "span"], "bool")
 
     if "# PROCESS_POLICY_ABI:" in source or "# PRODUCTION_PROCESS_POLICY_ABI:" in source:
         fixture_process = "# PROCESS_POLICY_ABI:" in source

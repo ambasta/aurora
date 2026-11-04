@@ -167,6 +167,9 @@ export namespace compiler_resolver {
         if (kind == ResolvedTypeKind::byte_span) {
             return 11;
         }
+        if (kind == ResolvedTypeKind::mutable_byte_span) {
+            return 30;
+        }
         return session.fail_storage(StorageStatus::invalid);
     }
     auto linkage_parameters(Session& session, i64 symbol, i64 signature) -> i64 {

@@ -1377,6 +1377,7 @@ def uefi_profile(profile_mode, flags):
         (owned_bytes, "owned-bytes", "owned-bytes", "owned-bytes", ["kernel/policies", "library"]),
         (process, "process-policy", "process", "process", ["kernel/policies", "library"]),
         (process, "memory-manager", "memory-manager", "memory-manager", ["kernel/policies", "library"]),
+        (process, "snapshot-copy", "snapshot-copy", "snapshot-copy", []),
         (process, "budget-root", "budget-root", "budget-root", ["kernel/policies"]),
         (process, "execution-lifecycle", "execution-lifecycle", "execution-lifecycle", ["kernel/policies"]),
         (process, "service-root", "service-root", "service-root", ["kernel/policies"]),

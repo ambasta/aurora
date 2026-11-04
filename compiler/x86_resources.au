@@ -278,7 +278,7 @@ export namespace compiler_x86 {
             }
             return true;
         }
-        if (form == 57) {
+        if (form == 57 || form == 95) {
             const i64 address_token25 = w.pack_address(0, operand_value(s, instruction, 0) - 48);
             emit_load(w, object, address_token25, Register::rax, false);
             return true;
@@ -293,7 +293,10 @@ export namespace compiler_x86 {
             // The old backend consumes the label ordinal even when the module
             // contains no owners and the runtime branch is omitted.
             const i64 division = w.next_division();
-            const bool owned = w.owned_span_runtime();
+            // A mutable invocation admits only contiguous companions; its
+            // closed effect contract must not acquire owner-runtime calls just
+            // because unrelated module code uses an OwnedBytes view.
+            const bool owned = w.owned_span_runtime() && !mutable_span_parameters(m, callable);
             if (owned) {
                 const i64 address_token28 = w.pack_address(0, offset);
                 emit_alu_mem_imm(w, object, AluOp::compare, 0, address_token28);
@@ -371,7 +374,7 @@ export namespace compiler_x86 {
             }
             return w.ok();
         }
-        if (form == 59) {
+        if (form == 59 || form == 94) {
             const i64 index = operand_value(s, instruction, 0);
             const i64 offset = operand_value(s, instruction, 1);
             const i64 save = w.call_record_save();
@@ -386,7 +389,60 @@ export namespace compiler_x86 {
                 emit_store(w, object, Register::rax, address_token43, false);
                 byte = byte + 8;
             }
+            if (form == 94 || mutable_span_parameters(m, callable)) {
+                // Mutable invocation parameters and readonly companions admit contiguous backing only.
+                // No owner dispatch or logical subspan may manufacture write
+                // authority. Native admission separately proves the physical
+                // extent and temporal exclusive access for this invocation.
+                const i64 kind_address = w.pack_address(0, offset);
+                emit_alu_mem_imm(w, object, AluOp::compare, 0, kind_address);
+                emit_branch(w, object, 5, 4, 0);
+                i64 reserved = 16;
+                while (reserved <= 32) {
+                    const i64 reserved_address = w.pack_address(0, offset - reserved);
+                    emit_alu_mem_imm(w, object, AluOp::compare, 0, reserved_address);
+                    emit_branch(w, object, 5, 4, 0);
+                    reserved = reserved + 8;
+                }
+                const i64 start_address = w.pack_address(0, offset - 40);
+                emit_alu_mem_imm(w, object, AluOp::compare, 0, start_address);
+                emit_branch(w, object, 5, 4, 0);
+                const i64 length_address = w.pack_address(0, offset - 48);
+                emit_alu_mem_imm(w, object, AluOp::compare, 0, length_address);
+                emit_branch(w, object, 8, 4, 0);
+            }
             return true;
+        }
+        if (form == 96 || form == 97) {
+            const i64 offset = operand_value(s, instruction, 0);
+            const i64 kind_address = w.pack_address(0, offset);
+            emit_alu_mem_imm(w, object, AluOp::compare, 0, kind_address);
+            emit_branch(w, object, 5, 4, 0);
+            const i64 length_address = w.pack_address(0, offset - 48);
+            const i64 base_address = w.pack_address(0, offset - 8);
+            if (form == 96) {
+                // Unsigned comparison rejects negative signed indices too,
+                // before any payload address arithmetic or memory access.
+                emit_alu_load(w, object, AluOp::compare, length_address, Register::rax);
+                emit_branch(w, object, 3, 4, 0);
+                emit_load(w, object, base_address, Register::rcx, false);
+                emit_indexed_load(w, object, Register::rcx, Register::rax, indexed_address(1, 0), true);
+            } else {
+                const i64 labels = w.next_division();
+                emit_pop(w, object, Register::rcx);
+                emit_alu_load(w, object, AluOp::compare, length_address, Register::rcx);
+                emit_branch(w, object, 3, 7, labels);
+                emit_load(w, object, base_address, Register::rdx, false);
+                // One observable byte store, emitted in source order. This
+                // grants no MMIO, atomicity or inter-agent synchronization.
+                emit_indexed_store(w, object, Register::rdx, Register::rcx, indexed_address(1, 0), true);
+                emit_mov_imm(w, object, 1, Register::rax);
+                emit_branch(w, object, -1, 8, labels);
+                emit_bind_label(w, object, 7, labels);
+                emit_mov_imm(w, object, 0, Register::rax);
+                emit_bind_label(w, object, 8, labels);
+            }
+            return w.ok();
         }
         return false;
     }

@@ -2,6 +2,7 @@
 #include "kernel-space.hpp"
 
 namespace aurora::uefi {
+extern "C" std::uint64_t __au_runtime_process_snapshot_copy(const void *);
 // Privileged physical effects of one retained MemoryManager. The source owns
 // policy and all mutable ledgers; this issuer retains only immutable boot facts,
 // source-field offsets admitted against emitted ABI facts, and an operation scope.
@@ -62,6 +63,28 @@ private:
     const std::byte *loader_buffer_ = nullptr;
     U64 loader_bytes_ = 0, boot_table_pages_ = 0;
     static inline MappingAuthority *owner_ = nullptr;
+    // The exact private mutable-span ABI, distinct from readonly PolicySpan in
+    // compiler facts despite equal size. Only this authenticated issuer builds
+    // it; source has no pointer adoption, copying or escaping operation.
+    class SnapshotWriteSpan final {
+    public:
+        U64 kind = 0;
+        std::byte *backing;
+        U64 reserved[3]{};
+        std::int64_t start = 0;
+        std::int64_t length;
+        SnapshotWriteSpan(std::byte *bytes, U64 count) : backing(bytes), length(static_cast<std::int64_t>(count)) {
+        }
+    };
+    class SnapshotCopyArguments final {
+    public:
+        SnapshotWriteSpan destination;
+        process::PolicySpan source;
+    };
+    static_assert(sizeof(SnapshotWriteSpan) == 56 && alignof(SnapshotWriteSpan) == 8);
+    static_assert(sizeof(SnapshotCopyArguments) == 112 && alignof(SnapshotCopyArguments) == 8 &&
+                  offsetof(SnapshotCopyArguments, source) == 56);
+
     static void require(bool condition) {
         if (!condition)
             words::fail();
@@ -838,9 +861,23 @@ public:
             const U64 amount = count - copied < frames::page - offset ? count - copied : frames::page - offset;
             view = self.space_->open(frame.physical);
             require(view);
-            for (U64 at = 0; at < amount; ++at)
-                reinterpret_cast<volatile std::byte *>(view)[offset + at] = self.source_[source + copied + at];
+            // Registered source pages are outside the managed frame inventory;
+            // this authenticated destination is inside it. This is temporal
+            // exclusive access, not unique mapping: the snapshot alias remains.
+            // The single-BSP, IRQ-off, nonreentrant call has no concurrent alias
+            // reader/writer, DMA or NMI mutation. It authorizes ordinary RAM only.
+            // Source performs sequenced observable byte stores under an exact
+            // invocation loan. A trap is fail-stop and may leave a partial copy;
+            // no cleanup, rollback or replay is promised on that path.
+            const SnapshotCopyArguments arguments{
+                {reinterpret_cast<std::byte *>(view) + offset, amount},
+                process::PolicySpan{{self.source_ + source + copied, static_cast<std::size_t>(amount)}}};
+            require(__au_runtime_process_snapshot_copy(&arguments) == 1 && current_root() == self.kernel_root_ &&
+                    interrupts_off() && self.space_->opened(frame.physical));
+            // No source view authority survives normal return. Close before another page
+            // can be opened, the source pin ends or the snapshot is sealed.
             self.space_->close();
+            require(self.space_->closed());
             copied += amount;
         }
         return true;

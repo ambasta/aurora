@@ -196,6 +196,9 @@ export namespace compiler_resolver {
         if (kind == ResolvedTypeKind::byte_span) {
             return 12;
         }
+        if (kind == ResolvedTypeKind::mutable_byte_span) {
+            return 30;
+        }
         if (kind == ResolvedTypeKind::byte_region) {
             return 13;
         }
@@ -740,7 +743,8 @@ export namespace compiler_resolver {
             return true;
         }
         if (parameter && (syntax.type_kind() == compiler_parser::TypeKind::byte_span || syntax.type_kind()
-            == compiler_parser::TypeKind::value_span)) {
+            == compiler_parser::TypeKind::value_span || syntax.type_kind()
+            == compiler_parser::TypeKind::mutable_byte_span)) {
             return true;
         }
         if (syntax.type_kind() == compiler_parser::TypeKind::builtin_class) {
@@ -2032,6 +2036,9 @@ export namespace compiler_resolver {
         }
         if (kind == compiler_parser::TypeKind::byte_span) {
             return ResolvedTypeKind::byte_span;
+        }
+        if (kind == compiler_parser::TypeKind::mutable_byte_span) {
+            return ResolvedTypeKind::mutable_byte_span;
         }
         return ResolvedTypeKind::invalid;
     }

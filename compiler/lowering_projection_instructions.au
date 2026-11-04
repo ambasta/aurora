@@ -273,6 +273,18 @@ export namespace compiler_lowering_projection {
             // Index, Offset.
             return InstructionShape(59, 257u64);
         }
+        if (form == compiler_lowering::InstructionForm::BindMutableSpanParameter) {
+            return InstructionShape(94, 257u64);
+        }
+        if (form == compiler_lowering::InstructionForm::MutableSpanLength) {
+            return InstructionShape(95, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::MutableSpanLoad) {
+            return InstructionShape(96, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::MutableSpanStore) {
+            return InstructionShape(97, 2u64);
+        }
         if (form == compiler_lowering::InstructionForm::BeginBytes) {
             // Offset.
             return InstructionShape(60, 2u64);

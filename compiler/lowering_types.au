@@ -826,7 +826,8 @@ export namespace compiler_lowering {
     auto is_span(compiler_resolver::Session& session, i64 type) -> bool {
         const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
         return kind == compiler_resolver::ResolvedTypeKind::byte_span || kind
-            == compiler_resolver::ResolvedTypeKind::value_span;
+            == compiler_resolver::ResolvedTypeKind::value_span || kind
+            == compiler_resolver::ResolvedTypeKind::mutable_byte_span;
     }
     // The copied element class type of a typed span, or -1 for a byte span.
     auto span_element(compiler_resolver::Session& session, i64 type) -> i64 {
@@ -1360,6 +1361,34 @@ export namespace compiler_lowering {
         }
         if (count > 6) {
             return fail(session, LoweringError::function_parameter_limit, source);
+        }
+        if (result_kind == compiler_resolver::ResolvedTypeKind::mutable_byte_span) {
+            return fail(session, LoweringError::span_result_method_boundary, source);
+        }
+        i64 mutable_count = 0;
+        i64 mutable_at = 0;
+        while (mutable_at < count) {
+            if (parameter_kind(session, symbol, mutable_at) == compiler_resolver::ResolvedTypeKind::mutable_byte_span) {
+                mutable_count = mutable_count + 1;
+            }
+            mutable_at = mutable_at + 1;
+        }
+        if (mutable_count > 0) {
+            if (mutable_count != 1 || receiver >= 0 || constructor || instantiated
+                || !compiler_resolver::scalar_value_kind(result_kind)) {
+                return fail(session, LoweringError::function_parameter_limit, source);
+            }
+            mutable_at = 0;
+            while (mutable_at < count) {
+                const compiler_resolver::ResolvedTypeKind mutable_kind = parameter_kind(session, symbol, mutable_at);
+                if (parameter_borrowed(session, symbol, mutable_at)
+                    || (!compiler_resolver::scalar_value_kind(mutable_kind) && mutable_kind
+                    != compiler_resolver::ResolvedTypeKind::byte_span && mutable_kind
+                    != compiler_resolver::ResolvedTypeKind::mutable_byte_span)) {
+                    return fail(session, LoweringError::function_parameter_limit, source);
+                }
+                mutable_at = mutable_at + 1;
+            }
         }
         bool retained_constructor = false;
         if (constructor && receiver >= 0) {

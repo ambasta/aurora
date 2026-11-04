@@ -305,7 +305,7 @@ export namespace compiler_x86 {
     }
     // Byte and typed readonly spans share the 56-byte capability record.
     auto span_kind(i64 kind) -> bool {
-        return kind == 11 || kind == 21 || kind == 28;
+        return kind == 11 || kind == 21 || kind == 28 || kind == 30;
     }
     auto type_class(const compiler_ir_metadata::MetadataStore& metadata, i64 type) -> i64 {
         const compiler_ir_metadata::RawTypeRow row = metadata.type_at(type);
@@ -494,6 +494,16 @@ export namespace compiler_x86 {
                 return true;
             }
             at = at + 1;
+        }
+        return false;
+    }
+    auto mutable_span_parameters(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
+        i64 index = 0;
+        while (index < parameter_count(metadata, callable)) {
+            if (type_kind(metadata, parameter_type(metadata, callable, index)) == 30) {
+                return true;
+            }
+            index = index + 1;
         }
         return false;
     }

@@ -176,7 +176,8 @@ export namespace compiler_parser {
         builtin_type,
         owned_values,
         builtin_class,
-        value_span
+        value_span,
+        mutable_byte_span
     };
     // Unresolved syntax only. close encodes the original token and its half;
     // roots name their containing expression or declaration by its first token.
