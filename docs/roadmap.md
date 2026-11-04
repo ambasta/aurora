@@ -161,6 +161,12 @@ or described as rollback. Service loss invalidates grants and visibly loses
 volatile contents; a later command may start a new incarnation, not resume the
 failed request. Mounted read-only data is separate from those RAM commits.
 
+The BIOS three-task preemption consumer now retains its actual lifecycle,
+dispatch cursor and cumulative tick budgets in Aurora. Native bindings still
+authenticate interrupt frames and perform timer, address-space and reclamation
+effects; no source borrow crosses execution or an IRQ. This bounded single-BSP
+consumer does not supply production UEFI scheduling or SMP.
+
 Next: general program/service lifetimes and scheduling, restart-safe storage,
 partial I/O/backpressure and durable mounted writes. Gate each step with actual
 compiled consumers, stale/foreign authority, exhaustion, cancellation, owner death

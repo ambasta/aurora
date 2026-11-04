@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the real single-read BIOS contract, ELF/raw layout, and final-sector I/O."""
+"""Check the real three-read BIOS contract, ELF/raw layout, and final-sector I/O."""
 
 import argparse
 from contextlib import nullcontext
@@ -19,9 +19,10 @@ SPEC = importlib.util.spec_from_file_location("kernel_image", ROOT / "tests/kern
 IMAGE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(IMAGE)
 BASE = 0x10000
-CAPACITY = 127 * 512
+CAPACITY = 254 * 512
 EARLY = 0x1C000
-LAST = 0x1FDF8
+LAST = 0x2FBF8
+BOUNDARIES = (0x1FDF8, 0x1FE00, 0x1FFF8, 0x20000)
 
 
 def require(condition: bool, message: str) -> None:
@@ -42,7 +43,7 @@ def fixture(size: int) -> tuple[bytes, bytes]:
     entries = (
         (5, 0x1000, BASE, bytes([0x90]) * 64, 64),
         (4, 0x2000, BASE + 4096, bytes(range(64)), 64),
-        (6, 0x3000, data_address, bytes(data_size - 1) + b"\xa5", 0x21000 - data_address),
+        (6, 0x3000, data_address, bytes(data_size - 1) + b"\xa5", 0x31000 - data_address),
     )
     header = bytearray(64)
     header[:7] = b"\x7fELF\x02\x01\x01"
@@ -65,7 +66,7 @@ def mutate(data: bytes, offset: int, value: int, width: int) -> bytes:
 
 def controls(boot: bytes, packet: int) -> int:
     require(
-        IMAGE.PAYLOAD_SECTORS == 127 and IMAGE.TRANSFER_END == 0x1FE00,
+        IMAGE.PAYLOAD_SECTORS == 254 and IMAGE.TRANSFER_END == 0x2FC00,
         "Capacity fixture and production transport disagree",
     )
     for size in (49153, 49904, CAPACITY):
@@ -102,6 +103,15 @@ def controls(boot: bytes, packet: int) -> int:
             (mutate(mutate(boot, packet + 4, 256, 2), packet + 6, 0xFF0, 2), raw, elf, "canonical"),
         )
     )
+    for index in (1, 2):
+        begin = packet + index * 16
+        invalid.extend(
+            (
+                (mutate(boot, begin + 2, 127, 2), raw, elf, "sector count"),
+                (mutate(boot, begin + 6, 0x1000, 2), raw, elf, "destination"),
+                (mutate(boot, begin + 8, 1, 8), raw, elf, "LBA"),
+            )
+        )
     for bad_boot, bad_raw, bad_elf, diagnostic in invalid:
         try:
             IMAGE.package_image(bad_boot, bad_raw, bad_elf, packet)
@@ -113,8 +123,8 @@ def controls(boot: bytes, packet: int) -> int:
 
 
 def build_probe(work: Path, boot: bytes, packet: int) -> bytes:
-    # Both sentinels are initialized file bytes, not BSS. The second occupies
-    # the last eight bytes of the final read sector. Entry uses no C++; the
+    # Sentinels are initialized file bytes, not BSS: old limit, both sides of
+    # every transfer boundary, and the final eight bytes. Entry uses no C++; the
     # inherited 0x90000 stack serves only bounded serial-output calls.
     source = work / "capacity.S"
     source.write_text(r"""
@@ -145,7 +155,7 @@ _start:
     out %al, %dx
     movabs $0x1c000, %rdi
     mov (%rdi), %r8
-    movabs $0x1fdf8, %rdi
+    movabs $0x2fbf8, %rdi
     mov (%rdi), %r9
     lea observed(%rip), %rsi
     call print
@@ -163,6 +173,28 @@ _start:
     movabs $0x0fedcba987654321, %rax
     cmp %rax, %r9
     jne failed_last
+    lea boundaries(%rip), %r12
+    mov $4, %r13d
+check_boundary:
+    mov (%r12), %r10
+    lea boundary_label(%rip), %rsi
+    call print
+    call hexadecimal
+    mov (%r12), %rax
+    mov (%rax), %r10
+    lea equals(%rip), %rsi
+    call print
+    call hexadecimal
+    lea newline(%rip), %rsi
+    call print
+    mov (%r12), %rax
+    mov (%rax), %rax
+    movabs $0x1122334455667788, %rdx
+    cmp %rax, %rdx
+    jne failed_last
+    add $8, %r12
+    dec %r13d
+    jnz check_boundary
     lea passed(%rip), %rsi
     call print
     mov $0x10, %eax
@@ -216,10 +248,20 @@ newline: .asciz "\n"
 passed: .asciz "AURORA_BIOS_CAPACITY_OK\n"
 missing: .asciz "AURORA_BIOS_CAPACITY_OLD_LIMIT_MISSING\n"
 corrupt: .asciz "AURORA_BIOS_CAPACITY_LAST_SECTOR_BAD\n"
+boundary_label: .asciz "BOUNDARY "
+equals: .asciz "="
+.balign 8
+boundaries: .quad 0x1fdf8, 0x1fe00, 0x1fff8, 0x20000
 digits: .ascii "0123456789abcdef"
 .section .data,"aw"
 .quad 0x123456789abcdef0
 .org 0x3df8
+.quad 0x1122334455667788
+.quad 0x1122334455667788
+.org 0x3ff8
+.quad 0x1122334455667788
+.quad 0x1122334455667788
+.org 0x13bf8
 .quad 0x0fedcba987654321
 .section .bss,"aw",@nobits
 .space 4096
@@ -234,7 +276,7 @@ SECTIONS {
  . = 0x10000; .text : { *(.text.entry) *(.text) } :code
  . = 0x11000; .rodata : { *(.rodata) } :rodata
  . = 0x1c000; .data : { *(.data) } :data
- ASSERT(. == 0x1fe00, "capacity sentinel must end at last loaded byte")
+ ASSERT(. == 0x2fc00, "capacity sentinel must end at last loaded byte")
  .bss : { *(.bss) } :data
  /DISCARD/ : { *(.note*) *(.comment*) }
 }
@@ -262,11 +304,14 @@ def smoke(work: Path, disk: bytes, packet: int) -> list[dict]:
     args = [qemu]
     if os.environ.get("QEMU_DATA"):
         args += ["-L", os.environ["QEMU_DATA"]]
-    # These two intentionally invalid disks bypass the packaging API only to
-    # prove the actual CPU rejects missing old-limit/final-sector input.
+    # Invalid/truncated disks bypass packaging only to exercise real loader
+    # refusal and payload corruption detection, never to qualify an image.
     fixtures = (
-        ("full-127", disk, 33),
-        ("old-96-negative", mutate(disk, packet + 2, 96, 2), 35),
+        ("full-254", disk, 33),
+        ("old-96-negative", mutate(disk, packet + 2, 96, 2), 67),
+        ("truncated-first", disk[: 512 * 127], 67),
+        ("truncated-second", disk[: 512 * 128], 69),
+        ("truncated-third", disk[: 512 * 129], 71),
         ("last-sector-negative", mutate(disk, 512 + LAST - BASE, 0, 1), 35),
     )
     results = []
@@ -308,22 +353,33 @@ def smoke(work: Path, disk: bytes, packet: int) -> list[dict]:
             result.returncode == expected,
             f"{name}: expected CPU exit {expected}, got {result.returncode}: {result.stdout}",
         )
+        if name.startswith("truncated-") or name == "old-96-negative":
+            require("AURORA_BIOS_CAPACITY_" not in result.stdout, f"{name}: entered payload after loader failure")
+            results.append(
+                {
+                    "name": name,
+                    "exit": result.returncode,
+                    "expected": expected,
+                    "image_sha256": hashlib.sha256(contents).hexdigest(),
+                    "command": command,
+                }
+            )
+            continue
         observed = re.findall(
             r"^AURORA_BIOS_CAPACITY_PROBE: old=([0-9a-f]{16}) final=([0-9a-f]{16})$", result.stdout, re.MULTILINE
         )
         require(len(observed) == 1, f"{name}: missing unique CPU-observed sentinel values")
         early, last = (int(value, 16) for value in observed[0])
-        if name == "full-127":
+        if name == "full-254":
             marker = "AURORA_BIOS_CAPACITY_OK"
+            require(
+                re.findall(r"^BOUNDARY ([0-9a-f]{16})=([0-9a-f]{16})$", result.stdout, re.MULTILINE)
+                == [(f"{address:016x}", "1122334455667788") for address in BOUNDARIES],
+                "CPU did not observe every transfer boundary sentinel",
+            )
             require(
                 (early, last) == (0x123456789ABCDEF0, 0x0FEDCBA987654321),
                 "Full read did not observe both exact sentinel values",
-            )
-        elif name == "old-96-negative":
-            marker = "AURORA_BIOS_CAPACITY_OLD_LIMIT_MISSING"
-            require(
-                early != 0x123456789ABCDEF0 and last != 0x0FEDCBA987654321,
-                "Old 96-sector read unexpectedly fetched a sentinel",
             )
         else:
             marker = "AURORA_BIOS_CAPACITY_LAST_SECTOR_BAD"
@@ -344,6 +400,9 @@ def smoke(work: Path, disk: bytes, packet: int) -> list[dict]:
                 "expected": expected,
                 "observed_old": observed[0][0],
                 "observed_final": observed[0][1],
+                "observed_boundaries": re.findall(
+                    r"^BOUNDARY ([0-9a-f]{16})=([0-9a-f]{16})$", result.stdout, re.MULTILINE
+                ),
                 "marker": marker,
                 "image_sha256": hashlib.sha256(contents).hexdigest(),
                 "command": command,
@@ -400,11 +459,14 @@ def main() -> None:
         }
         (work / "results.json").write_text(json.dumps(receipt, indent=2) + "\n")
         print(
-            f"PASS: 127-sector transport; three exact ELF/raw boundary fixtures; {negatives} rejected inputs; "
-            "linked final-sector probe validates at 65,024 bytes"
+            f"PASS: 254-sector transport; three exact ELF/raw boundary fixtures; {negatives} rejected inputs; "
+            "linked final-sector probe validates at 130,048 bytes"
         )
         if args.qemu:
-            print("PASS: actual BIOS final-sector read (exit 33); old-96 and corrupted-final-sector controls (exit 35)")
+            print(
+                "PASS: actual BIOS final-sector read (exit 33); loader refusal/truncation "
+                "and corrupted-final-sector controls"
+            )
 
 
 if __name__ == "__main__":

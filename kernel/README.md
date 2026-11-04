@@ -107,11 +107,18 @@ final image and affected guest/restoration gates are still required.
 The 512-byte sector starts at 0x7c00 with _boot first and a valid signature.
 The linker disables build IDs, discards only named GNU metadata, rejects other
 orphan/storage sections, and does not truncate or pad an invalid boot binary.
-A single EDD packet reads 127 sectors (65,024 bytes) from LBA 1 to
-[0x10000,0x1fe00), inside one 64 KiB window. A 65,025-byte payload rejects.
-Growth beyond this requires a separately checked multi-read/stage-two loader.
-512-byte sectors and EDD are assumed; loading and BSS initialization precede
-runtime memory-map grant verification. No physical BIOS compatibility is claimed.
+Three bounded EDD reads load 127, 1 and 126 sectors from LBAs 1, 128 and
+129 into [0x10000,0x1fe00), [0x1fe00,0x20000) and [0x20000,0x2fc00).
+Each transfer stays within a physical 64 KiB window; the total payload bound is
+130,048 bytes. Before payload writes, conventional memory must reach 576 KiB
+and the reported EBDA segment must be zero (absent) or at least 0x9000. The
+main stack ends exclusively at 0x90000. EDD discovery and every read's carry,
+status and returned count are checked; any failure halts without retry or
+payload entry. The image packager checks all three packets and padded coverage.
+The pinned emulator's 512-byte-sector IDE/EDD contract remains an assumption;
+loading and BSS initialization precede runtime memory-map grant verification.
+The existing A20 enable is not an A20 verification. No physical BIOS
+compatibility is claimed.
 
 ELF validation reconstructs initialized physical spans, checks exact flat bytes
 and zero alignment gaps, requires physical/virtual load agreement and coverage of
@@ -128,6 +135,30 @@ incarnation exhaustion rejects initialization. Dropping an unreleased lease leak
 rather than silently freeing aliased storage. The allocator is single-CPU and
 not a general heap. The raw pool does not scrub automatically: security-domain
 consumers must perform their checked scrub before release.
+
+## Retained BIOS scheduling owner
+
+The fixed three-task BIOS preemption consumer uses one retained Aurora
+`SchedulerOwner` for admission, round-robin selection, cumulative tick budgets
+and retirement decisions. Native code owns authenticated domain/context bindings
+and performs LAPIC, CR3, interrupt-frame and reclamation effects. It does not
+keep a second lifecycle or allowance ledger. This is not the production UEFI
+scheduler, SMP, blocking I/O or a general process API.
+
+A dispatch binds a slot, authenticated incarnation and nonwrapping sequence.
+Copied identity is not a capability. Source transitions run with interrupts
+disabled under short exclusive borrows, never across user execution or physical
+effects. IRQ observations occur only after frame/root authentication and timer
+acknowledgement or stop. Source restoration finishes only after deactivation
+and drain; retirement completes only after destruction and stale-handle rejection.
+Uncertain effects or rejected post-effect transitions fail-stop without replay.
+
+For each admitted task, used ticks equal the initial allowance minus remaining
+ticks. A timer observation charges exactly once; duplicate or stale observations
+reject before mutation. A fresh incarnation is required to renew an allowance.
+For a fixed runnable set, round-robin selection permits at most N-1 peer
+dispatches between selections, assuming finite execution/effect completion. This
+is not a wall-clock response bound. Existing 256/24/256 tick allowances remain.
 
 ## Protection and controlled programs
 

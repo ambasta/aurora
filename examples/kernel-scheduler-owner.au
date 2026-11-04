@@ -1,0 +1,53 @@
+module kernel_scheduler_owner;
+import kernel.scheduler_owner;
+
+// Synchronous plain-root entries; no loan survives a physical effect.
+auto scheduler_owner_create() -> kernel::SchedulerOwner {
+    const kernel::SchedulerTask empty = kernel::SchedulerTask();
+    const kernel::SchedulerOwner owner = kernel::SchedulerOwner(empty);
+    return owner;
+}
+auto scheduler_owner_admit(kernel::SchedulerOwner& owner, u64 slot, u64 stamp, u64 limit) -> bool {
+    return owner.admit(slot, stamp, limit);
+}
+auto scheduler_owner_select(kernel::SchedulerOwner& owner) -> kernel::SchedulerSelect {
+    return owner.select();
+}
+auto scheduler_owner_observe_tick(kernel::SchedulerOwner& owner, u64 slot, u64 stamp, u64 sequence) -> bool {
+    return owner.observe_tick(slot, stamp, sequence);
+}
+auto scheduler_owner_observe_terminal(kernel::SchedulerOwner& owner, u64 slot, u64 stamp, u64 sequence,
+    kernel::SchedulerTerminal reason) -> bool {
+    return owner.observe_terminal(slot, stamp, sequence, reason);
+}
+auto scheduler_owner_finish_restore(kernel::SchedulerOwner& owner, u64 slot, u64 stamp,
+    u64 sequence) -> kernel::SchedulerFinish {
+    return owner.finish_restore(slot, stamp, sequence);
+}
+auto scheduler_owner_ack_retired(kernel::SchedulerOwner& owner, u64 slot, u64 stamp, u64 sequence) -> bool {
+    return owner.ack_retired(slot, stamp, sequence);
+}
+auto scheduler_owner_active_slot(const kernel::SchedulerOwner& owner) -> u64 {
+    return owner.active_slot();
+}
+auto scheduler_owner_active_stamp(const kernel::SchedulerOwner& owner) -> u64 {
+    return owner.active_stamp();
+}
+auto scheduler_owner_sequence(const kernel::SchedulerOwner& owner) -> u64 {
+    return owner.sequence();
+}
+auto scheduler_owner_phase(const kernel::SchedulerOwner& owner, u64 slot) -> kernel::SchedulerPhase {
+    return owner.phase(slot);
+}
+auto scheduler_owner_used(const kernel::SchedulerOwner& owner, u64 slot) -> u64 {
+    return owner.used(slot);
+}
+auto scheduler_owner_remaining(const kernel::SchedulerOwner& owner, u64 slot) -> u64 {
+    return owner.remaining(slot);
+}
+auto scheduler_owner_reason(const kernel::SchedulerOwner& owner, u64 slot) -> kernel::SchedulerTerminal {
+    return owner.reason(slot);
+}
+auto scheduler_owner_complete(const kernel::SchedulerOwner& owner) -> bool {
+    return owner.complete();
+}

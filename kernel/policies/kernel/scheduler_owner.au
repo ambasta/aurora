@@ -1,0 +1,291 @@
+export module kernel.scheduler_owner;
+
+export namespace kernel {
+    enum class SchedulerPhase {
+        empty,
+        runnable,
+        dispatched,
+        observed,
+        retiring,
+        retired
+    };
+    enum class SchedulerSelect {
+        rejected,
+        idle,
+        selected
+    };
+    enum class SchedulerFinish {
+        rejected,
+        runnable,
+        retiring
+    };
+    enum class SchedulerTerminal {
+        none,
+        tick,
+        returned,
+        bounds,
+        overflow,
+        division_zero,
+        shift_count
+    };
+
+    // A copied task value carries policy state, never a domain capability.
+    class SchedulerTask {
+        SchedulerPhase state;
+        u64 incarnation;
+        u64 initial_count;
+        u64 remaining_count;
+        u64 used_count;
+        SchedulerTerminal terminal_reason;
+        u64 dispatch_sequence;
+    public:
+        SchedulerTask() : state(SchedulerPhase::empty), incarnation(0u64), initial_count(0u64), remaining_count(0u64),
+            used_count(0u64), terminal_reason(SchedulerTerminal::none), dispatch_sequence(0u64) {
+        }
+        auto valid_counts() const -> bool {
+            return initial_count > 0u64 && remaining_count <= initial_count && used_count == initial_count
+                - remaining_count;
+        }
+        auto admit(u64 stamp, u64 limit) -> bool {
+            state = SchedulerPhase::runnable;
+            incarnation = stamp;
+            initial_count = limit;
+            remaining_count = limit;
+            used_count = 0u64;
+            terminal_reason = SchedulerTerminal::none;
+            dispatch_sequence = 0u64;
+            return true;
+        }
+        auto dispatch(u64 sequence) -> bool {
+            state = SchedulerPhase::dispatched;
+            dispatch_sequence = sequence;
+            return true;
+        }
+        auto observe_tick() -> bool {
+            // The owner checked remaining > 0 and conservation first, so used
+            // is strictly below initial and neither operation can overflow.
+            remaining_count = remaining_count - 1u64;
+            used_count = used_count + 1u64;
+            terminal_reason = SchedulerTerminal::tick;
+            state = SchedulerPhase::observed;
+            return true;
+        }
+        auto observe_terminal(SchedulerTerminal reason) -> bool {
+            terminal_reason = reason;
+            state = SchedulerPhase::observed;
+            return true;
+        }
+        auto restore() -> SchedulerFinish {
+            if (terminal_reason == SchedulerTerminal::tick && remaining_count > 0u64) {
+                terminal_reason = SchedulerTerminal::none;
+                state = SchedulerPhase::runnable;
+                return SchedulerFinish::runnable;
+            }
+            state = SchedulerPhase::retiring;
+            return SchedulerFinish::retiring;
+        }
+        auto retire() -> bool {
+            state = SchedulerPhase::retired;
+            return true;
+        }
+        auto phase() const -> SchedulerPhase {
+            return state;
+        }
+        auto stamp() const -> u64 {
+            return incarnation;
+        }
+        auto sequence() const -> u64 {
+            return dispatch_sequence;
+        }
+        auto remaining() const -> u64 {
+            return remaining_count;
+        }
+        auto used() const -> u64 {
+            return used_count;
+        }
+        auto reason() const -> SchedulerTerminal {
+            return terminal_reason;
+        }
+    };
+
+    // One retained scheduling owner for the existing three-domain BSP consumer.
+    // Native code authenticates every domain, interrupt and physical completion;
+    // these scalar identities cannot create a handle or authorize an effect.
+    class SchedulerOwner {
+        SchedulerTask first;
+        SchedulerTask second;
+        SchedulerTask third;
+        u64 cursor;
+        u64 active;
+        u64 last_sequence;
+        u64 newest_stamp;
+
+        auto task(u64 slot) const -> SchedulerTask {
+            if (slot == 0u64) {
+                return first;
+            }
+            if (slot == 1u64) {
+                return second;
+            }
+            return third;
+        }
+        auto save(u64 slot, SchedulerTask value) -> bool {
+            if (slot == 0u64) {
+                first = value;
+            } else {
+                if (slot == 1u64) {
+                    second = value;
+                } else {
+                    third = value;
+                }
+            }
+            return true;
+        }
+        auto same(u64 slot, u64 stamp, u64 sequence, SchedulerPhase expected) const -> bool {
+            if (slot >= 3u64 || active != slot || stamp == 0u64 || sequence == 0u64 || sequence != last_sequence) {
+                return false;
+            }
+            const SchedulerTask value = task(slot);
+            return value.phase() == expected && value.stamp() == stamp && value.sequence() == sequence
+                && value.valid_counts();
+        }
+    public:
+        SchedulerOwner(SchedulerTask empty) : first(empty), second(empty), third(empty), cursor(0u64), active(3u64),
+            last_sequence(0u64), newest_stamp(0u64) {
+        }
+        auto admit(u64 slot, u64 stamp, u64 limit) -> bool {
+            if (slot >= 3u64 || active != 3u64 || stamp <= newest_stamp || limit == 0u64) {
+                return false;
+            }
+            SchedulerTask value = task(slot);
+            if (value.phase() != SchedulerPhase::empty && value.phase() != SchedulerPhase::retired) {
+                return false;
+            }
+            value.admit(stamp, limit);
+            save(slot, value);
+            newest_stamp = stamp;
+            return true;
+        }
+        auto select() -> SchedulerSelect {
+            if (active != 3u64 || cursor >= 3u64) {
+                return SchedulerSelect::rejected;
+            }
+            u64 slot = cursor;
+            u64 scanned = 0u64;
+            while (scanned < 3u64) {
+                SchedulerTask value = task(slot);
+                if (value.phase() == SchedulerPhase::runnable) {
+                    if (!value.valid_counts() || value.remaining() == 0u64 || value.reason() != SchedulerTerminal::none
+                        || last_sequence == 18446744073709551615u64) {
+                        return SchedulerSelect::rejected;
+                    }
+                    last_sequence = last_sequence + 1u64;
+                    value.dispatch(last_sequence);
+                    save(slot, value);
+                    active = slot;
+                    cursor = 0u64;
+                    if (slot < 2u64) {
+                        cursor = slot + 1u64;
+                    }
+                    return SchedulerSelect::selected;
+                }
+                slot = slot + 1u64;
+                if (slot == 3u64) {
+                    slot = 0u64;
+                }
+                scanned = scanned + 1u64;
+            }
+            return SchedulerSelect::idle;
+        }
+        auto observe_tick(u64 slot, u64 stamp, u64 sequence) -> bool {
+            if (!same(slot, stamp, sequence, SchedulerPhase::dispatched)) {
+                return false;
+            }
+            SchedulerTask value = task(slot);
+            if (value.remaining() == 0u64) {
+                return false;
+            }
+            value.observe_tick();
+            save(slot, value);
+            return true;
+        }
+        auto observe_terminal(u64 slot, u64 stamp, u64 sequence, SchedulerTerminal reason) -> bool {
+            if (!same(slot, stamp, sequence, SchedulerPhase::dispatched) || (reason != SchedulerTerminal::returned
+                && reason != SchedulerTerminal::bounds && reason != SchedulerTerminal::overflow && reason
+                != SchedulerTerminal::division_zero && reason != SchedulerTerminal::shift_count)) {
+                return false;
+            }
+            SchedulerTask value = task(slot);
+            value.observe_terminal(reason);
+            save(slot, value);
+            return true;
+        }
+        auto finish_restore(u64 slot, u64 stamp, u64 sequence) -> SchedulerFinish {
+            if (!same(slot, stamp, sequence, SchedulerPhase::observed)) {
+                return SchedulerFinish::rejected;
+            }
+            SchedulerTask value = task(slot);
+            const SchedulerFinish result = value.restore();
+            save(slot, value);
+            if (result == SchedulerFinish::runnable) {
+                active = 3u64;
+            }
+            return result;
+        }
+        auto ack_retired(u64 slot, u64 stamp, u64 sequence) -> bool {
+            if (!same(slot, stamp, sequence, SchedulerPhase::retiring)) {
+                return false;
+            }
+            SchedulerTask value = task(slot);
+            value.retire();
+            save(slot, value);
+            active = 3u64;
+            return true;
+        }
+        auto active_slot() const -> u64 {
+            return active;
+        }
+        auto active_stamp() const -> u64 {
+            if (active >= 3u64) {
+                return 0u64;
+            }
+            const SchedulerTask value = task(active);
+            return value.stamp();
+        }
+        auto sequence() const -> u64 {
+            return last_sequence;
+        }
+        auto phase(u64 slot) const -> SchedulerPhase {
+            if (slot >= 3u64) {
+                return SchedulerPhase::empty;
+            }
+            const SchedulerTask value = task(slot);
+            return value.phase();
+        }
+        auto used(u64 slot) const -> u64 {
+            if (slot >= 3u64) {
+                return 0u64;
+            }
+            const SchedulerTask value = task(slot);
+            return value.used();
+        }
+        auto remaining(u64 slot) const -> u64 {
+            if (slot >= 3u64) {
+                return 0u64;
+            }
+            const SchedulerTask value = task(slot);
+            return value.remaining();
+        }
+        auto reason(u64 slot) const -> SchedulerTerminal {
+            if (slot >= 3u64) {
+                return SchedulerTerminal::none;
+            }
+            const SchedulerTask value = task(slot);
+            return value.reason();
+        }
+        auto complete() const -> bool {
+            return active == 3u64 && first.phase() == SchedulerPhase::retired && second.phase()
+                == SchedulerPhase::retired && third.phase() == SchedulerPhase::retired;
+        }
+    };
+}
