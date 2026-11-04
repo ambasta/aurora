@@ -26,7 +26,9 @@ enum class Action : U64 {
     retire,
     close,
     abandon,
-    done
+    done,
+    input_poll,
+    input_wait
 };
 enum class Event : U64 {
     success,
@@ -38,7 +40,8 @@ enum class Event : U64 {
     pending,
     service_lost,
     output_failed,
-    cancelled
+    cancelled,
+    input
 };
 class Request final {
 public:
@@ -85,9 +88,12 @@ template <class Platform> class Root final {
         borrowed_ = false;
     }
     static auto valid(const Request &request) -> bool {
-        if (static_cast<U64>(request.action) > static_cast<U64>(Action::done) || request.status > 8)
+        if (static_cast<U64>(request.action) > static_cast<U64>(Action::input_wait) || request.status > 8)
             return false;
         if (request.quota != (request.action == Action::load ? 4096 : 0))
+            return false;
+        if ((request.action == Action::input_poll || request.action == Action::input_wait) &&
+            (request.child != 1 || request.status != 8 || request.value != 0))
             return false;
         const bool global =
             request.action == Action::admit || request.action == Action::abandon || request.action == Action::done;
@@ -132,7 +138,7 @@ public:
         in_flight_ = true;
     }
     auto accept(Event event, U64 status = 0, U64 value = 0) -> void {
-        require(pending_ && in_flight_ && static_cast<U64>(event) <= static_cast<U64>(Event::cancelled) && status <= 8);
+        require(pending_ && in_flight_ && static_cast<U64>(event) <= static_cast<U64>(Event::input) && status <= 8);
         enter();
         require(__au_runtime_batch_accept(storage_, receipt_.ordinal, event, status, value));
         leave();

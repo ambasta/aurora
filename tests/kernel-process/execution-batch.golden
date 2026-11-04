@@ -35,3 +35,23 @@ withdraw-processing denied
 withdraw-replied denied
 withdraw-completion denied
 withdraw-revoked denied
+input-ready admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/pending=1 activate.2#6q0/parked=1 input_poll.1#7q0/success=1 activate.2#8q0/terminal=1 close.2#9q0/success=1 activate.1#10q0/terminal=1 close.1#11q0/success=1 final=done.0#11q0:0,0,11,0,22
+input-repeated admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/pending=1 activate.2#6q0/parked=1 input_poll.1#7q0/pending=1 activate.2#8q0/parked=1 input_poll.1#9q0/success=1 final=activate.2#10q0
+input-sibling-terminal admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/pending=1 activate.2#6q0/terminal=1 close.2#7q0/success=1 input_poll.1#8q0/pending=1 input_wait.1#9q0/success=1 input_poll.1#10q0/success=1 activate.1#11q0/terminal=1 close.1#12q0/success=1 final=done.0#12q0:0,0,11,0,22
+input-sibling-fault admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/pending=1 activate.2#6q0/terminal=1 close.2#7q0/success=1 input_poll.1#8q0/pending=1 input_wait.1#9q0/success=1 input_poll.1#10q0/success=1 activate.1#11q0/terminal=1 close.1#12q0/success=1 final=done.0#12q0:0,0,11,1,6
+input-sibling-watchdog admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/pending=1 activate.2#6q0/terminal=1 close.2#7q0/success=1 input_poll.1#8q0/pending=1 input_wait.1#9q0/success=1 input_poll.1#10q0/success=1 activate.1#11q0/terminal=1 close.1#12q0/success=1 final=done.0#12q0:0,0,11,2,0
+input-rpc admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/pending=1 activate.2#6q0/request=1 request.2#7q0/pending=1 request.2#8q0/pending=1 request.2#9q0/success=1 input_poll.1#10q0/success=1 final=activate.2#11q0
+input-output admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/pending=1 activate.2#6q0/output=1 output.2#7q0/success=1 input_poll.1#8q0/success=1 final=activate.2#9q0
+input-output-loss admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/pending=1 activate.2#6q0/output=1 output.2#7q0/output_failed=1 retire.2#8q0/terminal=1 close.2#9q0/success=1 retire.1#10q0/terminal=1 close.1#11q0/success=1 final=done.0#11q0:0,8,0,7,0
+input-service-loss admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/service_lost=1 abandon.0#6q0/success=1 final=done.0#6q0:0,6,0,6,0
+input-wait-service-loss admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/pending=1 activate.2#6q0/terminal=1 close.2#7q0/success=1 input_poll.1#8q0/pending=1 input_wait.1#9q0/service_lost=1 abandon.0#10q0/success=1 final=done.0#10q0:0,6,0,0,22
+input-cancelled admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/cancelled=1 retire.1#6q0/terminal=1 close.1#7q0/success=1 activate.2#8q0/terminal=1 close.2#9q0/success=1 final=done.0#9q0:0,8,0,0,22
+input-malformed admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/stale=0 input_poll.1#5q0/pending=0 input_poll.1#5q0/pending=0 input_poll.1#5q0/cancelled=0 input_poll.1#5q0/cancelled=0 input_poll.1#5q0/input=0 input_poll.1#5q0/success=1 final=activate.2#6q0
+input-wait-malformed admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=1 input_poll.1#5q0/pending=1 activate.2#6q0/terminal=1 close.2#7q0/success=1 input_poll.1#8q0/pending=1 input_wait.1#9q0/pending=0 input_wait.1#9q0/cancelled=0 input_wait.1#9q0/success=0 input_wait.1#9q0/success=1 final=input_poll.1#10q0
+input-child2-refused admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/parked=1 activate.2#5q0/input=0 activate.2#5q0/parked=1 final=activate.1#6q0
+input-trap-malformed admit.0#1q0/success=1 load.1#2q4096/success=1 load.2#3q4096/success=1 activate.1#4q0/input=0 activate.1#4q0/input=0 activate.1#4q0/input=1 final=input_poll.1#5q0
+binding-forged-input-child denied
+binding-forged-input-action denied
+binding-forged-input-status denied
+binding-forged-input-value denied
+binding-forged-input-ordinal denied

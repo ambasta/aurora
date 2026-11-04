@@ -418,7 +418,10 @@ retires the child without manufacturing a report or resuming it.
 Each command receives one nonrenewable `InputWaitAllowance` in admitted LAPIC
 count units, separate from its existing CPU fuel. Full and partial supervisor
 wait slices debit it once before delivery; another read never renews it. This
-is not elapsed seconds or a wall-clock deadline. Exhaustion takes precedence
+is not elapsed seconds or a wall-clock deadline. In a foreground pair only the
+first member can receive this grant. Its parked read permits sibling execution;
+that CPU/RPC work does not debit or renew the separate charged-wait allowance.
+Exhaustion takes precedence
 over a coincident byte/EOF and closes input as unavailable. Native code owns
 authenticated fixed-size staging, saved-frame validation and bounded copying;
 Aurora policy owns channel state, terminal outcomes and byte publication.

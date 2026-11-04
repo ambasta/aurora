@@ -553,10 +553,12 @@ def validate_native_abi(facts, source):
 
     if "# EXECUTION_BATCH_ABI:" in source:
         nominal = retained_root("kernel::BatchOwner", reservation=160)
-        enum("kernel::BatchAction", "admit load activate output request retire close abandon done")
+        enum(
+            "kernel::BatchAction", "admit load activate output request retire close abandon done input_poll input_wait"
+        )
         enum(
             "kernel::BatchEvent",
-            "success refused parked output request terminal pending service_lost output_failed cancelled",
+            "success refused parked output request terminal pending service_lost output_failed cancelled input",
         )
         record(
             "kernel::BatchRequest",

@@ -52,6 +52,8 @@ using ProcessPairOutput = bool (*)(void *, std::size_t, bool, std::span<const st
                                     std::span<const std::byte> second_arguments,
                                     ProcessPairOutput output,
                                     void *context,
+                                    ProcessInput input = nullptr,
+                                    bool input_after_cr = false,
                                     ProcessPresentation presentation = nullptr) -> RunPairResult;
 
 // Exact production NVMe composition only: admit its readonly mount before the

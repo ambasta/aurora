@@ -54,6 +54,26 @@ auto binding_case(const std::string &kind) -> bool {
                 request = root.next();
                 request.quota = 8192;
             }
+            if (kind.starts_with("forged-input-")) {
+                for (int at = 0; at < 3; ++at) {
+                    root.begin_effect(request);
+                    root.accept(batch::Event::success);
+                    request = root.next();
+                }
+                root.begin_effect(request);
+                root.accept(batch::Event::input);
+                request = root.next();
+                if (kind == "forged-input-child")
+                    request.child = 2;
+                if (kind == "forged-input-action")
+                    request.action = batch::Action::input_wait;
+                if (kind == "forged-input-status")
+                    request.status = 0;
+                if (kind == "forged-input-value")
+                    request.value = 1;
+                if (kind == "forged-input-ordinal")
+                    --request.ordinal;
+            }
             if (kind == "forged-quota")
                 request.quota = 4096;
             if (kind == "forged-child")
@@ -61,6 +81,8 @@ auto binding_case(const std::string &kind) -> bool {
             if (kind == "stale-parent")
                 Platform::stale = true;
             root.begin_effect(request);
+            if (kind.starts_with("forged-input-"))
+                _exit(80); // A forgery must fail at authentication, not a later receipt.
             if (kind == "double-effect")
                 root.begin_effect(request);
             if (kind != "unfinished") {
@@ -83,7 +105,7 @@ auto binding_case(const std::string &kind) -> bool {
     return expected == 0;
 }
 constexpr const char *actions[] = {
-    "admit", "load", "activate", "output", "request", "retire", "close", "abandon", "done"};
+    "admit", "load", "activate", "output", "request", "retire", "close", "abandon", "done", "input_poll", "input_wait"};
 constexpr const char *events[] = {"success",
                                   "refused",
                                   "parked",
@@ -93,7 +115,8 @@ constexpr const char *events[] = {"success",
                                   "pending",
                                   "service_lost",
                                   "output_failed",
-                                  "cancelled"};
+                                  "cancelled",
+                                  "input"};
 auto event(const std::string &name) -> batch::Event {
     for (U64 at = 0; at < std::size(events); ++at)
         if (name == events[at])

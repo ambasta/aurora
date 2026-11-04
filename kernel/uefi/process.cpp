@@ -3513,8 +3513,8 @@ auto presentation_quiet(std::size_t selected) -> bool {
 }
 [[gnu::noinline]] auto present_foreground(std::size_t selected) -> void {
     using namespace aurora::lifecycle;
-    if (!presentation_sink)
-        return;
+    if (!presentation_sink || (input_read.pending && selected != 1))
+        return; // The input owner presents the dirty grid at its next authenticated poll.
     U64 stack_pointer;
     asm volatile("mov %%rsp, %0" : "=r"(stack_pointer));
     const auto target = reinterpret_cast<U64>(presentation_sink);
@@ -3790,15 +3790,23 @@ __attribute__((noinline)) auto wait_for_input_sample() -> void {
 #endif
     input_wait = {};
 }
-[[gnu::noinline]] auto deliver_input() -> bool {
+enum class InputProgress {
+    pending,
+    delivered,
+    failed
+};
+[[gnu::noinline]] auto poll_input() -> InputProgress {
     if (!input_read.pending || !residents[1].space)
-        return false;
+        return InputProgress::failed;
     if (!input_identity())
         fail("input delivery boundary");
 #if defined(AURORA_PRODUCTION) || defined(AURORA_PROCESS_FIXTURE)
     present_foreground();
 #endif
-    while (input_read.protocol.status == 0 && input_read.protocol.count < 504) {
+    // Count provider calls, not bytes: CR-following LF may consume a sample
+    // without publishing a byte. No poll owns the timer or waits for input.
+    for (U64 samples = 0; samples < 504 && input_read.protocol.status == 0 && input_read.protocol.count < 504;
+         ++samples) {
         if (!input_source) {
             input_read.protocol = process::input_update(input_read.protocol, 2);
             break;
@@ -3817,8 +3825,7 @@ __attribute__((noinline)) auto wait_for_input_sample() -> void {
                 input_read.protocol = process::input_update(input_read.protocol, 0);
                 break;
             }
-            wait_for_input_sample();
-            continue;
+            return InputProgress::pending;
         }
         const U64 prior = input_read.protocol.count;
         input_read.protocol = process::input_update(input_read.protocol, 1, sample.byte);
@@ -3829,10 +3836,20 @@ __attribute__((noinline)) auto wait_for_input_sample() -> void {
     }
     if (!input_identity())
         fail("input commit identity");
+    if (!input_read.protocol.count && !input_read.protocol.status)
+        return InputProgress::pending;
     input_read.completing = true;
     const bool completed = execution_owner.complete(1);
     input_read.completing = false;
-    return completed;
+    return completed ? InputProgress::delivered : InputProgress::failed;
+}
+[[gnu::noinline]] auto deliver_input() -> bool {
+    for (;;) {
+        const auto progress = poll_input();
+        if (progress != InputProgress::pending)
+            return progress == InputProgress::delivered;
+        wait_for_input_sample();
+    }
 }
 
 // Actual resources/effect evidence belong to the private authenticated lease
@@ -5731,6 +5748,8 @@ class PairBinding final {
 public:
     ResidentInput &input;
     std::array<ExecutionBinding, 2> members{};
+    // Diagnostic suppression only; never scheduling or cleanup authority.
+    bool input_parked_recorded = false, input_idle_recorded = false;
     explicit PairBinding(ResidentInput &value) : input(value) {
         members[0].slot = 1;
         members[1].slot = 2;
@@ -5873,8 +5892,13 @@ auto resident_pair(ResidentInput &input) -> aurora::execution::Result {
             case aurora::execution::Step::request:
                 event = Event::request;
                 break;
+            case aurora::execution::Step::input:
+                if (member->slot != 1 || !input_identity())
+                    fail("pair input owner");
+                event = Event::input;
+                break;
             default:
-                fail("pair unsupported input");
+                fail("pair unsupported step");
             }
             break;
         }
@@ -5900,9 +5924,68 @@ auto resident_pair(ResidentInput &input) -> aurora::execution::Result {
             }
             break;
         }
+        case Action::input_poll: {
+            if (member->slot != 1 || !ExecutionEffects::bound_client(*member) ||
+                !ExecutionEffects::bound_service(*member) || !member->input_pending || member->output_pending ||
+                member->request_pending || !input_identity())
+                fail("pair input poll binding");
+            const auto progress = poll_input();
+            if (progress == InputProgress::pending) {
+                if (!input_identity())
+                    fail("pair pending input receipt");
+                if (!binding.input_parked_recorded) {
+                    binding.input_parked_recorded = true;
+                    Serial::text("AURORA_PAIR_INPUT_PARKED:");
+                    field("run", input_read.owner);
+                    field("sequence", input_read.sequence);
+                    field("remaining", input_read.protocol.remaining);
+                    Serial::text(" child=1 pending=1\r\n");
+                }
+                event = Event::pending;
+            } else {
+                member->input_pending = false;
+                if (progress == InputProgress::failed) {
+                    event = Event::cancelled;
+                    status = static_cast<U64>(RunStatus::cancelled);
+                }
+            }
+            break;
+        }
+        case Action::input_wait: {
+            if (member->slot != 1 || !ExecutionEffects::bound_client(*member) ||
+                !ExecutionEffects::bound_service(*member) || !member->input_pending || member->output_pending ||
+                member->request_pending || !input_identity() || residents[2].space || binding.members[1].client ||
+                endpoint.caller)
+                fail("pair input wait binding");
+            const U64 owner = input_read.owner, sequence = input_read.sequence;
+            const U64 before = input_read.protocol.remaining, cpu = residents[1].budget.used();
+            const U64 armed = least(input_poll_count, before);
+            wait_for_input_sample(); // One charged, stopped and drained slice.
+            const U64 after = input_read.protocol.remaining;
+            if (!input_identity() || input_read.owner != owner || input_read.sequence != sequence || after >= before ||
+                before - after > armed || residents[1].budget.used() != cpu || input_wait.active ||
+                Timer::read(0x390) || !Timer::quiet(0x100, false) || !Timer::quiet(0x200, false))
+                fail("pair input wait settlement");
+            if (!after && !binding.input_idle_recorded) {
+                binding.input_idle_recorded = true;
+                Serial::text("AURORA_PAIR_INPUT_IDLE:");
+                field("run", owner);
+                field("sequence", sequence);
+                field("before", before);
+                field("after", after);
+                field("charge", before - after);
+                field("armed", armed);
+                field("cpu_before", cpu);
+                field("cpu_after", residents[1].budget.used());
+                Serial::text(" sibling_closed=1 drained=1\r\n");
+            }
+            break;
+        }
         case Action::retire:
+            invalidate_input(member->client);
+            member->input_pending = false;
             if (!ExecutionEffects::bound_client(*member) || !ExecutionEffects::bound_service(*member) ||
-                member->request_pending || member->input_pending || forced_execution)
+                member->request_pending || forced_execution)
                 fail("pair retirement binding");
             if (!member->output_failed && !endpoint.caller_cancelled) {
                 member->explicit_cancel_requested = true;
@@ -5945,8 +6028,10 @@ auto resident_pair(ResidentInput &input) -> aurora::execution::Result {
         }
         case Action::abandon:
             abandon_service();
-            for (auto &child : binding.members)
+            for (auto &child : binding.members) {
                 child.client = 0;
+                child.input_pending = false;
+            }
             endpoint.caller_cancelled = false;
             break;
         default:
@@ -5956,6 +6041,13 @@ auto resident_pair(ResidentInput &input) -> aurora::execution::Result {
             status = static_cast<U64>(RunStatus::unavailable);
             value = 0;
         } else if (event == Event::output_failed) {
+            if (input_read.pending) {
+                auto &reader = binding.members[0];
+                if (!reader.input_pending || input_read.owner != reader.client || !input_identity())
+                    fail("pair output loss input receipt");
+                invalidate_input(reader.client);
+                reader.input_pending = false;
+            }
             status = static_cast<U64>(RunStatus::output_failed);
             value = 0;
         }
@@ -6194,6 +6286,8 @@ auto aurora::uefi::run_program_pair(U64 arena,
                                     std::span<const std::byte> second_arguments,
                                     ProcessPairOutput output,
                                     void *context,
+                                    ProcessInput source_input,
+                                    bool input_after_cr,
                                     ProcessPresentation presentation) -> RunPairResult {
     if (!output || first_path.empty() || second_path.empty() || first_path.size() > process::file_path_limit ||
         second_path.size() > process::file_path_limit || first_arguments.empty() || second_arguments.empty() ||
@@ -6204,10 +6298,12 @@ auto aurora::uefi::run_program_pair(U64 arena,
     pair_output = output;
     pair_output_context = context;
     output_sink = pair_output_adapter;
-    output_context = nullptr;
+    output_context = context;
     presentation_sink = presentation;
     presentation_handoff = &handoff;
-    input_read = {}; // No input source: either requested input ABI refuses admission.
+    input_source = source_input;
+    input_read = {};
+    input_read.protocol.after_cr = input_after_cr ? 1 : 0;
     auto supplied = resident_arguments(handoff);
     supplied.mode = RunMode::pair;
     supplied.path = first_path;
@@ -6222,7 +6318,10 @@ auto aurora::uefi::run_program_pair(U64 arena,
     resident_owner.close(operation);
     if (static_cast<U64>(input.pair_result.admission) != static_cast<U64>(observed.status) || observed.value)
         fail("pair copied result binding");
-    const auto result = input.pair_result;
+    auto result = input.pair_result;
+    result.members[0].input_quarantine = input_read.quarantine;
+    invalidate_input(input_read.owner);
+    input_source = nullptr;
     pair_output = nullptr;
     pair_output_context = nullptr;
     pair_output_member = 0;

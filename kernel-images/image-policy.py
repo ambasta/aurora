@@ -545,7 +545,7 @@ RULES = [
         ],
         "callbacks": [
             "deliver_output(=execution_output_probe(",
-            "deliver_input(=input_probe_sample(",
+            "poll_input(=input_probe_sample(",
             "deliver_output(=presentation_probe_output(",
             "present_foreground(=presentation_probe(",
         ],
@@ -685,7 +685,7 @@ RULES = [
             "deliver_output(=production_output(",
             "deliver_output(=pair_output_adapter(",
             "pair_output_adapter(=production_pair_output(",
-            "deliver_input(=production_input(",
+            "poll_input(=production_input(",
             "present_foreground(=production_present(",
         ],
         "imports:execution": [

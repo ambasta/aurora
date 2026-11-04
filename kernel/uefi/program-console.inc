@@ -1219,7 +1219,17 @@ auto production_pair_output(void *context, std::size_t member, bool error, std::
     return production_output(context, error, std::as_bytes(std::span{tag.data(), tag.size()})) &&
            production_output(context, error, bytes);
 }
-[[nodiscard]] __attribute__((noinline)) auto production_run_pair(const program::Submission &input) -> bool {
+auto production_finish_input(bool quarantine) -> void {
+    if (quarantine) {
+        // The source console quarantines the remaining suffix through a
+        // delimiter. UART bytes themselves have no authenticated child epoch.
+        for (unsigned int index = 0; index < 16; ++index)
+            if (!ProgramSerial::next().present)
+                break;
+    }
+}
+[[nodiscard]] __attribute__((noinline)) auto production_run_pair(const program::Submission &input,
+                                                                 bool &input_quarantine) -> bool {
     require(ProgramInputPlatform::quiet() && terminal_mapping(), "production pair entry ownership");
     program::RunPairArguments arguments;
     if (!arguments.parse(input)) {
@@ -1237,8 +1247,12 @@ auto production_pair_output(void *context, std::size_t member, bool error, std::
                                          arguments.second().arguments(),
                                          production_pair_output,
                                          nullptr,
+                                         production_input,
+                                         input.after_cr() != 0,
                                          production_present);
     production_process_leave(previous_cr2);
+    input_quarantine = result.members[0].input_quarantine;
+    production_finish_input(input_quarantine);
     if (result.admission != RunStatus::exited)
         return production_run_result(RunResult{result.admission, 0, false}, "\r\nrun-pair: ");
     if (result.members[0].status == RunStatus::output_failed || result.members[1].status == RunStatus::output_failed)
@@ -1268,14 +1282,7 @@ auto production_pair_output(void *context, std::size_t member, bool error, std::
                                     production_present);
     production_process_leave(previous_cr2);
     input_quarantine = result.input_quarantine;
-    if (input_quarantine) {
-        // Bound the physical FIFO cleanup even under continuous input. The
-        // next source console turn quarantines the remaining suffix through a
-        // delimiter; UART bytes themselves have no authenticated child epoch.
-        for (unsigned int index = 0; index < 16; ++index)
-            if (!ProgramSerial::next().present)
-                break;
-    }
+    production_finish_input(input_quarantine);
     return production_run_result(result, "\r\nrun: ");
 }
 #endif
@@ -1328,7 +1335,7 @@ __attribute__((noinline)) auto run_program_console() -> void {
             copied.scrub();
             continue;
         case Effect::run_pair:
-            effect = session.advance(Event::response, production_run_pair(copied));
+            effect = session.advance(Event::response, production_run_pair(copied, input_quarantine));
             copied.scrub();
             continue;
         case Effect::run:

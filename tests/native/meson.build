@@ -412,6 +412,6 @@ if get_option('kernel_images')
        args: ['-B', files('../kernel-program-console-pty.py'), '--mode', 'program-console',
               '--build-dir', meson.project_build_root() / 'kernel-images/uefi/production',
               '--program-cases', meson.project_build_root(), '--pair-cases'],
-       depends: kernel_profile_images['uefi/production'] + production_guest_programs,
+       depends: kernel_profile_images['uefi/production'] + production_guest_programs + [process_programs['aurora:process-input']],
        suite: ['guest', 'guest-production'], workdir: native_root, is_parallel: false, timeout: 180)
 endif

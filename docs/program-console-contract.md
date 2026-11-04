@@ -39,7 +39,8 @@ limit; it never retries a lost request. Concurrent mutation is not a snapshot.
 `run-pair PATH [args] -- PATH [args]` admits two programs under one foreground
 command. The existing 64-byte line limit still applies, with at most 16 words
 per program and exactly one standalone `--`. There are no pipes, quoting,
-background jobs or InputStream grants. Both executable images must be admitted
+background jobs or shared input channels. Only the first member may request the
+foreground InputStream; the second member remains noninteractive. Both executable images must be admitted
 before either client executes. Admission failure reclaims prepared clients and
 preserves the file owner when its transport remains healthy.
 
@@ -54,6 +55,21 @@ existing memory admission. One endpoint transaction is completed, including the
 copied reply, before another client can use its buffers. A completed request, output
 record or timer park gives the other eligible client its next turn. This is
 bounded single-BSP scheduling, not SMP or a wall-clock fairness guarantee.
+
+An input-blocked first member retains its exact saved continuation while the
+second runs. Aurora selects a bounded input poll after each complete sibling
+turn, or one existing idle wait slice when no sibling is runnable. A poll takes
+at most 504 provider samples and publishes partial data without waiting to fill
+it. File RPCs remain indivisible scheduling turns. The nonrenewable input
+allowance charges only admitted supervisor LAPIC wait slices, not sibling CPU
+execution or RPC time; it is not a wall-clock timeout. CPU fuel remains separate.
+No timer role or source loan crosses a dispatch. Cancellation/EOF belongs only
+to the first member; an ordinary sibling exit or fault does not revoke input.
+
+Input ownership requires the same bounded FIFO and delimiter quarantine as
+ordinary `run`, even if the second image fails admission. Pending input is
+revoked before owner cleanup. Sibling output defers optional framebuffer painting
+until the reader's own authenticated poll; the existing presentation cap remains.
 
 Output records carry `[1]` or `[2]`, and each child gets its own terminal result.
 An ordinary child fault or exhausted CPU allowance does not kill its sibling.
