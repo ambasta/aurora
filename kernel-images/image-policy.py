@@ -25,7 +25,8 @@ RULES = [
             "__au_runtime_ap_worker_begin_start",
             "__au_runtime_ap_worker_reserve",
             "__au_runtime_ap_worker_observe",
-            "__au_runtime_ap_worker_sum_squares",
+            "__au_runtime_ap_worker_crc32c",
+            "__au_runtime_ap_worker_reserve_observation",
         ],
     },
     {

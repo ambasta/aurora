@@ -217,6 +217,7 @@ def validate_native_abi(facts, source):
                 "kernel::BudgetVerdict",
                 "kernel::BudgetCharge",
                 "kernel::ApWorkerStage",
+                "std::ChecksumStatus",
                 "kernel::TransportStage",
                 "kernel::TransportCompletionKind",
                 "kernel::SchedulerPhase",
@@ -426,7 +427,8 @@ def validate_native_abi(facts, source):
         nominal = retained_root("kernel::ApWorkerOwner", reservation=128)
         enum(
             "kernel::ApWorkerStage",
-            "fresh startup_reserved starting idle reserved running completion_selected failed exhausted",
+            "fresh startup_reserved starting idle reserved running observation_reserved "
+            "completion_selected failed exhausted",
         )
         record(
             "kernel::ApWorkerObservation",
@@ -449,7 +451,8 @@ def validate_native_abi(facts, source):
             ("ready", ["u64", "u64"], "bool", True),
             ("reserve", ["i64", "i64"], "bool", True),
             ("published", ["u64", "u64"], "bool", True),
-            ("observe", ["kernel::ApWorkerObservation"], "bool", True),
+            ("reserve_observation", ["u64", "u64"], "u64", True),
+            ("observe", ["kernel::ApWorkerObservation", "u64", "u64"], "bool", True),
             ("acknowledged", ["u64", "u64"], "bool", True),
             ("fail", [], "bool", True),
             ("stage", [], "kernel::ApWorkerStage", False),
@@ -462,11 +465,19 @@ def validate_native_abi(facts, source):
             ("target", [], "u64", False),
             ("start", [], "i64", False),
             ("count", [], "i64", False),
+            ("ordinal", [], "u64", False),
+            ("attempts", [], "u64", False),
+            ("ticks", [], "u64", False),
         ):
             borrowed_entry(nominal, "ap_worker_owner_" + name, tail, result, mutable)
 
+    if "# AP_WORKER_BUDGET_TEST_ABI:" in source:
+        entry("ap_worker_budget_case", ["bool"], "bool")
+
     if "# AP_WORKER_HELPER_ABI:" in source:
-        entry("ap_worker_sum_squares", ["i64", "i64"], "i64")
+        enum("std::ChecksumStatus", "success out_of_range invalid_previous")
+        record("std::ChecksumResult", 16, [("outcome", "std::ChecksumStatus", 0), ("value", "u64", 0)])
+        entry("ap_worker_crc32c", ["span", "i64", "i64"], "std::ChecksumResult")
 
     if "# RETAINED_SERVICE_ABI:" in source:
         nominal = retained_root("kernel::ServiceIncarnation")

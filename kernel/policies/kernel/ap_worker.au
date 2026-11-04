@@ -8,6 +8,7 @@ export namespace kernel {
         idle,
         reserved,
         running,
+        observation_reserved,
         completion_selected,
         failed,
         exhausted
@@ -56,6 +57,9 @@ export namespace kernel {
         i64 active_start;
         i64 active_count;
         i64 last_result;
+        u64 observation_ordinal;
+        u64 used_attempts;
+        u64 remaining_ticks;
 
         auto binding(u64 apic, u64 incarnation) const -> bool {
             return boot_incarnation != 0u64 && worker_apic == apic && boot_incarnation == incarnation;
@@ -66,7 +70,8 @@ export namespace kernel {
         }
     public:
         ApWorkerOwner() : current_stage(ApWorkerStage::fresh), worker_apic(256u64), boot_incarnation(0u64),
-            next_sequence(1u64), used_work(0u64), active_start(0), active_count(0), last_result(0) {
+            next_sequence(1u64), used_work(0u64), active_start(0), active_count(0), last_result(0),
+            observation_ordinal(0u64), used_attempts(0u64), remaining_ticks(3579546u64) {
         }
         auto begin_start(u64 apic, u64 incarnation) -> bool {
             if (current_stage != ApWorkerStage::fresh || apic > 255u64 || incarnation == 0u64) {
@@ -93,7 +98,8 @@ export namespace kernel {
             return true;
         }
         auto reserve(i64 start, i64 count) -> bool {
-            if (current_stage != ApWorkerStage::idle || start < 0 || start > 65535 || count < 1 || count > 1024) {
+            if (current_stage != ApWorkerStage::idle || start < 0 || start > 4096 || count < 0 || count > 1024 || count
+                > 4096 - start) {
                 return false;
             }
             if (next_sequence > 8u64 || used_work > 4096u64 || u64(count) > 4096u64 - used_work) {
@@ -107,6 +113,8 @@ export namespace kernel {
             active_start = start;
             active_count = count;
             last_result = 0;
+            used_attempts = 0u64;
+            remaining_ticks = 3579546u64;
             current_stage = ApWorkerStage::reserved;
             return true;
         }
@@ -117,27 +125,60 @@ export namespace kernel {
             current_stage = ApWorkerStage::running;
             return true;
         }
-        auto observe(ApWorkerObservation observed) -> bool {
+        auto reserve_observation(u64 incarnation, u64 sequence) -> u64 {
+            if (!same(incarnation, sequence, ApWorkerStage::running)) {
+                return 0u64;
+            }
+            if (used_attempts >= 50000000u64 || remaining_ticks == 0u64) {
+                fail();
+                return 0u64;
+            }
+            // The allowance is spent before native code can sample, including
+            // a terminal sample. A copied ordinal is not a native capability.
+            used_attempts = used_attempts + 1u64;
+            observation_ordinal = observation_ordinal + 1u64;
+            current_stage = ApWorkerStage::observation_reserved;
+            return observation_ordinal;
+        }
+        auto observe(ApWorkerObservation observed, u64 ordinal, u64 ticks) -> bool {
             if (current_stage == ApWorkerStage::failed || current_stage == ApWorkerStage::exhausted
                 || !binding(observed.apic(), observed.incarnation())) {
                 return false;
             }
-            // Stale/duplicate/foreign receipts do not mutate the owner. A future
-            // response from the bound AP is a broken transport, not fresh work.
+            // Bound future protocol data closes globally, even outside a sample.
+            // Stale, foreign and duplicate receipts never mutate the owner.
             if (observed.sequence() >= next_sequence) {
                 return fail();
             }
-            if (!same(observed.incarnation(), observed.sequence(), ApWorkerStage::running)) {
+            if (observed.sequence() == 0u64 || observed.sequence() != next_sequence - 1u64) {
                 return false;
             }
-            const i64 last = active_start + active_count - 1;
-            const i64 minimum = active_count * active_start * active_start;
-            const i64 maximum = active_count * last * last;
-            if (observed.status() != 0u64 || observed.result() < minimum || observed.result() > maximum) {
+            if (ordinal > observation_ordinal) {
                 return fail();
             }
-            last_result = observed.result();
-            current_stage = ApWorkerStage::completion_selected;
+            if (!same(observed.incarnation(), observed.sequence(), ApWorkerStage::observation_reserved) || ordinal
+                != observation_ordinal || ordinal == 0u64) {
+                return false;
+            }
+            // Completion wins over expiry on the final authorized sample.
+            if (observed.status() == 0u64) {
+                if (observed.result() < 0 || observed.result() > 4294967295) {
+                    return fail();
+                }
+                last_result = observed.result();
+                current_stage = ApWorkerStage::completion_selected;
+                return true;
+            }
+            if (observed.status() != 1u64 || ticks > 16777215u64) {
+                return fail();
+            }
+            // Timer deltas are meaningful only when consecutive samples are
+            // separated by less than one 24-bit wrap. No wall-clock guarantee.
+            if (ticks >= remaining_ticks || used_attempts >= 50000000u64) {
+                return fail();
+            }
+            remaining_ticks = remaining_ticks - ticks;
+            current_stage = ApWorkerStage::running;
             return true;
         }
         auto acknowledged(u64 incarnation, u64 sequence) -> bool {
@@ -159,6 +200,15 @@ export namespace kernel {
                 current_stage = ApWorkerStage::failed;
             }
             return false;
+        }
+        auto ordinal() const -> u64 {
+            return observation_ordinal;
+        }
+        auto attempts() const -> u64 {
+            return used_attempts;
+        }
+        auto ticks() const -> u64 {
+            return remaining_ticks;
         }
         auto stage() const -> ApWorkerStage {
             return current_stage;

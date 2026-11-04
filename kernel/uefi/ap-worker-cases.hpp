@@ -14,9 +14,13 @@ enum class Case : std::uint64_t {
     invalid_low_ownership,
     malformed_topology,
     unsupported_timer,
-    malformed_completion
+    malformed_completion,
+    overlap,
+    second_publication,
+    repeated_observation,
+    premature_settlement
 };
 [[nodiscard]] constexpr auto admitted_case(std::uint64_t value) -> bool {
-    return value <= static_cast<std::uint64_t>(Case::malformed_completion);
+    return value <= static_cast<std::uint64_t>(Case::premature_settlement);
 }
 } // namespace aurora::uefi::ap_worker

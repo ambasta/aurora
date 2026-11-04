@@ -1,5 +1,5 @@
 {
-  "results": [45397760, 45662976, 45929216, 46196480, 46464768, 46734080, 47004416, 47275776],
+  "results": [0, 2548833443, 819199888, 1917529135, 1917529135, 1917529135, 1134909107, 1134909107],
   "cases": [
     {"name": "normal", "selector": 0, "attempted": 1, "ready": true},
     {"name": "fault", "selector": 1, "attempted": 1, "ready": true, "status": 3},
@@ -13,6 +13,10 @@
     {"name": "unsupported-timer", "selector": 9, "failure": "ACPI discovery", "protected": true},
     {"name": "malformed-completion", "selector": 10, "attempted": 1, "ready": true, "status": 5},
     {"name": "one-cpu", "selector": 0, "cpus": 1, "failure": "ACPI discovery", "protected": true},
-    {"name": "unsupported-vendor", "selector": 0, "cpu": "qemu64,vendor=AuthenticAMD", "failure": "AP worker", "protected": true}
+    {"name": "unsupported-vendor", "selector": 0, "cpu": "qemu64,vendor=AuthenticAMD", "failure": "AP worker", "protected": true},
+    {"name": "overlap", "selector": 11, "attempted": 1, "ready": true, "overlap": true, "bsp_work": 522240},
+    {"name": "second-publication", "selector": 12, "attempted": 1, "ready": true, "status": 5},
+    {"name": "repeated-observation", "selector": 13, "attempted": 1, "ready": true, "status": 5},
+    {"name": "premature-settlement", "selector": 14, "attempted": 1, "ready": true, "status": 5}
   ]
 }

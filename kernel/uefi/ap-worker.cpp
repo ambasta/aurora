@@ -71,7 +71,7 @@ auto quarantine(ap_worker::Case selected, ApWorkerStatus status) -> bool {
 }
 } // namespace
 
-auto run_ap_worker(U64 arena, const Bytes &h) -> bool {
+auto run_ap_worker(U64 arena, const Bytes &h, memory::PhysicalPages &pool) -> bool {
     static_assert(Handoff::worker_pages * 4096 == ApWorkerLayout::bytes &&
                   Handoff::worker_request_offset == ApWorkerLayout::request);
     if (bound_owner || !discovered_ap_worker_topology() || !discovered_ap_worker_timer())
@@ -129,10 +129,12 @@ auto run_ap_worker(U64 arena, const Bytes &h) -> bool {
     asm volatile("invlpg (%0)" ::"r"(ApWorkerAdmission::virtual_address) : "memory");
     if (!tables.verify(arena, h, nullptr, &*grant))
         return false;
-    const auto native_case = selected == ap_worker::Case::malformed_completion
+    const auto native_case = selected >= ap_worker::Case::overlap ? ApWorkerFixture::overlap
+                             : selected == ap_worker::Case::malformed_completion
                                  ? ApWorkerFixture::malformed_status
                                  : static_cast<ApWorkerFixture>(static_cast<U64>(selected));
-    if ((selected > ap_worker::Case::stagnant_timer && selected != ap_worker::Case::malformed_completion) ||
+    if ((selected > ap_worker::Case::stagnant_timer && selected != ap_worker::Case::malformed_completion &&
+         selected < ap_worker::Case::overlap) ||
         !transport.prepare(
             *grant, map, h.get(Handoff::worker_block_word), h.get(Handoff::worker_low_word), 1, native_case) ||
         !transport.seal() || !tables.verify(arena, h, nullptr, &*grant, true))
@@ -163,32 +165,131 @@ auto run_ap_worker(U64 arena, const Bytes &h) -> bool {
     Serial::text(" root=");
     Serial::number(transport.permanent_root());
     Serial::text("\r\n");
-    // Independent closed-form sum-of-squares goldens for [3+i, 515+i).
+    // Independently calculated Castagnoli CRCs over the presealed byte page.
+    constexpr std::array<std::array<std::int64_t, 2>, 8> ranges{
+        {{4096, 0}, {4095, 1}, {1, 511}, {512, 512}, {1024, 512}, {1536, 512}, {2048, 1024}, {3072, 1024}}};
     constexpr std::array<U64, 8> expected{
-        45397760, 45662976, 45929216, 46196480, 46464768, 46734080, 47004416, 47275776};
-    for (std::size_t i = 0; i < expected.size(); ++i) {
-        const auto plan = owner.reserve(static_cast<std::int64_t>(3 + i), 512);
-        if (!plan.sequence)
+        0, 2548833443, 819199888, 1917529135, 1917529135, 1917529135, 1134909107, 1134909107};
+    const auto bsp_work = [&](U64 sequence) -> bool {
+        // Independent BSP-owned physical memory, never mapped into the AP root.
+        // No retained owner loan or AP request access spans this operation.
+        if (pool.used() != 0)
             return false;
-        const auto result = transport.submit(plan.incarnation, plan.sequence, plan.start, plan.count);
-        if (result.status != ApWorkerStatus::done) {
-            const bool expected_failure =
-                selected == ap_worker::Case::malformed_completion ? result.status == ApWorkerStatus::rejected
-                : selected == ap_worker::Case::fault
-                    ? result.status == ApWorkerStatus::fault && result.vector == 6 && result.error == 0
-                    : (selected == ap_worker::Case::withheld || selected == ap_worker::Case::late) &&
-                          result.status == ApWorkerStatus::timeout;
-            return expected_failure && quarantine(selected, result.status);
+        auto page = pool.acquire();
+        if (!page)
+            return false;
+        const auto address = pool.address(*page);
+        if (!address || *address != arena + Handoff::pool_offset)
+            return false;
+        U64 sum = 0;
+        for (U64 i = 0; i < 4096; ++i)
+            *reinterpret_cast<volatile std::uint8_t *>(*address + i) = static_cast<std::uint8_t>(i + sequence);
+        for (U64 i = 0; i < 4096; ++i) {
+            const auto value = *reinterpret_cast<volatile std::uint8_t *>(*address + i);
+            if (value != static_cast<std::uint8_t>(i + sequence))
+                return false;
+            sum += value;
         }
-        if (!owner.published(plan.incarnation, plan.sequence) ||
-            !owner.observe({result.apic, result.incarnation, result.sequence, result.value, 0}) ||
-            !owner.acknowledged(plan.incarnation, plan.sequence) ||
-            owner.result() != static_cast<std::int64_t>(expected[i]))
+        if (sum != 522240 || !pool.release(*page) || pool.used() != 0)
             return false;
+        if (selected == ap_worker::Case::overlap) {
+            Serial::text("AURORA_AP_BSP_WORK: sequence=");
+            Serial::number(sequence);
+            Serial::text(" value=");
+            Serial::number(sum);
+            Serial::text("\r\n");
+        }
+        return true;
+    };
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        const auto plan = owner.reserve(ranges[i][0], ranges[i][1]);
+        if (!plan.sequence || owner.stage() != ap::Stage::reserved || owner.incarnation() != plan.incarnation ||
+            owner.sequence() != plan.sequence || owner.start() != plan.start || owner.count() != plan.count)
+            return false;
+        const auto publication = transport.publish(plan.incarnation, plan.sequence, plan.start, plan.count);
+        if (publication.status != ApWorkerStatus::pending)
+            return false;
+        // The source transition is immediate after the physical release. Failure
+        // is terminal; no caller-visible "unsubmitted" state or refund escapes.
+        if (!owner.published(plan.incarnation, plan.sequence))
+            OwnerPlatform::fail();
+        // These boot-selected rows probe the native boundary, not forged source
+        // authority. Each refusal must close transport before owner quarantine.
+        if (selected == ap_worker::Case::second_publication) {
+            const auto refused = transport.publish(plan.incarnation, plan.sequence + 1, 0, 1);
+            return refused.status == ApWorkerStatus::rejected && transport.closed() &&
+                   quarantine(selected, refused.status);
+        }
+        if (selected == ap_worker::Case::premature_settlement)
+            return !transport.settle(plan.incarnation, plan.sequence) && transport.closed() &&
+                   quarantine(selected, ApWorkerStatus::rejected);
+        bool worked = false;
+        if (selected != ap_worker::Case::overlap) {
+            if (!bsp_work(plan.sequence))
+                return false;
+            worked = true;
+        }
+        for (;;) {
+            const auto ordinal = owner.reserve_observation(plan.incarnation, plan.sequence);
+            if (!ordinal)
+                return (selected == ap_worker::Case::withheld || selected == ap_worker::Case::late) &&
+                       quarantine(selected, ApWorkerStatus::timeout);
+            if (owner.stage() != ap::Stage::observation_reserved || owner.incarnation() != plan.incarnation ||
+                owner.sequence() != plan.sequence || owner.ordinal() != ordinal)
+                OwnerPlatform::fail();
+            const auto result = transport.progress(plan.incarnation, plan.sequence, ordinal);
+            if (result.status != ApWorkerStatus::done && result.status != ApWorkerStatus::pending) {
+                const bool expected_failure =
+                    selected == ap_worker::Case::malformed_completion ? result.status == ApWorkerStatus::rejected
+                    : selected == ap_worker::Case::fault
+                        ? result.status == ApWorkerStatus::fault && result.vector == 6 && result.error == 0
+                        : false;
+                return expected_failure && quarantine(selected, result.status);
+            }
+            if (result.ordinal != ordinal || !owner.observe({result.apic,
+                                                             result.incarnation,
+                                                             result.sequence,
+                                                             result.value,
+                                                             result.status == ApWorkerStatus::pending ? 1ULL : 0ULL},
+                                                            ordinal,
+                                                            result.ticks)) {
+                const bool expected_timeout =
+                    selected == ap_worker::Case::withheld || selected == ap_worker::Case::late;
+                return expected_timeout && quarantine(selected, ApWorkerStatus::timeout);
+            }
+            if (selected == ap_worker::Case::repeated_observation) {
+                const auto refused = transport.progress(plan.incarnation, plan.sequence, ordinal);
+                return result.status == ApWorkerStatus::pending && refused.status == ApWorkerStatus::rejected &&
+                       transport.closed() && quarantine(selected, refused.status);
+            }
+            if (result.status == ApWorkerStatus::pending) {
+                if (selected == ap_worker::Case::overlap && result.started && !worked) {
+                    Serial::text("AURORA_AP_STARTED: sequence=");
+                    Serial::number(plan.sequence);
+                    Serial::text("\r\n");
+                    if (!bsp_work(plan.sequence) || owner.stage() != ap::Stage::running ||
+                        owner.incarnation() != plan.incarnation || owner.sequence() != plan.sequence ||
+                        owner.ordinal() != ordinal ||
+                        !transport.release_overlap(plan.incarnation, plan.sequence, ordinal))
+                        return false;
+                    worked = true;
+                    Serial::text("AURORA_AP_RELEASED: sequence=");
+                    Serial::number(plan.sequence);
+                    Serial::text("\r\n");
+                }
+                asm volatile("pause");
+                continue;
+            }
+            if (!worked || !owner.acknowledged(plan.incarnation, plan.sequence) ||
+                !transport.settle(plan.incarnation, plan.sequence) ||
+                owner.result() != static_cast<std::int64_t>(expected[i]))
+                return false;
+            break;
+        }
         Serial::text("AURORA_AP_RESULT: sequence=");
-        Serial::number(result.sequence);
+        Serial::number(plan.sequence);
         Serial::text(" value=");
-        Serial::number(static_cast<U64>(result.value));
+        Serial::number(expected[i]);
         Serial::text("\r\n");
     }
     if (owner.stage() != ap::Stage::exhausted || owner.used() != 4096 || owner.remaining() || owner.jobs() != 8 ||

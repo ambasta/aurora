@@ -1,18 +1,14 @@
 module kernel_ap_helper;
+import std.checksum;
 
-// Closed AP execution leaf: scalar inputs and result, no imported service,
-// allocator, retained root, callback or mutable global. Guards precede every
-// multiplication; at most 1024 terms, each <= 66558 squared, fit signed i64.
-auto ap_worker_sum_squares(i64 start, i64 count) -> i64 {
-    if (start < 0 || start > 65535 || count < 1 || count > 1024) {
-        return -1;
+// Invocation-only readonly view of the immutable boot-owned page. The closed
+// imported checksum graph has no callbacks, allocators or retained state.
+// Every range is rejected before subtraction or checksum access.
+auto ap_worker_crc32c(builtin::span<const u8> bytes, i64 offset, i64 count) -> std::ChecksumResult {
+    if (bytes.size() != 4096 || offset < 0 || offset > 4096 || count < 0 || count > 1024 || count > 4096 - offset) {
+        const std::ChecksumResult failure = std::ChecksumResult(std::ChecksumStatus::out_of_range, 0u64);
+        return failure;
     }
-    i64 total = 0;
-    i64 index = 0;
-    while (index < count) {
-        const i64 value = start + index;
-        total = total + value * value;
-        index = index + 1;
-    }
-    return total;
+    const std::ChecksumResult result = std::crc32c(bytes, offset, count);
+    return result;
 }

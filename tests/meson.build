@@ -498,6 +498,12 @@ process_memory_manager_object = custom_target('process-memory-manager',
               '--module-root', meson.project_source_root() / 'library', '--local-symbols',
               '--referenced-reflection-only', '--bridge', files('../kernel/uefi/memory-manager-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+ap_worker_budget_object = custom_target('ap-worker-budget-policy',
+    input: 'kernel-ap-worker-budget.au', output: 'ap-worker-budget-policy.o', depfile: 'ap-worker-budget-policy.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'kernel/policies', '--local-symbols',
+              '--referenced-reflection-only', '--bridge', files('kernel-ap-worker-budget-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 process_word_view_object = custom_target('process-word-view',
     input: 'kernel-process-word-view.au', output: 'process-word-view.o', depfile: 'process-word-view.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@', '--local-symbols',

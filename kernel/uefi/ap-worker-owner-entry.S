@@ -82,8 +82,21 @@ __au_runtime_ap_worker_published:
 __au_runtime_ap_worker_observe:
     pushq %rbp
     movq %rsp,%rbp
+    subq $64,%rsp
     movq %rdi,%r10
-    movq %rsi,%r11
+    movq 0(%rsi),%rax
+    movq %rax,0(%rsp)
+    movq 8(%rsi),%rax
+    movq %rax,8(%rsp)
+    movq 16(%rsi),%rax
+    movq %rax,16(%rsp)
+    movq 24(%rsi),%rax
+    movq %rax,24(%rsp)
+    movq 32(%rsi),%rax
+    movq %rax,32(%rsp)
+    movq %rdx,40(%rsp)
+    movq %rcx,48(%rsp)
+    movq %rsp,%r11
     call @ap_worker_owner_observe@
     leave
     ret
@@ -222,3 +235,53 @@ __au_runtime_ap_worker_count:
     leave
     ret
 .size __au_runtime_ap_worker_count,.-__au_runtime_ap_worker_count
+
+.global __au_runtime_ap_worker_reserve_observation
+.hidden __au_runtime_ap_worker_reserve_observation
+.type __au_runtime_ap_worker_reserve_observation,@function
+__au_runtime_ap_worker_reserve_observation:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r10
+    movq %rsi,%rdi
+    movq %rdx,%rsi
+    call @ap_worker_owner_reserve_observation@
+    leave
+    ret
+.size __au_runtime_ap_worker_reserve_observation,.-__au_runtime_ap_worker_reserve_observation
+
+.global __au_runtime_ap_worker_attempts
+.hidden __au_runtime_ap_worker_attempts
+.type __au_runtime_ap_worker_attempts,@function
+__au_runtime_ap_worker_attempts:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r10
+    call @ap_worker_owner_attempts@
+    leave
+    ret
+.size __au_runtime_ap_worker_attempts,.-__au_runtime_ap_worker_attempts
+
+.global __au_runtime_ap_worker_ticks
+.hidden __au_runtime_ap_worker_ticks
+.type __au_runtime_ap_worker_ticks,@function
+__au_runtime_ap_worker_ticks:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r10
+    call @ap_worker_owner_ticks@
+    leave
+    ret
+.size __au_runtime_ap_worker_ticks,.-__au_runtime_ap_worker_ticks
+
+.global __au_runtime_ap_worker_ordinal
+.hidden __au_runtime_ap_worker_ordinal
+.type __au_runtime_ap_worker_ordinal,@function
+__au_runtime_ap_worker_ordinal:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r10
+    call @ap_worker_owner_ordinal@
+    leave
+    ret
+.size __au_runtime_ap_worker_ordinal,.-__au_runtime_ap_worker_ordinal

@@ -200,7 +200,7 @@ auto payload_main(U64 arena, U64 size) -> void {
         fail("protected runtime");
 #endif
 #ifdef AURORA_UEFI_AP_WORKER
-    if (!aurora::uefi::run_ap_worker(arena, h))
+    if (!aurora::uefi::run_ap_worker(arena, h, pool))
         fail("AP worker");
 #endif
     auto page = pool.acquire();

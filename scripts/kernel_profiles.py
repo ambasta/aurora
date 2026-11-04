@@ -1388,7 +1388,7 @@ def uefi_profile(profile_mode, flags):
         (process, "budget-root", "budget-root", "budget-root", ["kernel/policies"]),
         (nvme, "nvme-transport-owner", "nvme-transport", "nvme-transport-owner", ["kernel/policies"]),
         (ap_worker, "ap-worker-owner", "ap-worker", "ap-worker-owner", ["kernel/policies"]),
-        (ap_worker, "ap-helper", "ap-helper", "ap-worker-helper", []),
+        (ap_worker, "ap-helper", "ap-helper", "ap-worker-helper", ["library"]),
         (process, "execution-lifecycle", "execution-lifecycle", "execution-lifecycle", ["kernel/policies"]),
         (process, "service-root", "service-root", "service-root", ["kernel/policies"]),
         (process, "endpoint-root", "endpoint-root", "endpoint-root", ["kernel/policies"]),

@@ -168,9 +168,13 @@ effects; no source borrow crosses execution or an IRQ. This bounded single-BSP
 consumer does not supply production UEFI scheduling or SMP.
 
 The standalone [UEFI AP worker](ap-worker.md) executes bounded compiled Aurora
-scalar jobs on a second processor with independent pinned mappings and a
+immutable-byte CRC32C jobs on a second processor with independent pinned mappings and a
 CPU-local fault path. Its BSP-retained Aurora owner spends startup, sequence and
-cumulative work authority before native publication. This is an emulator-only
+cumulative byte/observation authority before native effects. Split publication,
+progress and settlement allow independent BSP work while a job is outstanding;
+presealed payload and invocation-local spans avoid asynchronous lexical loans.
+The PM-counter interpretation is conditional on bounded sampling gaps, not an
+unconditional deadline. This is an emulator-only
 multicore execution substrate, not production SMP scheduling: existing
 single-CPU process admission stays unchanged, and uncertain completion retains
 all startup-reachable backing without reset, replay or reclamation.
