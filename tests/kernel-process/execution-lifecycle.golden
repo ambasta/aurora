@@ -95,3 +95,11 @@ staged-request-expiry bind=1 exchange=1 service=1 prepare=1 stage=1 terminal=10:
 input-completion prepare=1 run=15:0:1 complete=1 run=6:0:1 finish=1 enter=0 enter=1 retire=1:6:6
 input-expiry prepare=1 run=10:0:1 state=0:1 finish=1 enter=0 retire=1:15:10
 input-abort prepare=1 run=15:0:1 force=11:0:1 state=0:1 finish=1 enter=0 retire=1:14:11
+presentation-empty present=0 present=0 present-finish=0 finish=1
+presentation-prepared prepare=1 present=0 force=12:0:1 finish=1 retire=1:14:12
+presentation-timer prepare=1 run=2:0:1 present=0 run=6:0:1 finish=1 enter=0 enter=1 retire=1:6:6
+presentation-request prepare=1 run=4:0:1 present=0 complete=1 run=6:0:1 finish=1 enter=0 enter=1 retire=1:6:6
+presentation-output prepare=1 run=5:19:1 present=0 present=1 state=6:1 pending=5 present=0 present-finish=0 present-finish=0 present-finish=0 state=6:1 present-finish=1 present-finish=0 state=3:1 pending=5 complete=1 run=6:0:1 finish=1 enter=0 enter=1 retire=1:6:6
+presentation-global prepare=1 prepare=1 run=15:23:1 present=1 can-prepare=0 can-prepare=0 prepare=0 prepare=0 run=0:0:1 run=0:0:1 force=0:0:1 force=0:0:1 complete=0 complete=0 state=1:1 state=6:1 pending=15 present-finish=1 complete=1 run=6:0:1 run=6:0:1 finish=1 enter=0 enter=1 retire=1:6:6 enter=0 invalidate=0 retire=0:6:6
+presentation-exhaust prepare=1 run=5:0:1 presentation-turns=1:32 present=0 complete=1 run=15:0:1 present=0 pending=15 complete=1 run=6:0:1 prepare=1 run=15:0:2 present=1 present-finish=1 complete=1 run=6:0:2 finish=1 enter=0 enter=1 enter=1 retire=1:6:6 enter=0 enter=1 retire=1:6:6
+finish-presenting denied=source

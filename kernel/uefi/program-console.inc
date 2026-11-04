@@ -1098,6 +1098,34 @@ auto production_input(void *) -> console::Sample {
         stop("production input ownership");
     return ProgramSerial::next();
 }
+// A parked child still owns the command. Only the native process dispatcher
+// calls this after source admission and complete MM-bank/window detachment.
+[[gnu::noinline]] auto production_present(bool paint) -> bool {
+    // Detached execution retains only boot arena mappings. Check the complete
+    // mutable callback data extents, not addresses in the removed MM aperture.
+    const auto data_begin = arena + Handoff::payload_offset + handoff->get(72);
+    const auto data_end = arena + Handoff::payload_offset + handoff->get(80);
+    const auto grid = reinterpret_cast<U64>(&terminal_grid);
+    const auto graphics = reinterpret_cast<U64>(&terminal_graphics);
+    require(grid >= data_begin && grid <= data_end && sizeof(terminal_grid) <= data_end - grid &&
+                graphics >= data_begin && graphics <= data_end && sizeof(terminal_graphics) <= data_end - graphics,
+            "production presentation callback data");
+    // Defer a guaranteed zero-cell yield before source admission. The shared
+    // status helper preserves sticky damage and its existing RX-error recovery;
+    // it reads no data byte, and deferral leaves every dirty cell unchanged.
+    if (!paint)
+        return terminal_grid.any_dirty() && !ProgramSerial::input_pending();
+    require(command_owned && !mailbox && frames.used() == 0 && !terminal_painting,
+            "production presentation command owner");
+    require(program_boundary() && terminal_quiet() && terminal_mapping(), "production presentation boot mapping");
+    install_architecture();
+    require(program_boundary() && terminal_quiet() && terminal_mapping(),
+            "production presentation console architecture");
+    static_cast<void>(terminal_present());
+    require(command_owned && !terminal_painting && program_boundary() && terminal_quiet() && terminal_mapping(),
+            "production presentation closed display");
+    return true;
+}
 [[nodiscard]] __attribute__((noinline)) auto production_storage_readonly() -> bool {
     require(ProgramInputPlatform::quiet() && terminal_mapping(), "storage switch entry ownership");
     const auto previous_cr2 = production_process_enter();
@@ -1147,7 +1175,8 @@ auto production_input(void *) -> console::Sample {
                                     production_output,
                                     nullptr,
                                     production_input,
-                                    input.after_cr() != 0);
+                                    input.after_cr() != 0,
+                                    production_present);
     production_process_leave(previous_cr2);
     input_quarantine = result.input_quarantine;
     if (input_quarantine) {

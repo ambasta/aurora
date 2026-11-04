@@ -695,8 +695,11 @@ def validate_native_abi(facts, source):
             ("phase", "u64", False),
             ("generation", "u64", False),
             ("pending", "u64", False),
+            ("begin_presentation", "u64", True),
         ):
             borrowed_entry(nominal, "lifecycle_" + name, ["u64"], result, mutable)
+
+        borrowed_entry(nominal, "lifecycle_finish_presentation", ["u64", "u64"], "bool", True)
 
     if "# RESIDENT_OWNER_ABI:" in source:
         nominal = retained_root("kernel::ServiceOwner")

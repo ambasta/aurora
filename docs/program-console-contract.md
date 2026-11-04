@@ -57,8 +57,25 @@ at session end or service loss; this is not durable storage.
 
 Stdout and stderr are copied to the same serial terminal and framebuffer grid.
 The sink runs only at the supervisor root; no Console or Display loan exists
-while the process owns the architecture. Painting and the `run:` exit status,
-fault, watchdog or admission result occur after process cleanup, retained-service
+while the process owns the architecture. A parked foreground child may temporarily
+yield that architecture for a bounded live paint after output delivery or before
+an input read. Source execution ownership freezes both resident slots during this
+excursion; native code authenticates their exact identities and continuation
+words before admission and after restoring the same mappings and metadata banks.
+No service operation closes, frame is released, serial byte is replayed or CPU/input
+allowance is renewed. Display closes before the child can resume. Failed physical
+restoration is fail-stop, not a graphics yield.
+
+Live painting is best-effort: ordinary UART yielding protects pending input, and
+each command has at most 32 nonrefundable presentation admissions. Each reserves
+one complete 1,920-cell pass with at most 94 stores per cell, including a pass that
+yields without painting. Thus live painting performs at most 5,775,360 pixel stores
+plus bounded transition work; this is not a latency or lossless-typeahead promise.
+Clean grids need no admission. Exhaustion leaves cells dirty for the normal final
+paint without terminating computation. There is no periodic repaint during pure
+computation and no general task scheduler.
+
+The `run:` exit status, fault, watchdog or admission result still follows process cleanup, retained-service
 parking, exact mapping audits, timer drain and restoration of the console's
 GDT/TSS/IDT and original page-table shape. Only then does the usual Aurora output
 turn restore `aurora>`. Transport failure remains terminal, with no output retry.
@@ -75,8 +92,8 @@ selector. Word 160 is zero
 for RAM, or exactly arena+0xe1000 for the storage BAR record, disjoint from runtime
 metadata at arena+0x81000. The volume has independent final-memory-map admission;
 merely naming its address does not grant ownership.
-The process extension/window views are attached only during process ownership,
-audited and detached before the unchanged exact graphical-console verifier runs.
+The process extension/window views are audited and detached before the unchanged
+exact graphical-console verifier runs, including each live presentation excursion.
 Retained frames remain owned while detached and are outside the old console's
 arena-only allocator.
 

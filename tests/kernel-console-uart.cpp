@@ -187,7 +187,31 @@ template <class Device> struct Suite {
     }
     static auto run(std::uint8_t trigger) -> void {
         Ports::expected_trigger = trigger;
+        if constexpr (requires { Uart::input_pending(); }) {
+            reset();
+            Ports::clear_trace();
+            need(!Uart::input_pending(), "empty presentation preflight reported input");
+            Ports::expect_trace({{false, 0x3fd, 0}});
+            queue("x");
+            Ports::clear_trace();
+            need(Uart::input_pending() && Ports::reads == 0 && Ports::input.size() == 1 &&
+                     Ports::input.front() == 'x' && Ports::rx_flushes == 1,
+                 "presentation preflight consumed a queued byte");
+            Ports::expect_trace({{false, 0x3fd, 0}});
+        }
         for (const auto error : {2, 4, 8, 16, 30}) {
+            if constexpr (requires { Uart::input_pending(); }) {
+                reset();
+                queue("untrusted suffix");
+                Ports::error = error;
+                Ports::clear_trace();
+                need(!Uart::input_pending() && Ports::reads == 0 && Ports::input.empty() && Ports::rx_flushes == 2,
+                     "presentation preflight did not recover the damaged FIFO");
+                Ports::expect_trace({{false, 0x3fd, 0}, {true, 0x3fa, static_cast<std::uint8_t>(trigger | 3)}});
+                need(!Uart::input_pending(), "empty repeated preflight reported input");
+                arrive("\nstatus\nexit\n");
+                expect(rejected + "status" + status + "exit" + exited);
+            }
             // The destructive initialization LSR read must preserve copied carry.
             reset(error);
             const auto initialized_damage = Uart::next();

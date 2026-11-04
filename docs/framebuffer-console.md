@@ -348,11 +348,20 @@ painter (`examples/kernel-graphical-terminal.au`, shared `graphics.text_cells`
 cells, 480x216 pixels at (32,32), at least 512x248) receives one cell position
 and glyph per call through a sealed DisplaySession; its object may import only
 `__au_runtime_display_pixel`. Changed cells are painted before each poll wait
-and after each Console turn, never during a protected run; each paint verifies
+and after each Console turn. Foreground output and input boundaries also permit
+a bounded paint while the same child is parked, with its execution authority
+frozen and the exact console architecture restored temporarily. No child executes
+while Display is loaned; each paint verifies
 the paired LAPIC/framebuffer tree, each store its leaf. A paint failure is a
 fail-stop. Handoff v7 carries the runtime metadata (word 120) and the record
 (word 128) separately. The painter call record is checked against the
 compiler's ABI facts when its bridge is rendered.
+
+Live foreground presentation retains UART yielding and has 32 nonrefundable
+full-screen-equivalent admissions per command. Dirty cells survive yield or
+exhaustion for a later/final paint. It does not promise continuous progress
+display, lossless typeahead or a real-time latency bound. The exact ownership,
+restoration and work contract is in [the program console](program-console-contract.md).
 
 `graphical-terminal-native` streams 26 cases to the Meson-built host
 (`tests/graphical-terminal-host`): grid layout, wrap, scroll, erase, control and

@@ -21,6 +21,9 @@ public:
 };
 using ProcessInput = console::Sample (*)(void *);
 using ProcessOutput = bool (*)(void *, bool, std::span<const std::byte>);
+// Private production adapter: false probes dirty cells, true presents one pass.
+// No process, source-owner or MM-bank address crosses this callback.
+using ProcessPresentation = bool (*)(bool);
 // A supervisor-only command boundary. The retained service survives return;
 // all process mappings are detached from the production console's exact root.
 [[nodiscard]] auto run_program(std::uint64_t arena,
@@ -30,7 +33,8 @@ using ProcessOutput = bool (*)(void *, bool, std::span<const std::byte>);
                                ProcessOutput output,
                                void *context,
                                ProcessInput input = nullptr,
-                               bool input_after_cr = false) -> RunResult;
+                               bool input_after_cr = false,
+                               ProcessPresentation presentation = nullptr) -> RunResult;
 
 // Exact production NVMe composition only: admit its readonly mount before the
 // first prompt. A valid unavailable mount preserves the boot/console owner.

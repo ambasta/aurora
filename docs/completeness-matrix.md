@@ -115,6 +115,12 @@ XFS directory children through a live directory capability, with copied names,
 private-name filtering and no snapshot or recursive traversal promise.
 Qualification of these applications remains tied to their final-source receipts.
 
+Foreground output/input checkpoints can present the existing framebuffer while
+the child is parked, through a source-owned, nonrenewable presentation allowance
+and an authenticated temporary architecture handoff. UART yielding or allowance
+exhaustion may defer painting until command return. This is bounded live terminal
+output, not concurrent display ownership, a scheduler or general window services.
+
 The retained-run authority and transcript deduplication passed integrated
 qualification in [PR #242](https://github.com/ambasta/aurora/pull/242).
 

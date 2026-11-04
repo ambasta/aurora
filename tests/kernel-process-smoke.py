@@ -1075,6 +1075,40 @@ def validate(
             "No trap fallback, continuation or successful return after authority rejection",
         )
         return
+    if mode.startswith("process-presentation-"):
+        frames(text)
+        case = PROCESS_CASES[mode][0]
+        marker = f"AURORA_PRESENTATION_PROBE: case={case} detached=1"
+        need(text.count(marker) == 1, "One real live-child detached presentation")
+        after = text[text.index(marker) :]
+        if case == 99:
+            need(
+                status == 33
+                and "AURORA_PRESENTATION_RESTORED: passes=1 reclaimed=1" in after
+                and "AURORA_PROCESS_RUNS_OK: runs=2" in after,
+                "Presentation restores exact participants and both processes retire",
+            )
+        else:
+            reason = "presentation resident changed" if case == 100 else "presentation exact bank restoration"
+            need(
+                status == 35 and after.count("AURORA_PROCESS_FAIL: " + reason) == 1,
+                "Corrupt presentation must fail closed at actual restoration",
+            )
+            need(
+                not any(
+                    marker in after
+                    for marker in (
+                        "AURORA_PROCESS_END:",
+                        "AURORA_PROCESS_RELEASED:",
+                        "AURORA_PROCESS_RESUMED:",
+                        "AURORA_PROCESS_RUNS_OK:",
+                        "AURORA_PRESENTATION_RESTORED:",
+                        "AURORA_PROCESS_KERNEL_FAULT:",
+                    )
+                ),
+                "No resume, retirement or trap fallback after restoration refusal",
+            )
+        return
     if mode.startswith("process-execution-authority-"):
         frames(text)
         case = PROCESS_CASES[mode][0]

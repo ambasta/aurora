@@ -121,3 +121,28 @@ __au_runtime_lifecycle_pending:
     leave
     ret
 .size __au_runtime_lifecycle_pending,.-__au_runtime_lifecycle_pending
+.global __au_runtime_lifecycle_begin_presentation
+.hidden __au_runtime_lifecycle_begin_presentation
+.type __au_runtime_lifecycle_begin_presentation,@function
+__au_runtime_lifecycle_begin_presentation:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r10
+    movq %rsi,%rdi
+    call @lifecycle_begin_presentation@
+    leave
+    ret
+.size __au_runtime_lifecycle_begin_presentation,.-__au_runtime_lifecycle_begin_presentation
+.global __au_runtime_lifecycle_finish_presentation
+.hidden __au_runtime_lifecycle_finish_presentation
+.type __au_runtime_lifecycle_finish_presentation,@function
+__au_runtime_lifecycle_finish_presentation:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r10
+    movq %rsi,%rdi
+    movq %rdx,%rsi
+    call @lifecycle_finish_presentation@
+    leave
+    ret
+.size __au_runtime_lifecycle_finish_presentation,.-__au_runtime_lifecycle_finish_presentation

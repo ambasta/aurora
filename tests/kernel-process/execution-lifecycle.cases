@@ -97,3 +97,12 @@ staged-request-expiry staged-request-expiry run:0:6:0:0 finish
 input-completion prepare:1 run:1:15:0:0 complete:1 run:1:6:0:0 finish
 input-expiry prepare:1 run:1:15:0:1 state:1 finish
 input-abort prepare:1 run:1:15:0:0 force:1:14:10:0 state:1 finish
+# Bounded source presentation turns preserve pending IO and exclude both slots.
+presentation-empty present:0 present:1 present-finish:1:1 finish
+presentation-prepared prepare:1 present:1 force:1:14:16:0 finish
+presentation-timer prepare:1 run:1:2:0:0 present:1 run:1:6:0:0 finish
+presentation-request prepare:1 run:1:4:0:0 present:1 complete:1 run:1:6:0:0 finish
+presentation-output prepare:1 run:1:5:19:0 present:0 present:1 state:1 pending:1 present:1 present-finish:0:1 present-finish:1:0 present-finish:1:2 state:1 present-finish:1:1 present-finish:1:1 state:1 pending:1 complete:1 run:1:6:0:0 finish
+presentation-global incarnation:0:7 incarnation:1:7 prepare:0 prepare:1 run:1:15:23:0 present:1 can-prepare:0 can-prepare:1 prepare:0 prepare:1 run:0:6:0:0 run:1:6:0:0 force:0:14:16:0 force:1:14:16:0 complete:0 complete:1 state:0 state:1 pending:1 present-finish:1:1 complete:1 run:1:6:0:0 run:0:6:0:0 finish
+presentation-exhaust prepare:1 run:1:5:0:0 presentation-turns:1:32 present:1 complete:1 run:1:15:0:0 present:1 pending:1 complete:1 run:1:6:0:0 prepare:1 run:1:15:0:0 present:1 present-finish:1:1 complete:1 run:1:6:0:0 finish
+finish-presenting source:finish-presenting

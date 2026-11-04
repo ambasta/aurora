@@ -3,12 +3,14 @@
 // remains the command surface. This adapter copies the bytes its Console session
 // actually wrote into a cell grid and asks the separately compiled Aurora
 // terminal painter to render changed cells through one sealed DisplaySession
-// loan. It reads no input, arms no timer and never runs inside a protected run.
+// loan. It reads no input and arms no timer. A parked production child may
+// synchronously lend presentation after its source owner freezes both slots.
 std::optional<FramebufferAdmission> terminal_graphics;
 constinit terminal::Grid terminal_grid;
 bool terminal_painting{};
 // One cell is 54 background, at most 35 glyph and five cursor stores.
 constexpr unsigned terminal_cell_store_limit = 94;
+static_assert(terminal::Grid::cells == 1920 && terminal_cell_store_limit * terminal::Grid::cells == 180480);
 unsigned terminal_cell_stores{};
 extern "C" auto __au_runtime_terminal_paint(const void *) -> U64;
 
@@ -18,9 +20,9 @@ extern "C" auto __au_runtime_terminal_paint(const void *) -> U64;
 [[nodiscard]] auto terminal_quiet() -> bool {
     const auto current = stack();
     return terminal_graphics.has_value() && root() == kernel_root && irq_off() && active == L::domain_count &&
-           saved_rsp == 0 && !program.running() && !timer_armed && !timer_draining && !timer_owner &&
-           !run_authority && selected_phase == ipc::Phase::inactive && !console_waiting && console_wait_stack == 0 &&
-           current % 8 == 0 && current >= arena + Handoff::stack_bottom && current < arena + Handoff::stack_top;
+           saved_rsp == 0 && !program.running() && !timer_armed && !timer_draining && !timer_owner && !run_authority &&
+           selected_phase == ipc::Phase::inactive && !console_waiting && console_wait_stack == 0 && current % 8 == 0 &&
+           current >= arena + Handoff::stack_bottom && current < arena + Handoff::stack_top;
 }
 class TerminalDisplayTransport final {
 public:
@@ -99,7 +101,8 @@ __attribute__((noinline)) auto terminal_install() -> void {
     Serial::text(" columns=80 rows=24\r\n");
 }
 // Paint changed cells. Called between Console samples (before the poll wait)
-// and after each Console turn releases its grant; never during a run. Unless
+// and after each Console turn releases its grant, or through the admitted parked
+// production-child boundary with all MM mappings detached. Unless
 // `complete`, painting yields as soon as a received byte waits, so rendering
 // never holds input past the UART FIFO; the remaining cells stay dirty. The
 // result reports whether it yielded to a waiting byte.
@@ -119,12 +122,8 @@ __attribute__((noinline)) auto terminal_present(bool complete = false) -> bool {
             yielded = true;
             break;
         }
-        const TerminalPaintArgument record{argument.grant,
-                                           argument.generation,
-                                           argument.width,
-                                           argument.height,
-                                           index,
-                                           terminal_grid.glyph(index)};
+        const TerminalPaintArgument record{
+            argument.grant, argument.generation, argument.width, argument.height, index, terminal_grid.glyph(index)};
         terminal_cell_stores = 0;
         require(__au_runtime_terminal_paint(&record) == 1, "graphical terminal cell paint");
         terminal_grid.commit(index);

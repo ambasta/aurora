@@ -27,3 +27,9 @@ auto lifecycle_generation(const kernel::ExecutionOwner& owner, u64 slot) -> u64 
 auto lifecycle_pending(const kernel::ExecutionOwner& owner, u64 slot) -> u64 {
     return owner.pending(slot);
 }
+auto lifecycle_begin_presentation(kernel::ExecutionOwner& owner, u64 slot) -> u64 {
+    return owner.begin_presentation(slot);
+}
+auto lifecycle_finish_presentation(kernel::ExecutionOwner& owner, u64 slot, u64 ordinal) -> bool {
+    return owner.finish_presentation(slot, ordinal);
+}
