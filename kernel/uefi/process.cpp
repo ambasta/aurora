@@ -3339,11 +3339,9 @@ auto presentation_quiet() -> bool {
     // no source admission; the production target and all its data are boot-mapped.
     if (!presentation_sink(false))
         return;
-    const auto pending = execution_owner.pending(1);
-    if (execution_owner.phase(1) != Phase::parked ||
-        (pending != static_cast<U64>(Event::output) && pending != static_cast<U64>(Event::input)) ||
-        (pending == static_cast<U64>(Event::input) && !input_identity()))
-        fail("presentation parked event");
+    // Only deliver_output and deliver_input call here, after authenticating
+    // their parked event (and exact input receipt for input). Source admission
+    // rechecks eligibility and both canonical resident identities below.
     // One admission prepays every possible cell/store, even on an immediate
     // UART yield. Exhaustion is optional graphics deferral, never process failure.
     const auto ordinal = execution_owner.begin_presentation(1);
@@ -3419,7 +3417,7 @@ auto presentation_quiet() -> bool {
         input_read.protocol.after_cr != saved_input.protocol.after_cr)
         fail("presentation input changed");
     if (!execution_owner.finish_presentation(1, ordinal) || execution_owner.phase(1) != Phase::parked ||
-        (pending == static_cast<U64>(Event::input) && !input_identity()))
+        (saved[1].pending == static_cast<U64>(Event::input) && !input_identity()))
         fail("presentation source restoration");
 }
 #endif

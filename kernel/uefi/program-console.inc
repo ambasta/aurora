@@ -1110,8 +1110,11 @@ auto production_input(void *) -> console::Sample {
     require(grid >= data_begin && grid <= data_end && sizeof(terminal_grid) <= data_end - grid &&
                 graphics >= data_begin && graphics <= data_end && sizeof(terminal_graphics) <= data_end - graphics,
             "production presentation callback data");
+    // Defer a guaranteed zero-cell yield before source admission. The shared
+    // status helper preserves sticky damage and its existing RX-error recovery;
+    // it reads no data byte, and deferral leaves every dirty cell unchanged.
     if (!paint)
-        return terminal_grid.any_dirty();
+        return terminal_grid.any_dirty() && !ProgramSerial::input_pending();
     require(command_owned && !mailbox && frames.used() == 0 && !terminal_painting,
             "production presentation command owner");
     require(program_boundary() && terminal_quiet() && terminal_mapping(), "production presentation boot mapping");
