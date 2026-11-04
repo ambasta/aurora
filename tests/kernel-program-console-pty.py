@@ -1646,13 +1646,29 @@ def main():
                 if quarantine:
                     closed = b"Input closed; press Enter to return to the console."
                     receive(closed, begin)
-                    need(b"aurora> " not in transcript[begin:], "Interactive pair returned before quarantine")
-                    # A queued child suffix is never a shell command, even on
-                    # admission failure after the first input grant was loaded.
+                    before_handoff = bytes(transcript[begin:])
+                    need(
+                        before_handoff.count(b"aurora> ") == 1
+                        and before_handoff.index(b"aurora> ") < before_handoff.index(closed),
+                        "Interactive pair has only its provisional result prompt before quarantine",
+                    )
+                    # Like singleton input, the result renderer's provisional
+                    # prompt is not a handoff. Wait from the banner for a fresh
+                    # prompt after discarding the queued child suffix/delimiter.
+                    handoff = len(transcript)
                     send(b"stale-pair-command\r\n")
-                receive(b"aurora> ", begin)
+                    receive(b"aurora> ", handoff)
+                    need(
+                        transcript[handoff:].count(b"aurora> ") == 1 and b"Unknown command" not in transcript[handoff:],
+                        "Pair quarantine must discard suffix and return exactly one fresh prompt",
+                    )
+                else:
+                    receive(b"aurora> ", begin)
                 part = bytes(transcript[begin:]).replace(b"\r\n", b"\n")
-                need(part.count(b"aurora> ") == 1, "Pair must finish with exactly one prompt")
+                need(
+                    part.count(b"aurora> ") == 1 + int(quarantine),
+                    "Pair has one result prompt and only the required fresh quarantine prompt",
+                )
                 parked = list(re.finditer(parked_pattern, part))
                 idle = list(re.finditer(idle_pattern, part))
                 need(
