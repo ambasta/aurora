@@ -40,15 +40,9 @@ process_result_entry __au_runtime_process_frame_range, @process_frame_range@
 process_entry __au_runtime_process_volume_admit, @process_volume_admit@
 process_entry __au_runtime_process_volume_find, @process_volume_find@
 process_result_entry __au_runtime_process_volume_entry, @process_volume_entry@
-process_entry __au_runtime_process_elf_admit, @process_elf_admit@
-process_entry __au_runtime_process_layout, @process_layout@
-process_result_entry __au_runtime_process_region, @process_region@
-process_entry __au_runtime_process_elf_entry, @process_elf_entry@
-process_entry __au_runtime_process_elf_input, @process_elf_input@
 process_entry __au_runtime_process_trap, @process_trap@
 process_result_entry __au_runtime_process_call, @process_call@
 process_result_entry __au_runtime_process_input, @process_input@
-process_entry __au_runtime_process_memory_load_charge, @process_memory_load_charge@
 
 # Scalar-only source roots use the compiler's six-register bootstrap ABI.
 # The native caller supplies one complete 48-byte copied record.
@@ -72,3 +66,5 @@ process_entry __au_runtime_process_memory_load_charge, @process_memory_load_char
 .size \name,.-\name
 .endm
 process_scalar6_entry __au_runtime_process_snapshot_writable_leaf, @process_snapshot_writable_leaf@
+
+process_result_entry __au_runtime_process_image_manifest, @process_image_manifest@

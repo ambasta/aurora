@@ -157,3 +157,34 @@ budget-more: valid
   budget p -> valid quota=100000 charged=2074
 budget-short: valid
   budget p -> quota
+manifest-slots-zero: valid
+  manifest p -> elf=valid layout=valid complete=1 regions=5 entry=0x401000 charge=2072 input=0
+manifest-slots-one: valid
+  manifest p -> elf=valid layout=valid complete=1 regions=5 entry=0x401000 charge=2074 input=0
+manifest-slots-two: valid
+  manifest p -> elf=valid layout=valid complete=1 regions=5 entry=0x401000 charge=2076 input=0
+manifest-slots-three: valid
+  manifest p -> elf=valid layout=valid complete=0 regions=5 entry=0x401000 charge=0 input=0
+manifest-input: valid
+  manifest p -> elf=valid layout=valid complete=1 regions=5 entry=0x401000 charge=2074 input=1
+manifest-no-arguments: valid
+  manifest p -> elf=valid layout=arguments complete=0 regions=0 entry=0 charge=0 input=0
+manifest-kernel-overlap: valid
+  manifest p -> elf=valid layout=kernel complete=0 regions=0 entry=0 charge=0 input=0
+manifest-first-elf-refusal: valid
+  manifest p -> elf=magic layout=image complete=0 regions=0 entry=0 charge=0 input=0
+manifest-max-segments: valid
+  manifest p -> elf=valid layout=valid complete=1 regions=10 entry=0x401000 charge=2094 input=0
+  program p -> elf=valid layout=valid entry=0x401000
+    segment first=0x400000 pages=1 read vaddr=0x400000 offset=0 bytes=512
+    segment first=0x401000 pages=1 execute vaddr=0x401000 offset=4096 bytes=256
+    segment first=0x402000 pages=2 write vaddr=0x402000 offset=8192 bytes=16
+    segment first=0x404000 pages=1 read vaddr=0x404000 offset=0 bytes=0
+    segment first=0x405000 pages=1 read vaddr=0x405000 offset=0 bytes=0
+    segment first=0x406000 pages=1 read vaddr=0x406000 offset=0 bytes=0
+    segment first=0x407000 pages=1 read vaddr=0x407000 offset=0 bytes=0
+    segment first=0x408000 pages=1 read vaddr=0x408000 offset=0 bytes=0
+    stack first=0x7ffffe800000 pages=2048 write vaddr=0x7ffffe800000 offset=0 bytes=0
+    arguments first=0x7fffff001000 pages=1 read vaddr=0x7fffff001000 offset=0 bytes=6
+manifest-too-many-segments: valid
+  manifest p -> elf=segment layout=image complete=0 regions=0 entry=0 charge=0 input=0

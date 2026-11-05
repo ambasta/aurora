@@ -10,7 +10,7 @@ same process lifetime, retained file owner and validated command loader; its
 old console/framebuffer architecture is restored at the command boundary.
 
 The decisions are Aurora (`examples/kernel-process.au` over
-`kernel/policies/kernel/{memory_map,frames,boot_volume,export_text,elf,process_space,process_memory,process_events,process_runs}.au`
+`kernel/policies/kernel/{memory_map,frames,boot_volume,export_text,elf,process_space,process_memory,process_manifest,process_events,process_runs}.au`
 and the existing `interrupt_budget`), reached through the private bridge
 `process-entry.S`. The build checks every argument record, result class and
 enum against the compiler's ABI facts (`PROCESS_POLICY_ABI` in
@@ -23,6 +23,23 @@ bytes in its own process. The former native file-store adapter and its ABI are
 now test-only references beneath `tests/`, never kernel image inputs. Assembly keeps the
 trap entry (`kernel/exceptions.S`) and the CPL 3 transition (`process-user.S`).
 Each C++ decoder rejects a result outside its closed encoding before using it.
+
+
+### Complete executable admission
+
+`kernel.process_manifest` owns the complete immutable-image parser operation:
+ELF refusal first, layout refusal second, all admitted regions, entry, input-ABI
+request and bounded load charge. Both boot-volume and committed-snapshot loaders
+consume this one copied plan. Its ten-region capacity retains eight load segments,
+stack and arguments; closed byte encodings keep the complete value within the
+existing compiler limits without narrowing extents or permitting truncation.
+
+Native code binds the plan to the original immutable source and snapshot epoch,
+validates the copied record encodings and closes its parser pin before diagnostics,
+quota admission or mapping. MemoryManager remains the sole allocation/quota owner;
+physical source reauthentication, page mappings, input-grant admission and final
+executable checks stay native. The plan conveys no authority, does not escape a
+loan and adds no asynchronous loading or general memory-safety guarantee.
 
 
 ### Retained copied endpoint transaction
