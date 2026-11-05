@@ -219,6 +219,36 @@ class ProcessRegion final {
 public:
     U64 kind = 0, first = 0, pages = 0, flags = 0, vaddr = 0, offset = 0, bytes = 0;
 };
+// Copied source plan, never an image loan or a physical mapping authority.
+class ImageManifest final {
+public:
+    U64 elf = 0, layout = 0, count = 0, entry = 0, charge = 0, complete = 0, input = 0;
+    std::array<ProcessRegion, 10> regions{};
+};
+class ImageRegionWire final {
+public:
+    std::uint8_t kind = 0, access = 0;
+    U64 first = 0, pages = 0, vaddr = 0, offset = 0, bytes = 0;
+};
+class ImageManifestWire final {
+public:
+    U64 elf = 0, layout = 0;
+    std::uint8_t count = 0, complete = 0, input = 0;
+    U64 entry = 0, charge = 0;
+    std::array<ImageRegionWire, 10> regions{};
+};
+class ManifestArguments final {
+public:
+    PolicySpan image;
+    U64 reserved_first, reserved_end, arguments, slots;
+};
+static_assert(sizeof(ImageManifestWire) == 520 && alignof(ImageManifestWire) == 8 && sizeof(ImageRegionWire) == 48 &&
+              alignof(ImageRegionWire) == 8 && offsetof(ImageRegionWire, first) == 8 &&
+              offsetof(ImageManifestWire, count) == 16 && offsetof(ImageManifestWire, complete) == 17 &&
+              offsetof(ImageManifestWire, input) == 18 && offsetof(ImageManifestWire, entry) == 24 &&
+              offsetof(ImageManifestWire, charge) == 32 && offsetof(ImageManifestWire, regions) == 40 &&
+              sizeof(ManifestArguments) == 88);
+
 class ProcessTrap final {
 public:
     U64 vector = 0, error = 0, rip = 0, cs = 0, flags = 0, rsp = 0, ss = 0, cr2 = 0, opcode = 0;
@@ -231,23 +261,12 @@ class RunEntry final {
 public:
     U64 found = 0, ticks = 0, flags = 0, quota = 0, path = 0, path_bytes = 0, arguments = 0, argument_bytes = 0;
 };
-class LayoutArguments final {
-public:
-    PolicySpan image;
-    U64 reserved_first, reserved_end, arguments;
-};
-class RegionArguments final {
-public:
-    PolicySpan image;
-    U64 index, arguments;
-};
 class CallArguments final {
 public:
     U64 operation, first, second, third, fourth;
 };
 static_assert(sizeof(ProcessRegion) == 56 && sizeof(ProcessTrap) == 72 && sizeof(KernelCall) == 40 &&
-              sizeof(RunEntry) == 64 && sizeof(LayoutArguments) == 80 && sizeof(RegionArguments) == 72 &&
-              sizeof(CallArguments) == 40);
+              sizeof(RunEntry) == 64 && sizeof(CallArguments) == 40);
 
 // The memory service (process.md#memory): kernel.process_memory's records.
 enum class MemoryVerdict : U64 {
@@ -310,11 +329,6 @@ public:
     PolicySpan records;
     U64 count, address, error;
 };
-class MemoryLoadArguments final {
-public:
-    PolicySpan image;
-    U64 arguments, slots;
-};
 class MemoryBudgetArguments final {
 public:
     PolicySpan image;
@@ -347,14 +361,7 @@ auto base64_group(const EntryArguments *) -> U64 asm("__au_runtime_process_base6
     __attribute__((visibility("hidden")));
 auto frame_transition(U64 operation, U64 record, U64 owner, U64 generation, U64 link) -> U64
     asm("aurora_kernel_frame_transition") __attribute__((visibility("hidden")));
-auto elf_admit(const VolumeArguments *) -> U64 asm("__au_runtime_process_elf_admit")
-    __attribute__((visibility("hidden")));
-auto layout(const LayoutArguments *) -> U64 asm("__au_runtime_process_layout") __attribute__((visibility("hidden")));
-auto region(const RegionArguments *, ProcessRegion *) -> void asm("__au_runtime_process_region")
-    __attribute__((visibility("hidden")));
-auto elf_input(const VolumeArguments *) -> U64 asm("__au_runtime_process_elf_input")
-    __attribute__((visibility("hidden")));
-auto elf_entry(const VolumeArguments *) -> U64 asm("__au_runtime_process_elf_entry")
+auto image_manifest(const ManifestArguments *, ImageManifestWire *) -> void asm("__au_runtime_process_image_manifest")
     __attribute__((visibility("hidden")));
 auto trap(const ProcessTrap *) -> U64 asm("__au_runtime_process_trap") __attribute__((visibility("hidden")));
 auto call(const CallArguments *, KernelCall *) -> void asm("__au_runtime_process_call")
@@ -372,8 +379,6 @@ auto memory_unmap(const MemoryUnmapArguments *, MemoryDecision *) -> void asm("_
 auto memory_find(const MemoryFindArguments *) -> U64 asm("__au_runtime_process_memory_find")
     __attribute__((visibility("hidden")));
 auto memory_fault(const MemoryFaultArguments *) -> U64 asm("__au_runtime_process_memory_fault")
-    __attribute__((visibility("hidden")));
-auto memory_load_charge(const MemoryLoadArguments *) -> U64 asm("__au_runtime_process_memory_load_charge")
     __attribute__((visibility("hidden")));
 auto memory_budget(const MemoryBudgetArguments *, MemoryBudget *) -> void asm("__au_runtime_process_memory_budget")
     __attribute__((visibility("hidden")));
@@ -479,52 +484,67 @@ frame_range(std::span<const std::byte> map, U64 stride, U64 index, U64 arena, U6
     return group >> 32 ? std::nullopt : std::optional<U64>{group};
 }
 
-// Program admission, layout and regions. A region outside its closed shape is
-// nullopt: pages within the 47-bit user half, its exact leaf flags, the copy
+// Copied program regions are rejected outside their closed shape: pages within the 47-bit user half, its exact leaf flags, the copy
 // extent inside its pages (and for segments inside the image).
-[[nodiscard]] inline auto elf_admit(std::span<const std::byte> image) -> std::optional<ElfVerdict> {
-    const VolumeArguments arguments{PolicySpan{image}};
-    return verdict<ElfVerdict, 20>(bridge::elf_admit(&arguments));
-}
-[[nodiscard]] inline auto layout(std::span<const std::byte> image, U64 reserved_first, U64 reserved_end, U64 bytes)
-    -> std::optional<LayoutVerdict> {
-    const LayoutArguments arguments{PolicySpan{image}, reserved_first, reserved_end, bytes};
-    return verdict<LayoutVerdict, 3>(bridge::layout(&arguments));
-}
-[[nodiscard]] inline auto region(std::span<const std::byte> image, U64 index, U64 bytes)
-    -> std::optional<ProcessRegion> {
-    const RegionArguments arguments{PolicySpan{image}, index, bytes};
-    ProcessRegion result{~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}, ~U64{0}};
-    bridge::region(&arguments, &result);
+[[nodiscard]] inline auto valid_region(const ProcessRegion &result, U64 image_bytes, U64 bytes) -> bool {
     if (result.kind == 0)
-        return result.first || result.pages || result.flags || result.vaddr || result.offset || result.bytes
-                   ? std::nullopt
-                   : std::optional<ProcessRegion>{result};
+        return !(result.first || result.pages || result.flags || result.vaddr || result.offset || result.bytes);
     constexpr U64 user_limit = U64{1} << 47;
     if (result.kind > 3 || result.pages == 0 || result.first % 4096 || result.first >= user_limit ||
         result.pages > (user_limit - result.first) / 4096 || result.vaddr < result.first ||
         result.vaddr - result.first >= 4096 || result.bytes > result.pages * 4096 - (result.vaddr - result.first))
-        return std::nullopt;
+        return false;
     const auto kind = static_cast<RegionKind>(result.kind);
     if (kind == RegionKind::segment)
         return (result.flags == leaf_read || result.flags == leaf_execute || result.flags == leaf_write) &&
-                       result.offset <= image.size() && result.bytes <= image.size() - result.offset
-                   ? std::optional<ProcessRegion>{result}
-                   : std::nullopt;
+               result.offset <= image_bytes && result.bytes <= image_bytes - result.offset;
     if (result.vaddr != result.first || result.offset != 0)
-        return std::nullopt;
+        return false;
     if (kind == RegionKind::stack)
-        return result.flags == leaf_write && result.bytes == 0 ? std::optional<ProcessRegion>{result} : std::nullopt;
-    return result.flags == leaf_read && result.bytes == bytes ? std::optional<ProcessRegion>{result} : std::nullopt;
+        return result.flags == leaf_write && result.bytes == 0;
+    return result.flags == leaf_read && result.bytes == bytes;
 }
-[[nodiscard]] inline auto elf_input(std::span<const std::byte> image) -> bool {
-    const VolumeArguments arguments{PolicySpan{image}};
-    return bridge::elf_input(&arguments) == 1;
+[[nodiscard]] inline auto
+image_manifest(std::span<const std::byte> image, U64 reserved_first, U64 reserved_end, U64 bytes, U64 slots)
+    -> std::optional<ImageManifest> {
+    const ManifestArguments arguments{PolicySpan{image}, reserved_first, reserved_end, bytes, slots};
+    ImageManifestWire wire;
+    wire.elf = 255;
+    bridge::image_manifest(&arguments, &wire);
+    ImageManifest result{wire.elf, wire.layout, wire.count, wire.entry, wire.charge, wire.complete, wire.input};
+    for (std::size_t index = 0; index < wire.regions.size(); ++index) {
+        const auto &region = wire.regions[index];
+        if (region.access > 3)
+            return std::nullopt;
+        const U64 flags = region.access == 1   ? leaf_read
+                          : region.access == 2 ? leaf_execute
+                          : region.access == 3 ? leaf_write
+                                               : 0;
+        result.regions[index] = {
+            region.kind, region.first, region.pages, flags, region.vaddr, region.offset, region.bytes};
+    }
+    if (result.elf > 20 || result.layout > 3 || result.count > result.regions.size() || result.complete > 1 ||
+        result.input > 1)
+        return std::nullopt;
+    // Validate every copied record, including canonical empty unused entries.
+    for (std::size_t index = 0; index < result.regions.size(); ++index) {
+        const auto &region = result.regions[index];
+        if (!valid_region(region, image.size(), bytes) || ((index < result.count) != (region.kind != 0)))
+            return std::nullopt;
+    }
+    if (result.elf != 0 || result.layout != 0) {
+        if (result.count || result.entry || result.charge || result.complete || result.input ||
+            (result.elf != 0 && result.layout != 1))
+            return std::nullopt;
+    } else if (result.complete) {
+        if (!result.count || !result.charge || !result.entry || slots > 2)
+            return std::nullopt;
+    } else if (result.charge) {
+        return std::nullopt;
+    }
+    return result;
 }
-[[nodiscard]] inline auto elf_entry(std::span<const std::byte> image) -> U64 {
-    const VolumeArguments arguments{PolicySpan{image}};
-    return bridge::elf_entry(&arguments);
-}
+
 [[nodiscard]] inline auto trap(const ProcessTrap &frame) -> std::optional<TrapClass> {
     return verdict<TrapClass, 15>(bridge::trap(&frame));
 }
@@ -718,10 +738,6 @@ public:
 }
 // A loaded process's quota and initial charge, or a quota refusal; nullopt for
 // a malformed result.
-[[nodiscard]] inline auto memory_load_charge(std::span<const std::byte> image, U64 arguments, U64 slots) -> U64 {
-    const MemoryLoadArguments call{PolicySpan{image}, arguments, slots};
-    return bridge::memory_load_charge(&call);
-}
 [[nodiscard]] inline auto
 memory_budget(std::span<const std::byte> image, U64 arguments, U64 slots, U64 requested, U64 free)
     -> std::optional<MemoryBudget> {

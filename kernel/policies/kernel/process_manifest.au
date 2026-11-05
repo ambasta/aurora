@@ -1,0 +1,136 @@
+export module kernel.process_manifest;
+import kernel.process_memory;
+import kernel.process_space;
+import kernel.elf;
+
+// One immutable-image admission operation. The complete copied plan survives
+// the parser pin; the native binding must authenticate its source epoch again
+// before any physical mapping. These facts do not convey mapping authority.
+export namespace kernel {
+    // The copy wire carries closed byte encodings for kind and permissions;
+    // extents remain exact u64 values. This fits the existing composed-value
+    // limit without reducing the eight-segment plus stack/arguments capacity.
+    auto image_access(u64 flags) -> u8 {
+        if (flags == leaf_read()) {
+            return 1u8;
+        }
+        if (flags == leaf_execute()) {
+            return 2u8;
+        }
+        if (flags == leaf_write()) {
+            return 3u8;
+        }
+        return 0u8;
+    }
+    class ImageRegion {
+    public:
+        u8 kind;
+        u8 access;
+        u64 first;
+        u64 pages;
+        u64 vaddr;
+        u64 offset;
+        u64 bytes;
+        ImageRegion(ProcessRegion value) : kind(u8(value.kind)), access(image_access(value.flags)), first(value.first),
+            pages(value.pages), vaddr(value.vaddr), offset(value.offset), bytes(value.bytes) {
+        }
+    };
+    class ImageManifest {
+    public:
+        ElfVerdict elf;
+        LayoutVerdict layout;
+        u8 count;
+        u8 complete;
+        u8 input;
+        u64 entry;
+        u64 charge;
+        ImageRegion region0;
+        ImageRegion region1;
+        ImageRegion region2;
+        ImageRegion region3;
+        ImageRegion region4;
+        ImageRegion region5;
+        ImageRegion region6;
+        ImageRegion region7;
+        ImageRegion region8;
+        ImageRegion region9;
+        ImageManifest(ImageRegion empty) : elf(ElfVerdict::truncated), layout(LayoutVerdict::image), count(0u8),
+            complete(0u8), input(0u8), entry(0u64), charge(0u64), region0(empty), region1(empty), region2(empty),
+            region3(empty), region4(empty), region5(empty), region6(empty), region7(empty), region8(empty),
+            region9(empty) {
+        }
+        auto append(ProcessRegion value) -> bool {
+            if (count >= 10u8) {
+                return false;
+            }
+            const ImageRegion copied = ImageRegion(value);
+            if (count == 0u8) {
+                region0 = copied;
+            }
+            if (count == 1u8) {
+                region1 = copied;
+            }
+            if (count == 2u8) {
+                region2 = copied;
+            }
+            if (count == 3u8) {
+                region3 = copied;
+            }
+            if (count == 4u8) {
+                region4 = copied;
+            }
+            if (count == 5u8) {
+                region5 = copied;
+            }
+            if (count == 6u8) {
+                region6 = copied;
+            }
+            if (count == 7u8) {
+                region7 = copied;
+            }
+            if (count == 8u8) {
+                region8 = copied;
+            }
+            if (count == 9u8) {
+                region9 = copied;
+            }
+            count = count + 1u8;
+            return true;
+        }
+    };
+
+    auto image_manifest(builtin::span<const u8> image, u64 reserved_first, u64 reserved_end, u64 arguments,
+        u64 slots) -> ImageManifest {
+        const ProcessRegion absent = region(0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+        const ImageRegion empty = ImageRegion(absent);
+        ImageManifest result = ImageManifest(empty);
+        const ElfVerdict elf = elf_admit(image, image_floor(), image_limit());
+        result.elf = elf;
+        if (elf != ElfVerdict::valid) {
+            return result;
+        }
+        const LayoutVerdict layout = process_layout(image, reserved_first, reserved_end, arguments);
+        result.layout = layout;
+        if (layout != LayoutVerdict::valid) {
+            return result;
+        }
+        i64 index = 0;
+        while (index <= 10) {
+            const ProcessRegion value = process_region(image, index, arguments);
+            if (value.kind == 0u64) {
+                result.entry = elf_entry(image);
+                result.input = u8(elf_input_requested(image));
+                result.charge = memory_load_charge(image, arguments, slots);
+                if (result.count != 0u8 && result.charge != 0u64) {
+                    result.complete = 1u8;
+                }
+                return result;
+            }
+            if (!result.append(value)) {
+                return result;
+            }
+            index = index + 1;
+        }
+        return result;
+    }
+}

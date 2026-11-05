@@ -261,13 +261,19 @@ def validate_native_abi(facts, source):
             type_name=symbol,
         )
 
-    def record(source, size, fields, alignment=8):
+    def record(source, size, fields, alignment=8, field_offsets=None):
         _, value = abi_declaration(facts, "records", source)
         expected, offset = [], 0
-        for name, kind, count in fields:
+        if field_offsets is not None and len(field_offsets) != len(fields):
+            raise ValueError("Incomplete native field offsets: " + source)
+        for index, (name, kind, count) in enumerate(fields):
+            if field_offsets is not None:
+                if field_offsets[index] < offset:
+                    raise ValueError("Overlapping native field offsets: " + source)
+                offset = field_offsets[index]
             field = shape(kind)
-            # Native bytes are dense byte arrays, not scalar ABI qwords.
-            width = count if kind == "u8" and count else field["bytes"] * max(1, count)
+            # Native byte fields and arrays are dense, unlike scalar call ABI qwords.
+            width = max(1, count) if kind == "u8" else field["bytes"] * max(1, count)
             expected.append(dict(name=name, offset=offset, array_length=count, **{**field, "bytes": width}))
             offset += width
         if offset != size or value != dict(
@@ -1163,12 +1169,20 @@ def validate_native_abi(facts, source):
         record("kernel::ProcessTrap", 72, [(name, "u64", 0) for name in trap])
         call = [("_value", "u64", 0), ("_length", "u64", 0), ("_base", "u64", 0), ("_record", "u64", 0)]
         record("kernel::KernelCall", 40, [("_action", "kernel::CallAction", 0)] + call)
-        entry("process_elf_admit", ["span"], "kernel::ElfVerdict")
-        entry("process_layout", ["span", "u64", "u64", "u64"], "kernel::LayoutVerdict")
-        entry("process_region", ["span", "u64", "u64"], "kernel::ProcessRegion")
-        entry("process_memory_load_charge", ["span", "u64", "u64"], "u64")
-        entry("process_elf_entry", ["span"], "u64")
-        entry("process_elf_input", ["span"], "u64")
+        compact_region = [("kind", "u8", 0), ("access", "u8", 0)]
+        compact_region += [(name, "u64", 0) for name in ("first", "pages", "vaddr", "offset", "bytes")]
+        record("kernel::ImageRegion", 48, compact_region, field_offsets=[0, 1, 8, 16, 24, 32, 40])
+        manifest = [("elf", "kernel::ElfVerdict", 0), ("layout", "kernel::LayoutVerdict", 0)]
+        manifest += [(name, "u8", 0) for name in ("count", "complete", "input")]
+        manifest += [(name, "u64", 0) for name in ("entry", "charge")]
+        manifest += [(f"region{index}", "kernel::ImageRegion", 0) for index in range(10)]
+        record(
+            "kernel::ImageManifest",
+            520,
+            manifest,
+            field_offsets=[0, 8, 16, 17, 18, 24, 32] + [40 + 48 * index for index in range(10)],
+        )
+        entry("process_image_manifest", ["span"] + ["u64"] * 4, "kernel::ImageManifest")
         entry("process_trap", ["kernel::ProcessTrap"], "kernel::TrapClass")
         entry("process_call", ["u64", "u64", "u64", "u64", "u64"], "kernel::KernelCall")
         record("kernel::InputSession", 32, [(name, "u64", 0) for name in ("remaining", "status", "count", "after_cr")])

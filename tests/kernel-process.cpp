@@ -730,27 +730,39 @@ auto flags_name(U64 flags) -> std::string {
 
 // An entry admitted as a program: verdicts, entry point and regions.
 auto program_query(std::span<const std::byte> image, U64 arguments, U64 reserved) -> void {
-    const auto elf = process::elf_admit(image);
-    std::cout << "elf=" << (elf ? elf_names[static_cast<U64>(*elf)] : "malformed");
-    const auto layout = process::layout(image, reserved, reserved + (U64{4} << 20), arguments);
-    std::cout << " layout=" << (layout ? layout_names[static_cast<U64>(*layout)] : "malformed");
-    if (layout != process::LayoutVerdict::valid) {
+    const auto manifest = process::image_manifest(image, reserved, reserved + (U64{4} << 20), arguments, 1);
+    if (!manifest) {
+        std::cout << "malformed\n";
+        return;
+    }
+    std::cout << "elf=" << elf_names[manifest->elf] << " layout=" << layout_names[manifest->layout];
+    if (manifest->layout != static_cast<U64>(process::LayoutVerdict::valid)) {
         std::cout << "\n";
         return;
     }
-    std::cout << " entry=" << hex(process::elf_entry(image)) << "\n";
-    for (U64 index = 0;; ++index) {
-        const auto region = process::region(image, index, arguments);
-        if (!region) {
-            std::cout << "    region malformed\n";
-            return;
-        }
-        if (region->kind == 0)
-            return;
-        std::cout << "    " << region_names[region->kind] << " first=" << hex(region->first)
-                  << " pages=" << region->pages << " " << flags_name(region->flags) << " vaddr=" << hex(region->vaddr)
-                  << " offset=" << region->offset << " bytes=" << region->bytes << "\n";
+    if (!manifest->complete) {
+        std::cout << " incomplete\n";
+        return;
     }
+    std::cout << " entry=" << hex(manifest->entry) << "\n";
+    for (U64 index = 0; index < manifest->count; ++index) {
+        const auto &region = manifest->regions[index];
+        std::cout << "    " << region_names[region.kind] << " first=" << hex(region.first) << " pages=" << region.pages
+                  << " " << flags_name(region.flags) << " vaddr=" << hex(region.vaddr) << " offset=" << region.offset
+                  << " bytes=" << region.bytes << "\n";
+    }
+}
+
+// The complete loader operation with explicit shared-slot charge and input facts.
+auto manifest_query(std::span<const std::byte> image, U64 arguments, U64 reserved, U64 slots) -> void {
+    const auto result = process::image_manifest(image, reserved, reserved + (U64{4} << 20), arguments, slots);
+    if (!result) {
+        std::cout << "malformed\n";
+        return;
+    }
+    std::cout << "elf=" << elf_names[result->elf] << " layout=" << layout_names[result->layout]
+              << " complete=" << result->complete << " regions=" << result->count << " entry=" << hex(result->entry)
+              << " charge=" << result->charge << " input=" << result->input << "\n";
 }
 
 // The load charge and quota of an entry run with one shared kernel slot.
@@ -817,7 +829,8 @@ auto volumes_mode(const char *path) -> int {
         const auto verdict = process::volume_admit(bytes);
         std::cout << name << ": " << (verdict ? volume_names[static_cast<U64>(*verdict)] : "malformed") << "\n";
         for (const auto &query : queries) {
-            if (query.starts_with("program:") || query.starts_with("budget:") || query.starts_with("runs:")) {
+            if (query.starts_with("program:") || query.starts_with("manifest:") || query.starts_with("budget:") ||
+                query.starts_with("runs:")) {
                 // program:ARGUMENTS:RESERVED:PATH, budget:ARGUMENTS:REQUESTED:FREE:PATH or runs:PATH.
                 std::istringstream parts{query};
                 std::string kind, arguments, reserved, free, name;
@@ -826,7 +839,7 @@ auto volumes_mode(const char *path) -> int {
                     std::getline(parts, arguments, ':');
                     std::getline(parts, reserved, ':');
                 }
-                if (kind == "budget")
+                if (kind == "budget" || kind == "manifest")
                     std::getline(parts, free, ':');
                 std::getline(parts, name);
                 const auto entry = process::volume_lookup(bytes, bytes_of(name));
@@ -835,6 +848,8 @@ auto volumes_mode(const char *path) -> int {
                     std::cout << "absent\n";
                 else if (kind == "program")
                     program_query(*entry, number(arguments), number(reserved));
+                else if (kind == "manifest")
+                    manifest_query(*entry, number(arguments), number(reserved), number(free));
                 else if (kind == "budget")
                     budget_query(*entry, number(arguments), number(reserved), number(free));
                 else

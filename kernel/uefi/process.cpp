@@ -1794,41 +1794,16 @@ auto refuse(U64 run, std::string_view reason) -> void {
     Serial::text("\r\n");
 }
 
-// The existing pure parser returns bounded copied layout facts only. This
-// local manifest remains bound to its immutable boot input or snapshot epoch;
-// physical copying authenticates that source again after the parser pin ends.
+// The native binding keeps exact source identity outside the pure copied plan.
+// Its parser pin ends before diagnostics or any manager mutation.
 class ImageManifest final {
 public:
-    std::array<process::ProcessRegion, ProcessSpace::max_regions> regions{};
-    std::optional<process::ElfVerdict> elf;
-    std::optional<process::LayoutVerdict> layout;
-    U64 count = 0, entry = 0, charge = 0, snapshot_epoch = 0;
-    bool complete = false, input_requested = false;
+    std::optional<process::ImageManifest> plan;
+    U64 snapshot_epoch = 0;
 };
 auto parse_image_manifest(std::span<const std::byte> image, U64 argument_bytes, U64 snapshot_epoch) -> ImageManifest {
-    ImageManifest result;
-    result.snapshot_epoch = snapshot_epoch;
-    result.elf = process::elf_admit(image);
-    if (result.elf != process::ElfVerdict::valid)
-        return result;
-    result.layout = process::layout(image, shared.reserved_first, shared.reserved_end, argument_bytes);
-    if (result.layout != process::LayoutVerdict::valid)
-        return result;
-    for (;;) {
-        const auto region = process::region(image, result.count, argument_bytes);
-        if (!region)
-            return result;
-        if (static_cast<process::RegionKind>(region->kind) == process::RegionKind::none)
-            break;
-        if (result.count == result.regions.size())
-            return result;
-        result.regions[result.count++] = *region;
-    }
-    result.entry = process::elf_entry(image);
-    result.input_requested = process::elf_input(image);
-    result.charge = process::memory_load_charge(image, argument_bytes, shared.slots);
-    result.complete = result.count != 0 && result.charge != 0;
-    return result;
+    return {process::image_manifest(image, shared.reserved_first, shared.reserved_end, argument_bytes, shared.slots),
+            snapshot_epoch};
 }
 
 // Map a complete immutable admitted source. A transient loader snapshot, if
@@ -1869,34 +1844,33 @@ auto load_image(std::span<const std::byte> view,
         manifest = parse_image_manifest(source, arguments.size(), 0);
     }
     // All parser pins end before diagnostics or manager mutations.
-    if (!manifest.elf)
-        fail("Aurora ELF admission");
-    if (*manifest.elf != process::ElfVerdict::valid) {
-        refuse(run, name(elf_names, static_cast<U64>(*manifest.elf)));
+    if (!manifest.plan)
+        fail("Aurora process manifest ABI");
+    const auto &plan = *manifest.plan;
+    if (plan.elf != static_cast<U64>(process::ElfVerdict::valid)) {
+        refuse(run, name(elf_names, plan.elf));
         return false;
     }
-    if (!manifest.layout)
-        fail("Aurora process layout");
-    if (*manifest.layout != process::LayoutVerdict::valid) {
-        refuse(run, name(layout_names, static_cast<U64>(*manifest.layout)));
+    if (plan.layout != static_cast<U64>(process::LayoutVerdict::valid)) {
+        refuse(run, name(layout_names, plan.layout));
         return false;
     }
-    if (!manifest.complete || manifest.snapshot_epoch != snapshot_epoch)
+    if (!plan.complete || manifest.snapshot_epoch != snapshot_epoch)
         fail("Aurora process manifest");
-    if (manifest.input_requested && (!external || slot != 1 || service || grant_block || grant_mounted ||
-                                     !preemptible || !input_source || input_read.owner)) {
+    if (plan.input && (!external || slot != 1 || service || grant_block || grant_mounted || !preemptible ||
+                       !input_source || input_read.owner)) {
         load_refusal = RunStatus::unavailable;
         return false; // Requesting an ABI never creates an input grant.
     }
-    const U64 epoch = table.prepare_load(slot, frames::first_owner + run, entry.quota, manifest.charge);
+    const U64 epoch = table.prepare_load(slot, frames::first_owner + run, entry.quota, plan.charge);
     if (!epoch) {
         refuse(run, "quota");
         return false;
     }
     auto &process_space = resident.space.emplace(table, slot, epoch);
     U64 stack_top = 0, block = 0;
-    for (U64 index = 0; index < manifest.count; ++index) {
-        const auto &region = manifest.regions[index];
+    for (U64 index = 0; index < plan.count; ++index) {
+        const auto &region = plan.regions[index];
         const auto kind = static_cast<process::RegionKind>(region.kind);
         if (kind == process::RegionKind::stack)
             stack_top = region.first + region.pages * frames::page;
@@ -1920,7 +1894,7 @@ auto load_image(std::span<const std::byte> view,
         if (!mapped)
             fail("process mapping");
     }
-    const U64 entry_point = manifest.entry, regions = manifest.count;
+    const U64 entry_point = plan.entry, regions = plan.count;
     if (snapshot_epoch) {
         if (!snapshot || snapshot->epoch() != snapshot_epoch || snapshot->owner() != process_space.owner() ||
             !snapshot->release())
@@ -2013,7 +1987,7 @@ auto load_image(std::span<const std::byte> view,
                         set_generation     ? set_count
                         : write_generation ? write_sectors
                                            : read_sectors};
-    if (manifest.input_requested) {
+    if (plan.input) {
         input_read.owner = run;
         // Conservative ownership handoff: even clean EOF/no read requires the
         // shell's source delimiter quarantine; native never parses that line.

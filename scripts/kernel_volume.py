@@ -100,7 +100,7 @@ def number(text):
 # input for admission and layout cases, never run. Edits are FIELD=VALUE for
 # header fields or pN.FIELD=VALUE for program header N, and truncate=BYTES.
 ELF_HEADER = {"magic": (0, 1), "class": (4, 1), "data": (5, 1), "osabi": (7, 1), "padding": (15, 1)}
-ELF_HEADER.update({"etype": (16, 2)})
+ELF_HEADER.update({"etype": (16, 2), "flags": (48, 4)})
 ELF_HEADER.update({"machine": (18, 2), "entry": (24, 8), "phoff": (32, 8), "phentsize": (54, 2), "phnum": (56, 2)})
 ELF_FIELDS = {"type": (0, 4), "flags": (4, 4), "offset": (8, 8), "vaddr": (16, 8), "paddr": (24, 8)}
 ELF_FIELDS.update({"filesz": (32, 8), "memsz": (40, 8), "align": (48, 8)})

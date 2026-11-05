@@ -174,6 +174,13 @@ invalidation preserves frozen identity for bootstrap/shutdown receipts. This doe
 not migrate the separate legacy Mailbox or add general IPC/scheduling; final-source
 qualification remains revision-specific.
 
+Complete executable admission now runs as one Aurora parser operation for boot
+and committed-snapshot images, returning the bounded region plan, first refusal,
+entry, input request and load charge. Native code retains source/epoch binding,
+closed copied-record validation and physical effects; MemoryManager retains
+allocation and quota admission. This adds no escaping image loan or asynchronous
+loader. Final-source qualification remains required.
+
 Committed executable acquisition now keeps open/read progress, bounded count admission,
 close-before-load ordering and failure selection in a short-lived Aurora operation.
 Native code retains authenticated RPC effects, snapshot epoch/copy effects and ELF
