@@ -1,6 +1,32 @@
-import SourceBinding.RuntimeEvaluation
+import SourceBinding.RuntimePureInversion
 import SourceBinding.RuntimeExpressionNames
 namespace Aurora.SourceBinding
+
+private theorem effect_variable_result
+    (valid : RuntimeContextValid context) (known : RuntimeVariableBinding context name binding)
+    (evaluated : EffectEvaluation functions response (.pure context) state (.name [name]) kind outcome shared events) :
+    kind = binding.kind ∧ outcome = sourceLift (state.locals.readBound binding) ∧ events = [] := by
+  cases evaluated with
+  | readVariable actual =>
+    have same := actual.unique valid known
+    subst binding
+    exact ⟨rfl,rfl,rfl⟩
+  | readField actual => cases actual.enabled
+  | enumValue actual =>
+    exact False.elim (((EffectEnumValue.pure_iff _).mp actual).not_singleton)
+
+private theorem effect_enum_result
+    (valid : RuntimeContextValid context) (known : RuntimeEnumValue context name identity ordinal)
+    (evaluated : EffectEvaluation functions response (.pure context) state (.name name) kind outcome shared events) :
+    kind = .nominal identity ∧
+    outcome = sourceLift (readRuntime (.nominal identity) (some (.nominal identity.name ordinal))) ∧ events = [] := by
+  cases evaluated with
+  | readVariable _ => exact False.elim known.not_singleton
+  | readField actual => cases actual.enabled
+  | enumValue actual =>
+    obtain ⟨sameIdentity,sameOrdinal⟩ := ((EffectEnumValue.pure_iff _).mp actual).unique valid known
+    subst identity; subst ordinal
+    exact ⟨rfl,rfl,rfl⟩
 
 /-- Invert any derivation of a known lexical variable. Missing/malformed runtime
     values remain the exact readBound outcome; readiness is not assumed. -/
@@ -9,12 +35,10 @@ theorem RuntimeEvaluation.variable_result
     (known : RuntimeVariableBinding context name binding)
     (evaluated : RuntimeEvaluation functions context state (.name [name]) kind outcome events) :
     kind = binding.kind ∧ outcome = state.readBound binding ∧ events = [] := by
-  cases evaluated with
-  | readVariable actual =>
-    have same := actual.unique valid known
-    subst binding
-    exact ⟨rfl,rfl,rfl⟩
-  | enumValue impossible => exact False.elim impossible.not_singleton
+  have facts := effect_variable_result valid known
+    (evaluated PUnit PUnit (fun _ _ _ => False) ⟨fun _ => none,PUnit.unit⟩)
+  exact ⟨facts.1,sourceLift_injective facts.2.1,
+    RuntimeSourceEvent.map_toEffect_injective facts.2.2⟩
 
 /-- Nominal constants retain their exact source-selected identity and ordinal. -/
 theorem RuntimeEvaluation.enum_result
@@ -23,12 +47,10 @@ theorem RuntimeEvaluation.enum_result
     (evaluated : RuntimeEvaluation functions context state (.name name) kind outcome events) :
     kind = .nominal identity ∧
     outcome = readRuntime (.nominal identity) (some (.nominal identity.name ordinal)) ∧ events = [] := by
-  cases evaluated with
-  | readVariable _ => exact False.elim known.not_singleton
-  | enumValue actual =>
-    obtain ⟨sameIdentity,sameOrdinal⟩ := actual.unique valid known
-    subst identity; subst ordinal
-    exact ⟨rfl,rfl,rfl⟩
+  have facts := effect_enum_result valid known
+    (evaluated PUnit PUnit (fun _ _ _ => False) ⟨fun _ => none,PUnit.unit⟩)
+  exact ⟨facts.1,sourceLift_injective facts.2.1,
+    RuntimeSourceEvent.map_toEffect_injective facts.2.2⟩
 
 /-- A named call either fails while evaluating arguments, or executes the actual
     chosen source body. Its existential lexical endpoint and current state are
@@ -51,13 +73,7 @@ theorem RuntimeEvaluation.call_cases
             callee.context.formals callee.result ⟨[],0,1,callee.context.formals.length⟩
             (formalSourceLocals callee.parameters (fun index => values[index]?))
             callee.parsed.statements after (.trapped fault finished) bodyEvents ∧
-          outcome = .trap fault ∧ events = argumentEvents ++ [.invoke callee.key values] ++ bodyEvents)) := by
-  cases evaluated with
-  | callArgumentsFault member resolves args => exact ⟨_,member,resolves,rfl,Or.inl ⟨_,rfl,args⟩⟩
-  | callValue member resolves args body =>
-    exact ⟨_,member,resolves,rfl,Or.inr (Or.inl ⟨_,_,_,_,_,_,args,body,rfl,rfl⟩)⟩
-  | callFault member resolves args body =>
-    exact ⟨_,member,resolves,rfl,Or.inr (Or.inr ⟨_,_,_,_,_,_,args,body,rfl,rfl⟩)⟩
+          outcome = .trap fault ∧ events = argumentEvents ++ [.invoke callee.key values] ++ bodyEvents)) := PureRuntimeEvaluation.call_cases evaluated
 
 /-- Cons inversion preserves first-fault/early-return behavior. The skipped tail
     has only its original scoped syntax witness, never an evaluation witness. -/
@@ -73,10 +89,6 @@ theorem RuntimeStatementsEvaluation.cons_cases
       ScopedStatements members module path formals middle rest after items ∧ outcome = .returned value finished) ∨
     (∃ middle fault finished items,
       RuntimeStatementEvaluation functions members module path formals result before state first middle (.trapped fault finished) events ∧
-      ScopedStatements members module path formals middle rest after items ∧ outcome = .trapped fault finished) := by
-  cases evaluated with
-  | next first tail => exact Or.inl ⟨_,_,_,_,first,tail,rfl⟩
-  | returned first tail => exact Or.inr (Or.inl ⟨_,_,_,_,first,tail,rfl⟩)
-  | trapped first tail => exact Or.inr (Or.inr ⟨_,_,_,_,first,tail,rfl⟩)
+      ScopedStatements members module path formals middle rest after items ∧ outcome = .trapped fault finished) := PureRuntimeStatementsEvaluation.cons_cases evaluated
 
 end Aurora.SourceBinding

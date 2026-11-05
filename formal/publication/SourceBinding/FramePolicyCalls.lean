@@ -9,23 +9,40 @@ def ArgumentsResult (functions : List RuntimeSourceFunction) (context : RuntimeE
   ∀ outcome events, RuntimeArgumentEvaluation functions context state raw kinds outcome events →
     outcome = .value values
 
+private theorem ArgumentsResult.effect
+    (result : ArgumentsResult functions context state raws kinds values)
+    (evaluated : EffectArguments (functions.map RuntimeSourceFunction.toEffect) response (.pure context)
+      ⟨state,shared⟩ raws kinds outcome after events) :
+    outcome = legacyEffectArguments (.value values) := by
+  rcases evaluated.pure_induction (pureRuntimeAlgebra functions) context rfl with
+    ⟨oldOutcome,oldEvents,old,same,_,_⟩
+  exact same.trans (congrArg legacyEffectArguments (result _ _ old))
+
 theorem ArgumentsResult.nil : ArgumentsResult functions context state [] [] [] := by
   intro outcome events evaluated
-  cases evaluated
-  rfl
+  have actual := evaluated PUnit PUnit (fun _ _ _ => False) ⟨fun _ => none,PUnit.unit⟩
+  generalize same : legacyEffectArguments outcome = actualOutcome at actual
+  generalize List.map RuntimeSourceEvent.toEffect events = actualEvents at actual
+  cases actual
+  exact legacyEffectArguments_injective same
 
 theorem ArgumentsResult.cons
     (first : RuntimeExpressionResult functions context state raw kind (.value value))
     (rest : ArgumentsResult functions context state raws kinds values) :
     ArgumentsResult functions context state (raw::raws) (kind::kinds) (value::values) := by
   intro outcome events evaluated
-  cases evaluated with
-  | fault evaluated => have impossible := (first _ _ _ evaluated).2; cases impossible
-  | cons evaluated tail =>
-    have same := (first _ _ _ evaluated).2
-    cases same
-    rw [rest _ _ tail]
-    rfl
+  have actual := evaluated PUnit PUnit (fun _ _ _ => False) ⟨fun _ => none,PUnit.unit⟩
+  generalize same : legacyEffectArguments outcome = actualOutcome at actual
+  generalize List.map RuntimeSourceEvent.toEffect events = actualEvents at actual
+  cases actual with
+  | stopped expression => have impossible := (first.effect expression).2; cases impossible
+  | missing expression => exact False.elim expression.outcome_typed
+  | cons expression tail =>
+    have valueEq := (first.effect expression).2
+    cases valueEq
+    have tailEq := rest.effect tail
+    rw [tailEq] at same
+    exact legacyEffectArguments_injective same
 
 variable {input : ByteArray} {files : List SourceFile} {root : Name}
 variable {bound : RuntimeDAGBinding input files root frameModule framePath rootName}

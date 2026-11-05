@@ -93,6 +93,27 @@ the canonical retired record at the limit, and subsequent policy invocations on 
 are invocation-level results, not allocator ledger updates, persistent retirement,
 native ABI/backend correctness or an ABA guarantee.
 
+Allocator-bookkeeping refinement has begun with an explicit finite-bank model,
+structural ledger invariants, primitive write/framing laws and raw resource-response
+consumption rules. Internal mathematical results preserve the complete invariant
+and retired cells under the specified release update, and derive consistency
+guards from a healthy ledger and the proved numerical policy result. The actual
+method must still be shown to perform that update. The source semantics now thread
+receiver and world state through expressions and statements, with raw resource
+responses consumed only at the modeled declaration or assertion boundary. Exact
+bidirectional compatibility preserves the prior pure evaluations, faults and
+traces; its legacy scope profile still rejects newly supported `if/else` forms,
+including in unexecuted syntax. A bounded resource-step proof now connects actual
+invoke, wait and resume transitions to the same canonical call machine, preserving
+raw responses and changed shared state. Scalar receiver access and the following
+local-store/assertion consumers are also connected to actual machine steps.
+Individual method identity and name/scoping checks do not establish expression
+typing or body-to-IR correspondence. The checked catalogue and code premises
+must still be derived for the complete method. These prerequisites do not yet bind
+the complete production `MemoryManager.release` body to canonical receiver/resource
+calls, establish the initial ledger invariant, or verify native bank admission
+and writes.
+
 | Destination | Status |
 |---|---|
 | Bounded second-CPU execution | The standalone [UEFI AP worker](ap-worker.md) runs the compiled Aurora CRC32C library over presealed bytes on a separately admitted processor with private pinned roots, stacks and fault handling. A BSP-only retained source owner spends unique job sequences, bytes and observations before native effects. Split publication/progress/settlement permits independent BSP work; elapsed-time detection is conditional on sampling gaps shorter than the PM-counter wrap. Exact completion, fault, late-result and refusal paths are exercised in the pinned two-CPU emulator. Production SMP scheduling, concurrent Aurora owners, NUMA, arbitrary worker programs, safe AP stop/reclamation and physical hardware support remain open. Early startup before the private IDT can fail the whole boot. |

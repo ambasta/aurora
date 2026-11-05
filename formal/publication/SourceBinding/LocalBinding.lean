@@ -1,5 +1,6 @@
 import SourceBinding.RuntimeSourceTyping
 import SourceBinding.MethodSyntax
+import SourceBinding.ScopeProfile
 namespace Aurora.SourceBinding
 open Aurora.Publication
 
@@ -118,58 +119,85 @@ def leaveLocalScope (before after : LocalContext) : LocalContext :=
   { after with visible := before.visible, scope := before.scope }
 
 mutual
-  inductive ScopedStatement (members : List Declaration) (module path : Name) (formals : List Formal) :
+  inductive ScopedStatementWith (profile : ScopeProfile) (uses : LocalContext → SourceExpr → Prop)
+      (writes : LocalContext → ByteArray → Prop)
+      (members : List Declaration) (module path : Name) (formals : List Formal) :
       LocalContext → SourceStatement → LocalContext → List SourceLocal → Prop
     | declare {declaration : Formal} : LocalSourceType members module path declaration.type kind mutable → NameAllowed declaration.name →
         declaration.name ∉ visibleNames formals before.visible →
         TypeUnshadowed formals before.visible declaration.type →
-        ExpressionNames members path formals before.visible value →
-        ScopedStatement members module path formals before (.localDecl declaration value)
+        uses before value →
+        ScopedStatementWith profile uses writes members module path formals before (.localDecl declaration value)
           (addLocal before (declaredLocal before declaration.name kind mutable))
           [declaredLocal before declaration.name kind mutable]
     | assign : binding ∈ before.visible → binding.name = name → binding.mutable = true →
-        ExpressionNames members path formals before.visible value →
-        ScopedStatement members module path formals before (.assign name value) before []
-    | returnValue : ExpressionNames members path formals before.visible value →
-        ScopedStatement members module path formals before (.returnValue value) before []
-    | call {callee : Callee} : ExpressionNames members path formals before.visible (.call callee arguments) →
-        ScopedStatement members module path formals before (.call callee arguments) before []
-    | branch : ExpressionNames members path formals before.visible condition →
-        ScopedStatements members module path formals (enterLocalScope before) body child declaredItems →
-        ScopedStatement members module path formals before (.ifThen condition body)
+        uses before value →
+        ScopedStatementWith profile uses writes members module path formals before (.assign name value) before []
+    | receiverAssign : profile = .receiverEffects → writes before name → uses before value →
+        ScopedStatementWith profile uses writes members module path formals before (.assign name value) before []
+    | returnValue : uses before value →
+        ScopedStatementWith profile uses writes members module path formals before (.returnValue value) before []
+    | call {callee : Callee} : uses before (.call callee arguments) →
+        ScopedStatementWith profile uses writes members module path formals before (.call callee arguments) before []
+    | branch : uses before condition →
+        ScopedStatementsWith profile uses writes members module path formals (enterLocalScope before) body child declaredItems →
+        ScopedStatementWith profile uses writes members module path formals before (.ifThen condition body)
           (leaveLocalScope before child) declaredItems
-  inductive ScopedStatements (members : List Declaration) (module path : Name) (formals : List Formal) :
+    | branchElse : profile = .receiverEffects → uses before condition →
+        ScopedStatementsWith profile uses writes members module path formals
+          (enterLocalScope before) yes yesAfter yesItems →
+        ScopedStatementsWith profile uses writes members module path formals
+          (enterLocalScope (leaveLocalScope before yesAfter)) no noAfter noItems →
+        ScopedStatementWith profile uses writes members module path formals before (.ifElse condition yes no)
+          (leaveLocalScope before noAfter) (yesItems ++ noItems)
+  inductive ScopedStatementsWith (profile : ScopeProfile) (uses : LocalContext → SourceExpr → Prop)
+      (writes : LocalContext → ByteArray → Prop)
+      (members : List Declaration) (module path : Name) (formals : List Formal) :
       LocalContext → List SourceStatement → LocalContext → List SourceLocal → Prop
-    | nil : ScopedStatements members module path formals before [] before []
-    | cons : ScopedStatement members module path formals before first middle declaredItems →
-        ScopedStatements members module path formals middle rest after remaining →
-        ScopedStatements members module path formals before (first :: rest) after (declaredItems ++ remaining)
+    | nil : ScopedStatementsWith profile uses writes members module path formals before [] before []
+    | cons : ScopedStatementWith profile uses writes members module path formals before first middle declaredItems →
+        ScopedStatementsWith profile uses writes members module path formals middle rest after remaining →
+        ScopedStatementsWith profile uses writes members module path formals before (first :: rest) after (declaredItems ++ remaining)
 end
 
-structure ScopedResult (members : List Declaration) (module path : Name) (formals : List Formal)
+-- Old aliases FIX both supported forms and name/write predicates, even in dead branches.
+abbrev ScopedStatement (members : List Declaration) (module path : Name) (formals : List Formal) :=
+  ScopedStatementWith .legacy
+    (fun cursor raw => ExpressionNames members path formals cursor.visible raw)
+    (fun _ _ => False) members module path formals
+abbrev ScopedStatements (members : List Declaration) (module path : Name) (formals : List Formal) :=
+  ScopedStatementsWith .legacy
+    (fun cursor raw => ExpressionNames members path formals cursor.visible raw)
+    (fun _ _ => False) members module path formals
+
+structure ScopedResultWith (profile : ScopeProfile) (uses : LocalContext → SourceExpr → Prop) (writes : LocalContext → ByteArray → Prop) (members : List Declaration) (module path : Name) (formals : List Formal)
     (before : LocalContext) (statements : List SourceStatement) where
   after : LocalContext
   declaredItems : List SourceLocal
-  grammar : ScopedStatements members module path formals before statements after declaredItems
-structure ScopedOne (members : List Declaration) (module path : Name) (formals : List Formal)
+  grammar : ScopedStatementsWith profile uses writes members module path formals before statements after declaredItems
+structure ScopedOneWith (profile : ScopeProfile) (uses : LocalContext → SourceExpr → Prop) (writes : LocalContext → ByteArray → Prop) (members : List Declaration) (module path : Name) (formals : List Formal)
     (before : LocalContext) (statement : SourceStatement) where
   after : LocalContext
   declaredItems : List SourceLocal
-  grammar : ScopedStatement members module path formals before statement after declaredItems
+  grammar : ScopedStatementWith profile uses writes members module path formals before statement after declaredItems
 
 mutual
-  def scopeStatements (members : List Declaration) (module path : Name) (formals : List Formal) :
+  def scopeStatementsWith (profile : ScopeProfile) (uses : LocalContext → SourceExpr → Prop) (writes : LocalContext → ByteArray → Prop)
+      (checkUses : (cursor : LocalContext) → (raw : SourceExpr) → Option { _witness : Unit // uses cursor raw })
+      (checkWrites : (cursor : LocalContext) → (name : ByteArray) → Option { _witness : Unit // writes cursor name }) (members : List Declaration) (module path : Name) (formals : List Formal) :
       (fuel : Nat) → (before : LocalContext) → (statements : List SourceStatement) →
-      Option (ScopedResult members module path formals before statements)
+      Option (ScopedResultWith profile uses writes members module path formals before statements)
     | 0, _, _ => none
     | _ + 1, before, [] => some ⟨before,[],.nil⟩
     | fuel + 1, before, first :: rest => do
-      let head ← scopeStatement members module path formals fuel before first
-      let tail ← scopeStatements members module path formals fuel head.after rest
+      let head ← scopeStatementWith profile uses writes checkUses checkWrites members module path formals fuel before first
+      let tail ← scopeStatementsWith profile uses writes checkUses checkWrites members module path formals fuel head.after rest
       return ⟨tail.after,head.declaredItems ++ tail.declaredItems,.cons head.grammar tail.grammar⟩
-  def scopeStatement (members : List Declaration) (module path : Name) (formals : List Formal) :
+  def scopeStatementWith (profile : ScopeProfile) (uses : LocalContext → SourceExpr → Prop) (writes : LocalContext → ByteArray → Prop)
+      (checkUses : (cursor : LocalContext) → (raw : SourceExpr) → Option { _witness : Unit // uses cursor raw })
+      (checkWrites : (cursor : LocalContext) → (name : ByteArray) → Option { _witness : Unit // writes cursor name }) (members : List Declaration) (module path : Name) (formals : List Formal) :
       (fuel : Nat) → (before : LocalContext) → (statement : SourceStatement) →
-      Option (ScopedOne members module path formals before statement)
+      Option (ScopedOneWith profile uses writes members module path formals before statement)
     | 0, _, _ => none
     | fuel + 1, before, statement => match statement with
       | .localDecl declaration value => do
@@ -177,7 +205,7 @@ mutual
         if allowed : NameAllowed declaration.name then
           if fresh : declaration.name ∉ visibleNames formals before.visible then
             if typeClear : TypeUnshadowed formals before.visible declaration.type then
-              let checked ← checkExpressionNames members path formals before.visible 4096 value
+              let checked ← checkUses before value
               let binding := declaredLocal before declaration.name typ.kind typ.mutable
               return ⟨addLocal before binding,[binding],.declare typ.typing allowed fresh typeClear checked.property⟩
             else none
@@ -185,25 +213,57 @@ mutual
         else none
       | .assign name value =>
         match found : before.visible.find? (fun item => item.name == name) with
-        | none => none
+        | none => do
+          if enabled : profile = .receiverEffects then
+            let write ← checkWrites before name
+            let checked ← checkUses before value
+            return ⟨before,[],.receiverAssign enabled write.property checked.property⟩
+          else none
         | some binding => do
           if named : binding.name = name then
             if mutable : binding.mutable = true then
-              let checked ← checkExpressionNames members path formals before.visible 4096 value
+              let checked ← checkUses before value
               return ⟨before,[],.assign (List.mem_of_find?_eq_some found) named mutable checked.property⟩
             else none
           else none
       | .returnValue value => do
-        let checked ← checkExpressionNames members path formals before.visible 4096 value
+        let checked ← checkUses before value
         return ⟨before,[],.returnValue checked.property⟩
       | .call callee arguments => do
-        let checked ← checkExpressionNames members path formals before.visible 4096 (.call callee arguments)
+        let checked ← checkUses before (.call callee arguments)
         return ⟨before,[],.call checked.property⟩
+      | .ifElse condition yes no => do
+        if enabled : profile = .receiverEffects then
+          let checked ← checkUses before condition
+          let yesBody ← scopeStatementsWith profile uses writes checkUses checkWrites members module path formals fuel
+            (enterLocalScope before) yes
+          let noBody ← scopeStatementsWith profile uses writes checkUses checkWrites members module path formals fuel
+            (enterLocalScope (leaveLocalScope before yesBody.after)) no
+          return ⟨leaveLocalScope before noBody.after,yesBody.declaredItems ++ noBody.declaredItems,
+            .branchElse enabled checked.property yesBody.grammar noBody.grammar⟩
+        else none
       | .ifThen condition body => do
-        let checked ← checkExpressionNames members path formals before.visible 4096 condition
-        let child ← scopeStatements members module path formals fuel (enterLocalScope before) body
+        let checked ← checkUses before condition
+        let child ← scopeStatementsWith profile uses writes checkUses checkWrites members module path formals fuel (enterLocalScope before) body
         return ⟨leaveLocalScope before child.after,child.declaredItems,.branch checked.property child.grammar⟩
 end
+
+abbrev ScopedResult (members : List Declaration) (module path : Name) (formals : List Formal) :=
+  ScopedResultWith .legacy (fun cursor raw => ExpressionNames members path formals cursor.visible raw)
+    (fun _ _ => False) members module path formals
+abbrev ScopedOne (members : List Declaration) (module path : Name) (formals : List Formal) :=
+  ScopedOneWith .legacy (fun cursor raw => ExpressionNames members path formals cursor.visible raw)
+    (fun _ _ => False) members module path formals
+
+def scopeStatements (members : List Declaration) (module path : Name) (formals : List Formal) :=
+  scopeStatementsWith .legacy (fun cursor raw => ExpressionNames members path formals cursor.visible raw)
+    (fun _ _ => False) (fun cursor raw => checkExpressionNames members path formals cursor.visible 4096 raw)
+    (fun _ _ => none) members module path formals
+
+def scopeStatement (members : List Declaration) (module path : Name) (formals : List Formal) :=
+  scopeStatementWith .legacy (fun cursor raw => ExpressionNames members path formals cursor.visible raw)
+    (fun _ _ => False) (fun cursor raw => checkExpressionNames members path formals cursor.visible 4096 raw)
+    (fun _ _ => none) members module path formals
 
 /-- Exact binding slot type/offset; mutability comes only from source typing. -/
 def SourceLocalSlot (t : Tables) (id : Int) (binding : SourceLocal) : Prop :=

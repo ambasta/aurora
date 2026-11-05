@@ -39,4 +39,13 @@ private def statementFixture (body : String) (code : List EffectOp) : Bool := Id
     unless actual == expected do throw (IO.userError s!"statement control failed: {label}")
   IO.println s!"runtime statement controls: {cases.length} passed"
 
+/-- The lexical inventory sees both new arms and dead suffixes, even though the
+    old pure statement-code profile deliberately refuses ifElse admission. -/
+example : runtimeStatementsNames 16
+    [.ifElse (.call (.named ["test".toUTF8]) [])
+      [.returnValue (.call (.named ["yes".toUTF8]) [])]
+      [.returnValue (.call (.named ["no".toUTF8]) [])],
+     .returnValue (.call (.named ["dead".toUTF8]) [])] =
+    some ["test".toUTF8,"yes".toUTF8,"no".toUTF8,"dead".toUTF8] := by decide
+
 end Aurora.SourceBinding

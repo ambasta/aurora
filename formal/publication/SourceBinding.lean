@@ -59,3 +59,21 @@ import SourceBinding.FramePolicyRootPrefix
 import SourceBinding.FramePolicyRoot
 import SourceBinding.FramePolicyExecution
 import SourceBinding.FramePolicyReflection
+
+import SourceBinding.EffectSourceBinding
+import SourceBinding.OwnedWordsFacts
+import SourceBinding.ResourceStatementFacts
+
+import SourceBinding.MemoryManagerLedgerFacts
+import SourceBinding.MemoryManagerReleaseFacts
+import SourceBinding.MemoryManagerReleasePreservation
+import SourceBinding.MemoryManagerReleaseGuards
+
+import SourceBinding.EffectMachineBoundaryFacts
+import SourceBinding.EffectResourceStepProof
+import SourceBinding.EffectCanonicalBinding
+
+import SourceBinding.EffectResourceConsumerProof
+import SourceBinding.EffectReceiverStepProof
+import SourceBinding.EffectCalleeSimulation
+import SourceBinding.EffectIdentityChecker

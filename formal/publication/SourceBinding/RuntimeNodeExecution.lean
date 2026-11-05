@@ -13,15 +13,9 @@ namespace Aurora.SourceBinding
 theorem RuntimeNoFallthrough.not_continued_general (terminal : RuntimeNoFallthrough statements) :
     ¬ RuntimeStatementsEvaluation functions members module path formals result
       before initial statements after (.continued final) events := by
-  induction terminal generalizing before initial after final events with
-  | returned =>
-    intro evaluated
-    cases evaluated with
-    | next first rest => cases first
-  | later tail ih =>
-    intro evaluated
-    cases evaluated with
-    | next first rest => exact ih rest
+  intro evaluated
+  exact terminal.effect_not_continued
+    (evaluated PUnit PUnit (fun _ _ _ => False) ⟨fun _ => none,PUnit.unit⟩ [])
 
 theorem RuntimeNoFallthrough.outcome_general {outcome : RuntimeBodyOutcome}
     (terminal : RuntimeNoFallthrough statements)

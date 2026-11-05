@@ -1,5 +1,6 @@
 import SourceBinding.FramePolicyHelpers
 import SourceBinding.FramePolicyStateUpdates
+import SourceBinding.FramePolicyFlow
 namespace Aurora.SourceBinding.FramePolicyAttachment
 open Aurora.Publication
 
@@ -26,34 +27,55 @@ private theorem word_result (bounded : value < wordLimit) :
   simpa [readScalar,bounded] using
     (RuntimeExpressionResult.word (functions := functions) (context := context) (state := state) (value := value))
 
+private theorem nil_terminal
+    (evaluated : RuntimeStatementsEvaluation functions members module path formals result before state [] after outcome events) :
+    after = before ∧ outcome = .continued state := by
+  have actual := evaluated PUnit PUnit (fun _ _ _ => False) ⟨fun _ => none,PUnit.unit⟩ []
+  generalize traceEq : events.map (RuntimeSourceEvent.toEffect (World := PUnit) (ExternalFault := PUnit)) = actualEvents at actual
+  cases outcome <;> cases actual <;> exact ⟨rfl,rfl⟩
+
 private theorem assign_singleton
     (visible : before.visible = [codeBinding]) (bounded : value < wordLimit)
     (evaluated : RuntimeStatementsEvaluation functions members module path formals result before state
       [.assign (bytes "code") (.word value)] after outcome events) :
     ∃ next, after = before ∧ outcome = .continued next ∧ state.assign 16 (.word value) = some next := by
-  cases evaluated with
-  | next first tail =>
-    cases first with
-    | assignmentValue member named mutable expression accepted =>
-      rw [visible] at member
-      have same := List.mem_singleton.mp member
-      subst_vars
-      have equal := ((word_result bounded) _ _ _ expression).2
-      cases equal
-      cases tail
-      exact ⟨_,rfl,rfl,accepted⟩
-  | returned first tail => cases first
-  | trapped first tail =>
-    cases first with
-    | assignmentFault _ _ _ expression =>
+  have invert {middle final firstEvents}
+      (first : RuntimeStatementEvaluation functions members module path formals result before state
+        (.assign (bytes "code") (.word value)) middle final firstEvents) :
+      ∃ next, middle = before ∧ final = .continued next ∧ state.assign 16 (.word value) = some next := by
+    obtain ⟨cursor,binding,member,named,mutable,alternatives⟩ := first.assignment_cases
+    rw [visible] at member
+    have same := List.mem_singleton.mp member
+    subst binding
+    rcases alternatives with faultCase | valueCase
+    · obtain ⟨fault,expression,equal⟩ := faultCase
       have impossible := ((word_result bounded) _ _ _ expression).2
       cases impossible
+    · obtain ⟨actual,next,expression,accepted,equal⟩ := valueCase
+      have sameValue := ((word_result bounded) _ _ _ expression).2
+      cases sameValue
+      exact ⟨next,cursor,equal,accepted⟩
+  rcases evaluated.cons_cases with normal | returned | trapped
+  · obtain ⟨middle,next,fe,re,first,tail,trace⟩ := normal
+    obtain ⟨actual,cursor,equal,accepted⟩ := invert first
+    cases equal
+    obtain ⟨endpoint,resultEq⟩ := nil_terminal tail
+    exact ⟨_,endpoint.trans cursor,resultEq,accepted⟩
+  · obtain ⟨middle,value,finished,items,first,tail,outcomeEq⟩ := returned
+    obtain ⟨next,cursor,impossible,accepted⟩ := invert first
+    cases impossible
+  · obtain ⟨middle,fault,finished,items,first,tail,outcomeEq⟩ := trapped
+    obtain ⟨next,cursor,impossible,accepted⟩ := invert first
+    cases impossible
 
 private theorem scoped_assign_singleton
     (proof : ScopedStatements members module path formals before
       [.assign name value] after items) : after = before := by
   cases proof with
-  | cons first rest => cases first; cases rest; rfl
+  | cons first rest =>
+    cases first with
+    | assign => cases rest; rfl
+    | receiverAssign enabled _ _ => cases enabled
 
 private theorem reserve_state (valid : RejectState identity ordinal code state)
     (accepted : state.reserveScopes scope = some next) : RejectState identity ordinal code next := by
@@ -140,32 +162,34 @@ private theorem reject_branch (profile : ExactProfile bound)
     ∃ next, after = rejectCursor (scope+1) ∧ outcome = .continued next ∧
       RejectState profile.rejections.nominal ordinal (if ordinal = value then value else code) next := by
   have guard := reject_guard profile valid ordinalBound caseAt
-  cases evaluated with
-  | branchFault scopedBody expression =>
+  obtain ⟨child,items,scopedBody,cursor,alternatives⟩ := evaluated.branch_cases
+  have childEq := scoped_assign_singleton scopedBody
+  subst child
+  subst after
+  rcases alternatives with faultCase | falseCase | continuedCase | returnedCase | trappedCase
+  · obtain ⟨fault,expression,equal⟩ := faultCase
     have impossible := (guard _ _ _ expression).2
     cases impossible
-  | branchFalse scopedBody expression reserved =>
-    have childEq := scoped_assign_singleton scopedBody
-    subst_vars
+  · obtain ⟨next,expression,reserved,equal⟩ := falseCase
+    subst outcome
     have same := (guard _ _ _ expression).2
     have different : ordinal ≠ value := by
       intro equal; simp [equal] at same
     exact ⟨_,rfl,rfl,by simpa [different] using reserve_state valid reserved⟩
-  | branchTrueContinue scopedBody expression entered body reserved =>
-    have childEq := scoped_assign_singleton scopedBody
-    subst_vars
+  · obtain ⟨entered,finished,next,ce,be,expression,enter,body,reserved,equal,trace⟩ := continuedCase
+    subst outcome
     have same := (guard _ _ _ expression).2
     have equal : ordinal = value := by
       by_cases equal : ordinal = value
       · exact equal
       · simp [equal] at same
-    obtain ⟨next,afterEq,outcomeEq,assigned⟩ := assign_singleton rfl valueBound body
+    obtain ⟨assignedNext,afterEq,outcomeEq,assigned⟩ := assign_singleton rfl valueBound body
     cases outcomeEq
-    exact ⟨_,rfl,rfl,by simpa [equal] using entered_assignment_state valid entered assigned reserved valueBound⟩
-  | branchTrueReturn scopedBody expression entered body =>
+    exact ⟨_,rfl,rfl,by simpa [equal] using entered_assignment_state valid enter assigned reserved valueBound⟩
+  · obtain ⟨entered,returned,finished,ce,be,expression,enter,body,equal,trace⟩ := returnedCase
     obtain ⟨next,afterEq,impossible,assigned⟩ := assign_singleton rfl valueBound body
     cases impossible
-  | branchTrueFault scopedBody expression entered body =>
+  · obtain ⟨entered,fault,finished,ce,be,expression,enter,body,equal,trace⟩ := trappedCase
     obtain ⟨next,afterEq,impossible,assigned⟩ := assign_singleton rfl valueBound body
     cases impossible
 
@@ -207,22 +231,22 @@ private theorem reject_suffix (profile : ExactProfile bound) (pairs : List (Stri
     have restValid : ∀ p ∈ rest, profile.rejections.declaration.cases[p.2]? = some (bytes p.1) ∧ p.2 ≤ 10 :=
       fun p member => casesValid p (List.mem_cons_of_mem _ member)
     change RuntimeStatementsEvaluation _ _ _ _ _ _ _ _ (_ :: rejectTail rest) _ _ _ at evaluated
-    cases evaluated with
-    | next first tail =>
+    rcases evaluated.cons_cases with normal | returned | trapped
+    · obtain ⟨middle,current,fe,re,first,tail,trace⟩ := normal
       obtain ⟨next,afterEq,resultEq,stateValid⟩ := reject_branch profile valid ordinalBound headValid.1
         (by unfold wordLimit; omega) first
-      subst_vars
+      rw [afterEq] at tail
       cases resultEq
       have nextBound : (if ordinal = pair.2 then pair.2 else code) ≤ 10 := by
         split
         · exact headValid.2
         · exact codeBound
       exact ih restValid stateValid nextBound tail
-    | returned first tail =>
+    · obtain ⟨middle,value,finished,items,first,tail,outcomeEq⟩ := returned
       obtain ⟨next,afterEq,impossible,stateValid⟩ := reject_branch profile valid ordinalBound headValid.1
         (by unfold wordLimit; omega) first
       cases impossible
-    | trapped first tail =>
+    · obtain ⟨middle,fault,finished,items,first,tail,outcomeEq⟩ := trapped
       obtain ⟨next,afterEq,impossible,stateValid⟩ := reject_branch profile valid ordinalBound headValid.1
         (by unfold wordLimit; omega) first
       cases impossible
@@ -283,25 +307,17 @@ theorem ExactProfile.frame_reject_result (profile : ExactProfile bound)
   change RuntimeStatementsEvaluation _ _ frameModule framePath rejectFormals (.scalar .word)
     ⟨[],0,1,1⟩ (rejectionSeed profile.rejections.nominal ordinal)
     (.localDecl (formal "code") (.word 1) :: rejectTail pairs) after outcome events at evaluated
-  cases evaluated with
-  | next first tail =>
-    cases first with
-    | declarationValue lexical expression accepted =>
-      cases lexical with
-      | declare typing allowed clear unshadowed names =>
-        cases typing with
-        | mutable typ =>
-          obtain ⟨sameKind,sameValue⟩ := (word_result (by decide : 1 < wordLimit)) _ _ _ expression
-          cases sameKind
-          cases sameValue
-          have initialized := initialize_reject actualBound accepted
-          obtain ⟨final,result⟩ := reject_suffix profile pairs validPairs initialized actualBound (by decide : 1 ≤ 10) tail
-          exact ⟨final,by simpa only [foldValue] using result⟩
-  | returned first tail => cases first
-  | trapped first tail =>
-    cases first with
-    | declarationFault lexical expression =>
-      have impossible := ((word_result (by decide : 1 < wordLimit)) _ _ _ expression).2
-      cases impossible
+  have initializer := word_result (functions := bound.checked.shape.nodes.map (·.source))
+    (context := runtimeStatementContext bound.checked.shape.rootNode.source.context.members frameModule framePath rejectFormals ⟨[],0,1,1⟩)
+    (state := rejectionSeed profile.rejections.nominal ordinal) (by decide : 1 < wordLimit)
+  obtain ⟨binding,middle,next,restEvents,lexical,kindEq,accepted,tail⟩ := declaration_tail initializer evaluated
+  cases lexical with
+  | declare typing allowed clear unshadowed names =>
+    cases typing with
+    | mutable typ =>
+      cases kindEq
+      have initialized := initialize_reject actualBound accepted
+      obtain ⟨final,result⟩ := reject_suffix profile pairs validPairs initialized actualBound (by decide : 1 ≤ 10) tail
+      exact ⟨final,by simpa only [foldValue] using result⟩
 
 end Aurora.SourceBinding.FramePolicyAttachment

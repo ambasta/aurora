@@ -1,6 +1,31 @@
 import SourceBinding.RuntimeEvaluation
 namespace Aurora.SourceBinding
 
+private theorem effect_singleton_return
+    (evaluated : EffectStatements functions response context result before state
+      [.returnValue raw] after (.returned value final) events) :
+    after = before ∧ final.locals = state.locals ∧
+      EffectEvaluation functions response (context.atCursor before) state raw result
+        (.value (some value)) final.shared events := by
+  cases evaluated with
+  | next first rest => cases first
+  | returned first tail =>
+    cases first with
+    | returnValue expression => cases tail; exact ⟨rfl,rfl,expression⟩
+
+private theorem effect_singleton_trap
+    (evaluated : EffectStatements functions response context result before state
+      [.returnValue raw] after (.stopped (.localFault (.scalar fault)) final) events) :
+    after = before ∧ final.locals = state.locals ∧
+      EffectEvaluation functions response (context.atCursor before) state raw result
+        (.stopped (.localFault (.scalar fault))) final.shared events := by
+  cases evaluated with
+  | next first rest => cases first
+  | stopped first tail =>
+    cases first with
+    | returnStop expression => cases tail; exact ⟨rfl,rfl,expression⟩
+    | returnMissing expression => exact False.elim expression.outcome_typed
+
 theorem runtime_singleton_return_iff :
     RuntimeStatementsEvaluation functions members module path formals result before state
       [.returnValue raw] after (.returned value final) events ↔
@@ -9,11 +34,11 @@ theorem runtime_singleton_return_iff :
         state raw result (.value value) events := by
   constructor
   · intro evaluated
-    cases evaluated with
-    | next first rest => cases first
-    | returned first tail =>
-      cases first with
-      | returnValue expression => cases tail; exact ⟨rfl,rfl,expression⟩
+    have initial := effect_singleton_return
+      (evaluated PUnit PUnit (fun _ _ _ => False) ⟨fun _ => none,PUnit.unit⟩ [])
+    refine ⟨initial.1,initial.2.1,?_⟩
+    intro World ExternalFault response shared
+    exact (effect_singleton_return (evaluated World ExternalFault response shared [])).2.2
   · rintro ⟨rfl,rfl,evaluated⟩
     exact .returned (.returnValue evaluated) .nil
 
@@ -25,13 +50,39 @@ theorem runtime_singleton_trap_iff :
         state raw result (.trap fault) events := by
   constructor
   · intro evaluated
-    cases evaluated with
-    | next first rest => cases first
-    | trapped first tail =>
-      cases first with
-      | returnFault expression => cases tail; exact ⟨rfl,rfl,expression⟩
+    have initial := effect_singleton_trap
+      (evaluated PUnit PUnit (fun _ _ _ => False) ⟨fun _ => none,PUnit.unit⟩ [])
+    refine ⟨initial.1,initial.2.1,?_⟩
+    intro World ExternalFault response shared
+    exact (effect_singleton_trap (evaluated World ExternalFault response shared [])).2.2
   · rintro ⟨rfl,rfl,evaluated⟩
     exact .trapped (.returnFault evaluated) .nil
+
+/-- Any actual singleton return derivation returns or traps at its expression;
+    continuing normally is impossible, without a readiness assumption. -/
+theorem runtime_singleton_cases
+    (evaluated : RuntimeStatementsEvaluation functions members module path formals result before state
+      [.returnValue raw] after outcome events) :
+    ∃ expressionOutcome,
+      RuntimeEvaluation functions (runtimeStatementContext members module path formals before)
+        state raw result expressionOutcome events ∧ after = before ∧
+      outcome = match expressionOutcome with
+        | .value value => .returned value state
+        | .trap fault => .trapped fault state := by
+  cases outcome with
+  | continued final =>
+    have actual := evaluated PUnit PUnit (fun _ _ _ => False) ⟨fun _ => none,PUnit.unit⟩ []
+    generalize traceEq : events.map (RuntimeSourceEvent.toEffect (World := PUnit) (ExternalFault := PUnit)) = actualEvents at actual
+    cases actual with
+    | next first rest => cases first
+  | returned value final =>
+    obtain ⟨endpoint,stateEq,expression⟩ := runtime_singleton_return_iff.mp evaluated
+    cases stateEq
+    exact ⟨.value value,expression,endpoint,rfl⟩
+  | trapped fault final =>
+    obtain ⟨endpoint,stateEq,expression⟩ := runtime_singleton_trap_iff.mp evaluated
+    cases stateEq
+    exact ⟨.trap fault,expression,endpoint,rfl⟩
 
 theorem RuntimeSourceLeaf.initial_context (leaf : RuntimeSourceLeaf) :
     runtimeStatementContext leaf.context.members leaf.context.module leaf.context.path leaf.context.formals

@@ -39,40 +39,129 @@ def RuntimeBodySupported : RuntimeBodyOutcome → Prop
 theorem RuntimeEvaluation.supported
     (evaluated : RuntimeEvaluation functions context state raw kind outcome events) :
     SupportedOutcome outcome := by
-  induction evaluated using RuntimeEvaluation.rec
-      (motive_2 := fun _ _ _ _ outcome _ _ =>
-        outcome ≠ (Outcome.trap Fault.unsupported : Outcome (List Value)))
-      (motive_3 := fun _ _ _ _ _ _ _ _ _ outcome _ _ => RuntimeBodySupported outcome)
-      (motive_4 := fun _ _ _ _ _ _ _ _ _ outcome _ _ => RuntimeBodySupported outcome) with
-  | word => exact read_supported _ _
-  | boolean => intro h; cases h
-  | readVariable _ => exact RuntimeLocals.readBound_supported _ _
-  | enumValue _ => exact runtime_read_supported _ _
-  | not _ ih => exact then_supported _ _ ih not_supported
-  | wordBinaryFault _ _ ih => exact ih
-  | wordBinary _ _ _ left right => exact then_supported _ _ right (fun _ => binary_supported _ _ _)
-  | enumCompareFault _ ih => exact ih
-  | enumCompare _ _ left right => exact then_supported _ _ right (fun _ => runtime_nominal_compare_supported _ _ _ _)
-  | shiftLeft _ _ ih | shiftRight _ _ ih => exact then_supported _ _ ih (fun _ => binary_supported _ _ _)
-  | andFault _ ih | orFault _ ih | andStop _ ih | orStop _ ih => exact ih
-  | andContinue _ _ _ right | orContinue _ _ _ right => exact right
-  | callArgumentsFault _ _ _ ih =>
-    intro impossible
-    exact ih (Outcome.trap.inj impossible ▸ rfl)
-  | callValue => intro h; cases h
-  | callFault _ _ _ _ _ body => exact body
-  | fault first ih =>
-    intro impossible
-    exact ih (Outcome.trap.inj impossible ▸ rfl)
-  | @cons context state first kind value firstEvents rest kinds outcome restEvents firstEval restEval firstIH restIH =>
-    cases outcome with
-    | trap fault => exact restIH
-    | value values => intro h; cases h
-  | declarationFault _ _ ih | assignmentFault _ _ _ _ ih | returnFault _ ih | branchFault _ _ ih => exact ih
-  | branchTrueFault _ _ _ _ _ ih => exact ih
-  | next _ _ _ ih => exact ih
-  | trapped _ _ ih => exact ih
-  | _ => all_goals intros; trivial
+  apply PureRuntimeEvaluation.induct evaluated
+    (Expression := fun _ _ _ _ outcome _ => SupportedOutcome outcome)
+    (Arguments := fun _ _ _ _ outcome _ => outcome ≠ (Outcome.trap Fault.unsupported : Outcome (List Value)))
+    (Statement := fun _ _ _ _ _ _ _ _ _ outcome _ => RuntimeBodySupported outcome)
+    (Statements := fun _ _ _ _ _ _ _ _ _ outcome _ => RuntimeBodySupported outcome)
+  exact {
+    expression_word := by
+      intro context state value
+      exact read_supported _ _
+    expression_boolean := by
+      intro context state value
+      intro h; cases h
+    expression_readVariable := by
+      intro context name binding state h0
+      exact RuntimeLocals.readBound_supported _ _
+    expression_enumValue := by
+      intro context name identity ordinal state h0
+      exact runtime_read_supported _ _
+    expression_not := by
+      intro context state inner outcome events h0
+      exact then_supported _ _ h0 not_supported
+    expression_wordBinaryFault := by
+      intro operator primitive result context state left fault events right h0 h1
+      exact h1
+    expression_wordBinary := by
+      intro operator primitive result context state left value leftEvents right outcome rightEvents h0 h1 h2
+      exact then_supported _ _ h2 (fun _ => binary_supported _ _ _)
+    expression_enumCompareFault := by
+      intro context state left identity fault events right equal h0
+      exact h0
+    expression_enumCompare := by
+      intro context state left identity value leftEvents right outcome rightEvents equal h0 h1
+      exact then_supported _ _ h1 (fun _ => runtime_nominal_compare_supported _ _ _ _)
+    expression_shiftLeft := by
+      intro context state left outcome events right count h0 h1
+      exact then_supported _ _ h0 (fun _ => binary_supported _ _ _)
+    expression_shiftRight := by
+      intro context state left outcome events right count h0 h1
+      exact then_supported _ _ h0 (fun _ => binary_supported _ _ _)
+    expression_andFault := by
+      intro context state left fault events right h0
+      exact h0
+    expression_andStop := by
+      intro context state left events right h0
+      exact h0
+    expression_andContinue := by
+      intro context state left leftEvents right outcome rightEvents h0 h1
+      exact h1
+    expression_orFault := by
+      intro context state left fault events right h0
+      exact h0
+    expression_orStop := by
+      intro context state left events right h0
+      exact h0
+    expression_orContinue := by
+      intro context state left leftEvents right outcome rightEvents h0 h1
+      exact h1
+    expression_callArgumentsFault := by
+      intro leaf context name state sources fault events h0 h1 h2
+      intro impossible; exact h2 (Outcome.trap.inj impossible ▸ rfl)
+    expression_callValue := by
+      intro leaf context name state sources values argumentEvents after value finished bodyEvents h0 h1 h2 h3
+      intro h; cases h
+    expression_callFault := by
+      intro leaf context name state sources values argumentEvents after fault finished bodyEvents h0 h1 h2 h3
+      exact h3
+    arguments_nil := by
+      intro context state
+      intro h; cases h
+    arguments_fault := by
+      intro context state first kind fault events rest kinds h0
+      intro impossible; exact h0 (Outcome.trap.inj impossible ▸ rfl)
+    arguments_cons := by
+      intro context state first kind value firstEvents rest kinds outcome restEvents h0 h1
+      cases outcome with
+      | trap fault => exact h1
+      | value values => intro h; cases h
+    statement_declarationFault := by
+      intro members module path formals before raw after binding state fault events result declaration h0 h1
+      exact h1
+    statement_declarationValue := by
+      intro members module path formals before raw after binding state value events next result declaration h0 h1 h2
+      trivial
+    statement_assignmentFault := by
+      intro binding name members module path formals before state raw fault events result h0 h1 h2 h3
+      exact h3
+    statement_assignmentValue := by
+      intro binding name members module path formals before state raw value events next result h0 h1 h2 h3 h4
+      trivial
+    statement_returnFault := by
+      intro members module path formals before state raw result fault events h0
+      exact h0
+    statement_returnValue := by
+      intro members module path formals before state raw result value events h0
+      trivial
+    statement_branchFault := by
+      intro members module path formals before body child declaredItems state condition fault events result h0 h1
+      exact h1
+    statement_branchFalse := by
+      intro members module path formals before body child declaredItems state condition events next result h0 h1 h2
+      trivial
+    statement_branchTrueContinue := by
+      intro members module path formals before body child declaredItems state condition firstEvents entered result finished bodyEvents next h0 h1 h2 h3 h4
+      trivial
+    statement_branchTrueReturn := by
+      intro members module path formals before body child declaredItems state condition firstEvents entered result value finished bodyEvents h0 h1 h2 h3
+      trivial
+    statement_branchTrueFault := by
+      intro members module path formals before body child declaredItems state condition firstEvents entered result fault finished bodyEvents h0 h1 h2 h3
+      exact h3
+    statements_nil := by
+      intro members module path formals result before state
+      trivial
+    statements_next := by
+      intro members module path formals result before state first middle next firstEvents rest after outcome restEvents h0 h1
+      exact h1
+    statements_returned := by
+      intro members module path formals result before state first middle value final events rest after declaredItems h0 h1
+      trivial
+    statements_trapped := by
+      intro members module path formals result before state first middle fault final events rest after declaredItems h0 h1
+      exact h0
+  }
 
 theorem RuntimeEvaluatesWith.supported
     (evaluated : RuntimeEvaluatesWith functions context state raw kind outcome events) :

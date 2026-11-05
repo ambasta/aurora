@@ -824,3 +824,155 @@ reports**, plus the same separately labeled **20 independent specification
 reports**. The specification is now connected by the attachment theorems, while
 its standalone audit remains separately counted. Axiom restrictions and default
 proof limits are unchanged.
+
+
+### OwnedWords primitive prerequisites (not complete release refinement)
+
+The next selected method is the actual retained production `MemoryManager.release`,
+not the independently declared `FrameAllocator` methods whose bodies are absent
+from this artifact. Its source/canonical-IR bookkeeping proof is **not yet attached**.
+
+The new finite-bank model defines exact `size`, `at`, and one-cell `set` responses,
+framing the receiver, other banks and unrelated world data. Seventeen primitive
+laws connect the concrete update to the ledger's sole one-cell replacement relation
+and preserve abstract admission. The ledger invariant records complete free-list
+coverage, exact two-owner counts with no orphan allocations, and bounded valid
+records; these are mathematical definitions, not established native invariants.
+Native binding/access/extent admission remains an explicit trust boundary.
+
+Direct resource initializer/require boundary rules retain raw optional responses
+until the actual typed store/assertion consumer, including changed poststate on
+false, absent or external-fault responses. A finite waiting observation remains
+valid even when a response is available; it is neither a completed refusal nor
+divergence. The old arbitrary external-relation APIs are unchanged. No generalized
+effectful source-body simulation, release-store ordering, persistent retirement,
+transactional rollback, native-bank refinement or allocator-history claim is made.
+
+The strict audit retains all 571 earlier primary exports and adds these 17:
+**588 primary reports**, plus the unchanged separately counted **20 specification
+reports**. Tiny controls exercise primitive cells, framing, partial-response
+poststates and waiting; they are not full-method or native acceptance evidence.
+
+
+### Internal finite-bank release mathematics (not method execution)
+
+`MemoryManagerLedgerFacts`, `MemoryManagerReleaseFacts`,
+`MemoryManagerReleasePreservation` and `MemoryManagerReleaseGuards` use the
+same finite `Bank` and the existing independent `FramePolicy.ResultSpec`.
+Their twelve exports prove constructive one-cell census balances and bounds,
+complete free-chain prepend/retention, accepted-release input facts, and
+bit-for-bit preservation of old retired cells. The internal implication from
+`LedgerInv before` and `ReleaseSuccess before after ...` restores **every**
+ledger-invariant clause, including exact owner counts, no orphan allocations,
+reserved prefix and complete acyclic one-based free-chain coverage. It also
+preserves the optional canonical-retired strengthening.
+
+The source-facing guard lemma instead starts from a healthy ledger, an admitted
+finite index, bounded policy inputs, the existing exact policy result, and its
+nonzero low-state branch. It derives priority-preserving owner-slot selection,
+positive held/allocated counts, free-room and link constraints, and all relevant
+counter bounds including the late `index + 1`. It has **no** `ReleaseDelta`,
+after-state, successful-store or assumed helper-return premise.
+
+These are internal mathematical implications, not an execution proof for
+`MemoryManager.release`. The complete checked source/IR method must still
+establish its actual bank requests, retained failure prefixes, ordered stores,
+and `ReleaseSuccess`; no theorem may substitute a caller-supplied final ledger
+or successful-store summary. Initial invariant establishment, native primitive
+refinement, and arbitrary allocation histories remain separate obligations.
+
+The strict audit retains the previous 588 primary exports and adds these 12:
+**600 primary dependency reports**, plus the unchanged separately counted
+**20 specification reports**. Only `propext` and `Quot.sound` are permitted.
+This math-only checkpoint does not include the ongoing effectful source-relation
+migration or claim that migration preserves the old closure yet.
+
+### Conservative effect-aware source semantics
+
+The same raw source AST now admits `if`/`else`. A single four-way source
+judgment threads receiver/world state through expressions, ordered arguments,
+statements and statement lists. Its receiver profile includes scalar fields,
+ordinary calls and the selected resource statement forms: direct local
+initializers and direct `require` calls. Resource responses remain raw until
+that actual store or assertion consumes them. Faults retain current shared
+state; waiting is a finite outstanding-request observation, not divergence or
+proof that a response is unavailable. Ordinary invocation precedes the fresh
+callee's parameter checks. General resource expressions remain unsupported.
+
+The original pure APIs are uniform specializations over arbitrary shared
+states and external relations. Global bidirectional proofs cover all four old
+relations, including arbitrary old function records, nested calls, malformed
+values, faults and unexecuted syntax. The frozen reference is proof-only and
+imported by the audit, never the production semantic/checker/execution root.
+The original scope profile still rejects new `if`/`else` syntax, including in
+dead arms or suffixes; its admissions have not silently widened. Pure outcomes
+and traces retain their original stronger quantifier order.
+
+The strict gate retains all 600 prior primary exports and adds 48 migration
+exports: **648 primary dependency reports**, with the separate **20 independent
+specification reports** unchanged. Existing frame-policy execution and result
+statements remain intact. New scope controls distinguish capability admission
+from legacy refusal; the syntax-call inventory traverses both arms and dead
+suffixes. This layer does **not** yet bind the complete canonical
+`MemoryManager.release` receiver/resource closure or prove its actual bank and
+metadata writes. The internal ledger-preservation mathematics still needs that
+source/IR attachment; initial ledger invariants and native bank admission remain
+separate obligations.
+
+### Effect-aware machine boundary and resource primitive
+
+The source shared state is now associated exactly with the existing call
+machine's receiver/world state. Internal result relations retain the actual
+active frame on faults, the frozen request and continuation on finite waits,
+and the AFTER shared state on values. Body returns still require execution of
+the checked pending `ret`; these relations alone are not a complete-method proof.
+
+A proved resource-step bridge executes the actual resource instruction and,
+when a response is supplied, its actual resume transition. It preserves ordered
+arguments, raw optional results, external faults and the complete postresponse
+shared state. Its instruction, argument-collection and identity premises are
+internal obligations for the later complete checked grammar, not assumed bank
+writes. External relations agree pointwise only on paired checked requests;
+empty inventories impose no restriction on the old pure APIs. Finite waiting
+remains legal even when a response is available.
+
+Minimal same-graph receiver/resource certificates retain source scope, method
+mode, full fields/signatures and catalogue identity. The shared catalogue check
+admits the declared readonly or mutable effect; the old mutable-only check and
+raw retained-call convention remain exact specializations. No complete receiver
+method decoder or 13-node execution certificate is claimed yet. Tiny existing
+Lean-machine controls cover changed-shared-state false/missing/wrong-kind
+responses, actual store/assert consumers and external faults without rollback.
+
+The strict gate retains the 648 prior exports and adds nine boundary/primitive
+and conservative-catalogue results: **657 primary reports**, plus the unchanged
+**20 independent specification reports**. Complete release execution, derived
+ledger writes, lawful-response terminal classification and native bank authority
+remain separate obligations.
+
+### Resource consumers, receiver steps and identity-only admission
+
+The direct resource initializer and `require` bridges now compose the real
+invocation/resumption with the actual next local store or assertion. Pending
+and external-fault paths do not execute the consumer. Malformed/false responses
+fault at that consumer without restoring shared state; successful initialization
+uses the actual guarded source operation's value map, not a supplied store
+summary. Receiver read/store bridges cover arbitrary malformed inputs and retain
+current shared effects, exact private frames and successful store events.
+
+A mixed free-function/receiver-method identity layer checks the same source graph,
+full signatures, receiver layout, catalogue modes and source scoping. Its optional
+`--effect-method-identity` probe mode reports identity/scoping only;
+observing the selected 13 identities is not a checked 13-node call graph or body
+execution proof. Available catalogue entries are not the actually used resource
+closure. The internal effectful callee simulation interface fixes a given source
+derivation and initial shared state/response relation before arbitrary private
+continuations; its resource pairs must later be derived from all syntactically
+used calls, including dead arms, not supplied as public assumptions.
+
+This checkpoint retains all 657 prior exports and adds seven consumer, receiver
+and signature results: **664 primary dependency reports** and the unchanged
+**20 independent specification reports**. The generalized code grammar,
+closed mixed-body/rank simulation, complete release ledger-write attachment and
+completed lawful-response classification remain unproved. The old pure public
+statements and stronger shared-state/external-relation uniformity are unchanged.

@@ -1,6 +1,7 @@
 import SourceBinding
 -- Proof-only migration equivalence is deliberately outside the production root.
 import SourceBinding.LegacyLeafCompatibility
+import SourceBinding.LegacyEffectEquivalence
 #print axioms Aurora.SourceBinding.lex_sound
 #print axioms Aurora.SourceBinding.lex_oversize
 #print axioms Aurora.SourceBinding.lex_exhausted
@@ -599,3 +600,103 @@ import SourceBinding.LegacyLeafCompatibility
 #print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.terminal_correspondence
 #print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.not_locally_diverges
 #print axioms Aurora.SourceBinding.FramePolicyAttachment.ExactProfile.retired_input_refuses
+
+#print axioms Aurora.SourceBinding.OwnedWordsBank.write_size
+#print axioms Aurora.SourceBinding.OwnedWordsBank.write_same
+#print axioms Aurora.SourceBinding.OwnedWordsBank.write_other
+#print axioms Aurora.SourceBinding.OwnedWordsBank.write_valid
+#print axioms Aurora.SourceBinding.OwnedWordsWorld.write_same
+#print axioms Aurora.SourceBinding.OwnedWordsWorld.write_other_bank
+#print axioms Aurora.SourceBinding.OwnedWordsWorld.write_other
+#print axioms Aurora.SourceBinding.OwnedWordsResponse.receiver_frame
+#print axioms Aurora.SourceBinding.OwnedWordsResponse.other_frame
+#print axioms Aurora.SourceBinding.OwnedWordsResponse.bank_frame
+#print axioms Aurora.SourceBinding.OwnedWordsResponse.preserves_admission
+#print axioms Aurora.SourceBinding.OwnedWordsBank.write_replacement
+#print axioms Aurora.SourceBinding.SourceResourceStep.waiting_before
+#print axioms Aurora.SourceBinding.SourceResourceInitialize.retains_response
+#print axioms Aurora.SourceBinding.SourceResourceAssert.retains_response
+#print axioms Aurora.SourceBinding.SourceResourceAssert.false_retains_poststate
+#print axioms Aurora.SourceBinding.SourceResourceAssert.missing_retains_poststate
+
+-- Internal finite-bank mathematics; actual complete release remains separate.
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.OneCellReplacement.state_count_balance
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.OneCellReplacement.owner_count_balance
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.stateCount_le
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.ownerCount_le
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.LedgerInv.head_bound
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.CompleteFreeChain.prepend
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.CompleteFreeChain.retain
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.release_result_inputs
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.ReleaseSuccess.retired_preserved
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.ReleaseSuccess.canonical_retired
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.ReleaseSuccess.preserves
+#print axioms Aurora.SourceBinding.MemoryManagerRelease.release_consistency_guards
+
+-- Conservative effect-aware source migration; no complete receiver-method execution claim.
+#print axioms Aurora.SourceBinding.EffectEvaluation.outcome_typed
+#print axioms Aurora.SourceBinding.EffectArguments.checked
+#print axioms Aurora.SourceBinding.EffectEvaluation.pure_induction
+#print axioms Aurora.SourceBinding.EffectArguments.pure_induction
+#print axioms Aurora.SourceBinding.EffectStatement.pure_induction
+#print axioms Aurora.SourceBinding.EffectStatements.pure_induction
+#print axioms Aurora.SourceBinding.LegacyEffectEvaluation.effect_iff
+#print axioms Aurora.SourceBinding.LegacyEffectEvaluation.uniform_iff
+#print axioms Aurora.SourceBinding.LegacyEffectArgumentEvaluation.effect_iff
+#print axioms Aurora.SourceBinding.LegacyEffectArgumentEvaluation.uniform_iff
+#print axioms Aurora.SourceBinding.LegacyEffectStatementEvaluation.effect_iff
+#print axioms Aurora.SourceBinding.LegacyEffectStatementEvaluation.uniform_iff
+#print axioms Aurora.SourceBinding.LegacyEffectStatementsEvaluation.effect_iff
+#print axioms Aurora.SourceBinding.LegacyEffectStatementsEvaluation.uniform_iff
+#print axioms Aurora.SourceBinding.RuntimeSourceFunction.toEffect_resolves
+#print axioms Aurora.SourceBinding.RuntimeSourceFunction.toEffect_key
+#print axioms Aurora.SourceBinding.EffectContext.pure_atCursor
+#print axioms Aurora.SourceBinding.EffectContext.pure_uses
+#print axioms Aurora.SourceBinding.EffectContext.pure_writes
+#print axioms Aurora.SourceBinding.EffectScopedStatement.pure_iff
+#print axioms Aurora.SourceBinding.EffectScopedStatements.pure_iff
+#print axioms Aurora.SourceBinding.EffectEnumValue.pure_iff
+#print axioms Aurora.SourceBinding.EffectResourceResolved.pure_impossible
+#print axioms Aurora.SourceBinding.ScopedStatementWith.cursors
+#print axioms Aurora.SourceBinding.ScopedStatementWith.visible_subset
+#print axioms Aurora.SourceBinding.ScopedStatementWith.formal_clear
+#print axioms Aurora.SourceBinding.ScopedStatementWith.scope_eq
+#print axioms Aurora.SourceBinding.ScopedStatementsWith.cursors
+#print axioms Aurora.SourceBinding.ScopedStatementsWith.visible_subset
+#print axioms Aurora.SourceBinding.ScopedStatementsWith.formal_clear
+#print axioms Aurora.SourceBinding.ScopedStatementsWith.scope_eq
+#print axioms Aurora.SourceBinding.sourceLift_injective
+#print axioms Aurora.SourceBinding.legacyEffectArguments_injective
+#print axioms Aurora.SourceBinding.legacyEffectBody_injective
+#print axioms Aurora.SourceBinding.RuntimeSourceEvent.toEffect_injective
+#print axioms Aurora.SourceBinding.RuntimeSourceEvent.map_toEffect_injective
+#print axioms Aurora.SourceBinding.pureRuntimeAlgebra
+#print axioms Aurora.SourceBinding.PureRuntimeEvaluation.induct
+#print axioms Aurora.SourceBinding.PureRuntimeArgumentEvaluation.induct
+#print axioms Aurora.SourceBinding.PureRuntimeStatementEvaluation.induct
+#print axioms Aurora.SourceBinding.PureRuntimeStatementsEvaluation.induct
+#print axioms Aurora.SourceBinding.RuntimeExpressionResult.effect
+#print axioms Aurora.SourceBinding.RuntimeNoFallthrough.effect_not_continued
+#print axioms Aurora.SourceBinding.runtime_singleton_cases
+#print axioms Aurora.SourceBinding.PureRuntimeStatementEvaluation.declaration_cases
+#print axioms Aurora.SourceBinding.PureRuntimeStatementEvaluation.assignment_cases
+#print axioms Aurora.SourceBinding.PureRuntimeStatementEvaluation.return_cases
+#print axioms Aurora.SourceBinding.PureRuntimeStatementEvaluation.branch_cases
+
+#print axioms Aurora.SourceBinding.SourceShared.toCall_injective
+#print axioms Aurora.SourceBinding.SourceExternalOutcome.toCall_injective
+#print axioms Aurora.SourceBinding.EffectExternalRelated.empty
+#print axioms Aurora.SourceBinding.EffectStopResult.shared
+#print axioms Aurora.SourceBinding.EffectExpressionResult.shared
+#print axioms Aurora.SourceBinding.EffectBodyResult.shared
+#print axioms Aurora.SourceBinding.SourceResourceStep.response_run
+#print axioms Aurora.SourceBinding.ResourceDescriptorMatches.mutable_iff
+#print axioms Aurora.SourceBinding.EffectResourceMeaning.mutable_iff
+
+#print axioms Aurora.SourceBinding.SourceResourceInitialize.machine_run
+#print axioms Aurora.SourceBinding.SourceResourceAssert.machine_run
+#print axioms Aurora.SourceBinding.effect_receiver_load
+#print axioms Aurora.SourceBinding.effect_receiver_store_fault
+#print axioms Aurora.SourceBinding.effect_receiver_store_value
+#print axioms Aurora.SourceBinding.EffectCallable.parameters_exact
+#print axioms Aurora.SourceBinding.EffectCallable.result_exact

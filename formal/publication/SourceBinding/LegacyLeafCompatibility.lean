@@ -109,118 +109,156 @@ theorem legacy_singleton_trap_iff :
   · rintro ⟨rfl,rfl,evaluated⟩
     exact .trapped (.returnFault evaluated) .nil
 
+private theorem legacyLeafAlgebra (functions : List RuntimeSourceLeaf) :
+    PureEffectAlgebra (functions.map RuntimeSourceLeaf.toFunction)
+      (LegacyLeafEvaluation functions) (LegacyLeafArguments functions)
+      (LegacyLeafStatement functions) (LegacyLeafStatements functions) where
+  expression_word := by
+    intro context state value
+    exact LegacyLeafEvaluation.word
+  expression_boolean := by
+    intro context state value
+    exact LegacyLeafEvaluation.boolean
+  expression_readVariable := by
+    intro context name binding state h0
+    exact LegacyLeafEvaluation.readVariable h0
+  expression_enumValue := by
+    intro context name identity ordinal state h0
+    exact LegacyLeafEvaluation.enumValue h0
+  expression_not := by
+    intro context state inner outcome events h0
+    exact LegacyLeafEvaluation.not h0
+  expression_wordBinaryFault := by
+    intro operator primitive result context state left fault events right h0 h1
+    exact LegacyLeafEvaluation.wordBinaryFault h0 h1
+  expression_wordBinary := by
+    intro operator primitive result context state left value leftEvents right outcome rightEvents h0 h1 h2
+    exact LegacyLeafEvaluation.wordBinary h0 h1 h2
+  expression_enumCompareFault := by
+    intro context state left identity fault events right equal h0
+    exact LegacyLeafEvaluation.enumCompareFault h0
+  expression_enumCompare := by
+    intro context state left identity value leftEvents right outcome rightEvents equal h0 h1
+    exact LegacyLeafEvaluation.enumCompare h0 h1
+  expression_shiftLeft := by
+    intro context state left outcome events right count h0 h1
+    exact LegacyLeafEvaluation.shiftLeft h0 h1
+  expression_shiftRight := by
+    intro context state left outcome events right count h0 h1
+    exact LegacyLeafEvaluation.shiftRight h0 h1
+  expression_andFault := by
+    intro context state left fault events right h0
+    exact LegacyLeafEvaluation.andFault h0
+  expression_andStop := by
+    intro context state left events right h0
+    exact LegacyLeafEvaluation.andStop h0
+  expression_andContinue := by
+    intro context state left leftEvents right outcome rightEvents h0 h1
+    exact LegacyLeafEvaluation.andContinue h0 h1
+  expression_orFault := by
+    intro context state left fault events right h0
+    exact LegacyLeafEvaluation.orFault h0
+  expression_orStop := by
+    intro context state left events right h0
+    exact LegacyLeafEvaluation.orStop h0
+  expression_orContinue := by
+    intro context state left leftEvents right outcome rightEvents h0 h1
+    exact LegacyLeafEvaluation.orContinue h0 h1
+  expression_callArgumentsFault := by
+    intro leaf context name state sources fault events h0 h1 h2
+    obtain ⟨source,member,equal⟩ := List.mem_map.mp h0
+    cases equal
+    exact .callArgumentsFault member h1 h2
+  expression_callValue := by
+    intro leaf context name state sources values argumentEvents after value finished bodyEvents h0 h1 h2 h3
+    obtain ⟨source,member,equal⟩ := List.mem_map.mp h0
+    cases equal
+    simp only [RuntimeSourceLeaf.toFunction] at h3
+    rw [source.singleton] at h3
+    have old := (legacy_singleton_return_iff.mp h3).2.2
+    exact .callValue member h1 h2 (by simpa only [source.initial_context] using old)
+  expression_callFault := by
+    intro leaf context name state sources values argumentEvents after fault finished bodyEvents h0 h1 h2 h3
+    obtain ⟨source,member,equal⟩ := List.mem_map.mp h0
+    cases equal
+    simp only [RuntimeSourceLeaf.toFunction] at h3
+    rw [source.singleton] at h3
+    have old := (legacy_singleton_trap_iff.mp h3).2.2
+    exact .callFault member h1 h2 (by simpa only [source.initial_context] using old)
+  arguments_nil := by
+    intro context state
+    exact LegacyLeafArguments.nil
+  arguments_fault := by
+    intro context state first kind fault events rest kinds h0
+    exact LegacyLeafArguments.fault h0
+  arguments_cons := by
+    intro context state first kind value firstEvents rest kinds outcome restEvents h0 h1
+    exact LegacyLeafArguments.cons h0 h1
+  statement_declarationFault := by
+    intro members module path formals before raw after binding state fault events result declaration h0 h1
+    exact LegacyLeafStatement.declarationFault h0 h1
+  statement_declarationValue := by
+    intro members module path formals before raw after binding state value events next result declaration h0 h1 h2
+    exact LegacyLeafStatement.declarationValue h0 h1 h2
+  statement_assignmentFault := by
+    intro binding name members module path formals before state raw fault events result h0 h1 h2 h3
+    exact LegacyLeafStatement.assignmentFault h0 h1 h2 h3
+  statement_assignmentValue := by
+    intro binding name members module path formals before state raw value events next result h0 h1 h2 h3 h4
+    exact LegacyLeafStatement.assignmentValue h0 h1 h2 h3 h4
+  statement_returnFault := by
+    intro members module path formals before state raw result fault events h0
+    exact LegacyLeafStatement.returnFault h0
+  statement_returnValue := by
+    intro members module path formals before state raw result value events h0
+    exact LegacyLeafStatement.returnValue h0
+  statement_branchFault := by
+    intro members module path formals before body child declaredItems state condition fault events result h0 h1
+    exact LegacyLeafStatement.branchFault h0 h1
+  statement_branchFalse := by
+    intro members module path formals before body child declaredItems state condition events next result h0 h1 h2
+    exact LegacyLeafStatement.branchFalse h0 h1 h2
+  statement_branchTrueContinue := by
+    intro members module path formals before body child declaredItems state condition firstEvents entered result finished bodyEvents next h0 h1 h2 h3 h4
+    exact LegacyLeafStatement.branchTrueContinue h0 h1 h2 h3 h4
+  statement_branchTrueReturn := by
+    intro members module path formals before body child declaredItems state condition firstEvents entered result value finished bodyEvents h0 h1 h2 h3
+    exact LegacyLeafStatement.branchTrueReturn h0 h1 h2 h3
+  statement_branchTrueFault := by
+    intro members module path formals before body child declaredItems state condition firstEvents entered result fault finished bodyEvents h0 h1 h2 h3
+    exact LegacyLeafStatement.branchTrueFault h0 h1 h2 h3
+  statements_nil := by
+    intro members module path formals result before state
+    exact LegacyLeafStatements.nil
+  statements_next := by
+    intro members module path formals result before state first middle next firstEvents rest after outcome restEvents h0 h1
+    exact LegacyLeafStatements.next h0 h1
+  statements_returned := by
+    intro members module path formals result before state first middle value final events rest after declaredItems h0 h1
+    exact LegacyLeafStatements.returned h0 h1
+  statements_trapped := by
+    intro members module path formals result before state first middle fault final events rest after declaredItems h0 h1
+    exact LegacyLeafStatements.trapped h0 h1
+
 theorem RuntimeEvaluatesWith.backward
     (evaluated : RuntimeEvaluatesWith functions context state raw kind outcome events) :
-    LegacyLeafEvaluation functions context state raw kind outcome events := by
-  induction evaluated using RuntimeEvaluation.rec
-      (motive_2 := fun context state raws kinds outcome events _ =>
-        LegacyLeafArguments functions context state raws kinds outcome events)
-      (motive_3 := fun members module path formals result before state raw after outcome events _ =>
-        LegacyLeafStatement functions members module path formals result before state raw after outcome events)
-      (motive_4 := fun members module path formals result before state raws after outcome events _ =>
-        LegacyLeafStatements functions members module path formals result before state raws after outcome events) with
-  | word => exact .word
-  | boolean => exact .boolean
-  | readVariable binding => exact .readVariable binding
-  | enumValue binding => exact .enumValue binding
-  | not _ ih => exact .not ih
-  | wordBinaryFault operator _ ih => exact .wordBinaryFault operator ih
-  | wordBinary operator _ _ left right => exact .wordBinary operator left right
-  | enumCompareFault _ ih => exact .enumCompareFault ih
-  | enumCompare _ _ left right => exact .enumCompare left right
-  | shiftLeft _ count ih => exact .shiftLeft ih count
-  | shiftRight _ count ih => exact .shiftRight ih count
-  | andFault _ ih => exact .andFault ih
-  | andStop _ ih => exact .andStop ih
-  | andContinue _ _ left right => exact .andContinue left right
-  | orFault _ ih => exact .orFault ih
-  | orStop _ ih => exact .orStop ih
-  | orContinue _ _ left right => exact .orContinue left right
-  | callArgumentsFault member resolves _ ih =>
-    obtain ⟨leaf,oldMember,equal⟩ := List.mem_map.mp member
-    cases equal
-    exact .callArgumentsFault oldMember resolves ih
-  | callValue member resolves _ _ args body =>
-    obtain ⟨leaf,oldMember,equal⟩ := List.mem_map.mp member
-    cases equal
-    simp only [RuntimeSourceLeaf.toFunction] at body
-    rw [leaf.singleton] at body
-    have old := (legacy_singleton_return_iff.mp body).2.2
-    exact .callValue oldMember resolves args (by simpa only [leaf.initial_context] using old)
-  | callFault member resolves _ _ args body =>
-    obtain ⟨leaf,oldMember,equal⟩ := List.mem_map.mp member
-    cases equal
-    simp only [RuntimeSourceLeaf.toFunction] at body
-    rw [leaf.singleton] at body
-    have old := (legacy_singleton_trap_iff.mp body).2.2
-    exact .callFault oldMember resolves args (by simpa only [leaf.initial_context] using old)
-  | fault _ ih => exact .fault ih
-  | cons _ _ first rest => exact .cons first rest
-  | declarationFault scope expression ih => exact .declarationFault scope ih
-  | declarationValue scope expression initialized ih => exact .declarationValue scope ih initialized
-  | assignmentFault member named mutable expression ih => exact .assignmentFault member named mutable ih
-  | assignmentValue member named mutable expression assigned ih => exact .assignmentValue member named mutable ih assigned
-  | returnFault expression ih => exact .returnFault ih
-  | returnValue expression ih => exact .returnValue ih
-  | branchFault scope expression ih => exact .branchFault scope ih
-  | branchFalse scope expression reserved ih => exact .branchFalse scope ih reserved
-  | branchTrueContinue scope expression entered body reserved first ih =>
-      exact .branchTrueContinue scope first entered ih reserved
-  | branchTrueReturn scope expression entered body first ih => exact .branchTrueReturn scope first entered ih
-  | branchTrueFault scope expression entered body first ih => exact .branchTrueFault scope first entered ih
-  | next first rest ih tail => exact .next ih tail
-  | returned first scope ih => exact .returned ih scope
-  | trapped first scope ih => exact .trapped ih scope
-
-  | _ => exact .nil
+    LegacyLeafEvaluation functions context state raw kind outcome events :=
+  evaluated.induct (legacyLeafAlgebra functions)
 
 theorem RuntimeArgumentsEvaluateWith.backward
     (evaluated : RuntimeArgumentsEvaluateWith functions context state raws kinds outcome events) :
-    LegacyLeafArguments functions context state raws kinds outcome events := by
-  induction evaluated using RuntimeArgumentEvaluation.rec
-      (motive_1 := fun _ _ _ _ _ _ _ => True)
-      (motive_3 := fun _ _ _ _ _ _ _ _ _ _ _ _ => True)
-      (motive_4 := fun _ _ _ _ _ _ _ _ _ _ _ _ => True) with
-  | fault first _ => exact .fault (RuntimeEvaluatesWith.backward first)
-  | cons first rest _ ih => exact .cons (RuntimeEvaluatesWith.backward first) ih
-  | _ => all_goals first | exact True.intro | exact LegacyLeafArguments.nil | exact LegacyLeafStatements.nil
+    LegacyLeafArguments functions context state raws kinds outcome events :=
+  evaluated.induct (legacyLeafAlgebra functions)
 
 theorem RuntimeStatementEvaluates.backward
     (evaluated : RuntimeStatementEvaluates functions members module path formals result before state raw after outcome events) :
-    LegacyLeafStatement functions members module path formals result before state raw after outcome events := by
-  induction evaluated using RuntimeStatementEvaluation.rec
-      (motive_1 := fun _ _ _ _ _ _ _ => True)
-      (motive_2 := fun _ _ _ _ _ _ _ => True)
-      (motive_4 := fun members module path formals result before state raws after outcome events _ =>
-        LegacyLeafStatements functions members module path formals result before state raws after outcome events) with
-  | declarationFault scope expression _ => exact .declarationFault scope (RuntimeEvaluatesWith.backward expression)
-  | declarationValue scope expression initialized _ => exact .declarationValue scope (RuntimeEvaluatesWith.backward expression) initialized
-  | assignmentFault member named mutable expression _ => exact .assignmentFault member named mutable (RuntimeEvaluatesWith.backward expression)
-  | assignmentValue member named mutable expression assigned _ => exact .assignmentValue member named mutable (RuntimeEvaluatesWith.backward expression) assigned
-  | returnFault expression _ => exact .returnFault (RuntimeEvaluatesWith.backward expression)
-  | returnValue expression _ => exact .returnValue (RuntimeEvaluatesWith.backward expression)
-  | branchFault scope expression _ => exact .branchFault scope (RuntimeEvaluatesWith.backward expression)
-  | branchFalse scope expression reserved _ => exact .branchFalse scope (RuntimeEvaluatesWith.backward expression) reserved
-  | branchTrueContinue scope expression entered body reserved _ ih =>
-      exact .branchTrueContinue scope (RuntimeEvaluatesWith.backward expression) entered ih reserved
-  | branchTrueReturn scope expression entered body _ ih => exact .branchTrueReturn scope (RuntimeEvaluatesWith.backward expression) entered ih
-  | branchTrueFault scope expression entered body _ ih => exact .branchTrueFault scope (RuntimeEvaluatesWith.backward expression) entered ih
-  | next first rest ih tail => exact .next ih tail
-  | returned first scope ih => exact .returned ih scope
-  | trapped first scope ih => exact .trapped ih scope
-  | _ => all_goals first | exact True.intro | exact LegacyLeafArguments.nil | exact LegacyLeafStatements.nil
+    LegacyLeafStatement functions members module path formals result before state raw after outcome events :=
+  evaluated.induct (legacyLeafAlgebra functions)
 
 theorem RuntimeStatementsEvaluate.backward
     (evaluated : RuntimeStatementsEvaluate functions members module path formals result before state raws after outcome events) :
-    LegacyLeafStatements functions members module path formals result before state raws after outcome events := by
-  induction evaluated using RuntimeStatementsEvaluation.rec
-      (motive_1 := fun _ _ _ _ _ _ _ => True)
-      (motive_2 := fun _ _ _ _ _ _ _ => True)
-      (motive_3 := fun _ _ _ _ _ _ _ _ _ _ _ _ => True) with
-  | next first rest _ ih => exact .next (RuntimeStatementEvaluates.backward first) ih
-  | returned first scope _ => exact .returned (RuntimeStatementEvaluates.backward first) scope
-  | trapped first scope _ => exact .trapped (RuntimeStatementEvaluates.backward first) scope
-  | _ => all_goals first | exact True.intro | exact LegacyLeafArguments.nil | exact LegacyLeafStatements.nil
+    LegacyLeafStatements functions members module path formals result before state raws after outcome events :=
+  evaluated.induct (legacyLeafAlgebra functions)
 
 theorem legacy_expression_iff :
     LegacyLeafEvaluation functions context state raw kind outcome events ↔

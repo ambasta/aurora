@@ -12,6 +12,7 @@ import SourceBinding.RuntimeBodyPublic
 import SourceBinding.RuntimeDAGPublic
 import SourceBinding.FramePolicyChecker
 import SourceBinding.FramePolicyExecution
+import SourceBinding.EffectIdentityChecker
 open Aurora.SourceBinding
 
 def readSource (path : System.FilePath) (limit : Nat := 1048576) : IO ByteArray :=
@@ -28,6 +29,9 @@ def showName (name : Name) : String :=
   String.intercalate "." (name.map String.fromUTF8!)
 
 def main (args : List String) : IO UInt32 := do
+  let (effectIdentity, args) := match args with
+    | "--effect-method-identity" :: rest => (true,rest)
+    | _ => (false,args)
   let (framePolicy, args) := match args with
     | "--frame-policy" :: rest => (true,rest)
     | _ => (false,args)
@@ -64,7 +68,10 @@ def main (args : List String) : IO UInt32 := do
     | "--ir" :: path :: rest => (some path,rest)
     | _ => (none,args)
   let root :: module :: classPath :: member :: paths := arguments |
-    throw (IO.userError "usage: source-binding-probe [--frame-policy|--runtime-dag|--runtime-body|--runtime-call-expression PATH START|--runtime-expression|--runtime-identity|--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+    throw (IO.userError "usage: source-binding-probe [--effect-method-identity|--frame-policy|--runtime-dag|--runtime-body|--runtime-call-expression PATH START|--runtime-expression|--runtime-identity|--forward-leaf WRAPPER|--calls|--call-examples|--body|--body-examples|--snapshot-examples] [--ir PUBLICATION] ROOT_MODULE SELECT_MODULE CLASS_PATH MEMBER SOURCE ...")
+  if effectIdentity && (framePolicy || runtimeDAG || runtimeBody || runtimeCall.isSome || runtimeExpression || runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
+    throw (IO.userError "effect identity and other modes are distinct")
+  if effectIdentity && irPath.isNone then throw (IO.userError "effect identity requires --ir")
   if framePolicy && (runtimeDAG || runtimeBody || runtimeCall.isSome || runtimeExpression || runtimeIdentity || forward.isSome || callMode || bodyMode || examples) then
     throw (IO.userError "frame policy and other modes are distinct")
   if framePolicy && irPath.isNone then throw (IO.userError "frame policy requires --ir")
@@ -105,6 +112,19 @@ def main (args : List String) : IO UInt32 := do
   let rootName := (root.splitOn ".").map String.toUTF8
   let selectedModule := (module.splitOn ".").map String.toUTF8
   let selectedPath := (classPath.splitOn "::").map String.toUTF8
+  if effectIdentity then
+    let some path := irPath | throw (IO.userError "effect identity requires --ir")
+    let publication ← readSource path 16777216
+    let some artifact := Aurora.Publication.decodeArtifact {} publication |
+      throw (IO.userError "effect identity publication rejected")
+    let t := Aurora.Publication.tables artifact.document.reversed.reverse
+    let some className := selectedPath.getLast? | throw (IO.userError "effect identity class path rejected")
+    let some checked := checkCanonicalEffectMethod t files rootName selectedModule selectedPath.dropLast className member.toUTF8 |
+      throw (IO.userError "effect receiver identity/scoping rejected")
+    IO.println s!"SOURCE-EFFECT-IDENTITY callable={checked.id} readonly={checked.source.selected.method.function.mode == .readonly} formals={checked.source.selected.method.function.formals.length} locals={checked.lexical.declaredItems.length} fields={(fields checked.source.selected.classDecl.members).length} resources={checked.resources.length} retained_rows={(Aurora.Publication.functionCode t checked.id).size} resource_fields={checked.resources.map (fun resource => resource.target.fieldOrdinal)} resource_methods={checked.resources.map (fun resource => String.fromUTF8! resource.source.method)} publication_bytes={publication.size}"
+    IO.println s!"SOURCE-GRAPH files={files.length} bytes={total} ms={(← IO.monoMsNow) - start}"
+    IO.println "NATIVE selected receiver identity/scoping/catalogue/full-slot metadata only. Name admission is not complete resolved-call closure. No closed13-node/740-row body coverage, source/machine execution, resource response law, native ABI, authority or ledger theorem."
+    return 0
   if framePolicy then
     if selectedModule != FramePolicyAttachment.frameModule || selectedPath != FramePolicyAttachment.framePath || member.toUTF8 != FramePolicyAttachment.rootName then
       throw (IO.userError "frame policy selection rejected")

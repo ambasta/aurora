@@ -12,6 +12,9 @@ def runtimeStatementNames : Nat → SourceStatement → Option (List ByteArray)
   | fuel + 1, .returnValue value => runtimeCalledNames fuel value
   | fuel + 1, .ifThen condition body => do
     return (← runtimeCalledNames fuel condition) ++ (← runtimeStatementsNames fuel body)
+  | fuel + 1, .ifElse condition yes no => do
+    return (← runtimeCalledNames fuel condition) ++ (← runtimeStatementsNames fuel yes) ++
+      (← runtimeStatementsNames fuel no)
   | _, .call _ _ => none
 
 def runtimeStatementsNames : Nat → List SourceStatement → Option (List ByteArray)
